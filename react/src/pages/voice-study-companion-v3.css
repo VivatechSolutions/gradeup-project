@@ -1,0 +1,180 @@
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+.voice-companion-v3 {
+    
+    background: var(--background);
+    color: var(--foreground);
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Glassmorphism Effect */
+.glass-effect {
+    background-color: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+}
+.dark .glass-effect {
+    background-color: rgba(10, 10, 10, 0.25);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.companion-header {
+    flex-shrink: 0;
+    height: 60px;
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    transition: all 0.3s ease-in-out;
+}
+
+.companion-main {
+    flex-grow: 1;
+    padding-top: 60px; /* Header height */
+    padding-bottom: 88px; /* Footer height */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: all 0.3s ease-in-out;
+}
+
+.companion-footer {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    padding: 16px 24px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.chat-input-container {
+    position: relative;
+    width: 100%;
+    max-width: 800px;
+    transition: all 0.3s ease-in-out;
+}
+
+.chat-input {
+    width: 100%;
+    height: 56px;
+    padding-left: 20px;
+    padding-right: 120px; /* space for buttons */
+    border-radius: 999px;
+    font-size: 16px;
+    border: none;
+}
+
+.chat-input-buttons {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    gap: 8px;
+}
+
+.voice-visualizer-bar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.note-card-v3 {
+    border: 1px solid var(--border);
+    transition: all 0.2s ease-in-out;
+}
+
+.note-card-v3:hover {
+    border-color: var(--primary);
+    box-shadow: 0 0 20px rgba(var(--primary-rgb), 0.1);
+}
+
+/* Sidebar transitions */
+.sidebar-content {
+    box-shadow: 0 0 40px rgba(0,0,0,0.2);
+}
+
+.setup-container h2 {
+    font-weight: 800;
+    font-size: 3rem;
+    letter-spacing: -0.05em;
+    background: -webkit-linear-gradient(45deg, var(--primary), var(--secondary), var(--primary));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.dark .setup-container h2 {
+    background: none;
+    -webkit-background-clip: unset;
+    -webkit-text-fill-color: var(--foreground);
+}
+
+.particle-background {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    z-index: -1;
+}
+
+.particle {
+    position: absolute;
+    background-color: var(--primary);
+    border-radius: 50%;
+    opacity: 0;
+    animation: float 25s infinite ease-in-out;
+}
+
+@keyframes float {
+    0% { transform: translateY(0) translateX(0) scale(1); opacity: 0; }
+    5%, 95% { opacity: 0.3; }
+    50% { transform: translateY(-100vh) translateX(5vw) scale(1.5); }
+    100% { transform: translateY(-200vh) translateX(-5vw) scale(1); opacity: 0; }
+}
+
+.dark .particle {
+    background-color: var(--primary);
+    box-shadow: 0 0 10px var(--primary), 0 0 20px var(--primary);
+}
+
+/* Custom scrollbar */
+.custom-scroll::-webkit-scrollbar {
+    width: 6px;
+}
+.custom-scroll::-webkit-scrollbar-track {
+    background: transparent;
+}
+.custom-scroll::-webkit-scrollbar-thumb {
+    background: var(--primary);
+    border-radius: 3px;
+}
+.custom-scroll::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--primary-h), var(--primary-s), calc(var(--primary-l) + 5%));
+}

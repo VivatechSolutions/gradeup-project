@@ -1,0 +1,34 @@
+.marquee {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+.marquee-content {
+  display: inline-block;
+  white-space: nowrap;
+  animation: marquee 15s linear infinite;
+  animation-play-state: paused; /* Start paused */
+}
+
+.marquee:hover .marquee-content {
+  animation-play-state: running; /* Run on hover */
+}
+
+
+@keyframes marquee {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
+.chat-history-item {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.dark .chat-history-item {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}

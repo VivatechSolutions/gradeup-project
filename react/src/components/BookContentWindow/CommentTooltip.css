@@ -1,0 +1,30 @@
+.comment-tooltip-wrapper {
+  position: relative;
+  cursor: pointer;
+}
+
+.comment-tooltip-wrapper .comment-tooltip {
+  visibility: hidden;
+  width: max-content;
+  max-width: 300px;
+  background-color: hsl(var(--popover));
+  color: hsl(var(--popover-foreground));
+  text-align: center;
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  position: absolute;
+  z-index: 10;
+  bottom: 125%;
+  left: 50%;
+  transform: translateX(-50%);
+  opacity: 0;
+  transition: opacity 0.3s;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.comment-tooltip-wrapper:hover .comment-tooltip {
+  visibility: visible;
+  opacity: 1;
+}

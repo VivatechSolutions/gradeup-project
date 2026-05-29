@@ -1,0 +1,21 @@
+:root {
+  --bg: #0b1020;
+  --glass: rgba(255,255,255,0.08);
+  --border: rgba(255,255,255,0.15);
+  --text: #e5e7eb;
+  --accent: #4f46e5;
+}
+
+body {
+  margin: 0;
+  
+  background: radial-gradient(circle at top, #111827, #020617);
+  color: var(--text);
+}
+
+.glass {
+  backdrop-filter: blur(18px);
+  background: var(--glass);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+}

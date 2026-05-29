@@ -1,0 +1,67 @@
+version: 0.2
+
+env:
+  secrets-manager:
+    OPENAI_API_KEY: "Gradeup/env/secrets:OPENAI_API_KEY"
+    MISTRAL_API_KEY: "Gradeup/env/secrets:MISTRAL_API_KEY"
+    OPENROUTER_API_KEY: "Gradeup/env/secrets:OPENROUTER_API_KEY"
+    OPENAI_API_KEY_TEXT: "Gradeup/env/secrets:OPENAI_API_KEY_TEXT"
+    OPENAI_API_KEY_TTS: "Gradeup/env/secrets:OPENAI_API_KEY_TTS"
+    QDRANT_URL: "Gradeup/env/secrets:QDRANT_URL"
+    QDRANT_API_KEY: "Gradeup/env/secrets:QDRANT_API_KEY"
+    QDRANT_COLLECTION_NAME: "Gradeup/env/secrets:QDRANT_COLLECTION_NAME"
+    LANGFUSE_SECRET_KEY: "Gradeup/env/secrets:LANGFUSE_SECRET_KEY"
+    LANGFUSE_PUBLIC_KEY: "Gradeup/env/secrets:LANGFUSE_PUBLIC_KEY"
+    LANGFUSE_BASE_URL: "Gradeup/env/secrets:LANGFUSE_BASE_URL"
+  parameter-store:
+    DOCKER_REGISTRY_USERNAME: /Resumeparse-AI-CICD/Docker-credentials/username
+    DOCKER_REGISTRY_PASSWORD: /Resumeparse-AI-CICD/Docker-credentials/password
+    DOCKER_REGISTRY_URL: /Resumeparse-AI-CICD/Docker-registry/url
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Upgrading pip..."
+      - pip install --upgrade pip
+
+      # Create the .env file and populate it with values from Secrets Manager
+      - echo "Creating .env file..."
+      - echo "OPENAI_API_KEY=$OPENAI_API_KEY" > .env
+      - echo "GEMINI_API_KEY=$MISTRAL_API_KEY" >> .env
+      - echo "GEMINI_API_KEY=$OPENROUTER_API_KEY" >> .env
+      - echo "GEMINI_API_KEY=$OPENAI_API_KEY_TEXT" >> .env
+      - echo "GEMINI_API_KEY=$OPENAI_API_KEY_TTS" >> .env
+      - echo "GEMINI_API_KEY=$QDRANT_URL" >> .env
+      - echo "GEMINI_API_KEY=$QDRANT_API_KEY" >> .env
+      - echo "GEMINI_API_KEY=$QDRANT_COLLECTION_NAME" >> .env
+      - echo "GEMINI_API_KEY=$LANGFUSE_SECRET_KEY" >> .env
+      - echo "GEMINI_API_KEY=$LANGFUSE_PUBLIC_KEY" >> .env
+      - echo "GEMINI_API_KEY=$LANGFUSE_BASE_URL" >> .env
+
+  pre_build:
+    commands:
+      - echo "Dependencies and file check..."
+      - pip --version
+      - ls -l # List files to verify location
+      - pip install -r requirements.txt
+
+  build:
+    commands:
+      - echo "Build and Docker login..."
+      - echo "$DOCKER_REGISTRY_PASSWORD" | docker login "$DOCKER_REGISTRY_URL" -u "$DOCKER_REGISTRY_USERNAME" --password-stdin
+      - echo "Building Docker image..."
+      - docker build -t "$DOCKER_REGISTRY_URL/$DOCKER_REGISTRY_USERNAME/gradeup-new:latest" .
+      - docker push "$DOCKER_REGISTRY_URL/$DOCKER_REGISTRY_USERNAME/gradeup-new:latest"
+
+  post_build:
+    commands:
+      - echo "Build completed successfully!"
+artifacts:
+  files:
+    - appspec.yml
+    - scripts/**/*
+    - Dockerfile
+    - requirements.txt
+  discard-paths: no
