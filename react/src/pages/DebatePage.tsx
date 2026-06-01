@@ -2082,12 +2082,69 @@ function ScheduleDebateModal({ config, onSchedule, onClose }: any) {
 }
 
 const TEAM_COLORS: Record<Team, string> = {
-  A: "#6366f1",
-  B: "#ec4899",
+  A: "#3b82f6",  // Blue — matches AI greeting "🔵 Blue Team"
+  B: "#ef4444",  // Red  — matches AI greeting "🔴 Red Team"
 };
 
 function getTeamColor(team: Team | undefined) {
   return team === "B" ? TEAM_COLORS.B : TEAM_COLORS.A;
+}
+
+// Parse AI opening text to find who gets first turn.
+// Looks for patterns like "Gokul, the floor is yours", "Blue Team, your turn",
+// "I invite [Name]", etc. Returns { speakerId, team } or null if not found.
+function extractFirstSpeakerFromGreeting(
+  greetingText: string,
+  participants: any[],
+): { speakerId: string | null; team: "A" | "B" | null } {
+  if (!greetingText || !participants.length) return { speakerId: null, team: null };
+  const text = greetingText.toLowerCase();
+
+  // Check for blue/red team mention first
+  const mentionsBlue = text.includes("blue team") || text.includes("🔵");
+  const mentionsRed = text.includes("red team") || text.includes("🔴");
+  let firstTeam: "A" | "B" | null = null;
+
+  // Detect who is invited to speak — common AI patterns
+  const invitePatterns = [
+    /i invite\s+([\w\s]+?)[,.]?\s*(the floor|your turn|to begin|to present|to start)/i,
+    /([\w\s]+?),?\s+the floor is yours/i,
+    /([\w\s]+?),?\s+you(?:'re| are) up first/i,
+    /([\w\s]+?),?\s+please (?:begin|start|proceed)/i,
+    /let(?:'s| us) begin with\s+([\w\s]+?)[\.,!]/i,
+    /start(?:ing)? with\s+([\w\s]+?)[\.,!]/i,
+  ];
+
+  let mentionedName: string | null = null;
+  for (const pattern of invitePatterns) {
+    const match = greetingText.match(pattern);
+    if (match) {
+      mentionedName = (match[1] || match[2] || "").trim();
+      break;
+    }
+  }
+
+  // Try to match mentioned name to a participant
+  if (mentionedName) {
+    const nameLower = mentionedName.toLowerCase();
+    const matched = participants.find(
+      (p: any) => !p.isAi && p.name && p.name.toLowerCase().includes(nameLower),
+    );
+    if (matched) {
+      return { speakerId: String(matched.id), team: matched.team || null };
+    }
+  }
+
+  // Fall back to team colour mention
+  if (mentionsBlue && !mentionsRed) firstTeam = "A";
+  else if (mentionsRed && !mentionsBlue) firstTeam = "B";
+
+  if (firstTeam) {
+    const teamFirst = participants.find((p: any) => !p.isAi && p.team === firstTeam);
+    return { speakerId: teamFirst ? String(teamFirst.id) : null, team: firstTeam };
+  }
+
+  return { speakerId: null, team: null };
 }
 
 function extractDebateScores(payload: any) {
@@ -2272,7 +2329,8 @@ function buildTeamDebateResult(
     ([participantId, scoreData]: any) => ({
       participantId,
       score: Number(
-        scoreData?.score ??
+        scoreData?.total_score ??
+          scoreData?.score ??
           scoreData?.overall_score ??
           scoreData?.overallScore ??
           0,
@@ -2294,8 +2352,22 @@ function buildTeamDebateResult(
         score: entry.score,
         isHost: Boolean(participant.isHost),
         isViewer: String(entry.participantId) === String(config.candidateId),
+        breakdown: {
+          reasoning: entry.raw?.reasoning ?? null,
+          textbook_knowledge: entry.raw?.textbook_knowledge ?? null,
+          argumentation: entry.raw?.argumentation ?? null,
+          communication: entry.raw?.communication ?? null,
+        },
+        strengths: entry.raw?.strengths || [],
+        improvements: entry.raw?.improvements || [],
+        overall_feedback: entry.raw?.overall_feedback || entry.raw?.feedback || null,
         raw: entry.raw,
       };
+
+
+
+
+
     })
     .filter(Boolean)
     .sort(
@@ -2344,10 +2416,12 @@ function buildTeamDebateResult(
       teamA: teamAScore,
       teamB: teamBScore,
       overall:
-        Number(apiResult?.overallScore ?? apiResult?.overall_score ?? 0) ||
+        Number(apiResult?.total_score ?? apiResult?.overallScore ?? apiResult?.overall_score ?? 0) ||
         null,
       participantScores,
       viewer: viewerScore,
+      session_feedback: apiResult?.session_feedback || null,
+      team_scores: apiResult?.team_scores || null,
     },
     meetingEnded: true,
     viewerCandidateId: config.candidateId || null,
@@ -3295,6 +3369,11 @@ function TeamDebateRoom({
   const greetingPlaybackTokenRef = useRef(0);
   const onEndRef = useRef(onEnd);
   const currentSpeakerIdRef = useRef<string>("");
+  // Auto start/stop refs — same pattern as LiveAIDebateRoom
+  const startSpeechCaptureRef = useRef<(() => void) | null>(null);
+  const autoSilenceIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const autoSilenceSpeechDetectedRef = useRef(false);
+  const autoSilenceCounterRef = useRef(0);
   const {
     state: roomMicState,
     stream: roomMicStream,
@@ -3557,37 +3636,34 @@ function TeamDebateRoom({
           sessionId: config.sessionId,
           turnId: latestModeratorTurn.id,
         });
-        const audio = await synthesizeDebateSpeech({ text, voice: "alloy" });
-        ttsDebug("[TTS] audio returned", {
-          sessionId: config.sessionId,
-          hasAudio: Boolean(audio?.dataUrl),
-          dataUrlLength: audio?.dataUrl?.length || 0,
-        });
-        if (cancelled || playbackToken !== greetingPlaybackTokenRef.current) {
-          setMeetingReady(true);
-          ttsDebug("[CLEANUP] speech cancellation", {
+        // Use pre-loaded audio from handleStart if available (host path).
+        // Participants synthesize fresh here. Either way: land page → speak immediately.
+        let greetingDataUrl: string | null = config.preloadedGreetingDataUrl || null;
+        if (!greetingDataUrl) {
+          const audio = await synthesizeDebateSpeech({ text, voice: "alloy" });
+          ttsDebug("[TTS] audio returned", {
             sessionId: config.sessionId,
-            mode: "team",
-            reason: "cancelled-after-synthesize",
+            hasAudio: Boolean(audio?.dataUrl),
+            dataUrlLength: audio?.dataUrl?.length || 0,
           });
-          return;
+          if (cancelled || playbackToken !== greetingPlaybackTokenRef.current) {
+            setMeetingReady(true);
+            return;
+          }
+          if (audio?.dataUrl) {
+            await preloadAudioDataUrl(audio.dataUrl);
+            if (cancelled || playbackToken !== greetingPlaybackTokenRef.current) {
+              setMeetingReady(true);
+              return;
+            }
+            greetingDataUrl = audio.dataUrl;
+          }
         }
-        if (!audio?.dataUrl) {
+        if (!greetingDataUrl) {
           setMeetingReady(true);
-          ttsDebug("[LOADER] Meeting ready", {
+          ttsDebug("[LOADER] Meeting ready — no audio dataUrl", {
             sessionId: config.sessionId,
             mode: "team",
-            reason: "no-audio-dataurl",
-          });
-          return;
-        }
-        await preloadAudioDataUrl(audio.dataUrl);
-        if (cancelled || playbackToken !== greetingPlaybackTokenRef.current) {
-          setMeetingReady(true);
-          ttsDebug("[CLEANUP] speech cancellation", {
-            sessionId: config.sessionId,
-            mode: "team",
-            reason: "cancelled-after-preload",
           });
           return;
         }
@@ -3601,7 +3677,7 @@ function TeamDebateRoom({
           mode: "team",
         });
         activeAudioRef.current = playAudioDataUrl(
-          audio.dataUrl,
+          greetingDataUrl,
           () => {
             ttsDebug("[TTS] play started", {
               sessionId: config.sessionId,
@@ -3618,6 +3694,28 @@ function TeamDebateRoom({
               mode: "team",
               reason: "playback-ended",
             });
+            // Parse greeting to find first speaker mentioned by AI.
+            // If server already set currentSpeakerId that's authoritative;
+            // this is a client-side fallback in case it's null.
+            const serverSpeakerId = liveSession?.currentRound?.currentSpeakerId;
+            if (!serverSpeakerId) {
+              const allParticipants = liveSession?.participants || [];
+              const { speakerId, team } = extractFirstSpeakerFromGreeting(text, allParticipants);
+              ttsDebug("[TURN] first speaker extracted from greeting", { speakerId, team });
+              if (speakerId) {
+                // Trigger auto-start for the first mentioned speaker
+                setTimeout(() => { startSpeechCaptureRef.current?.(); }, 300);
+              }
+            } else {
+              // Server has set the first speaker — auto-start will fire via canSpeak useEffect.
+              // Ensure the local track is enabled so startSpeechCapture can proceed.
+              const localTrack = config.stream?.getAudioTracks?.()[0];
+              if (localTrack && !localTrack.enabled) {
+                localTrack.enabled = true;
+                ttsDebug("[MIC] track pre-enabled for server-assigned speaker", { serverSpeakerId });
+              }
+              ttsDebug("[TURN] first speaker from server", { serverSpeakerId });
+            }
           },
         );
       } catch (error) {
@@ -3892,35 +3990,41 @@ function TeamDebateRoom({
       readyState: audioTrack.readyState,
       enabled: audioTrack.enabled,
     });
-    if (!audioTrack.enabled) {
-      debateDebug("[ERROR] speak blocked track disabled", {
-        sessionId: config.sessionId,
-      });
-      debateDebug("[SPEAK] blocked", {
-        reason: "track_disabled",
-        activeSpeakerId,
-        currentUserId: candidateId,
-        participantId: candidateId,
-        hasStream: Boolean(roomAudioStream),
-      });
-      debateDebug("[EARLY_RETURN]", {
-        functionName: "startSpeechCapture",
-        reason: "track_disabled",
-        values: {
-          activeSpeakerId,
-          currentUserId: candidateId,
-          participantId: candidateId,
-          hasStream: Boolean(roomAudioStream),
-        },
-      });
-      toast$("Enable your microphone before speaking.", "warn");
+    // Track ended — need fresh stream (same fix as LiveAIDebateRoom)
+    if (audioTrack.readyState === "ended") {
+      debateDebug("[MIC] track ended — requesting fresh stream", {});
+      try {
+        const freshStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        const freshTrack = freshStream.getAudioTracks()[0];
+        if (!freshTrack) { toast$("Microphone is not available.", "error"); speechCaptureLockRef.current = false; return; }
+        if (roomAudioStream) {
+          roomAudioStream.removeTrack(audioTrack);
+          roomAudioStream.addTrack(freshTrack);
+        }
+      } catch (err: any) {
+        toast$(err?.message || "Microphone access failed.", "error");
+        speechCaptureLockRef.current = false;
+        return;
+      }
+    }
+    // Re-read track after possible refresh
+    const liveTrack = roomAudioStream?.getAudioTracks?.()[0];
+    if (!liveTrack || liveTrack.readyState === "ended") {
+      toast$("Microphone unavailable. Please refresh and allow mic access.", "error");
+      speechCaptureLockRef.current = false;
       return;
     }
+    // Re-enable if muted (was disabled while AI was speaking)
+    if (!liveTrack.enabled) {
+      debateDebug("[MIC] re-enabling track for team speech capture", { readyState: liveTrack.readyState });
+      liveTrack.enabled = true;
+    }
     speechCaptureLockRef.current = true;
-    const recordingStream = new MediaStream([audioTrack]);
+    const recordingStream = new MediaStream([liveTrack]);
     const mimeType = MediaRecorder.isTypeSupported("audio/webm")
       ? "audio/webm"
-      : "audio/mp4";
+      : MediaRecorder.isTypeSupported("audio/mp4") ? "audio/mp4" : "";
+    if (!mimeType) { toast$("Your browser does not support audio recording.", "error"); speechCaptureLockRef.current = false; return; }
     debateDebug("[RECORDER] creating", {
       mimeType,
       trackCount: recordingStream.getTracks().length,
@@ -4052,8 +4156,9 @@ function TeamDebateRoom({
         const armedForSilence =
           firstSpeechAtRef.current &&
           Date.now() - firstSpeechAtRef.current >= 600;
-        if (armedForSilence && Date.now() - lastSpeechAtRef.current >= 2400) {
-          debateDebug("[SILENCE] silence detected", {
+        // 8 seconds silence (matching LiveAIDebateRoom behaviour)
+        if (armedForSilence && Date.now() - lastSpeechAtRef.current >= 8000) {
+          debateDebug("[SILENCE] 8s silence detected — auto-stopping", {
             sessionId: config.sessionId,
             activeSpeakerId: currentSpeakerId,
           });
@@ -4066,11 +4171,21 @@ function TeamDebateRoom({
   }
 
   function stopSpeechCapture() {
+    // Clear auto-silence interval
+    if (autoSilenceIntervalRef.current) {
+      clearInterval(autoSilenceIntervalRef.current);
+      autoSilenceIntervalRef.current = null;
+    }
+    autoSilenceSpeechDetectedRef.current = false;
+    autoSilenceCounterRef.current = 0;
     cleanupSpeechDetection();
     const activeRecorder = mediaRecorderRef.current;
     if (activeRecorder && activeRecorder.state !== "inactive") {
       activeRecorder.stop();
     }
+    // Mute mic after stop — re-enabled when auto-start or user clicks Start
+    const liveTrack = roomAudioStream?.getAudioTracks?.()[0];
+    if (liveTrack) liveTrack.enabled = false;
   }
 
   async function handleMicGrant() {
@@ -4119,36 +4234,35 @@ function TeamDebateRoom({
     toast$("Microphone is already enabled.", "info");
   }
 
+  // Sync ref so greeting callback can call startSpeechCapture without stale closure
   useEffect(() => {
-    if (!canSpeak || micBlocked) {
-      console.log("[TURN] speech capture paused", {
-        sessionId: config.sessionId,
-        canSpeak,
-        micBlocked,
-        speechRecording,
-      });
-      if (speechRecording) {
-        stopSpeechCapture();
-      }
+    startSpeechCaptureRef.current = startSpeechCapture;
+  });
+
+  // Stop recording if AI takes over — otherwise leave manual/auto-silence in control
+  useEffect(() => {
+    if (aiIsSpeaking && speechRecording) {
+      stopSpeechCapture();
+    }
+  }, [aiIsSpeaking, speechRecording]);
+
+  // Auto-start when it's this user's turn (after AI finishes speaking)
+  useEffect(() => {
+    if (!canSpeak || micBlocked || speechRecording || speechProcessing || submittingTurn) {
       return;
     }
     const turnKey = `${liveSession?.currentRound?.roundNumber || 0}:${currentSpeakerId || ""}`;
-    if (
-      autoTurnStartRef.current === turnKey ||
-      speechRecording ||
-      speechProcessing ||
-      submittingTurn
-    ) {
-      return;
-    }
+    if (autoTurnStartRef.current === turnKey) return;
     autoTurnStartRef.current = turnKey;
-    console.log("[TURN] speech capture armed", {
+    console.log("[TURN] auto-starting speech capture for team member", {
       sessionId: config.sessionId,
       turnKey,
       currentSpeakerId,
       activeTeam,
     });
-    startSpeechCapture().catch(() => null);
+    setTimeout(() => {
+      startSpeechCaptureRef.current?.();
+    }, 300);
   }, [
     canSpeak,
     currentSpeakerId,
@@ -4156,7 +4270,6 @@ function TeamDebateRoom({
     micBlocked,
     speechProcessing,
     speechRecording,
-    startSpeechCapture,
     submittingTurn,
   ]);
 
@@ -4237,7 +4350,7 @@ function TeamDebateRoom({
     (teams?.[teamKey] || []).map(
       (participant: any, index: number) =>
         ({
-          id: Number(participant.id) || index + 1,
+          id: participant.id != null ? String(participant.id) : String(index + 1),
           name: participant.name,
           stream:
             String(participant.id) === String(candidateId) &&
@@ -4389,7 +4502,7 @@ function TeamDebateRoom({
                     >
                       <div className="team-box-head">
                         <div>
-                          <div className="team-box-title">Team A</div>
+                          <div className="team-box-title">🔵 Blue Team</div>
                           <div className="team-box-sub">
                             {
                               teamATiles.filter(
@@ -4399,7 +4512,7 @@ function TeamDebateRoom({
                             /{teamATiles.length} spoke
                           </div>
                         </div>
-                        <span className="team-a-badge">Left</span>
+                        <span className="team-a-badge">Blue</span>
                       </div>
                       <div className="team-member-grid">
                         {teamATiles.map((participant) => (
@@ -4413,7 +4526,7 @@ function TeamDebateRoom({
                     >
                       <div className="team-box-head">
                         <div>
-                          <div className="team-box-title">Team B</div>
+                          <div className="team-box-title">🔴 Red Team</div>
                           <div className="team-box-sub">
                             {
                               teamBTiles.filter(
@@ -4423,7 +4536,7 @@ function TeamDebateRoom({
                             /{teamBTiles.length} spoke
                           </div>
                         </div>
-                        <span className="team-b-badge">Right</span>
+                        <span className="team-b-badge">Red</span>
                       </div>
                       <div className="team-member-grid">
                         {teamBTiles.map((participant) => (
@@ -6275,6 +6388,26 @@ function DebateWaitingRoom({
         result?.ai_opening ||
         resultLiveSession?.currentRound?.latestAiMessage ||
         "";
+
+      // ── Pre-synthesise the AI greeting before landing on meeting page ──────
+      // Same pattern as 1v1: speak API completes → land on meeting → AI speaks
+      // immediately with zero delay.
+      let preloadedAudioDataUrl: string | null = null;
+      if (aiOpening) {
+        try {
+          console.log("[TTS] pre-synthesizing team greeting", { textLength: aiOpening.length });
+          const audio = await synthesizeDebateSpeech({ text: aiOpening, voice: "alloy" });
+          if (audio?.dataUrl) {
+            await preloadAudioDataUrl(audio.dataUrl);
+            preloadedAudioDataUrl = audio.dataUrl;
+            console.log("[TTS] team greeting pre-loaded", { dataUrlLength: audio.dataUrl.length });
+          }
+        } catch (ttsErr) {
+          console.warn("[TTS] pre-synthesis failed, will retry in room", ttsErr);
+          // Non-fatal — room will re-attempt TTS on mount
+        }
+      }
+
       onEnterRoom({
         ...config,
         candidateId,
@@ -6283,6 +6416,7 @@ function DebateWaitingRoom({
         isHost: true,
         hostApproved: true,
         initialAiMessage: aiOpening,
+        preloadedGreetingDataUrl: preloadedAudioDataUrl,
         teamsFromServer: resultLiveSession?.teams || null,
         turnsFromServer: resultLiveSession?.turns || [],
         skipInitialFetch: true,
