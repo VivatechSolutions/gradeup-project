@@ -22,10 +22,20 @@ import {
   transcribeDebateAudio,
   type LibrarySubject,
 } from "../lib/gradeupApi";
+import { debateDebug, ttsDebug } from "../lib/ttsDebug";
 
 const POST_AUTH_REDIRECT_KEY = "gradeup_post_auth_redirect";
 const DEBATE_GUEST_NAME_KEY = "gradeup_debate_guest_name";
 const DEBATE_GUEST_ID_KEY = "gradeup_debate_guest_id";
+
+type GreetingFlight = {
+  promise: Promise<{ dataUrl: string | null }>;
+  ownerId: number;
+  played: boolean;
+};
+
+const debateGreetingFlights = new Map<string, GreetingFlight>();
+let debateGreetingOwnerSeq = 0;
 
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
@@ -790,17 +800,39 @@ function useMicPerm() {
   const audioContextRef = useRef<AudioContext | null>(null);
   const rafRef = useRef<number>(0);
   const streamRef = useRef<MediaStream | null>(null);
+  const lastMicLevelLogRef = useRef(0);
+
+  const logEarlyReturn = useCallback(
+    (functionName: string, reason: string, values: Record<string, unknown> = {}) => {
+      debateDebug("[EARLY_RETURN]", {
+        functionName,
+        reason,
+        values,
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
     streamRef.current = localStream;
-    console.log("[STREAM] mic stream ref updated", {
+    debateDebug("[STREAM] mic stream ref updated", {
       hasStream: Boolean(localStream),
       trackCount: localStream?.getTracks?.().length || 0,
     });
   }, [localStream]);
 
+  useEffect(() => {
+    const now = Date.now();
+    if (now - lastMicLevelLogRef.current < 2500) return;
+    lastMicLevelLogRef.current = now;
+    debateDebug("[MIC_LEVEL]", {
+      level: micLevel,
+      speakingDetected: micLevel > 5,
+    });
+  }, [micLevel]);
+
 const cleanupAnalysis = useCallback(() => {
-    console.log("[CLEANUP] mic analysis cleanup");
+    debateDebug("[CLEANUP] mic analysis cleanup", {});
     cancelAnimationFrame(rafRef.current);
     rafRef.current = 0;
     analyserRef.current = null;
@@ -810,9 +842,17 @@ const cleanupAnalysis = useCallback(() => {
     }
 }, []);
 const stop = useCallback((silent = false) => {
-    console.log("[MIC] stop requested", {
+    debateDebug("[MIC] stop requested", {
       hasStream: Boolean(streamRef.current),
+      silent,
     });
+    if (streamRef.current) {
+      debateDebug("[STREAM] stream stopped", {
+        streamId: streamRef.current.id || null,
+        tracks: streamRef.current.getTracks().length,
+        audioTracks: streamRef.current.getAudioTracks().length,
+      });
+    }
     cleanupAnalysis();
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
@@ -831,21 +871,47 @@ const stop = useCallback((silent = false) => {
   const canProceed = micGranted && micLive && micEnabled;
 
   useEffect(() => {
-    console.log("[MIC] Permission:", state);
-    console.log("[MIC] canProceed:", canProceed);
+    debateDebug("[MIC_PERMISSION] state", { state });
+    debateDebug("[MIC] canProceed", { canProceed });
     if (audioTrack) {
-      console.log("[MIC] Track state:", {
+      debateDebug("[MIC] Track state", {
         readyState: audioTrack.readyState,
         enabled: audioTrack.enabled,
       });
     }
   }, [state, canProceed, audioTrack]);
 
-const request = useCallback(async () => {
+  const request = useCallback(async () => {
     setError(null);
     try {
-      console.log("[MIC] request start");
+      const permissionState = null;
+      debateDebug("[MIC_PERMISSION] navigator.permissions state", {
+        permissionState,
+        hasMediaDevices: !!navigator.mediaDevices,
+        hasGetUserMedia: !!navigator.mediaDevices?.getUserMedia,
+      });
+      debateDebug("[MIC_PERMISSION] request started", {
+        permissionState,
+        hasMediaDevices: !!navigator.mediaDevices,
+        hasGetUserMedia: !!navigator.mediaDevices?.getUserMedia,
+      });
+      debateDebug("[MIC] request started", {
+        permissionState,
+        hasMediaDevices: !!navigator.mediaDevices,
+        hasGetUserMedia: !!navigator.mediaDevices?.getUserMedia,
+      });
       if (!navigator.mediaDevices?.getUserMedia) {
+        logEarlyReturn("request", "no_get_userMedia", {
+          permissionState,
+          hasMediaDevices: !!navigator.mediaDevices,
+          hasGetUserMedia: !!navigator.mediaDevices?.getUserMedia,
+        });
+        debateDebug("[MIC_PERMISSION] request failed", {
+          permissionState,
+          hasMediaDevices: !!navigator.mediaDevices,
+          hasGetUserMedia: !!navigator.mediaDevices?.getUserMedia,
+          reason: "no_get_userMedia",
+        });
         throw new Error("Microphone access is not supported in this browser.");
       }
 
@@ -856,10 +922,20 @@ const request = useCallback(async () => {
       if (!isLocalhost && navigator.permissions) {
         try {
           const permStatus = await navigator.permissions.query({ name: "microphone" as PermissionName });
-          console.log("[MIC] Permission:", permStatus.state);
+          debateDebug("[MIC_PERMISSION] navigator.permissions state", {
+            permissionState: permStatus.state,
+            hasMediaDevices: !!navigator.mediaDevices,
+            hasGetUserMedia: !!navigator.mediaDevices?.getUserMedia,
+          });
           if (permStatus.state === "denied") {
             setState("denied");
             setError("PERMISSION_DENIED");
+            debateDebug("[MIC_PERMISSION] request failed", {
+              permissionState: permStatus.state,
+              hasMediaDevices: !!navigator.mediaDevices,
+              hasGetUserMedia: !!navigator.mediaDevices?.getUserMedia,
+              reason: "permission_denied",
+            });
             return null;
           }
         } catch {
@@ -873,21 +949,71 @@ const request = useCallback(async () => {
         audio: true,
         video: false,
       });
-      console.log("[MIC] Stream created");
+      debateDebug("[MIC] request success", {
+        permissionState,
+        hasMediaDevices: !!navigator.mediaDevices,
+        hasGetUserMedia: !!navigator.mediaDevices?.getUserMedia,
+      });
+      debateDebug("[STREAM] stream created", {
+        streamId: stream.id,
+        tracks: stream.getTracks().length,
+        audioTracks: stream.getAudioTracks().length,
+      });
       const audioTrack = stream.getAudioTracks?.()[0] || null;
       if (!audioTrack) {
+        logEarlyReturn("request", "no_audio_track", {
+          permissionState,
+          hasMediaDevices: !!navigator.mediaDevices,
+          hasGetUserMedia: !!navigator.mediaDevices?.getUserMedia,
+        });
+        debateDebug("[MIC_PERMISSION] request failed", {
+          permissionState,
+          hasMediaDevices: !!navigator.mediaDevices,
+          hasGetUserMedia: !!navigator.mediaDevices?.getUserMedia,
+          reason: "no_audio_track",
+        });
         throw new Error("No audio track was returned from the browser.");
       }
-      console.log("[MIC] Track state:", {
-        readyState: audioTrack.readyState,
+      debateDebug("[STREAM] audio track", {
+        trackId: audioTrack.id,
         enabled: audioTrack.enabled,
+        muted: audioTrack.muted,
+        readyState: audioTrack.readyState,
+        label: audioTrack.label,
       });
       if (audioTrack.readyState !== "live") {
+        logEarlyReturn("request", "track_not_live", {
+          readyState: audioTrack.readyState,
+        });
+        debateDebug("[MIC_PERMISSION] request failed", {
+          permissionState,
+          hasMediaDevices: !!navigator.mediaDevices,
+          hasGetUserMedia: !!navigator.mediaDevices?.getUserMedia,
+          reason: "track_not_live",
+        });
         throw new Error("Microphone track is not live.");
       }
       if (!audioTrack.enabled) {
         audioTrack.enabled = true;
       }
+      audioTrack.addEventListener("mute", () => {
+        debateDebug("[STREAM] track muted", {
+          readyState: audioTrack.readyState,
+          enabled: audioTrack.enabled,
+        });
+      });
+      audioTrack.addEventListener("unmute", () => {
+        debateDebug("[STREAM] track unmuted", {
+          readyState: audioTrack.readyState,
+          enabled: audioTrack.enabled,
+        });
+      });
+      audioTrack.addEventListener("ended", () => {
+        debateDebug("[STREAM] track ended", {
+          readyState: audioTrack.readyState,
+          enabled: audioTrack.enabled,
+        });
+      });
 
       try {
         const ctx = new AudioContext();
@@ -912,10 +1038,27 @@ const request = useCallback(async () => {
       setLocalStream(stream);
       setState("granted");
       bumpStreamVersion();
-      console.log("[MIC] canProceed:", Boolean(stream && audioTrack.readyState === "live" && audioTrack.enabled));
+      debateDebug("[MIC] canProceed", {
+        canProceed: Boolean(stream && audioTrack.readyState === "live" && audioTrack.enabled),
+      });
+      debateDebug("[MIC_PERMISSION] request success", {
+        permissionState,
+        hasMediaDevices: !!navigator.mediaDevices,
+        hasGetUserMedia: !!navigator.mediaDevices?.getUserMedia,
+      });
       return stream;
     } catch (err: any) {
-      console.log("[MIC] request failed", {
+      debateDebug("[MIC] request failed", {
+        permissionState: null,
+        hasMediaDevices: !!navigator.mediaDevices,
+        hasGetUserMedia: !!navigator.mediaDevices?.getUserMedia,
+        name: err?.name || null,
+        message: err?.message || String(err),
+      });
+      debateDebug("[MIC_PERMISSION] request failed", {
+        permissionState: null,
+        hasMediaDevices: !!navigator.mediaDevices,
+        hasGetUserMedia: !!navigator.mediaDevices?.getUserMedia,
         name: err?.name || null,
         message: err?.message || String(err),
       });
@@ -941,7 +1084,7 @@ const request = useCallback(async () => {
     if (track) {
       track.enabled = next;
     }
-    console.log("[MIC] track enabled toggled", {
+    debateDebug("[MIC] track enabled toggled", {
       next,
       readyState: track?.readyState || null,
     });
@@ -962,11 +1105,15 @@ const request = useCallback(async () => {
     };
 
     syncTrackState(false);
+    debateDebug("[STREAM] mic track listeners attached", {
+      readyState: track.readyState,
+      enabled: track.enabled,
+    });
     track.addEventListener("ended", syncTrackState);
     track.addEventListener("mute", syncTrackState);
     track.addEventListener("unmute", syncTrackState);
     return () => {
-      console.log("[STREAM] mic track listeners cleanup", {
+      debateDebug("[STREAM] mic track listeners cleanup", {
         readyState: track.readyState,
         enabled: track.enabled,
       });
@@ -978,7 +1125,7 @@ const request = useCallback(async () => {
 
   useEffect(() => {
     return () => {
-      console.log("[CLEANUP] mic hook unmount");
+      debateDebug("[CLEANUP] mic hook unmount", {});
       cleanupAnalysis();
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
@@ -1986,10 +2133,16 @@ function playAudioDataUrl(
   onStart?: () => void,
   onDone?: () => void,
 ) {
-  console.log("[TTS] Playback requested", {
+  ttsDebug("[TTS] playAudioDataUrl called", {
     srcLength: dataUrl?.length || 0,
   });
   const audio = new Audio(dataUrl);
+  ttsDebug("[TTS] audio created", {
+    readyState: audio.readyState,
+    paused: audio.paused,
+    muted: audio.muted,
+    currentTime: audio.currentTime,
+  });
   audio.muted = false;
   audio.volume = 1;
   audio.preload = "auto";
@@ -1997,7 +2150,7 @@ function playAudioDataUrl(
   audio.addEventListener(
     "play",
     () => {
-      console.log("[TTS] Audio playing");
+      ttsDebug("[TTS] play started");
       onStart?.();
     },
     { once: true },
@@ -2005,24 +2158,30 @@ function playAudioDataUrl(
   audio.addEventListener(
     "ended",
     () => {
-      console.log("[TTS] Audio ended");
+      ttsDebug("[TTS] play ended");
       onDone?.();
     },
     { once: true },
   );
   audio.addEventListener("error", (event) => {
-    console.warn("[DebatePage][Audio] playback error", {
+    ttsDebug("[TTS] play error", {
       srcLength: dataUrl?.length || 0,
       error: event,
     });
     onDone?.();
   }, { once: true });
   const playResult = audio.play();
+  ttsDebug("[TTS] audio.play() invoked", {
+    paused: audio.paused,
+    muted: audio.muted,
+    currentTime: audio.currentTime,
+  });
   if (playResult && typeof playResult.catch === "function") {
     playResult.catch((error) => {
-      console.warn("[DebatePage][Audio] play() rejected", {
+      ttsDebug("[TTS] play error", {
         srcLength: dataUrl?.length || 0,
-        error,
+        name: error?.name,
+        message: error?.message,
       });
       onDone?.();
     });
@@ -2050,7 +2209,9 @@ function preloadAudioDataUrl(dataUrl: string) {
       audio.removeEventListener("error", handleError);
     };
     const handleReady = () => {
-      console.log("[TTS] Audio preloaded");
+      ttsDebug("[TTS] audio returned", {
+        readyState: audio.readyState,
+      });
       finish(() => resolve(audio));
     };
     const handleError = (event: Event) => {
@@ -2058,7 +2219,7 @@ function preloadAudioDataUrl(dataUrl: string) {
     };
     const timeoutId = window.setTimeout(() => {
       if (settled) return;
-      console.log("[TTS] Audio preload timeout", {
+      ttsDebug("[TTS] audio preload timeout", {
         readyState: audio.readyState,
       });
       finish(() => resolve(audio));
@@ -3172,6 +3333,28 @@ function TeamDebateRoom({
   const roomReady = meetingReady && (!loadingRoom || roomHasSnapshot);
 
   useEffect(() => {
+    if (!canSpeak || !localAudioTrack || localAudioTrack.readyState !== "live") {
+      return;
+    }
+    if (!localAudioTrack.enabled) {
+      localAudioTrack.enabled = true;
+      debateDebug("[MIC] track re-enabled for turn", {
+        sessionId: config.sessionId,
+        activeSpeakerId,
+        currentSpeakerId,
+        trackReadyState: localAudioTrack.readyState,
+      });
+    }
+  }, [
+    activeSpeakerId,
+    canSpeak,
+    config.sessionId,
+    currentSpeakerId,
+    localAudioTrack?.enabled,
+    localAudioTrack?.readyState,
+  ]);
+
+  useEffect(() => {
     if (!meetingReady || !loadingRoom || !roomHasSnapshot) return;
     console.log("[LOADER] Clearing room loading gate", {
       sessionId: config.sessionId,
@@ -3181,7 +3364,7 @@ function TeamDebateRoom({
   }, [config.sessionId, loadingRoom, meetingReady, roomHasSnapshot]);
 
   useEffect(() => {
-    console.log("[STREAM] room audio route", {
+    debateDebug("[STREAM] room audio route", {
       sessionId: config.sessionId,
       source: roomMicStream instanceof MediaStream ? "mic" : config.stream instanceof MediaStream ? "config" : "none",
       hasMicStream: Boolean(roomMicStream),
@@ -3195,7 +3378,7 @@ function TeamDebateRoom({
   }, [config.sessionId, config.stream, localAudioTrack?.enabled, localAudioTrack?.readyState, micAvailable, micBlocked, micEnabled, roomMicStream]);
 
   useEffect(() => {
-    console.log("[TURN] speaker state", {
+    debateDebug("[TURN] speaker state", {
       sessionId: config.sessionId,
       currentSpeakerId,
       currentPhase,
@@ -3207,7 +3390,7 @@ function TeamDebateRoom({
       speechRecording,
       speechProcessing,
     });
-    console.log("[TURN] current speaker:", activeSpeakerId);
+    debateDebug("[TURN] current speaker", { activeSpeakerId });
   }, [
     activeTeam,
     aiIsSpeaking,
@@ -3252,12 +3435,17 @@ function TeamDebateRoom({
       sessionId: config.sessionId,
     });
     return () => {
-      console.log("[CLEANUP] team room cleanup", {
+      ttsDebug("[CLEANUP] component unmount", {
         sessionId: config.sessionId,
         currentSpeakerId: currentSpeakerIdRef.current,
       });
       activeAudioRef.current?.pause();
       activeAudioRef.current = null;
+      ttsDebug("[TTS] activeAudioRef cleanup", {
+        sessionId: config.sessionId,
+        mode: "team",
+        reason: "component-unmount",
+      });
       if (
         mediaRecorderRef.current &&
         mediaRecorderRef.current.state !== "inactive"
@@ -3276,11 +3464,26 @@ function TeamDebateRoom({
       }
       moderatorSpeechTokenRef.current += 1;
       stopRoomMic(true);
-      console.log("[ROOM] leave", {
+      ttsDebug("[CLEANUP] speech cancellation", {
         sessionId: config.sessionId,
+        mode: "team",
+        reason: "component-unmount",
       });
     };
   }, [config.sessionId, stopRoomMic]);
+
+  // Stable string key derived from turns — only changes when a NEW moderator turn
+  // arrives. Prevents the greeting useEffect from re-firing on every poll interval
+  // (which creates new array references and cancels TTS mid-flight).
+  const latestModeratorTurnId = (() => {
+    const turns = liveSession?.turns || [];
+    return (
+      [...turns]
+        .reverse()
+        .find((t: any) => t.role === "moderator" && (t.message || t.transcript))
+        ?.id ?? null
+    );
+  })();
 
   useEffect(() => {
     const turns = liveSession?.turns || [];
@@ -3311,7 +3514,7 @@ function TeamDebateRoom({
       return;
     }
 
-    console.log("[TTS] Greeting triggered", {
+    ttsDebug("[GREETING] triggered", {
       sessionId: config.sessionId,
       turnId: latestModeratorTurn.id,
       textLength: text.length,
@@ -3321,52 +3524,65 @@ function TeamDebateRoom({
 
     (async () => {
       try {
-        // Do NOT setMeetingReady(false) here — re-locking inside async
-        // causes stuck loader on React StrictMode double-mount
         activeAudioRef.current?.pause();
         activeAudioRef.current = null;
-        setAiIsSpeaking(false);
-        console.log("[AI] Greeting response generated", {
+        ttsDebug("[TTS] activeAudioRef cleanup", {
           sessionId: config.sessionId,
-          turnId: latestModeratorTurn.id,
+          mode: "team",
+          reason: "pre-greeting",
         });
-        console.log("[TTS] Speak API started", {
+        setAiIsSpeaking(false);
+        ttsDebug("[TTS] synthesizeDebateSpeech started", {
           sessionId: config.sessionId,
           turnId: latestModeratorTurn.id,
         });
         const audio = await synthesizeDebateSpeech({ text, voice: "alloy" });
-        console.log("[TTS] Greeting synthesis result", {
+        ttsDebug("[TTS] audio returned", {
           sessionId: config.sessionId,
           hasAudio: Boolean(audio?.dataUrl),
+          dataUrlLength: audio?.dataUrl?.length || 0,
         });
-        // Always unlock page if cancelled — never leave loader stuck
         if (cancelled || playbackToken !== greetingPlaybackTokenRef.current) {
           setMeetingReady(true);
+          ttsDebug("[CLEANUP] speech cancellation", {
+            sessionId: config.sessionId,
+            mode: "team",
+            reason: "cancelled-after-synthesize",
+          });
           return;
         }
         if (!audio?.dataUrl) {
           setMeetingReady(true);
-          console.log("[LOADER] Meeting ready", {
+          ttsDebug("[LOADER] Meeting ready", {
             sessionId: config.sessionId,
             mode: "team",
+            reason: "no-audio-dataurl",
           });
           return;
         }
         await preloadAudioDataUrl(audio.dataUrl);
-        // Always unlock page if cancelled after preload
         if (cancelled || playbackToken !== greetingPlaybackTokenRef.current) {
           setMeetingReady(true);
+          ttsDebug("[CLEANUP] speech cancellation", {
+            sessionId: config.sessionId,
+            mode: "team",
+            reason: "cancelled-after-preload",
+          });
           return;
         }
         setMeetingReady(true);
-        console.log("[LOADER] Meeting ready", {
+        ttsDebug("[LOADER] Meeting ready", {
+          sessionId: config.sessionId,
+          mode: "team",
+        });
+        ttsDebug("[TTS] activeAudioRef assignment", {
           sessionId: config.sessionId,
           mode: "team",
         });
         activeAudioRef.current = playAudioDataUrl(
           audio.dataUrl,
           () => {
-            console.log("[TTS] Greeting playback started", {
+            ttsDebug("[TTS] play started", {
               sessionId: config.sessionId,
               mode: "team",
             });
@@ -3376,27 +3592,32 @@ function TeamDebateRoom({
             if (cancelled || playbackToken !== greetingPlaybackTokenRef.current) return;
             setAiIsSpeaking(false);
             activeAudioRef.current = null;
+            ttsDebug("[TTS] activeAudioRef cleanup", {
+              sessionId: config.sessionId,
+              mode: "team",
+              reason: "playback-ended",
+            });
           },
         );
       } catch (error) {
-        if (cancelled || playbackToken !== greetingPlaybackTokenRef.current) return;
-        console.log("[TTS] Greeting playback failed", {
+        setMeetingReady(true);
+        ttsDebug("[TTS] play error", {
           sessionId: config.sessionId,
           message: error instanceof Error ? error.message : String(error),
-        });
-        setMeetingReady(true);
-        console.log("[LOADER] Meeting ready", {
-          sessionId: config.sessionId,
-          mode: "team",
-          reason: "greeting-failed",
         });
       }
     })();
 
     return () => {
       cancelled = true;
+      ttsDebug("[CLEANUP] speech cancellation", {
+        sessionId: config.sessionId,
+        mode: "team",
+        reason: "effect-cleanup",
+      });
     };
-  }, [config.sessionId, liveSession?.turns]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config.sessionId, latestModeratorTurnId]); // stable string key, not array ref
 
   const syncRoom = useCallback(
     async (firstLoad = false) => {
@@ -3407,7 +3628,10 @@ function TeamDebateRoom({
         console.log("[ROOM] team sync skipped initial fetch", {
           sessionId: config.sessionId,
         });
-        setRoomSnapshot({ liveSession: config.liveSession });
+        // Use the already-initialised roomSnapshot (set in useState) — do NOT
+        // call setRoomSnapshot here with a new object, as that triggers a re-render
+        // which creates a new liveSession.turns array reference and re-fires the
+        // greeting useEffect, cancelling TTS mid-flight.
         setLoadingRoom(false);
         return;
       }
@@ -3549,13 +3773,64 @@ function TeamDebateRoom({
   }
 
   async function startSpeechCapture() {
+    debateDebug("[SPEAK] button clicked", {
+      sessionId: config.sessionId,
+      candidateId,
+      currentSpeakerId,
+      activeTeam,
+      canSpeak,
+      micAvailable,
+      micEnabled,
+      micBlocked,
+      hasStream: Boolean(roomAudioStream),
+    });
+    debateDebug("[TURN] validation", {
+      activeSpeakerId,
+      currentUserId: candidateId,
+      participantId: candidateId,
+      canSpeak,
+    });
     if (
       !canSpeak ||
       speechCaptureLockRef.current ||
       mediaRecorderRef.current?.state === "recording"
-    )
+    ) {
+      debateDebug("[SPEAK] blocked", {
+        reason: "precondition_failed",
+        activeSpeakerId,
+        currentUserId: candidateId,
+        participantId: candidateId,
+        hasStream: Boolean(roomAudioStream),
+        canSpeak,
+        speechCaptureLockRef: speechCaptureLockRef.current,
+        recorderState: mediaRecorderRef.current?.state || null,
+      });
+      debateDebug("[EARLY_RETURN]", {
+        functionName: "startSpeechCapture",
+        reason: "precondition_failed",
+        values: {
+          activeSpeakerId,
+          currentUserId: candidateId,
+          participantId: candidateId,
+          hasStream: Boolean(roomAudioStream),
+          canSpeak,
+          speechCaptureLockRef: speechCaptureLockRef.current,
+          recorderState: mediaRecorderRef.current?.state || null,
+        },
+      });
       return;
-    console.log("[TRANSCRIBE] start", {
+    }
+    debateDebug("[SPEAK] validation passed", {
+      sessionId: config.sessionId,
+      candidateId,
+      currentSpeakerId,
+      activeTeam,
+      canSpeak,
+      micAvailable,
+      micEnabled,
+      micBlocked,
+    });
+    debateDebug("[SPEAK] button clicked", {
       sessionId: config.sessionId,
       candidateId,
       currentSpeakerId,
@@ -3569,15 +3844,54 @@ function TeamDebateRoom({
       roomAudioStream instanceof MediaStream ? roomAudioStream : null;
     const audioTrack = sourceStream?.getAudioTracks?.()[0];
     if (!audioTrack) {
-      console.log("[TRANSCRIBE] blocked no track");
+      debateDebug("[ERROR] speak blocked no track", {
+        sessionId: config.sessionId,
+      });
+      debateDebug("[SPEAK] blocked", {
+        reason: "no_audio_track",
+        activeSpeakerId,
+        currentUserId: candidateId,
+        participantId: candidateId,
+        hasStream: Boolean(roomAudioStream),
+      });
+      debateDebug("[EARLY_RETURN]", {
+        functionName: "startSpeechCapture",
+        reason: "no_audio_track",
+        values: {
+          activeSpeakerId,
+          currentUserId: candidateId,
+          participantId: candidateId,
+          hasStream: Boolean(roomAudioStream),
+        },
+      });
       toast$("Microphone is not available.", "error");
       return;
     }
-    console.log("[STREAM] audio track state", {
+    debateDebug("[STREAM] audio track state", {
       readyState: audioTrack.readyState,
       enabled: audioTrack.enabled,
     });
     if (!audioTrack.enabled) {
+      debateDebug("[ERROR] speak blocked track disabled", {
+        sessionId: config.sessionId,
+      });
+      debateDebug("[SPEAK] blocked", {
+        reason: "track_disabled",
+        activeSpeakerId,
+        currentUserId: candidateId,
+        participantId: candidateId,
+        hasStream: Boolean(roomAudioStream),
+      });
+      debateDebug("[EARLY_RETURN]", {
+        functionName: "startSpeechCapture",
+        reason: "track_disabled",
+        values: {
+          activeSpeakerId,
+          currentUserId: candidateId,
+          participantId: candidateId,
+          hasStream: Boolean(roomAudioStream),
+        },
+      });
       toast$("Enable your microphone before speaking.", "warn");
       return;
     }
@@ -3586,25 +3900,45 @@ function TeamDebateRoom({
     const mimeType = MediaRecorder.isTypeSupported("audio/webm")
       ? "audio/webm"
       : "audio/mp4";
-    const recorder = new MediaRecorder(recordingStream, { mimeType });
-    console.log("[TRANSCRIBE] recorder created", {
+    debateDebug("[RECORDER] creating", {
       mimeType,
       trackCount: recordingStream.getTracks().length,
     });
+    const recorder = new MediaRecorder(recordingStream, { mimeType });
+    debateDebug("[RECORDER] created", {
+      mimeType,
+      trackCount: recordingStream.getTracks().length,
+      state: recorder.state,
+    });
     mediaChunksRef.current = [];
     mediaRecorderRef.current = recorder;
+    const recordingStartedAt = Date.now();
     recorder.ondataavailable = (event) => {
       if (event.data.size > 0) mediaChunksRef.current.push(event.data);
+      debateDebug("[RECORDER] dataavailable", {
+        state: recorder.state,
+        blobSize: event.data.size,
+      });
+    };
+    recorder.onerror = (event: any) => {
+      debateDebug("[RECORDER] error", {
+        state: recorder.state,
+        message: event?.error?.message || event?.message || String(event),
+      });
     };
     recorder.onstop = async () => {
-      console.log("[TRANSCRIBE] stop", {
+      debateDebug("[RECORDER] stop", {
         sessionId: config.sessionId,
+        state: recorder.state,
         chunkCount: mediaChunksRef.current.length,
       });
       setSpeechRecording(false);
       setUserIsSpeaking(false);
       const blob = new Blob(mediaChunksRef.current, { type: mimeType });
-      console.log("[TRANSCRIBE] blob size:", blob.size);
+      debateDebug("[TRANSCRIBE] starting", {
+        blobSize: blob.size,
+        durationMs: Date.now() - recordingStartedAt,
+      });
       mediaChunksRef.current = [];
       mediaRecorderRef.current = null;
       if (!blob.size) {
@@ -3616,7 +3950,7 @@ function TeamDebateRoom({
       try {
         const transcription = await transcribeDebateAudio(blob);
         const text = transcription?.text?.trim();
-        console.log("[TRANSCRIBE] result", {
+        debateDebug("[TRANSCRIBE] result", {
           sessionId: config.sessionId,
           textLength: text?.length || 0,
         });
@@ -3627,7 +3961,7 @@ function TeamDebateRoom({
         }
         await submitTurn(text);
       } catch (error: any) {
-        console.log("[TRANSCRIBE] failed", {
+        debateDebug("[ERROR] transcribe failed", {
           sessionId: config.sessionId,
           message: error?.message || String(error),
         });
@@ -3637,8 +3971,16 @@ function TeamDebateRoom({
         speechCaptureLockRef.current = false;
       }
     };
+    debateDebug("[RECORDER] start requested", {
+      state: recorder.state,
+      mimeType,
+    });
     recorder.start();
-    console.log("[TRANSCRIBE] recorder started");
+    debateDebug("[RECORDER] started", {
+      sessionId: config.sessionId,
+      state: recorder.state,
+      mimeType,
+    });
     setSpeechRecording(true);
     speechDetectedRef.current = false;
     speechActiveStreakRef.current = 0;
@@ -3690,7 +4032,7 @@ function TeamDebateRoom({
           firstSpeechAtRef.current &&
           Date.now() - firstSpeechAtRef.current >= 600;
         if (armedForSilence && Date.now() - lastSpeechAtRef.current >= 2400) {
-          console.log("[SILENCE] silence detected", {
+          debateDebug("[SILENCE] silence detected", {
             sessionId: config.sessionId,
             activeSpeakerId: currentSpeakerId,
           });
@@ -3711,7 +4053,7 @@ function TeamDebateRoom({
   }
 
   async function handleMicGrant() {
-    console.log("[MIC] grant requested", {
+    debateDebug("[MIC] grant requested", {
       sessionId: config.sessionId,
       roomMicState,
       hasRoomMicStream: Boolean(roomMicStream),
@@ -3722,7 +4064,7 @@ function TeamDebateRoom({
     if (roomMicState !== "granted" || !roomMicStream) {
       const stream = await requestRoomMic();
       if (!stream) {
-        console.log("[MIC] grant failed", {
+        debateDebug("[ERROR] mic grant failed", {
           sessionId: config.sessionId,
           roomMicState,
           roomMicError,
@@ -3735,7 +4077,7 @@ function TeamDebateRoom({
         return;
       }
       setRoomMicRefresh((value) => value + 1);
-      console.log("[MIC] grant success", {
+      debateDebug("[MIC] grant success", {
         sessionId: config.sessionId,
         trackState: stream.getAudioTracks?.()[0]?.readyState || null,
         trackEnabled: stream.getAudioTracks?.()[0]?.enabled ?? null,
@@ -3745,7 +4087,7 @@ function TeamDebateRoom({
     }
     if (localAudioTrack && !localAudioTrack.enabled) {
       localAudioTrack.enabled = true;
-      console.log("[MIC] track enabled", {
+      debateDebug("[MIC] track enabled", {
         sessionId: config.sessionId,
         readyState: localAudioTrack.readyState,
       });
@@ -4124,20 +4466,6 @@ function TeamDebateRoom({
                               : "Start Speak"}
                       </span>
                     </button>
-                    <button
-                      className="cbtn"
-                      onClick={() => submitTurn(messageInput)}
-                      disabled={
-                        !canSpeak ||
-                        submittingTurn ||
-                        speechProcessing ||
-                        endingRoom ||
-                        !messageInput.trim()
-                      }
-                    >
-                      <span className="cbtn-ico">➤</span>
-                      <span>{submittingTurn ? "Submitting..." : "Submit"}</span>
-                    </button>
                   </div>
                   <div className="cg">
                     <button
@@ -4222,23 +4550,6 @@ function TeamDebateRoom({
                       )}
                     </div>
                   </div>
-                  <textarea
-                    className="chat-inp"
-                    style={{ minHeight: 110 }}
-                    placeholder={
-                      canSpeak
-                        ? "Type your team response here..."
-                        : "You can respond when it is your turn."
-                    }
-                    value={messageInput}
-                    onChange={(event) => setMessageInput(event.target.value)}
-                    disabled={
-                      !canSpeak ||
-                      submittingTurn ||
-                      speechProcessing ||
-                      endingRoom
-                    }
-                  />
                   <div className="chat-msgs" style={{ maxHeight: 320 }}>
                     {(liveSession?.turns || []).length ? (
                       (liveSession?.turns || []).map((turn: any) => (
@@ -4412,13 +4723,26 @@ function LiveAIDebateRoom({
   const speechPlaybackTokenRef = useRef(0);
   const greetingPlaybackTokenRef = useRef(0);
   const activeSpeakerId = whoTurn === "you" ? 0 : 1;
+  const hardCleanupRef = useRef(false);
 
   const addMsg = useCallback(
     (sender: string, senderId: number, text: string) => {
-      setMessages((current) => [
-        ...current,
-        { sender, senderId, text, time: Date.now() },
-      ]);
+      const safeText = String(text ?? "").trim();
+      debateDebug("[CHAT] Moderator message created", {
+        sender,
+        senderId,
+        textLength: safeText.length,
+        payload: safeText,
+      });
+      if (!safeText) return;
+      const message = { sender, senderId, text: safeText, time: Date.now() };
+      setMessages((current) => [...current, message]);
+      debateDebug("[CHAT] Moderator message added", {
+        sender,
+        senderId,
+        textLength: safeText.length,
+        payload: safeText,
+      });
     },
     [],
   );
@@ -4427,16 +4751,23 @@ function LiveAIDebateRoom({
     const playbackToken = ++speechPlaybackTokenRef.current;
     activeAudioRef.current?.pause();
     activeAudioRef.current = null;
+    ttsDebug("[TTS] activeAudioRef cleanup", {
+      mode: "ai-response",
+      reason: "pre-playback",
+    });
     setAiIsSpeaking(false);
-    console.log("[TTS] AI playback requested", {
+    ttsDebug("[TTS] synthesizeDebateSpeech started", {
+      mode: "ai-response",
       textLength: text.length,
       token: playbackToken,
     });
     synthesizeDebateSpeech({ text, voice: "alloy" })
       .then((audio) => {
-        console.log("[TTS] AI synthesis result", {
+        ttsDebug("[TTS] audio returned", {
+          mode: "ai-response",
           token: playbackToken,
           hasAudio: Boolean(audio?.dataUrl),
+          dataUrlLength: audio?.dataUrl?.length || 0,
         });
         if (playbackToken !== speechPlaybackTokenRef.current) return;
         if (audio?.dataUrl) {
@@ -4444,24 +4775,59 @@ function LiveAIDebateRoom({
             .then(() => {
               if (playbackToken !== speechPlaybackTokenRef.current) return;
               activeAudioRef.current?.pause();
+              ttsDebug("[TTS] activeAudioRef cleanup", {
+                mode: "ai-response",
+                reason: "pre-playAudioDataUrl",
+              });
+              ttsDebug("[TTS] activeAudioRef assignment", {
+                mode: "ai-response",
+                token: playbackToken,
+              });
               activeAudioRef.current = playAudioDataUrl(
                 audio.dataUrl,
-                () => setAiIsSpeaking(true),
+                () => {
+                  ttsDebug("[TTS] play started", {
+                    mode: "ai-response",
+                    token: playbackToken,
+                  });
+                  setAiIsSpeaking(true);
+                },
                 () => {
                   if (playbackToken !== speechPlaybackTokenRef.current) return;
                   setAiIsSpeaking(false);
+                  ttsDebug("[TTS] activeAudioRef cleanup", {
+                    mode: "ai-response",
+                    reason: "playback-ended",
+                    token: playbackToken,
+                  });
                   onDone?.();
                 },
               );
             })
             .catch(() => {
               if (playbackToken !== speechPlaybackTokenRef.current) return;
+              ttsDebug("[TTS] activeAudioRef assignment", {
+                mode: "ai-response",
+                token: playbackToken,
+                fallback: true,
+              });
               activeAudioRef.current = playAudioDataUrl(
                 audio.dataUrl,
-                () => setAiIsSpeaking(true),
+                () => {
+                  ttsDebug("[TTS] play started", {
+                    mode: "ai-response",
+                    token: playbackToken,
+                  });
+                  setAiIsSpeaking(true);
+                },
                 () => {
                   if (playbackToken !== speechPlaybackTokenRef.current) return;
                   setAiIsSpeaking(false);
+                  ttsDebug("[TTS] activeAudioRef cleanup", {
+                    mode: "ai-response",
+                    reason: "playback-ended",
+                    token: playbackToken,
+                  });
                   onDone?.();
                 },
               );
@@ -4479,7 +4845,29 @@ function LiveAIDebateRoom({
   }, []);
 
   useEffect(() => {
+    const lastMessage = messages[messages.length - 1];
+    if (!lastMessage) return;
+    debateDebug("[CHAT] Moderator message rendered", {
+      sender: lastMessage.sender,
+      senderId: lastMessage.senderId,
+      textLength: String(lastMessage.text ?? "").length,
+      payload: lastMessage.text,
+    });
+  }, [messages]);
+
+  useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  useEffect(() => {
+    const lastMessage = messages[messages.length - 1];
+    if (!lastMessage) return;
+    debateDebug("[CHAT] Moderator message rendered", {
+      sender: lastMessage.sender,
+      senderId: lastMessage.senderId,
+      textLength: String(lastMessage.text ?? "").length,
+      payload: lastMessage.text,
+    });
   }, [messages]);
 
   useEffect(() => {
@@ -4512,117 +4900,169 @@ function LiveAIDebateRoom({
     );
     window.addEventListener("popstate", onPopState);
     return () => {
-      console.log("[CLEANUP] live AI room cleanup", {
+      ttsDebug("[CLEANUP] route changes", {
         endingDebate,
       });
       window.removeEventListener("popstate", onPopState);
-      activeAudioRef.current?.pause();
-      if (
-        speechRecorderRef.current &&
-        speechRecorderRef.current.state !== "inactive"
-      ) {
-        speechRecorderRef.current.stop();
+      if (hardCleanupRef.current) {
+        activeAudioRef.current?.pause();
+        activeAudioRef.current = null;
+        ttsDebug("[TTS] activeAudioRef cleanup", {
+          mode: "ai",
+          reason: "route-change-cleanup",
+        });
+        if (
+          speechRecorderRef.current &&
+          speechRecorderRef.current.state !== "inactive"
+        ) {
+          speechRecorderRef.current.stop();
+        }
+        speechRecorderRef.current = null;
+        speechCaptureLockRef.current = false;
+        if (speechSilenceRef.current) {
+          clearInterval(speechSilenceRef.current);
+          speechSilenceRef.current = null;
+        }
+        if (speechAudioContextRef.current) {
+          speechAudioContextRef.current.close().catch(() => null);
+          speechAudioContextRef.current = null;
+        }
+        speechPlaybackTokenRef.current += 1;
+        ttsDebug("[CLEANUP] speech cancellation", {
+          mode: "ai",
+          reason: "route-change-cleanup",
+        });
       }
-      speechRecorderRef.current = null;
-      speechCaptureLockRef.current = false;
-      if (speechSilenceRef.current) {
-        clearInterval(speechSilenceRef.current);
-        speechSilenceRef.current = null;
-      }
-      if (speechAudioContextRef.current) {
-        speechAudioContextRef.current.close().catch(() => null);
-        speechAudioContextRef.current = null;
-      }
-      speechPlaybackTokenRef.current += 1;
     };
   }, [endingDebate]);
 
   useEffect(() => {
-    if (!config.initialAiMessage || initialAiPlayedRef.current) return;
-    initialAiPlayedRef.current = true;
+    if (!config.initialAiMessage) return;
     const text = config.initialAiMessage.trim();
     if (!text) {
       setMeetingReady(true);
-      console.log("[LOADER] Meeting ready", {
+      ttsDebug("[LOADER] Meeting ready", {
         mode: "ai",
         reason: "no-greeting-text",
       });
       return;
     }
 
-    const playbackToken = ++greetingPlaybackTokenRef.current;
-    let cancelled = false;
+    const sessionKey = String(config.sessionId || config.roomId || "ai-greeting");
+    const ownerId = ++debateGreetingOwnerSeq;
+    let flight = debateGreetingFlights.get(sessionKey);
+    if (!flight) {
+      flight = {
+        ownerId,
+        played: false,
+        promise: (async () => {
+          try {
+            ttsDebug("[GREETING] triggered", {
+              mode: "ai",
+              sessionId: config.sessionId,
+              textLength: text.length,
+              ownerId,
+            });
+            activeAudioRef.current?.pause();
+            activeAudioRef.current = null;
+            ttsDebug("[TTS] activeAudioRef cleanup", {
+              mode: "ai",
+              reason: "pre-greeting",
+              ownerId,
+            });
+            setAiLocked(true);
+            ttsDebug("[TTS] synthesizeDebateSpeech started", {
+              mode: "ai",
+              textLength: text.length,
+              ownerId,
+            });
+            const audio = await synthesizeDebateSpeech({ text, voice: "alloy" });
+            ttsDebug("[TTS] audio returned", {
+              mode: "ai",
+              ownerId,
+              hasAudio: Boolean(audio?.dataUrl),
+              dataUrlLength: audio?.dataUrl?.length || 0,
+            });
+            if (!audio?.dataUrl) {
+              return { dataUrl: null };
+            }
+            await preloadAudioDataUrl(audio.dataUrl);
+            return { dataUrl: audio.dataUrl };
+          } catch (error) {
+            ttsDebug("[TTS] play error", {
+              mode: "ai",
+              ownerId,
+              message: error instanceof Error ? error.message : String(error),
+            });
+            return { dataUrl: null };
+          }
+        })(),
+      };
+      debateGreetingFlights.set(sessionKey, flight);
+    } else {
+      flight.ownerId = ownerId;
+    }
 
+    let mounted = true;
     (async () => {
       try {
-        // Do NOT setMeetingReady(false) here — it was already set false on init
-        // and re-locking inside async causes issues on React StrictMode double-mount
-        activeAudioRef.current?.pause();
-        activeAudioRef.current = null;
-        setAiLocked(true);
-        console.log("[AI] Greeting response generated", {
-          textLength: text.length,
+        const audio = await flight.promise;
+        if (!mounted) return;
+        if (flight.ownerId !== ownerId || flight.played) return;
+        flight.played = true;
+        setMeetingReady(true);
+        ttsDebug("[LOADER] Meeting ready", {
+          mode: "ai",
+          sessionId: config.sessionId,
         });
-        console.log("[TTS] Speak API started", {
-          textLength: text.length,
-        });
-        const audio = await synthesizeDebateSpeech({ text, voice: "alloy" });
-        console.log("[TTS] Greeting synthesis result", {
-          hasAudio: Boolean(audio?.dataUrl),
-        });
-        // If cancelled (StrictMode double-mount), still unlock the page
-        if (cancelled || playbackToken !== greetingPlaybackTokenRef.current) {
-          setMeetingReady(true);
-          return;
-        }
         addMsg("AI Debater", 1, text);
         if (!audio?.dataUrl) {
-          setMeetingReady(true);
-          console.log("[LOADER] Meeting ready", {
-            mode: "ai",
-          });
           setAiLocked(false);
           setWhoTurn("you");
+          ttsDebug("[LOADER] Meeting ready", {
+            mode: "ai",
+            reason: "no-audio-dataurl",
+          });
           return;
         }
-        await preloadAudioDataUrl(audio.dataUrl);
-        // If cancelled after preload, still unlock the page
-        if (cancelled || playbackToken !== greetingPlaybackTokenRef.current) {
-          setMeetingReady(true);
-          return;
-        }
-        setMeetingReady(true);
-        console.log("[LOADER] Meeting ready", {
+        ttsDebug("[TTS] activeAudioRef assignment", {
           mode: "ai",
+          sessionId: config.sessionId,
         });
         activeAudioRef.current = playAudioDataUrl(
           audio.dataUrl,
           () => {
-            console.log("[TTS] Greeting playback started", {
+            ttsDebug("[TTS] play started", {
               mode: "ai",
+              sessionId: config.sessionId,
             });
             setAiIsSpeaking(true);
           },
           () => {
-            if (cancelled || playbackToken !== greetingPlaybackTokenRef.current) return;
             setAiIsSpeaking(false);
             activeAudioRef.current = null;
+            ttsDebug("[TTS] activeAudioRef cleanup", {
+              mode: "ai",
+              reason: "playback-ended",
+              sessionId: config.sessionId,
+            });
             setAiLocked(false);
             setWhoTurn("you");
-            console.log("[TURN] next speaker assigned", {
+            ttsDebug("[TURN] next speaker assigned", {
               activeSpeakerId: 0,
             });
           },
         );
       } catch (error) {
-        if (cancelled || playbackToken !== greetingPlaybackTokenRef.current) return;
-        console.log("[TTS] Greeting playback failed", {
+        if (!mounted) return;
+        ttsDebug("[TTS] play error", {
+          mode: "ai",
           message: error instanceof Error ? error.message : String(error),
         });
         setMeetingReady(true);
         setAiLocked(false);
         setWhoTurn("you");
-        console.log("[LOADER] Meeting ready", {
+        ttsDebug("[LOADER] Meeting ready", {
           mode: "ai",
           reason: "greeting-failed",
         });
@@ -4630,12 +5070,17 @@ function LiveAIDebateRoom({
     })();
 
     return () => {
-      cancelled = true;
+      mounted = false;
+      ttsDebug("[CLEANUP] speech cancellation", {
+        mode: "ai",
+        reason: "effect-cleanup",
+        sessionId: config.sessionId,
+      });
     };
-  }, [addMsg, config.initialAiMessage]);
+  }, [config.initialAiMessage, config.sessionId]);
 
   function cleanupSpeechDetection() {
-    console.log("[CLEANUP] speech detection cleanup", {
+    debateDebug("[CLEANUP] speech detection cleanup", {
       endingDebate,
       speechRecording,
       speechProcessing,
@@ -4666,6 +5111,22 @@ function LiveAIDebateRoom({
   }
 
   async function startSpeechCapture() {
+    const currentUserId = String(
+      config.candidateId || config.userId || config.participantId || "",
+    );
+    debateDebug("[SPEAK] button clicked", {
+      whoTurn,
+      aiLocked,
+      speechRecording,
+      speechProcessing,
+      endingDebate,
+    });
+    debateDebug("[TURN] validation", {
+      activeSpeakerId,
+      currentUserId,
+      participantId: currentUserId,
+      canSpeak: whoTurn === "you" && !aiLocked && !endingDebate,
+    });
     if (
       speechCaptureLockRef.current ||
       speechRecording ||
@@ -4673,9 +5134,31 @@ function LiveAIDebateRoom({
       aiLocked ||
       whoTurn !== "you" ||
       endingDebate
-    )
+    ) {
+      debateDebug("[SPEAK] blocked", {
+        reason: "precondition_failed",
+        activeSpeakerId,
+        currentUserId,
+        participantId: currentUserId,
+        hasStream: Boolean(config.stream instanceof MediaStream ? config.stream : null),
+        canSpeak: whoTurn === "you" && !aiLocked && !endingDebate,
+        speechCaptureLockRef: speechCaptureLockRef.current,
+      });
+      debateDebug("[EARLY_RETURN]", {
+        functionName: "startSpeechCapture",
+        reason: "precondition_failed",
+        values: {
+          speechCaptureLockRef: speechCaptureLockRef.current,
+          speechRecording,
+          speechProcessing,
+          aiLocked,
+          whoTurn,
+          endingDebate,
+        },
+      });
       return;
-    console.log("[TRANSCRIBE] start", {
+    }
+    debateDebug("[SPEAK] validation passed", {
       whoTurn,
       aiLocked,
       speechRecording,
@@ -4686,13 +5169,59 @@ function LiveAIDebateRoom({
       config.stream instanceof MediaStream ? config.stream : null;
     const audioTrack = localStream?.getAudioTracks?.()[0];
     if (!audioTrack) {
-      console.log("[TRANSCRIBE] blocked no track");
+      debateDebug("[ERROR] speak blocked no track", {
+        whoTurn,
+        aiLocked,
+      });
+      debateDebug("[SPEAK] blocked", {
+        reason: "no_audio_track",
+        activeSpeakerId,
+        currentUserId,
+        participantId: currentUserId,
+        hasStream: Boolean(localStream),
+      });
+      debateDebug("[EARLY_RETURN]", {
+        functionName: "startSpeechCapture",
+        reason: "no_audio_track",
+        values: {
+          hasStream: Boolean(localStream),
+          whoTurn,
+          aiLocked,
+        },
+      });
       toast$("Microphone is not available.", "error");
       return;
     }
-    console.log("[STREAM] audio track state", {
+    debateDebug("[STREAM] audio track state", {
       readyState: audioTrack.readyState,
       enabled: audioTrack.enabled,
+    });
+    if (!audioTrack.enabled) {
+      debateDebug("[SPEAK] blocked", {
+        reason: "track_disabled",
+        activeSpeakerId,
+        currentUserId,
+        participantId: currentUserId,
+        hasStream: Boolean(localStream),
+      });
+      debateDebug("[EARLY_RETURN]", {
+        functionName: "startSpeechCapture",
+        reason: "track_disabled",
+        values: {
+          activeSpeakerId,
+          currentUserId,
+          participantId: currentUserId,
+          hasStream: Boolean(localStream),
+        },
+      });
+      toast$("Enable your microphone before speaking.", "warn");
+      return;
+    }
+    debateDebug("[RECORDER] creating", {
+      mimeType: MediaRecorder.isTypeSupported("audio/webm")
+        ? "audio/webm"
+        : "audio/mp4",
+      trackCount: 1,
     });
     speechCaptureLockRef.current = true;
     const recordingStream = new MediaStream([audioTrack]);
@@ -4700,20 +5229,35 @@ function LiveAIDebateRoom({
       ? "audio/webm"
       : "audio/mp4";
     const recorderInstance = new MediaRecorder(recordingStream, { mimeType });
-    console.log("[TRANSCRIBE] recorder created", {
+    debateDebug("[RECORDER] created", {
       mimeType,
       trackCount: recordingStream.getTracks().length,
+      state: recorderInstance.state,
     });
     speechChunksRef.current = [];
     recorderInstance.ondataavailable = (event) => {
-      if (event.data.size > 0) speechChunksRef.current.push(event.data);
+      if (event.data.size > 0) {
+        speechChunksRef.current.push(event.data);
+      }
+      debateDebug("[RECORDER] dataavailable", {
+        state: recorderInstance.state,
+        blobSize: event.data.size,
+      });
+    };
+    recorderInstance.onerror = (event: any) => {
+      debateDebug("[RECORDER] error", {
+        state: recorderInstance.state,
+        message: event?.error?.message || event?.message || String(event),
+      });
     };
     recorderInstance.onstop = async () => {
-      console.log("[TRANSCRIBE] stop");
+      debateDebug("[RECORDER] stop", {
+        chunkCount: speechChunksRef.current.length,
+      });
       setSpeechRecording(false);
       setUserIsSpeaking(false);
       const audioBlob = new Blob(speechChunksRef.current, { type: mimeType });
-      console.log("[TRANSCRIBE] blob size:", audioBlob.size);
+      debateDebug("[TRANSCRIBE] blob size", { blobSize: audioBlob.size });
       speechChunksRef.current = [];
       speechRecorderRef.current = null;
       if (!audioBlob.size) {
@@ -4723,9 +5267,13 @@ function LiveAIDebateRoom({
       }
       setSpeechProcessing(true);
       try {
+        debateDebug("[TRANSCRIBE] starting", {
+          blobSize: audioBlob.size,
+          durationMs: 0,
+        });
         const result = await transcribeDebateAudio(audioBlob);
         const transcriptText = result?.text?.trim();
-        console.log("[TRANSCRIBE] result", {
+        debateDebug("[TRANSCRIBE] result", {
           textLength: transcriptText?.length || 0,
         });
         if (!transcriptText) {
@@ -4735,7 +5283,7 @@ function LiveAIDebateRoom({
         }
         await sendMsg(transcriptText);
       } catch (error: any) {
-        console.log("[TRANSCRIBE] failed", {
+        debateDebug("[ERROR] transcribe failed", {
           message: error?.message || String(error),
         });
         toast$(error?.message || "Unable to transcribe speech.", "error");
@@ -4745,8 +5293,15 @@ function LiveAIDebateRoom({
       }
     };
     speechRecorderRef.current = recorderInstance;
+    debateDebug("[RECORDER] start requested", {
+      state: recorderInstance.state,
+      mimeType,
+    });
     recorderInstance.start();
-    console.log("[TRANSCRIBE] recorder started");
+    debateDebug("[RECORDER] started", {
+      state: recorderInstance.state,
+      mimeType,
+    });
     setSpeechRecording(true);
     speechDetectedRef.current = false;
     speechActiveStreakRef.current = 0;
@@ -4805,11 +5360,11 @@ function LiveAIDebateRoom({
         const armedForSilence =
           firstSpeechAtRef.current &&
           Date.now() - firstSpeechAtRef.current >= 600;
-        if (armedForSilence && Date.now() - lastSpeechAtRef.current >= 2400) {
-          console.log("[SILENCE] silence detected", {
-            activeSpeakerId,
-            whoTurn,
-          });
+      if (armedForSilence && Date.now() - lastSpeechAtRef.current >= 2400) {
+        debateDebug("[SILENCE] silence detected", {
+          activeSpeakerId,
+          whoTurn,
+        });
           stopSpeechCapture();
         }
       }, 120);
@@ -4858,10 +5413,10 @@ function LiveAIDebateRoom({
 
   async function sendMsg(text: string) {
     if (!text.trim() || aiLocked || endingDebate) return;
-    console.log("[TURN] AI response generation", {
+    debateDebug("[TURN] AI response generation", {
       textLength: text.trim().length,
     });
-    console.log("[AI] generating response", {
+    debateDebug("[AI] generating response", {
       textLength: text.trim().length,
     });
     addMsg(config.name, 0, text.trim());
@@ -4879,22 +5434,22 @@ function LiveAIDebateRoom({
         response?.reply ||
         response?.message;
       if (!replyText) throw new Error("AI response was empty.");
-      console.log("[TURN] AI response received", {
+      debateDebug("[TURN] AI response received", {
         textLength: replyText.length,
       });
-      console.log("[AI] response end", {
+      debateDebug("[AI] response end", {
         textLength: replyText.length,
       });
       addMsg("AI Debater", 1, replyText);
       playAiText(replyText, () => {
         setAiLocked(false);
         setWhoTurn("you");
-        console.log("[TURN] next speaker assigned", {
+        debateDebug("[TURN] next speaker assigned", {
           activeSpeakerId: 0,
         });
       });
     } catch (error: any) {
-      console.log("[TURN] AI response failed", {
+      debateDebug("[ERROR] AI response failed", {
         message: error?.message || String(error),
       });
       setAiLocked(false);
@@ -4911,6 +5466,7 @@ function LiveAIDebateRoom({
     console.log("[ROOM] end requested", {
       sessionId: config.sessionId,
     });
+    hardCleanupRef.current = true;
     setEndingDebate(true);
     setEndError(null);
     stopSpeechCapture();
@@ -4963,6 +5519,7 @@ function LiveAIDebateRoom({
     console.log("[ROOM] leave", {
       sessionId: config.sessionId,
     });
+    hardCleanupRef.current = true;
     activeAudioRef.current?.pause();
     voiceEngine.cancel();
     onEnd({
@@ -5100,19 +5657,6 @@ function LiveAIDebateRoom({
                       : "Start Speaking"}
                 </span>
               </button>
-              <button
-                className="cbtn"
-                onClick={() => sendMsg(chatInput)}
-                disabled={
-                  whoTurn !== "you" ||
-                  aiLocked ||
-                  !chatInput.trim() ||
-                  endingDebate
-                }
-              >
-                <span className="cbtn-ico">➤</span>
-                <span>{aiLocked ? "Waiting..." : "Send"}</span>
-              </button>
             </div>
             <div className="cg">
               <button
@@ -5166,23 +5710,6 @@ function LiveAIDebateRoom({
                 </div>
               </div>
             </div>
-            <textarea
-              className="chat-inp"
-              style={{ minHeight: 110 }}
-              placeholder={
-                whoTurn === "you"
-                  ? "Type your argument here..."
-                  : "Wait for the AI to finish..."
-              }
-              value={chatInput}
-              onChange={(event) => setChatInput(event.target.value)}
-              disabled={
-                whoTurn !== "you" ||
-                aiLocked ||
-                speechProcessing ||
-                endingDebate
-              }
-            />
             <div className="chat-msgs" style={{ maxHeight: 340 }}>
               {messages.length ? (
                 messages.map((message, index) => (
@@ -6884,9 +7411,23 @@ function DebateRoom({
   );
 
   function addMsg(sender: string, senderId: number, text: string) {
-    const e = { sender, senderId, text, time: Date.now() };
+    const safeText = String(text ?? "").trim();
+    debateDebug("[CHAT] Moderator message created", {
+      sender,
+      senderId,
+      textLength: safeText.length,
+      payload: safeText,
+    });
+    if (!safeText) return;
+    const e = { sender, senderId, text: safeText, time: Date.now() };
     setMessages((ms) => [...ms, e]);
     setTranscript((t) => [...t, e]);
+    debateDebug("[CHAT] Moderator message added", {
+      sender,
+      senderId,
+      textLength: safeText.length,
+      payload: safeText,
+    });
   }
 
   const emitTileReaction = useCallback((targetId: number, emoji: string) => {
@@ -6914,6 +7455,14 @@ function DebateRoom({
   const speakModerator = useCallback(
     (text: string, onDone?: () => void) => {
       const id = `mod-${Date.now()}`;
+      ttsDebug("[GREETING] speakModRef called", {
+        textLength: text.length,
+        id,
+      });
+      ttsDebug("[TTS] synthesizeDebateSpeech started", {
+        path: "moderator",
+        textLength: text.length,
+      });
       updateP(99, { isSpeaking: false });
       setAiIsSpeaking(false);
       voiceEngine.speak(
@@ -6937,6 +7486,14 @@ function DebateRoom({
   const speakDebater = useCallback(
     (text: string, onDone?: () => void) => {
       const id = `deb-${Date.now()}`;
+      ttsDebug("[GREETING] speakDebaterRef called", {
+        textLength: text.length,
+        id,
+      });
+      ttsDebug("[TTS] synthesizeDebateSpeech started", {
+        path: "debater",
+        textLength: text.length,
+      });
       updateP(1, { isSpeaking: false, isAITyping: false });
       setAiIsSpeaking(false);
       voiceEngine.speak(
@@ -9359,7 +9916,6 @@ const isJoinRoute = Boolean(
 );
 if (isJoinRoute) {
   sessionStorage.removeItem("dp-screen");
-  sessionStorage.removeItem("dp-config");
 }
 // ────────────────────────────────────────────────────────────────────────
 
@@ -9375,11 +9931,43 @@ const [config, setConfig, clearConfig] = useSessionState<any>(
 useEffect(() => {
   const handleUnload = () => {
     sessionStorage.removeItem("dp-screen");
-    sessionStorage.removeItem("dp-config");
   };
   window.addEventListener("beforeunload", handleUnload);
   return () => window.removeEventListener("beforeunload", handleUnload);
 }, []);
+
+useEffect(() => {
+  const handleError = (event: ErrorEvent) => {
+    debateDebug("[GLOBAL_ERROR]", {
+      message: event.message,
+      stack: event.error?.stack || null,
+    });
+  };
+  const handleRejection = (event: PromiseRejectionEvent) => {
+    const reason = event.reason;
+    debateDebug("[UNHANDLED_REJECTION]", {
+      reason: typeof reason === "string" ? reason : String(reason),
+      stack: reason?.stack || null,
+    });
+  };
+  window.addEventListener("error", handleError);
+  window.addEventListener("unhandledrejection", handleRejection);
+  return () => {
+    window.removeEventListener("error", handleError);
+    window.removeEventListener("unhandledrejection", handleRejection);
+  };
+}, []);
+
+useEffect(() => {
+  if (!config) return;
+  debateDebug("[SESSION] dp-config loaded", {
+    roomId: config.sessionId || config.roomId || null,
+    userId: config.candidateId || config.userId || null,
+    sessionId: config.sessionId || null,
+    participantId: config.participantId || config.candidateId || null,
+    role: config.role || config.userRole || null,
+  });
+}, [config]);
   const [result, setResult] = useState<any>(null);
   const [role, setRole] = useState("student");
   const [entrySessionId, setEntrySessionId] = useState("");
