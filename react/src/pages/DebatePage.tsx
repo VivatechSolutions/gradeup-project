@@ -1754,7 +1754,7 @@ function Tile({
           className="tile-turn"
           style={{ background: "rgba(99,102,241,.88)" }}
         >
-          🎙 Your Turn Unmute & speak
+          🎙 Your Turn Soon
         </div>
       )}
       {p.isAITyping && (
@@ -2091,40 +2091,61 @@ function getTeamColor(team: Team | undefined) {
 }
 
 function extractDebateScores(payload: any) {
-  const scores = payload?.scores || {};
-  const directOverall = Number(payload?.overallScore ?? payload?.overall_score);
-  const studentEntry =
-    scores.student ||
-    scores.user ||
-    scores.candidate ||
-    Object.values(scores).find((entry: any) => !entry?.is_ai && !entry?.isAi);
-  const aiEntry =
-    scores.ai ||
-    scores.opponent ||
-    Object.values(scores).find((entry: any) => entry?.is_ai || entry?.isAi);
+  // API response shape: payload = full end API response (data field)
+  // payload.liveSession.scores = { overall, student, ai }
+  // payload.liveSession.feedback.scores = { reasoning, textbook_knowledge, argumentation, communication, total_score }
+  // payload.liveSession.recommendations = { current_score, attempt_number, needs_retry, ... }
+
+  const liveSession = payload?.liveSession || payload;
+  const scoresObj = liveSession?.scores || payload?.scores || {};
+  const feedbackObj = liveSession?.feedback || payload?.feedback || {};
+  const feedbackScores = feedbackObj?.scores || {};
+  const recommendations = liveSession?.recommendations || payload?.recommendations || {};
 
   const readNumeric = (value: any) => {
     const parsed = Number(
-      value?.overallScore ??
+      value?.total_score ??
+        value?.overallScore ??
         value?.overall_score ??
         value?.score ??
         value?.total ??
         value,
     );
-    return Number.isFinite(parsed) ? parsed : null;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
   };
 
-  const student = readNumeric(studentEntry);
-  const ai = readNumeric(aiEntry);
-  const overall = Number.isFinite(directOverall)
-    ? directOverall
-    : readNumeric(payload?.feedback);
+  // Overall score: liveSession.scores.overall OR feedback.scores.total_score
+  const overall =
+    readNumeric(scoresObj?.overall) ??
+    readNumeric(feedbackScores?.total_score) ??
+    readNumeric(recommendations?.current_score) ??
+    null;
+
+  // Student score: liveSession.scores.student OR feedback.scores.total_score
+  const you =
+    readNumeric(scoresObj?.student) ??
+    readNumeric(feedbackScores?.total_score) ??
+    overall;
+
+  // AI score: liveSession.scores.ai
+  const ai = readNumeric(scoresObj?.ai) ?? null;
+
+  // Breakdown scores from feedback
+  const breakdown = feedbackScores?.reasoning != null ? {
+    reasoning: feedbackScores.reasoning,
+    textbook_knowledge: feedbackScores.textbook_knowledge,
+    argumentation: feedbackScores.argumentation,
+    communication: feedbackScores.communication,
+    total: feedbackScores.total_score,
+  } : null;
 
   return {
-    you: student,
+    you,
     ai,
     overall,
-    hasRealScores: student !== null || ai !== null || overall !== null,
+    breakdown,
+    recommendations,
+    hasRealScores: you !== null || ai !== null || overall !== null,
   };
 }
 
@@ -5508,6 +5529,9 @@ function LiveAIDebateRoom({
       const mappedScores = extractDebateScores(response);
       setScores({ you: mappedScores.you, ai: mappedScores.ai });
       setSessionFeedback(response || null);
+      // Use server turns if available (more complete than local messages)
+      const serverTurns = response?.liveSession?.turns || response?.data?.liveSession?.turns || [];
+      const transcriptData = serverTurns.length > 0 ? serverTurns : messages;
       onEnd({
         timer: elapsedTimer,
         debateLimit: fmtClock(debateDurationSeconds),
@@ -5521,10 +5545,12 @@ function LiveAIDebateRoom({
           you: mappedScores.you,
           ai: mappedScores.ai,
           overall: mappedScores.overall,
+          breakdown: mappedScores.breakdown,
         },
+        recommendations: mappedScores.recommendations,
         hasRealScores: mappedScores.hasRealScores,
-        feedback: response || null,
-        transcript: messages,
+        feedback: response?.liveSession?.feedback || response?.feedback || response || null,
+        transcript: transcriptData,
         meetingEnded: true,
       });
     } catch (error: any) {
@@ -9533,6 +9559,77 @@ function DebateResults({ result, onNew }: { result: any; onNew: () => void }) {
   const insights = verdict?.insights || [];
   const winnerTeam = verdict?.winnerTeam;
 
+  // ── Derived from API response ──────────────────────────────────────────────
+  const breakdown = result.scores?.breakdown || null;
+  const recommendations = result.recommendations || null;
+  const feedback = result.feedback || null;
+  const feedbackText =
+    feedback?.feedback_text ||
+    feedback?.summary ||
+    feedback?.text ||
+    (typeof feedback === "string" ? feedback : null);
+  const turns: any[] = Array.isArray(result.transcript) ? result.transcript : [];
+
+  // ── Download transcript as PDF (plain-text based, no lib needed) ──────────
+  const downloadTranscriptPDF = () => {
+    const lines: string[] = [];
+    lines.push("DEBATE TRANSCRIPT");
+    lines.push("=================");
+    lines.push(`Topic: ${result.topic || "N/A"}`);
+    lines.push(`Subject: ${result.subject || "N/A"}${result.unit ? " · " + result.unit : ""}`);
+    lines.push(`Duration: ${result.timer || "N/A"}`);
+    lines.push(`Date: ${new Date().toLocaleDateString()}`);
+    lines.push("");
+    lines.push("SCORES");
+    lines.push("------");
+    if (breakdown) {
+      lines.push(`  Reasoning        : ${breakdown.reasoning ?? "-"}`);
+      lines.push(`  Textbook Knowledge: ${breakdown.textbook_knowledge ?? "-"}`);
+      lines.push(`  Argumentation    : ${breakdown.argumentation ?? "-"}`);
+      lines.push(`  Communication    : ${breakdown.communication ?? "-"}`);
+      lines.push(`  Total Score      : ${breakdown.total ?? result.scores?.you ?? "-"}`);
+    } else {
+      lines.push(`  Your Score : ${result.scores?.you ?? "-"}`);
+      lines.push(`  AI Score   : ${result.scores?.ai ?? "-"}`);
+      lines.push(`  Overall    : ${result.scores?.overall ?? "-"}`);
+    }
+    lines.push("");
+    if (feedbackText) {
+      lines.push("FEEDBACK");
+      lines.push("--------");
+      lines.push(feedbackText);
+      lines.push("");
+    }
+    if (recommendations?.needs_retry != null) {
+      lines.push("RECOMMENDATIONS");
+      lines.push("---------------");
+      lines.push(`  Attempt #${recommendations.attempt_number ?? "-"}`);
+      if (recommendations.retry_suggestion) lines.push(`  Retry suggestion: ${recommendations.retry_suggestion}`);
+      if (recommendations.next_topic_suggestion) lines.push(`  Next topic: ${recommendations.next_topic_suggestion}`);
+      lines.push("");
+    }
+    if (turns.length > 0) {
+      lines.push("TRANSCRIPT");
+      lines.push("----------");
+      turns.forEach((t: any, i: number) => {
+        const speaker = t.speakerName || t.sender || (t.role === "assistant" ? "AI Debater" : "You");
+        const msg = t.message || t.transcript || t.text || "";
+        const time = t.createdAt ? new Date(t.createdAt).toLocaleTimeString() : "";
+        lines.push(`[${i + 1}] ${speaker}${time ? " (" + time + ")" : ""}`);
+        lines.push(msg);
+        lines.push("");
+      });
+    }
+    const text = lines.join("\n");
+    const blob = new Blob([text], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `debate_transcript_${result.topic?.replace(/\s+/g, "_").slice(0, 30) || "session"}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="results-page">
       <div className="res-trophy">🏆</div>
@@ -9827,85 +9924,149 @@ function DebateResults({ result, onNew }: { result: any; onNew: () => void }) {
       )}
 
       {result.subMode === "ai" && (
-        <div style={{ width: "100%", maxWidth: 400, marginBottom: 18 }}>
-          <div
-            style={{
-              background: "var(--surf)",
-              border: "1px solid var(--bdr)",
-              borderRadius: 18,
-              padding: 18,
-              boxShadow: "var(--sh)",
-            }}
-          >
-            <div
-              style={{
-                fontSize: 12,
-                fontWeight: 800,
-                letterSpacing: ".08em",
-                textTransform: "uppercase" as const,
-                color: "var(--t3)",
-                marginBottom: 10,
-              }}
-            >
+        <div style={{ width: "100%", maxWidth: 520, marginBottom: 18, display: "flex", flexDirection: "column" as const, gap: 14 }}>
+
+          {/* ── Score Card ── */}
+          <div style={{ background: "var(--surf)", border: "1px solid var(--bdr)", borderRadius: 18, padding: 18, boxShadow: "var(--sh)" }}>
+            <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".08em", textTransform: "uppercase" as const, color: "var(--t3)", marginBottom: 10 }}>
               Final Score
             </div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 16,
-                justifyContent: "center",
-              }}
-            >
-              <div style={{ textAlign: "center" as const }}>
-                <div
-                  style={{ fontSize: 36, fontWeight: 900, color: "var(--ind)" }}
-                >
-                  {result.scores?.you || 0}
+            {breakdown ? (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+                  {[
+                    { label: "Reasoning", value: breakdown.reasoning },
+                    { label: "Knowledge", value: breakdown.textbook_knowledge },
+                    { label: "Argumentation", value: breakdown.argumentation },
+                    { label: "Communication", value: breakdown.communication },
+                  ].map((item) => (
+                    <div key={item.label} style={{ background: "var(--surf2)", borderRadius: 12, padding: "10px 12px", textAlign: "center" as const }}>
+                      <div style={{ fontSize: 22, fontWeight: 900, color: "var(--ind)" }}>{item.value ?? "-"}</div>
+                      <div style={{ fontSize: 10, color: "var(--t3)", fontWeight: 700, marginTop: 2 }}>{item.label}</div>
+                    </div>
+                  ))}
                 </div>
-                <div style={{ fontSize: 11, color: "var(--t3)" }}>You</div>
-              </div>
-              <div
-                style={{ fontSize: 18, fontWeight: 800, color: "var(--t4)" }}
-              >
-                VS
-              </div>
-              <div style={{ textAlign: "center" as const }}>
-                <div
-                  style={{ fontSize: 36, fontWeight: 900, color: "var(--vio)" }}
-                >
-                  {result.scores?.ai || 0}
+                <div style={{ textAlign: "center" as const, padding: "12px 0", borderTop: "1px solid var(--bdr)" }}>
+                  <div style={{ fontSize: 32, fontWeight: 900, color: "var(--em)" }}>{breakdown.total ?? result.scores?.you ?? "-"}</div>
+                  <div style={{ fontSize: 11, color: "var(--t3)" }}>Total Score</div>
                 </div>
-                <div style={{ fontSize: 11, color: "var(--t3)" }}>AI</div>
+              </>
+            ) : (
+              <div style={{ display: "flex", alignItems: "center", gap: 16, justifyContent: "center" }}>
+                <div style={{ textAlign: "center" as const }}>
+                  <div style={{ fontSize: 36, fontWeight: 900, color: "var(--ind)" }}>{result.scores?.you || 0}</div>
+                  <div style={{ fontSize: 11, color: "var(--t3)" }}>You</div>
+                </div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: "var(--t4)" }}>VS</div>
+                <div style={{ textAlign: "center" as const }}>
+                  <div style={{ fontSize: 36, fontWeight: 900, color: "var(--vio)" }}>{result.scores?.ai || 0}</div>
+                  <div style={{ fontSize: 11, color: "var(--t3)" }}>AI</div>
+                </div>
               </div>
-            </div>
-            <div
-              style={{
-                textAlign: "center" as const,
-                marginTop: 10,
-                fontSize: 15,
-                fontWeight: 800,
-                color:
-                  (result.scores?.you || 0) >= (result.scores?.ai || 0)
-                    ? "var(--em)"
-                    : "var(--vio)",
-              }}
-            >
-              {(result.scores?.you || 0) >= (result.scores?.ai || 0)
-                ? "🥇 You won the debate!"
-                : "🤖 AI won this round!"}
-            </div>
+            )}
+            {!breakdown && (
+              <div style={{ textAlign: "center" as const, marginTop: 10, fontSize: 15, fontWeight: 800, color: (result.scores?.you || 0) >= (result.scores?.ai || 0) ? "var(--em)" : "var(--vio)" }}>
+                {(result.scores?.you || 0) >= (result.scores?.ai || 0) ? "🥇 You won the debate!" : "🤖 AI won this round!"}
+              </div>
+            )}
           </div>
+
+          {/* ── Feedback Card ── */}
+          {feedbackText && (
+            <div style={{ background: "var(--surf)", border: "1px solid var(--bdr)", borderRadius: 18, padding: 18, boxShadow: "var(--sh)" }}>
+              <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".08em", textTransform: "uppercase" as const, color: "var(--t3)", marginBottom: 10 }}>
+                💡 Feedback
+              </div>
+              <div style={{ fontSize: 13, color: "var(--t1)", lineHeight: 1.7 }}>{feedbackText}</div>
+            </div>
+          )}
+
+          {/* ── Recommendations Card ── */}
+          {recommendations && (
+            <div style={{ background: "var(--surf)", border: "1px solid var(--bdr)", borderRadius: 18, padding: 18, boxShadow: "var(--sh)" }}>
+              <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".08em", textTransform: "uppercase" as const, color: "var(--t3)", marginBottom: 10 }}>
+                📈 Recommendations
+              </div>
+              <div style={{ display: "flex", flexDirection: "column" as const, gap: 8 }}>
+                {recommendations.attempt_number && (
+                  <div style={{ fontSize: 12.5, color: "var(--t2)" }}>
+                    Attempt <strong style={{ color: "var(--ind)" }}>#{recommendations.attempt_number}</strong> on this topic
+                  </div>
+                )}
+                {recommendations.needs_retry && recommendations.retry_suggestion && (
+                  <div style={{ fontSize: 12.5, color: "var(--t2)", padding: "8px 12px", background: "rgba(239,68,68,.07)", borderRadius: 10, border: "1px solid rgba(239,68,68,.15)" }}>
+                    🔁 {recommendations.retry_suggestion}
+                  </div>
+                )}
+                {recommendations.next_topic_suggestion && (
+                  <div style={{ fontSize: 12.5, color: "var(--t2)", padding: "8px 12px", background: "rgba(16,185,129,.07)", borderRadius: 10, border: "1px solid rgba(16,185,129,.15)" }}>
+                    ➡️ Next topic: <strong>{recommendations.next_topic_suggestion}</strong>
+                  </div>
+                )}
+                {recommendations.history_based_suggestions?.length > 0 && (
+                  <div style={{ fontSize: 12, color: "var(--t3)" }}>
+                    {recommendations.history_based_suggestions.map((s: string, i: number) => (
+                      <div key={i} style={{ marginTop: 4 }}>• {s}</div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Transcript Card ── */}
+          {turns.length > 0 && (
+            <div style={{ background: "var(--surf)", border: "1px solid var(--bdr)", borderRadius: 18, padding: 18, boxShadow: "var(--sh)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".08em", textTransform: "uppercase" as const, color: "var(--t3)" }}>
+                  💬 Transcript ({turns.length} turns)
+                </div>
+                <button
+                  className="btn-s"
+                  style={{ fontSize: 11, padding: "5px 12px", width: "auto" }}
+                  onClick={downloadTranscriptPDF}
+                >
+                  📥 Download
+                </button>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column" as const, gap: 10, maxHeight: 320, overflowY: "auto" as const }}>
+                {turns.map((t: any, i: number) => {
+                  const isAI = t.role === "assistant" || t.speakerId === "ai-debater";
+                  const speaker = t.speakerName || (isAI ? "AI Debater" : "You");
+                  const msg = t.message || t.transcript || t.text || "";
+                  return (
+                    <div key={t.id || i} style={{ display: "flex", flexDirection: "column" as const, alignItems: isAI ? "flex-start" : "flex-end" as const }}>
+                      <div style={{ fontSize: 10, color: "var(--t4)", marginBottom: 3, fontWeight: 700 }}>{speaker}</div>
+                      <div style={{
+                        maxWidth: "85%",
+                        padding: "8px 12px",
+                        borderRadius: 12,
+                        fontSize: 12.5,
+                        lineHeight: 1.6,
+                        background: isAI ? "rgba(139,92,246,.1)" : "rgba(99,102,241,.12)",
+                        border: isAI ? "1px solid rgba(139,92,246,.2)" : "1px solid rgba(99,102,241,.2)",
+                        color: "var(--t1)",
+                      }}>
+                        {msg}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       <div className="res-actions">
         {result.hasRecording && (
-          <button
-            className="btn-s"
-            onClick={() => result.recorder?.download("debate.webm")}
-          >
+          <button className="btn-s" onClick={() => result.recorder?.download("debate.webm")}>
             📥 Download Recording
+          </button>
+        )}
+        {turns.length > 0 && result.subMode !== "ai" && (
+          <button className="btn-s" onClick={downloadTranscriptPDF}>
+            📄 Download Transcript
           </button>
         )}
         <button
