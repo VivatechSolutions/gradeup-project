@@ -343,6 +343,8 @@ async function startRoomSession({
   sessionId,
   teams,
   aiOpening,
+  firstSpeakerId = null,
+  firstSpeakerTeam = null,
   warnings = [],
   metadata = null,
 }) {
@@ -361,13 +363,21 @@ async function startRoomSession({
   session.status = "active";
   session.startedAt = session.startedAt || now();
   session.teams = normalizedTeams;
+// Use server-provided firstSpeakerId if given, otherwise fall back to Team A's first human
+  const resolvedFirstSpeakerId = firstSpeakerId
+    || normalizedTeams[firstSpeakerTeam || "A"]?.find((p) => !p.isAi)?.id
+    || normalizedTeams.A.find((p) => !p.isAi)?.id
+    || null;
+  const resolvedActiveTeam = firstSpeakerTeam || "A";
+
   session.currentRound = {
     roundNumber: 1,
     phase: "ai_opening",
-    activeTeam: "A",
+    activeTeam: resolvedActiveTeam,
     awaitingTeams: ["A", "B"],
-    currentSpeakerId: normalizedTeams.A.find((participant) => !participant.isAi)?.id || null,
+    currentSpeakerId: resolvedFirstSpeakerId,
     latestAiMessage: aiOpening || null,
+    greetingAudioUrl: null,
   };
   session.warnings = normalizeWarnings(warnings);
   session.metadata = metadata || session.metadata;

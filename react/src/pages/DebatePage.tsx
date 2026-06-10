@@ -23,7 +23,7 @@ import {
   type LibrarySubject,
 } from "../lib/gradeupApi";
 import { debateDebug, ttsDebug } from "../lib/ttsDebug";
-
+import { useDebateLivekit } from "./../hooks/useDebateLivekit";
 const POST_AUTH_REDIRECT_KEY = "gradeup_post_auth_redirect";
 const DEBATE_GUEST_NAME_KEY = "gradeup_debate_guest_name";
 const DEBATE_GUEST_ID_KEY = "gradeup_debate_guest_id";
@@ -772,11 +772,11 @@ function useTimer(running: boolean) {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   useEffect(() => {
     if (!running) return;
-    console.log("[TURN] timer started", { running, elapsedSeconds });
+    // ("[TURN] timer started", { running, elapsedSeconds });
     const id = setInterval(() => {
       setElapsedSeconds((x) => {
         const next = x + 1;
-        console.log("[TURN] timer tick", { elapsedSeconds: next });
+        // console.log("[TURN] timer tick", { elapsedSeconds: next });
         return next;
       });
     }, 1000);
@@ -803,7 +803,11 @@ function useMicPerm() {
   const lastMicLevelLogRef = useRef(0);
 
   const logEarlyReturn = useCallback(
-    (functionName: string, reason: string, values: Record<string, unknown> = {}) => {
+    (
+      functionName: string,
+      reason: string,
+      values: Record<string, unknown> = {},
+    ) => {
       debateDebug("[EARLY_RETURN]", {
         functionName,
         reason,
@@ -831,7 +835,7 @@ function useMicPerm() {
     });
   }, [micLevel]);
 
-const cleanupAnalysis = useCallback(() => {
+  const cleanupAnalysis = useCallback(() => {
     debateDebug("[CLEANUP] mic analysis cleanup", {});
     cancelAnimationFrame(rafRef.current);
     rafRef.current = 0;
@@ -840,29 +844,32 @@ const cleanupAnalysis = useCallback(() => {
       audioContextRef.current.close().catch(() => null);
       audioContextRef.current = null;
     }
-}, []);
-const stop = useCallback((silent = false) => {
-    debateDebug("[MIC] stop requested", {
-      hasStream: Boolean(streamRef.current),
-      silent,
-    });
-    if (streamRef.current) {
-      debateDebug("[STREAM] stream stopped", {
-        streamId: streamRef.current.id || null,
-        tracks: streamRef.current.getTracks().length,
-        audioTracks: streamRef.current.getAudioTracks().length,
+  }, []);
+  const stop = useCallback(
+    (silent = false) => {
+      debateDebug("[MIC] stop requested", {
+        hasStream: Boolean(streamRef.current),
+        silent,
       });
-    }
-    cleanupAnalysis();
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-    if (!silent) {
-      setLocalStream(null);
-      setState("idle");
-      setError(null);
-      bumpStreamVersion();
-    }
- }, [cleanupAnalysis]);
+      if (streamRef.current) {
+        debateDebug("[STREAM] stream stopped", {
+          streamId: streamRef.current.id || null,
+          tracks: streamRef.current.getTracks().length,
+          audioTracks: streamRef.current.getAudioTracks().length,
+        });
+      }
+      cleanupAnalysis();
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+      if (!silent) {
+        setLocalStream(null);
+        setState("idle");
+        setError(null);
+        bumpStreamVersion();
+      }
+    },
+    [cleanupAnalysis],
+  );
 
   const audioTrack = localStream?.getAudioTracks?.()[0] || null;
   const micGranted = Boolean(localStream);
@@ -921,7 +928,9 @@ const stop = useCallback((silent = false) => {
       const isLocalhost = /^localhost$|^127\./.test(window.location.hostname);
       if (!isLocalhost && navigator.permissions) {
         try {
-          const permStatus = await navigator.permissions.query({ name: "microphone" as PermissionName });
+          const permStatus = await navigator.permissions.query({
+            name: "microphone" as PermissionName,
+          });
           debateDebug("[MIC_PERMISSION] navigator.permissions state", {
             permissionState: permStatus.state,
             hasMediaDevices: !!navigator.mediaDevices,
@@ -1039,7 +1048,9 @@ const stop = useCallback((silent = false) => {
       setState("granted");
       bumpStreamVersion();
       debateDebug("[MIC] canProceed", {
-        canProceed: Boolean(stream && audioTrack.readyState === "live" && audioTrack.enabled),
+        canProceed: Boolean(
+          stream && audioTrack.readyState === "live" && audioTrack.enabled,
+        ),
       });
       debateDebug("[MIC_PERMISSION] request success", {
         permissionState,
@@ -1069,17 +1080,21 @@ const stop = useCallback((silent = false) => {
         // Blocked mid-flow (e.g. user dismissed the native popup)
         setError("PERMISSION_DENIED");
       } else if (name === "NotFoundError" || name === "DevicesNotFoundError") {
-        setError("No microphone found. Please connect a microphone and click Retry.");
+        setError(
+          "No microphone found. Please connect a microphone and click Retry.",
+        );
       } else if (name === "NotReadableError" || name === "TrackStartError") {
-        setError("Microphone is in use by another app. Close other apps using the mic and click Retry.");
+        setError(
+          "Microphone is in use by another app. Close other apps using the mic and click Retry.",
+        );
       } else {
         setError(err?.message || "Microphone access was denied.");
       }
       return null;
     }
- }, [stop]);
+  }, [stop]);
 
- const setMicEnabled = useCallback((next: boolean) => {
+  const setMicEnabled = useCallback((next: boolean) => {
     const track = streamRef.current?.getAudioTracks?.()[0] || null;
     if (track) {
       track.enabled = next;
@@ -1089,7 +1104,7 @@ const stop = useCallback((silent = false) => {
       readyState: track?.readyState || null,
     });
     bumpStreamVersion();
- }, []);
+  }, []);
 
   useEffect(() => {
     const track = localStream?.getAudioTracks?.()[0] || null;
@@ -1493,10 +1508,17 @@ function MicPermCard({
 
       {perm === "denied" && error === "PERMISSION_DENIED" && (
         <div className="mic-perm-warn">
-          Your browser has blocked microphone access for this site.<br/><br/>
-          🔒 <strong>Desktop:</strong> Click the lock icon in the address bar → Microphone → Allow → then click Retry.<br/>
-          📱 <strong>Mobile (Chrome):</strong> Tap the lock icon in address bar → Permissions → Microphone → Allow → Retry.<br/>
-          📱 <strong>Mobile (Safari):</strong> Go to Settings app → Safari → Camera & Microphone → Allow → Retry.
+          Your browser has blocked microphone access for this site.
+          <br />
+          <br />
+          🔒 <strong>Desktop:</strong> Click the lock icon in the address bar →
+          Microphone → Allow → then click Retry.
+          <br />
+          📱 <strong>Mobile (Chrome):</strong> Tap the lock icon in address bar
+          → Permissions → Microphone → Allow → Retry.
+          <br />
+          📱 <strong>Mobile (Safari):</strong> Go to Settings app → Safari →
+          Camera & Microphone → Allow → Retry.
         </div>
       )}
       {perm === "denied" && error !== "PERMISSION_DENIED" && error && (
@@ -1598,8 +1620,10 @@ function MicPreview({ perm, name, onReq, micOn, onToggle }: any) {
         </div>
         {perm === "denied" && (
           <div className="perm-warn">
-            🔒 Desktop: click lock icon in address bar → allow Mic → Retry.<br/>
-            📱 Mobile: browser Settings → Site permissions → Microphone → allow → Retry.
+            🔒 Desktop: click lock icon in address bar → allow Mic → Retry.
+            <br />
+            📱 Mobile: browser Settings → Site permissions → Microphone → allow
+            → Retry.
           </div>
         )}
       </div>
@@ -2082,8 +2106,8 @@ function ScheduleDebateModal({ config, onSchedule, onClose }: any) {
 }
 
 const TEAM_COLORS: Record<Team, string> = {
-  A: "#3b82f6",  // Blue — matches AI greeting "🔵 Blue Team"
-  B: "#ef4444",  // Red  — matches AI greeting "🔴 Red Team"
+  A: "#3b82f6", // Blue — matches AI greeting "🔵 Blue Team"
+  B: "#ef4444", // Red  — matches AI greeting "🔴 Red Team"
 };
 
 function getTeamColor(team: Team | undefined) {
@@ -2097,7 +2121,8 @@ function extractFirstSpeakerFromGreeting(
   greetingText: string,
   participants: any[],
 ): { speakerId: string | null; team: "A" | "B" | null } {
-  if (!greetingText || !participants.length) return { speakerId: null, team: null };
+  if (!greetingText || !participants.length)
+    return { speakerId: null, team: null };
   const text = greetingText.toLowerCase();
 
   // Check for blue/red team mention first
@@ -2140,8 +2165,13 @@ function extractFirstSpeakerFromGreeting(
   else if (mentionsRed && !mentionsBlue) firstTeam = "B";
 
   if (firstTeam) {
-    const teamFirst = participants.find((p: any) => !p.isAi && p.team === firstTeam);
-    return { speakerId: teamFirst ? String(teamFirst.id) : null, team: firstTeam };
+    const teamFirst = participants.find(
+      (p: any) => !p.isAi && p.team === firstTeam,
+    );
+    return {
+      speakerId: teamFirst ? String(teamFirst.id) : null,
+      team: firstTeam,
+    };
   }
 
   return { speakerId: null, team: null };
@@ -2157,7 +2187,8 @@ function extractDebateScores(payload: any) {
   const scoresObj = liveSession?.scores || payload?.scores || {};
   const feedbackObj = liveSession?.feedback || payload?.feedback || {};
   const feedbackScores = feedbackObj?.scores || {};
-  const recommendations = liveSession?.recommendations || payload?.recommendations || {};
+  const recommendations =
+    liveSession?.recommendations || payload?.recommendations || {};
 
   const readNumeric = (value: any) => {
     const parsed = Number(
@@ -2188,13 +2219,16 @@ function extractDebateScores(payload: any) {
   const ai = readNumeric(scoresObj?.ai) ?? null;
 
   // Breakdown scores from feedback
-  const breakdown = feedbackScores?.reasoning != null ? {
-    reasoning: feedbackScores.reasoning,
-    textbook_knowledge: feedbackScores.textbook_knowledge,
-    argumentation: feedbackScores.argumentation,
-    communication: feedbackScores.communication,
-    total: feedbackScores.total_score,
-  } : null;
+  const breakdown =
+    feedbackScores?.reasoning != null
+      ? {
+          reasoning: feedbackScores.reasoning,
+          textbook_knowledge: feedbackScores.textbook_knowledge,
+          argumentation: feedbackScores.argumentation,
+          communication: feedbackScores.communication,
+          total: feedbackScores.total_score,
+        }
+      : null;
 
   return {
     you,
@@ -2241,13 +2275,17 @@ function playAudioDataUrl(
     },
     { once: true },
   );
-  audio.addEventListener("error", (event) => {
-    ttsDebug("[TTS] play error", {
-      srcLength: dataUrl?.length || 0,
-      error: event,
-    });
-    onDone?.();
-  }, { once: true });
+  audio.addEventListener(
+    "error",
+    (event) => {
+      ttsDebug("[TTS] play error", {
+        srcLength: dataUrl?.length || 0,
+        error: event,
+      });
+      onDone?.();
+    },
+    { once: true },
+  );
   const playResult = audio.play();
   ttsDebug("[TTS] audio.play() invoked", {
     paused: audio.paused,
@@ -2360,14 +2398,10 @@ function buildTeamDebateResult(
         },
         strengths: entry.raw?.strengths || [],
         improvements: entry.raw?.improvements || [],
-        overall_feedback: entry.raw?.overall_feedback || entry.raw?.feedback || null,
+        overall_feedback:
+          entry.raw?.overall_feedback || entry.raw?.feedback || null,
         raw: entry.raw,
       };
-
-
-
-
-
     })
     .filter(Boolean)
     .sort(
@@ -2416,8 +2450,12 @@ function buildTeamDebateResult(
       teamA: teamAScore,
       teamB: teamBScore,
       overall:
-        Number(apiResult?.total_score ?? apiResult?.overallScore ?? apiResult?.overall_score ?? 0) ||
-        null,
+        Number(
+          apiResult?.total_score ??
+            apiResult?.overallScore ??
+            apiResult?.overall_score ??
+            0,
+        ) || null,
       participantScores,
       viewer: viewerScore,
       session_feedback: apiResult?.session_feedback || null,
@@ -3345,6 +3383,28 @@ function TeamDebateRoom({
   const [aiIsSpeaking, setAiIsSpeaking] = useState(false);
   const [userIsSpeaking, setUserIsSpeaking] = useState(false);
   const [meetingReady, setMeetingReady] = useState(false);
+
+  const [greetingPending, setGreetingPending] = useState(false);
+  const meetingReadyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  useEffect(() => {
+    meetingReadyTimeoutRef.current = setTimeout(() => {
+      setMeetingReady((prev) => {
+        if (!prev)
+          console.warn(
+            "[LOADER] meetingReady safety timeout fired — forced unblock",
+            { sessionId: config.sessionId },
+          );
+        return true;
+      });
+    }, 8000);
+    return () => {
+      if (meetingReadyTimeoutRef.current)
+        clearTimeout(meetingReadyTimeoutRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [, setRoomMicRefresh] = useState(0);
   const roomSyncInFlightRef = useRef(false);
   const autoEndedRef = useRef(false);
@@ -3371,7 +3431,9 @@ function TeamDebateRoom({
   const currentSpeakerIdRef = useRef<string>("");
   // Auto start/stop refs — same pattern as LiveAIDebateRoom
   const startSpeechCaptureRef = useRef<(() => void) | null>(null);
-  const autoSilenceIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const autoSilenceIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
+    null,
+  );
   const autoSilenceSpeechDetectedRef = useRef(false);
   const autoSilenceCounterRef = useRef(0);
   const {
@@ -3417,23 +3479,46 @@ function TeamDebateRoom({
   const micAvailable = Boolean(localAudioTrack);
   const micEnabled = Boolean(localAudioTrack?.enabled);
   const micBlocked = !micAvailable || !micEnabled;
+  const {
+    connected: livekitConnected,
+    muteLocalAudio: livekitMute,
+    unmuteLocalAudio: livekitUnmute,
+    disconnect: livekitDisconnect,
+  } = useDebateLivekit({
+    sessionId: config.sessionId,
+    candidateId: String(candidateId),
+    candidateName: candidateName,
+    enabled: meetingReady,
+    localStream:
+      roomAudioStream instanceof MediaStream ? roomAudioStream : null,
+    apiBase: `${process.env.REACT_APP_API_BASE_URL}`,
+    startMuted: true, // ← add this line
+  });
   const isCurrentUserSpeaker = activeSpeakerId === String(candidateId);
   const isCurrentUserTurn =
     isCurrentUserSpeaker &&
     (!activeTeam || currentParticipant?.team === activeTeam);
   const canSpeak =
     liveSession?.status === "active" &&
+    currentPhase !== "ai_opening" &&
     !aiIsSpeaking &&
+    !greetingPending &&
     isCurrentUserTurn &&
     !submittingTurn &&
     !speechProcessing &&
     !speechRecording &&
     !endingRoom;
-  const roomHasSnapshot = Boolean(roomSnapshot?.liveSession || config.liveSession);
+  const roomHasSnapshot = Boolean(
+    roomSnapshot?.liveSession || config.liveSession,
+  );
   const roomReady = meetingReady && (!loadingRoom || roomHasSnapshot);
 
   useEffect(() => {
-    if (!canSpeak || !localAudioTrack || localAudioTrack.readyState !== "live") {
+    if (
+      !canSpeak ||
+      !localAudioTrack ||
+      localAudioTrack.readyState !== "live"
+    ) {
       return;
     }
     if (!localAudioTrack.enabled) {
@@ -3466,7 +3551,12 @@ function TeamDebateRoom({
   useEffect(() => {
     debateDebug("[STREAM] room audio route", {
       sessionId: config.sessionId,
-      source: roomMicStream instanceof MediaStream ? "mic" : config.stream instanceof MediaStream ? "config" : "none",
+      source:
+        roomMicStream instanceof MediaStream
+          ? "mic"
+          : config.stream instanceof MediaStream
+            ? "config"
+            : "none",
       hasMicStream: Boolean(roomMicStream),
       hasConfigStream: Boolean(config.stream instanceof MediaStream),
       trackReadyState: localAudioTrack?.readyState || null,
@@ -3475,7 +3565,16 @@ function TeamDebateRoom({
       micEnabled,
       micBlocked,
     });
-  }, [config.sessionId, config.stream, localAudioTrack?.enabled, localAudioTrack?.readyState, micAvailable, micBlocked, micEnabled, roomMicStream]);
+  }, [
+    config.sessionId,
+    config.stream,
+    localAudioTrack?.enabled,
+    localAudioTrack?.readyState,
+    micAvailable,
+    micBlocked,
+    micEnabled,
+    roomMicStream,
+  ]);
 
   useEffect(() => {
     debateDebug("[TURN] speaker state", {
@@ -3516,7 +3615,13 @@ function TeamDebateRoom({
       teamA: teams.A?.length || 0,
       teamB: teams.B?.length || 0,
     });
-  }, [config.sessionId, currentSpeakerId, participants.length, teams.A?.length, teams.B?.length]);
+  }, [
+    config.sessionId,
+    currentSpeakerId,
+    participants.length,
+    teams.A?.length,
+    teams.B?.length,
+  ]);
 
   useEffect(() => {
     latestElapsedTimerRef.current = elapsedTimer;
@@ -3580,8 +3685,12 @@ function TeamDebateRoom({
     return (
       [...turns]
         .reverse()
-        .find((t: any) => t.role === "moderator" && (t.message || t.transcript))
-        ?.id ?? null
+        .find(
+          (t: any) =>
+            t.role === "moderator" &&
+            (t.turnType === "opening" || !t.turnType) &&
+            (t.message || t.transcript),
+        )?.id ?? null
     );
   })();
 
@@ -3591,12 +3700,16 @@ function TeamDebateRoom({
       .reverse()
       .find(
         (turn: any) =>
-          turn.role === "moderator" && (turn.message || turn.transcript),
+          turn.role === "moderator" &&
+          (turn.turnType === "opening" || !turn.turnType) &&
+          (turn.message || turn.transcript),
       );
     if (
       !latestModeratorTurn?.id ||
       playedModeratorTurnsRef.current.has(String(latestModeratorTurn.id))
     ) {
+      // No opening turn found — unblock the room so it doesn't hang on loading
+      if (!latestModeratorTurn?.id) setMeetingReady(true);
       return;
     }
 
@@ -3621,7 +3734,10 @@ function TeamDebateRoom({
     });
     const playbackToken = ++greetingPlaybackTokenRef.current;
     let cancelled = false;
-
+    setGreetingPending(true); // ← BLOCK canSpeak immediately, synchronously before async starts
+    setAiIsSpeaking(true);
+    if (localAudioTrack) localAudioTrack.enabled = false;
+    livekitMute();
     (async () => {
       try {
         activeAudioRef.current?.pause();
@@ -3631,34 +3747,48 @@ function TeamDebateRoom({
           mode: "team",
           reason: "pre-greeting",
         });
-        setAiIsSpeaking(false);
+        // setAiIsSpeaking(false);
         ttsDebug("[TTS] synthesizeDebateSpeech started", {
           sessionId: config.sessionId,
           turnId: latestModeratorTurn.id,
         });
         // Use pre-loaded audio from handleStart if available (host path).
         // Participants synthesize fresh here. Either way: land page → speak immediately.
-        let greetingDataUrl: string | null = config.preloadedGreetingDataUrl || null;
+          let greetingDataUrl: string | null =
+          config.preloadedGreetingDataUrl || null;
+        console.log("[GREETING] dataUrl source", {
+          sessionId: config.sessionId,
+          fromPreloaded: Boolean(config.preloadedGreetingDataUrl),
+          greetingDataUrlLength: greetingDataUrl?.length || 0,
+        });
         if (!greetingDataUrl) {
           const audio = await synthesizeDebateSpeech({ text, voice: "alloy" });
-          ttsDebug("[TTS] audio returned", {
+           console.log("[GREETING] synthesizeDebateSpeech returned", {
             sessionId: config.sessionId,
             hasAudio: Boolean(audio?.dataUrl),
             dataUrlLength: audio?.dataUrl?.length || 0,
+            audioKeys: audio ? Object.keys(audio) : null,
           });
-          if (cancelled || playbackToken !== greetingPlaybackTokenRef.current) {
+            if (playbackToken !== greetingPlaybackTokenRef.current) {
+            console.warn("[GREETING] newer playback token — skipping", { sessionId: config.sessionId });
             setMeetingReady(true);
             return;
           }
-          if (audio?.dataUrl) {
+            if (audio?.dataUrl) {
             await preloadAudioDataUrl(audio.dataUrl);
-            if (cancelled || playbackToken !== greetingPlaybackTokenRef.current) {
+            if (playbackToken !== greetingPlaybackTokenRef.current) {
+              console.warn("[GREETING] newer playback token after preload — skipping", { sessionId: config.sessionId });
               setMeetingReady(true);
               return;
             }
             greetingDataUrl = audio.dataUrl;
           }
         }
+            if (playbackToken !== greetingPlaybackTokenRef.current) {
+              console.warn("[GREETING] newer playback token after preload — skipping", { sessionId: config.sessionId });
+              setMeetingReady(true);
+              return;
+            }
         if (!greetingDataUrl) {
           setMeetingReady(true);
           ttsDebug("[LOADER] Meeting ready — no audio dataUrl", {
@@ -3668,59 +3798,69 @@ function TeamDebateRoom({
           return;
         }
         setMeetingReady(true);
-        ttsDebug("[LOADER] Meeting ready", {
-          sessionId: config.sessionId,
-          mode: "team",
-        });
-        ttsDebug("[TTS] activeAudioRef assignment", {
-          sessionId: config.sessionId,
-          mode: "team",
-        });
-        activeAudioRef.current = playAudioDataUrl(
-          greetingDataUrl,
-          () => {
-            ttsDebug("[TTS] play started", {
-              sessionId: config.sessionId,
-              mode: "team",
-            });
-            setAiIsSpeaking(true);
-          },
-          () => {
-            if (cancelled || playbackToken !== greetingPlaybackTokenRef.current) return;
-            setAiIsSpeaking(false);
-            activeAudioRef.current = null;
-            ttsDebug("[TTS] activeAudioRef cleanup", {
-              sessionId: config.sessionId,
-              mode: "team",
-              reason: "playback-ended",
-            });
-            // Parse greeting to find first speaker mentioned by AI.
-            // If server already set currentSpeakerId that's authoritative;
-            // this is a client-side fallback in case it's null.
-            const serverSpeakerId = liveSession?.currentRound?.currentSpeakerId;
-            if (!serverSpeakerId) {
-              const allParticipants = liveSession?.participants || [];
-              const { speakerId, team } = extractFirstSpeakerFromGreeting(text, allParticipants);
-              ttsDebug("[TURN] first speaker extracted from greeting", { speakerId, team });
-              if (speakerId) {
-                // Trigger auto-start for the first mentioned speaker
-                setTimeout(() => { startSpeechCaptureRef.current?.(); }, 300);
-              }
-            } else {
-              // Server has set the first speaker — auto-start will fire via canSpeak useEffect.
-              // Ensure the local track is enabled so startSpeechCapture can proceed.
-              const localTrack = config.stream?.getAudioTracks?.()[0];
-              if (localTrack && !localTrack.enabled) {
-                localTrack.enabled = true;
-                ttsDebug("[MIC] track pre-enabled for server-assigned speaker", { serverSpeakerId });
-              }
-              ttsDebug("[TURN] first speaker from server", { serverSpeakerId });
+        if (localAudioTrack) localAudioTrack.enabled = false;
+        livekitMute();
+
+        const greetingAudio = new Audio(greetingDataUrl);
+        greetingAudio.volume = 1.0;
+        activeAudioRef.current = greetingAudio;
+
+        const onGreetingEnd = () => {
+          if (cancelled || playbackToken !== greetingPlaybackTokenRef.current) return;
+          console.log("[GREETING] audio play ended — unmuting for first speaker", { sessionId: config.sessionId });
+          setAiIsSpeaking(false);
+          setGreetingPending(false);
+          // if (localAudioTrack) localAudioTrack.enabled = true;
+          // livekitUnmute();
+          // activeAudioRef.current = null;
+          const serverSpeakerId = liveSession?.currentRound?.currentSpeakerId;
+          if (!serverSpeakerId) {
+            const allParticipants = liveSession?.participants || [];
+            const { speakerId, team } = extractFirstSpeakerFromGreeting(text, allParticipants);
+            ttsDebug("[TURN] first speaker extracted from greeting", { speakerId, team });
+            if (speakerId) {
+              setTimeout(() => { startSpeechCaptureRef.current?.(); }, 300);
             }
-          },
-        );
+          } else {
+            const localTrack = config.stream?.getAudioTracks?.()[0];
+            if (localTrack && !localTrack.enabled) {
+              localTrack.enabled = true;
+            }
+            ttsDebug("[TURN] first speaker from server", { serverSpeakerId });
+          }
+        };
+
+        greetingAudio.addEventListener("ended", onGreetingEnd);
+        greetingAudio.addEventListener("error", (e) => {
+          console.error("[GREETING] audio element error", { sessionId: config.sessionId, error: e });
+          setAiIsSpeaking(false);
+          setGreetingPending(false);
+          if (localAudioTrack) localAudioTrack.enabled = true;
+          livekitUnmute();
+          activeAudioRef.current = null;
+        });
+
+        greetingAudio.play().then(() => {
+          console.log("[GREETING] audio play started — browser allowed autoplay", { sessionId: config.sessionId });
+          setAiIsSpeaking(true);
+          setGreetingPending(true);
+        }).catch((err) => {
+          console.error("[GREETING] autoplay blocked — user gesture required", { sessionId: config.sessionId, err: err.message });
+          // Autoplay was blocked — release the locks so the room doesn't hang
+          setAiIsSpeaking(false);
+          setGreetingPending(false);
+          if (localAudioTrack) localAudioTrack.enabled = true;
+          livekitUnmute();
+          activeAudioRef.current = null;
+        });
+
       } catch (error) {
         setMeetingReady(true);
-        ttsDebug("[TTS] play error", {
+        setAiIsSpeaking(false);
+        setGreetingPending(false);
+        if (localAudioTrack) localAudioTrack.enabled = true;
+        livekitUnmute();
+        console.error("[TTS] play error", {
           sessionId: config.sessionId,
           message: error instanceof Error ? error.message : String(error),
         });
@@ -3735,22 +3875,28 @@ function TeamDebateRoom({
         reason: "effect-cleanup",
       });
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config.sessionId, latestModeratorTurnId]); // stable string key, not array ref
+  const configLiveSessionRef = useRef(config.liveSession);
+  const skipInitialFetchRef = useRef(config.skipInitialFetch);
+  useEffect(() => {
+    configLiveSessionRef.current = config.liveSession;
+  }, [config.liveSession]);
+  useEffect(() => {
+    skipInitialFetchRef.current = config.skipInitialFetch;
+  }, [config.skipInitialFetch]);
 
   const syncRoom = useCallback(
     async (firstLoad = false) => {
       if (!config.sessionId || roomSyncInFlightRef.current) return;
-      // Skip the very first fetch if caller already provided full liveSession
-      // (avoids blink caused by double-loading on room entry)
-      if (firstLoad && config.skipInitialFetch && config.liveSession) {
+      if (
+        firstLoad &&
+        skipInitialFetchRef.current &&
+        configLiveSessionRef.current
+      ) {
         console.log("[ROOM] team sync skipped initial fetch", {
           sessionId: config.sessionId,
         });
-        // Use the already-initialised roomSnapshot (set in useState) — do NOT
-        // call setRoomSnapshot here with a new object, as that triggers a re-render
-        // which creates a new liveSession.turns array reference and re-fires the
-        // greeting useEffect, cancelling TTS mid-flight.
         setLoadingRoom(false);
         return;
       }
@@ -3764,15 +3910,15 @@ function TeamDebateRoom({
         const snapshot = await getDebateRoom(config.sessionId);
         setRoomSnapshot(snapshot);
         setRoomError(null);
-        if (snapshot?.pythonWarning) {
-          setRoomWarning(snapshot.pythonWarning);
-        }
+        if (snapshot?.pythonWarning) setRoomWarning(snapshot.pythonWarning);
         const status = snapshot?.liveSession?.status;
         console.log("[ROOM] team sync snapshot", {
           sessionId: config.sessionId,
           status: status || null,
-          currentSpeakerId: snapshot?.liveSession?.currentRound?.currentSpeakerId || null,
+          currentSpeakerId:
+            snapshot?.liveSession?.currentRound?.currentSpeakerId || null,
           activeTeam: snapshot?.liveSession?.currentRound?.activeTeam || null,
+          turnCount: snapshot?.liveSession?.turns?.length ?? 0,
         });
         if (status === "completed" && !autoEndedRef.current) {
           autoEndedRef.current = true;
@@ -3797,7 +3943,7 @@ function TeamDebateRoom({
         if (firstLoad) setLoadingRoom(false);
       }
     },
-    [config.sessionId, config.skipInitialFetch, config.liveSession],
+    [config.sessionId], // ← only sessionId, no object refs
   );
 
   useEffect(() => {
@@ -3852,11 +3998,29 @@ function TeamDebateRoom({
         team: currentParticipant?.team,
         message: message.trim(),
       });
+      console.log("[TURN] submit response received", {
+        sessionId: config.sessionId,
+        nextSpeakerId:
+          data?.liveSession?.currentRound?.currentSpeakerId || null,
+        activeTeam: data?.liveSession?.currentRound?.activeTeam || null,
+        moderatorTurns: (data?.liveSession?.turns || []).filter(
+          (t: any) => t.role === "moderator",
+        ).length,
+      });
       setMessageInput("");
+      // Update snapshot immediately so turn state reflects backend response
       setRoomSnapshot({
         liveSession: data?.liveSession || liveSession,
         ...data,
       });
+      // After each submit, force a fresh poll after 800ms so all participants
+      // quickly get the updated snapshot (new currentSpeakerId, teams, etc.)
+      setTimeout(() => {
+        syncRoom(false).catch(() => null);
+      }, 800);
+
+      // Play any new moderator message that appeared in the submit response
+      // (backend sometimes includes an ai_moderation comment inline)
     } catch (error: any) {
       console.log("[TURN] submit failed", {
         sessionId: config.sessionId,
@@ -3867,7 +4031,6 @@ function TeamDebateRoom({
       setSubmittingTurn(false);
     }
   }
-
   function cleanupSpeechDetection() {
     console.log("[CLEANUP] speech detection cleanup", {
       sessionId: config.sessionId,
@@ -3994,9 +4157,16 @@ function TeamDebateRoom({
     if (audioTrack.readyState === "ended") {
       debateDebug("[MIC] track ended — requesting fresh stream", {});
       try {
-        const freshStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        const freshStream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: false,
+        });
         const freshTrack = freshStream.getAudioTracks()[0];
-        if (!freshTrack) { toast$("Microphone is not available.", "error"); speechCaptureLockRef.current = false; return; }
+        if (!freshTrack) {
+          toast$("Microphone is not available.", "error");
+          speechCaptureLockRef.current = false;
+          return;
+        }
         if (roomAudioStream) {
           roomAudioStream.removeTrack(audioTrack);
           roomAudioStream.addTrack(freshTrack);
@@ -4010,21 +4180,34 @@ function TeamDebateRoom({
     // Re-read track after possible refresh
     const liveTrack = roomAudioStream?.getAudioTracks?.()[0];
     if (!liveTrack || liveTrack.readyState === "ended") {
-      toast$("Microphone unavailable. Please refresh and allow mic access.", "error");
+      toast$(
+        "Microphone unavailable. Please refresh and allow mic access.",
+        "error",
+      );
       speechCaptureLockRef.current = false;
       return;
     }
     // Re-enable if muted (was disabled while AI was speaking)
     if (!liveTrack.enabled) {
-      debateDebug("[MIC] re-enabling track for team speech capture", { readyState: liveTrack.readyState });
+      debateDebug("[MIC] re-enabling track for team speech capture", {
+        readyState: liveTrack.readyState,
+      });
       liveTrack.enabled = true;
     }
+    livekitUnmute();
+
     speechCaptureLockRef.current = true;
     const recordingStream = new MediaStream([liveTrack]);
     const mimeType = MediaRecorder.isTypeSupported("audio/webm")
       ? "audio/webm"
-      : MediaRecorder.isTypeSupported("audio/mp4") ? "audio/mp4" : "";
-    if (!mimeType) { toast$("Your browser does not support audio recording.", "error"); speechCaptureLockRef.current = false; return; }
+      : MediaRecorder.isTypeSupported("audio/mp4")
+        ? "audio/mp4"
+        : "";
+    if (!mimeType) {
+      toast$("Your browser does not support audio recording.", "error");
+      speechCaptureLockRef.current = false;
+      return;
+    }
     debateDebug("[RECORDER] creating", {
       mimeType,
       trackCount: recordingStream.getTracks().length,
@@ -4186,6 +4369,7 @@ function TeamDebateRoom({
     // Mute mic after stop — re-enabled when auto-start or user clicks Start
     const liveTrack = roomAudioStream?.getAudioTracks?.()[0];
     if (liveTrack) liveTrack.enabled = false;
+    livekitMute();
   }
 
   async function handleMicGrant() {
@@ -4245,20 +4429,38 @@ function TeamDebateRoom({
       stopSpeechCapture();
     }
   }, [aiIsSpeaking, speechRecording]);
+ // Mute LiveKit track for any participant who is NOT the current speaker
+  useEffect(() => {
+    if (!meetingReady) return;
+    if (isCurrentUserTurn && !aiIsSpeaking) {
+      // My turn — unmute handled by startSpeechCapture
+      return;
+    }
+    // Not my turn — ensure LiveKit mic is muted
+    if (localAudioTrack) localAudioTrack.enabled = false;
+    livekitMute();
+  }, [isCurrentUserTurn, aiIsSpeaking, meetingReady, localAudioTrack, livekitMute]);
 
   // Auto-start when it's this user's turn (after AI finishes speaking)
   useEffect(() => {
-    if (!canSpeak || micBlocked || speechRecording || speechProcessing || submittingTurn) {
+if (
+      !canSpeak ||
+      !micAvailable ||
+      speechRecording ||
+      speechProcessing ||
+      submittingTurn
+    ) {
       return;
     }
-    const turnKey = `${liveSession?.currentRound?.roundNumber || 0}:${currentSpeakerId || ""}`;
+    // Track may be disabled (muted between turns) — startSpeechCapture re-enables it
+    // Do NOT block on micEnabled here; that causes deadlock when track is muted between turns
+    const turnKey = `${liveSession?.currentRound?.roundNumber || 0}:${currentSpeakerId || ""}:${(liveSession?.turns || []).length}`;
     if (autoTurnStartRef.current === turnKey) return;
     autoTurnStartRef.current = turnKey;
-    console.log("[TURN] auto-starting speech capture for team member", {
+    console.log("[TURN] auto-start guard cleared for new turn", {
       sessionId: config.sessionId,
       turnKey,
       currentSpeakerId,
-      activeTeam,
     });
     setTimeout(() => {
       startSpeechCaptureRef.current?.();
@@ -4283,6 +4485,7 @@ function TeamDebateRoom({
     setEndingRoom(true);
     setEndError(null);
     stopSpeechCapture();
+    livekitDisconnect();
     activeAudioRef.current?.pause();
     activeAudioRef.current = null;
     moderatorSpeechTokenRef.current += 1;
@@ -4350,7 +4553,8 @@ function TeamDebateRoom({
     (teams?.[teamKey] || []).map(
       (participant: any, index: number) =>
         ({
-          id: participant.id != null ? String(participant.id) : String(index + 1),
+          id:
+            participant.id != null ? String(participant.id) : String(index + 1),
           name: participant.name,
           stream:
             String(participant.id) === String(candidateId) &&
@@ -4416,6 +4620,21 @@ function TeamDebateRoom({
             : liveSession?.status === "active"
               ? "Live debate"
               : liveSession?.status || "Connecting"}
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 11,
+          }}
+        >
+          {meetingReady && livekitConnected && (
+            <span style={{ color: "#22c55e" }}>● Voice connected</span>
+          )}
+          {meetingReady && !livekitConnected && (
+            <span style={{ color: "#f97316" }}>● Connecting voice...</span>
+          )}
         </div>
       </div>
 
@@ -4713,12 +4932,32 @@ function TeamDebateRoom({
                           border: "1px solid rgba(139,92,246,.18)",
                         }}
                       >
-                        <div className="loader-spin" style={{ width: 16, height: 16, borderWidth: 2, flexShrink: 0 }} />
+                        <div
+                          className="loader-spin"
+                          style={{
+                            width: 16,
+                            height: 16,
+                            borderWidth: 2,
+                            flexShrink: 0,
+                          }}
+                        />
                         <div>
-                          <div style={{ fontSize: 12, fontWeight: 800, color: "#c4b5fd" }}>
+                          <div
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 800,
+                              color: "#c4b5fd",
+                            }}
+                          >
                             AI Moderator is speaking…
                           </div>
-                          <div style={{ fontSize: 11, color: "rgba(255,255,255,.45)", marginTop: 2 }}>
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: "rgba(255,255,255,.45)",
+                              marginTop: 2,
+                            }}
+                          >
                             Preparing the opening greeting
                           </div>
                         </div>
@@ -4829,7 +5068,9 @@ function LiveAIDebateRoom({
   const [speechRecording, setSpeechRecording] = useState(false);
   const [speechProcessing, setSpeechProcessing] = useState(false);
   const [userIsSpeaking, setUserIsSpeaking] = useState(false);
-  const [meetingReady, setMeetingReady] = useState(() => !config.initialAiMessage);
+  const [meetingReady, setMeetingReady] = useState(
+    () => !config.initialAiMessage,
+  );
   const [showEnd, setShowEnd] = useState(false);
   const [showBackConfirm, setShowBackConfirm] = useState(false);
   const [endingDebate, setEndingDebate] = useState(false);
@@ -4859,7 +5100,9 @@ function LiveAIDebateRoom({
   // Auto start/stop refs — startSpeechCaptureRef lets AI callbacks call the function
   // without circular deps; autoSilenceIntervalRef tracks the 8s silence timer
   const startSpeechCaptureRef = useRef<(() => void) | null>(null);
-  const autoSilenceIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const autoSilenceIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
+    null,
+  );
   const autoSilenceSpeechDetectedRef = useRef(false);
   const autoSilenceCounterRef = useRef(0);
   const activeSpeakerId = whoTurn === "you" ? 0 : 1;
@@ -5020,7 +5263,15 @@ function LiveAIDebateRoom({
       speechProcessing,
       endingDebate,
     });
-  }, [activeSpeakerId, whoTurn, aiLocked, aiIsSpeaking, speechRecording, speechProcessing, endingDebate]);
+  }, [
+    activeSpeakerId,
+    whoTurn,
+    aiLocked,
+    aiIsSpeaking,
+    speechRecording,
+    speechProcessing,
+    endingDebate,
+  ]);
 
   useEffect(() => {
     const onPopState = () => {
@@ -5088,7 +5339,9 @@ function LiveAIDebateRoom({
       return;
     }
 
-    const sessionKey = String(config.sessionId || config.roomId || "ai-greeting");
+    const sessionKey = String(
+      config.sessionId || config.roomId || "ai-greeting",
+    );
     const ownerId = ++debateGreetingOwnerSeq;
     let flight = debateGreetingFlights.get(sessionKey);
     if (!flight) {
@@ -5116,7 +5369,10 @@ function LiveAIDebateRoom({
               textLength: text.length,
               ownerId,
             });
-            const audio = await synthesizeDebateSpeech({ text, voice: "alloy" });
+            const audio = await synthesizeDebateSpeech({
+              text,
+              voice: "alloy",
+            });
             ttsDebug("[TTS] audio returned", {
               mode: "ai",
               ownerId,
@@ -5261,7 +5517,8 @@ function LiveAIDebateRoom({
       activeRecorder.stop();
     }
     // Mute mic immediately after stopping — re-enabled when user clicks Start Speaking
-    const _localStream = config.stream instanceof MediaStream ? config.stream : null;
+    const _localStream =
+      config.stream instanceof MediaStream ? config.stream : null;
     const _audioTrack = _localStream?.getAudioTracks?.()[0];
     if (_audioTrack) _audioTrack.enabled = false;
   }
@@ -5270,10 +5527,10 @@ function LiveAIDebateRoom({
     // Derive candidateId safely — config shape differs between 1v1 and multi-user
     const currentUserId = String(
       config.candidateId ||
-      config.userId ||
-      config.participantId ||
-      candidateContext?.candidateId ||
-      "",
+        config.userId ||
+        config.participantId ||
+        candidateContext?.candidateId ||
+        "",
     );
     debateDebug("[SPEAK] button clicked", {
       whoTurn,
@@ -5301,7 +5558,9 @@ function LiveAIDebateRoom({
         activeSpeakerId,
         currentUserId,
         participantId: currentUserId,
-        hasStream: Boolean(config.stream instanceof MediaStream ? config.stream : null),
+        hasStream: Boolean(
+          config.stream instanceof MediaStream ? config.stream : null,
+        ),
         canSpeak: whoTurn === "you" && !aiLocked && !endingDebate,
         speechCaptureLockRef: speechCaptureLockRef.current,
       });
@@ -5369,7 +5628,10 @@ function LiveAIDebateRoom({
     if (audioTrack.readyState === "ended") {
       debateDebug("[ERROR] audio track ended — requesting fresh stream", {});
       try {
-        const freshStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        const freshStream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: false,
+        });
         const freshTrack = freshStream.getAudioTracks()[0];
         if (!freshTrack) {
           toast$("Microphone is not available.", "error");
@@ -5384,7 +5646,9 @@ function LiveAIDebateRoom({
         // Re-assign so the recorder uses the fresh track
         Object.defineProperty(freshTrack, "_fromFresh", { value: true });
         // Fall through with freshTrack
-        debateDebug("[MIC] fresh stream obtained", { readyState: freshTrack.readyState });
+        debateDebug("[MIC] fresh stream obtained", {
+          readyState: freshTrack.readyState,
+        });
       } catch (err: any) {
         toast$(err?.message || "Microphone access failed.", "error");
         speechCaptureLockRef.current = false;
@@ -5395,7 +5659,10 @@ function LiveAIDebateRoom({
     // Re-read audioTrack after possible refresh
     const liveTrack = localStream?.getAudioTracks?.()[0];
     if (!liveTrack || liveTrack.readyState === "ended") {
-      toast$("Microphone track is not available. Please refresh and allow mic access.", "error");
+      toast$(
+        "Microphone track is not available. Please refresh and allow mic access.",
+        "error",
+      );
       speechCaptureLockRef.current = false;
       return;
     }
@@ -5413,8 +5680,8 @@ function LiveAIDebateRoom({
     const mimeType = MediaRecorder.isTypeSupported("audio/webm")
       ? "audio/webm"
       : MediaRecorder.isTypeSupported("audio/mp4")
-      ? "audio/mp4"
-      : "";
+        ? "audio/mp4"
+        : "";
     if (!mimeType) {
       toast$("Your browser does not support audio recording.", "error");
       speechCaptureLockRef.current = false;
@@ -5552,11 +5819,11 @@ function LiveAIDebateRoom({
         const armedForSilence =
           firstSpeechAtRef.current &&
           Date.now() - firstSpeechAtRef.current >= 600;
-      if (armedForSilence && Date.now() - lastSpeechAtRef.current >= 2400) {
-        debateDebug("[SILENCE] silence detected", {
-          activeSpeakerId,
-          whoTurn,
-        });
+        if (armedForSilence && Date.now() - lastSpeechAtRef.current >= 2400) {
+          debateDebug("[SILENCE] silence detected", {
+            activeSpeakerId,
+            whoTurn,
+          });
           stopSpeechCapture();
         }
       }, 120);
@@ -5579,8 +5846,8 @@ function LiveAIDebateRoom({
     autoSilenceSpeechDetectedRef.current = false;
     autoSilenceCounterRef.current = 0;
 
-    const SILENCE_THRESHOLD = 8;        // RMS below this = silent
-    const SILENCE_INTERVALS = 40;       // 40 × 200ms = 8 seconds
+    const SILENCE_THRESHOLD = 8; // RMS below this = silent
+    const SILENCE_INTERVALS = 40; // 40 × 200ms = 8 seconds
     const CHECK_INTERVAL_MS = 200;
 
     autoSilenceIntervalRef.current = setInterval(() => {
@@ -5717,7 +5984,10 @@ function LiveAIDebateRoom({
       setScores({ you: mappedScores.you, ai: mappedScores.ai });
       setSessionFeedback(response || null);
       // Use server turns if available (more complete than local messages)
-      const serverTurns = response?.liveSession?.turns || response?.data?.liveSession?.turns || [];
+      const serverTurns =
+        response?.liveSession?.turns ||
+        response?.data?.liveSession?.turns ||
+        [];
       const transcriptData = serverTurns.length > 0 ? serverTurns : messages;
       onEnd({
         timer: elapsedTimer,
@@ -5736,7 +6006,11 @@ function LiveAIDebateRoom({
         },
         recommendations: mappedScores.recommendations,
         hasRealScores: mappedScores.hasRealScores,
-        feedback: response?.liveSession?.feedback || response?.feedback || response || null,
+        feedback:
+          response?.liveSession?.feedback ||
+          response?.feedback ||
+          response ||
+          null,
         transcript: transcriptData,
         meetingEnded: true,
       });
@@ -6202,12 +6476,14 @@ function DebateWaitingRoom({
     (participant: any) => String(participant.id) === String(candidateId),
   );
   const isHost = snapshot
-  ? Boolean(currentParticipant?.isHost)
-  : Boolean(config.isHost);
+    ? Boolean(currentParticipant?.isHost)
+    : Boolean(config.isHost);
   const previousParticipantIdsRef = useRef<string[]>([]);
 
   useEffect(() => {
-    const currentIds = participants.map((participant: any) => String(participant.id));
+    const currentIds = participants.map((participant: any) =>
+      String(participant.id),
+    );
     const previousIds = previousParticipantIdsRef.current;
     console.log("[PARTICIPANT] waiting-room view", {
       sessionId: config.sessionId,
@@ -6263,14 +6539,14 @@ function DebateWaitingRoom({
         setSnapshot(room);
         setError(null);
         const roomParticipants =
-          room?.liveSession?.participants ||
-          room?.participants ||
-          [];
+          room?.liveSession?.participants || room?.participants || [];
         console.log("[ROOM] waiting-room snapshot", {
           sessionId: config.sessionId,
           status: room?.liveSession?.status || null,
           participantCount: roomParticipants.length,
-          participantNames: roomParticipants.map((participant: any) => participant?.name),
+          participantNames: roomParticipants.map(
+            (participant: any) => participant?.name,
+          ),
           hasLiveSession: Boolean(room?.liveSession),
           hasRoomSnapshot: Boolean(room),
         });
@@ -6285,11 +6561,27 @@ function DebateWaitingRoom({
         ) {
           enteredRef.current = true;
           setHostApproved(true);
-          const participantLiveSession = room?.liveSession || config.liveSession || null;
+          const participantLiveSession =
+            room?.liveSession || config.liveSession || null;
+          const moderatorTurn = (participantLiveSession?.turns || []).find(
+            (t: any) => t.role === "moderator" && (t.message || t.transcript),
+          );
           const participantAiOpening =
+            moderatorTurn?.message ||
+            moderatorTurn?.transcript ||
             participantLiveSession?.currentRound?.latestAiMessage ||
+            participantLiveSession?.metadata?.aiGreeting ||
             participantLiveSession?.metadata?.ai_opening ||
             "";
+          console.log("[GREETING] participant aiOpening resolved", {
+            sessionId: config.sessionId,
+            source: moderatorTurn
+              ? "turns[moderator]"
+              : participantLiveSession?.currentRound?.latestAiMessage
+                ? "currentRound.latestAiMessage"
+                : "none",
+            textLength: participantAiOpening.length,
+          });
           onEnterRoomRef.current({
             ...config,
             candidateId,
@@ -6371,11 +6663,31 @@ function DebateWaitingRoom({
       isHost,
     });
     setStarting(true);
+    console.log("[GREETING] /start API call initiated", {
+      sessionId: config.sessionId,
+      candidateId,
+      candidateName,
+      timestamp: new Date().toISOString(),
+    });
     try {
       const result = await startDebateRoom({
         sessionId: config.sessionId,
         candidateId,
         candidateName,
+      });
+      console.log("[GREETING] /start API response received", {
+        sessionId: config.sessionId,
+        status: result?.liveSession?.status,
+        aiOpeningLength: (
+          result?.data?.aiGreeting ||
+          result?.data?.ai_opening ||
+          ""
+        ).length,
+        turnCount: result?.liveSession?.turns?.length ?? 0,
+        moderatorTurnPresent: Boolean(
+          result?.liveSession?.turns?.find((t: any) => t.role === "moderator"),
+        ),
+        timestamp: new Date().toISOString(),
       });
       console.log("[ROOM] waiting-room start success", {
         sessionId: config.sessionId,
@@ -6384,26 +6696,50 @@ function DebateWaitingRoom({
       setHostApproved(true);
       const resultLiveSession = result?.liveSession || liveSession;
       const aiOpening =
-        result?.data?.ai_opening ||
+        result?.data?.aiGreeting || // ← canonical full greeting (camelCase)
+        result?.data?.ai_opening || // ← fallback short greeting
+        result?.aiGreeting ||
         result?.ai_opening ||
         resultLiveSession?.currentRound?.latestAiMessage ||
+        resultLiveSession?.turns?.find((t: any) => t.role === "moderator")
+          ?.message ||
         "";
-
+      console.log("[GREETING] aiOpening resolved", {
+        sessionId: config.sessionId,
+        source: result?.data?.aiGreeting
+          ? "data.aiGreeting"
+          : result?.data?.ai_opening
+            ? "data.ai_opening"
+            : resultLiveSession?.currentRound?.latestAiMessage
+              ? "currentRound.latestAiMessage"
+              : "none",
+        textLength: aiOpening.length,
+      });
       // ── Pre-synthesise the AI greeting before landing on meeting page ──────
       // Same pattern as 1v1: speak API completes → land on meeting → AI speaks
       // immediately with zero delay.
       let preloadedAudioDataUrl: string | null = null;
       if (aiOpening) {
         try {
-          console.log("[TTS] pre-synthesizing team greeting", { textLength: aiOpening.length });
-          const audio = await synthesizeDebateSpeech({ text: aiOpening, voice: "alloy" });
+          console.log("[TTS] pre-synthesizing team greeting", {
+            textLength: aiOpening.length,
+          });
+          const audio = await synthesizeDebateSpeech({
+            text: aiOpening,
+            voice: "alloy",
+          });
           if (audio?.dataUrl) {
             await preloadAudioDataUrl(audio.dataUrl);
             preloadedAudioDataUrl = audio.dataUrl;
-            console.log("[TTS] team greeting pre-loaded", { dataUrlLength: audio.dataUrl.length });
+            console.log("[TTS] team greeting pre-loaded", {
+              dataUrlLength: audio.dataUrl.length,
+            });
           }
         } catch (ttsErr) {
-          console.warn("[TTS] pre-synthesis failed, will retry in room", ttsErr);
+          console.warn(
+            "[TTS] pre-synthesis failed, will retry in room",
+            ttsErr,
+          );
           // Non-fatal — room will re-attempt TTS on mount
         }
       }
@@ -8036,15 +8372,22 @@ function DebateRoom({
 
       // Use server-provided teams if available (from startDebateRoom API response)
       // Otherwise fall back to local assignTeams()
-      const serverTeams = config.teamsFromServer as { A: any[]; B: any[] } | null | undefined;
+      const serverTeams = config.teamsFromServer as
+        | { A: any[]; B: any[] }
+        | null
+        | undefined;
 
       setParticipants((ps) => {
         let withTeams: typeof ps;
         if (serverTeams?.A && serverTeams?.B) {
           // Map server teams onto participant list
           withTeams = ps.map((p) => {
-            const inA = serverTeams.A.find((t: any) => String(t.id) === String(p.id));
-            const inB = serverTeams.B.find((t: any) => String(t.id) === String(p.id));
+            const inA = serverTeams.A.find(
+              (t: any) => String(t.id) === String(p.id),
+            );
+            const inB = serverTeams.B.find(
+              (t: any) => String(t.id) === String(p.id),
+            );
             return {
               ...p,
               team: inA ? "A" : inB ? "B" : p.team,
@@ -8056,11 +8399,19 @@ function DebateRoom({
         }
 
         // Use server ai_opening greeting directly — no local generation
-        const intro = config.initialAiMessage || (() => {
-          const teamA = withTeams.filter((p) => p.team === "A").map((p) => p.name).join(", ");
-          const teamB = withTeams.filter((p) => p.team === "B").map((p) => p.name).join(", ");
-          return `Welcome everyone to the debate on: ${config.topic}. I am your AI Moderator. Teams have been assigned. Team A: ${teamA}. Team B: ${teamB}. Each speaker must speak for at least 10 seconds before passing the turn. Teams will alternate strictly. Let us begin with Team A.`;
-        })();
+        const intro =
+          config.initialAiMessage ||
+          (() => {
+            const teamA = withTeams
+              .filter((p) => p.team === "A")
+              .map((p) => p.name)
+              .join(", ");
+            const teamB = withTeams
+              .filter((p) => p.team === "B")
+              .map((p) => p.name)
+              .join(", ");
+            return `Welcome everyone to the debate on: ${config.topic}. I am your AI Moderator. Teams have been assigned. Team A: ${teamA}. Team B: ${teamB}. Each speaker must speak for at least 10 seconds before passing the turn. Teams will alternate strictly. Let us begin with Team A.`;
+          })();
 
         // Pre-populate chat with turns already in the session (from API)
         const existingTurns: any[] = config.turnsFromServer || [];
@@ -8076,7 +8427,9 @@ function DebateRoom({
         });
 
         // Only add the intro message if it wasn't already in turnsFromServer
-        const alreadyInTurns = existingTurns.some((t: any) => t?.message === intro);
+        const alreadyInTurns = existingTurns.some(
+          (t: any) => t?.message === intro,
+        );
         if (!alreadyInTurns) {
           addMsg("AI Moderator", 99, intro);
         }
@@ -9013,15 +9366,15 @@ function DebateRoom({
                 )}
                 {!isMulti && (
                   <div className="p-list">
-                        {participants.map((p) => {
-                          const c = p.avatarColor || avColor(p.name);
-                          const participantSpeaking =
-                            p.isLocal && localIsActive ? userIsSpeaking : false;
-                          return (
-                            <div
-                              key={p.id}
-                              className={`p-row${participantSpeaking ? " spk" : ""}`}
-                            >
+                    {participants.map((p) => {
+                      const c = p.avatarColor || avColor(p.name);
+                      const participantSpeaking =
+                        p.isLocal && localIsActive ? userIsSpeaking : false;
+                      return (
+                        <div
+                          key={p.id}
+                          className={`p-row${participantSpeaking ? " spk" : ""}`}
+                        >
                           <div
                             className="p-av"
                             style={{ background: c + "28", color: c }}
@@ -9029,12 +9382,12 @@ function DebateRoom({
                             {p.isAI ? "🤖" : p.isMed ? "🎙️" : avInit(p.name)}
                           </div>
                           <div className="p-info">
-                              <div className="p-name">
-                                {p.name}
-                                {p.isLocal ? " (You)" : ""}
-                                {participantSpeaking ? " 🔊" : ""}
-                                {p.handRaised ? " ✋" : ""}
-                              </div>
+                            <div className="p-name">
+                              {p.name}
+                              {p.isLocal ? " (You)" : ""}
+                              {participantSpeaking ? " 🔊" : ""}
+                              {p.handRaised ? " ✋" : ""}
+                            </div>
                             <div className="p-role">
                               {p.isHost
                                 ? "👑 Host"
@@ -9776,7 +10129,9 @@ function DebateResults({ result, onNew }: { result: any; onNew: () => void }) {
     feedback?.summary ||
     feedback?.text ||
     (typeof feedback === "string" ? feedback : null);
-  const turns: any[] = Array.isArray(result.transcript) ? result.transcript : [];
+  const turns: any[] = Array.isArray(result.transcript)
+    ? result.transcript
+    : [];
 
   // ── Download transcript as PDF (plain-text based, no lib needed) ──────────
   const downloadTranscriptPDF = () => {
@@ -9784,7 +10139,9 @@ function DebateResults({ result, onNew }: { result: any; onNew: () => void }) {
     lines.push("DEBATE TRANSCRIPT");
     lines.push("=================");
     lines.push(`Topic: ${result.topic || "N/A"}`);
-    lines.push(`Subject: ${result.subject || "N/A"}${result.unit ? " · " + result.unit : ""}`);
+    lines.push(
+      `Subject: ${result.subject || "N/A"}${result.unit ? " · " + result.unit : ""}`,
+    );
     lines.push(`Duration: ${result.timer || "N/A"}`);
     lines.push(`Date: ${new Date().toLocaleDateString()}`);
     lines.push("");
@@ -9792,10 +10149,14 @@ function DebateResults({ result, onNew }: { result: any; onNew: () => void }) {
     lines.push("------");
     if (breakdown) {
       lines.push(`  Reasoning        : ${breakdown.reasoning ?? "-"}`);
-      lines.push(`  Textbook Knowledge: ${breakdown.textbook_knowledge ?? "-"}`);
+      lines.push(
+        `  Textbook Knowledge: ${breakdown.textbook_knowledge ?? "-"}`,
+      );
       lines.push(`  Argumentation    : ${breakdown.argumentation ?? "-"}`);
       lines.push(`  Communication    : ${breakdown.communication ?? "-"}`);
-      lines.push(`  Total Score      : ${breakdown.total ?? result.scores?.you ?? "-"}`);
+      lines.push(
+        `  Total Score      : ${breakdown.total ?? result.scores?.you ?? "-"}`,
+      );
     } else {
       lines.push(`  Your Score : ${result.scores?.you ?? "-"}`);
       lines.push(`  AI Score   : ${result.scores?.ai ?? "-"}`);
@@ -9812,17 +10173,24 @@ function DebateResults({ result, onNew }: { result: any; onNew: () => void }) {
       lines.push("RECOMMENDATIONS");
       lines.push("---------------");
       lines.push(`  Attempt #${recommendations.attempt_number ?? "-"}`);
-      if (recommendations.retry_suggestion) lines.push(`  Retry suggestion: ${recommendations.retry_suggestion}`);
-      if (recommendations.next_topic_suggestion) lines.push(`  Next topic: ${recommendations.next_topic_suggestion}`);
+      if (recommendations.retry_suggestion)
+        lines.push(`  Retry suggestion: ${recommendations.retry_suggestion}`);
+      if (recommendations.next_topic_suggestion)
+        lines.push(`  Next topic: ${recommendations.next_topic_suggestion}`);
       lines.push("");
     }
     if (turns.length > 0) {
       lines.push("TRANSCRIPT");
       lines.push("----------");
       turns.forEach((t: any, i: number) => {
-        const speaker = t.speakerName || t.sender || (t.role === "assistant" ? "AI Debater" : "You");
+        const speaker =
+          t.speakerName ||
+          t.sender ||
+          (t.role === "assistant" ? "AI Debater" : "You");
         const msg = t.message || t.transcript || t.text || "";
-        const time = t.createdAt ? new Date(t.createdAt).toLocaleTimeString() : "";
+        const time = t.createdAt
+          ? new Date(t.createdAt).toLocaleTimeString()
+          : "";
         lines.push(`[${i + 1}] ${speaker}${time ? " (" + time + ")" : ""}`);
         lines.push(msg);
         lines.push("");
@@ -10132,90 +10500,275 @@ function DebateResults({ result, onNew }: { result: any; onNew: () => void }) {
       )}
 
       {result.subMode === "ai" && (
-        <div style={{ width: "100%", maxWidth: 520, marginBottom: 18, display: "flex", flexDirection: "column" as const, gap: 14 }}>
-
+        <div
+          style={{
+            width: "100%",
+            maxWidth: 520,
+            marginBottom: 18,
+            display: "flex",
+            flexDirection: "column" as const,
+            gap: 14,
+          }}
+        >
           {/* ── Score Card ── */}
-          <div style={{ background: "var(--surf)", border: "1px solid var(--bdr)", borderRadius: 18, padding: 18, boxShadow: "var(--sh)" }}>
-            <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".08em", textTransform: "uppercase" as const, color: "var(--t3)", marginBottom: 10 }}>
+          <div
+            style={{
+              background: "var(--surf)",
+              border: "1px solid var(--bdr)",
+              borderRadius: 18,
+              padding: 18,
+              boxShadow: "var(--sh)",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 800,
+                letterSpacing: ".08em",
+                textTransform: "uppercase" as const,
+                color: "var(--t3)",
+                marginBottom: 10,
+              }}
+            >
               Final Score
             </div>
             {breakdown ? (
               <>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 10,
+                    marginBottom: 14,
+                  }}
+                >
                   {[
                     { label: "Reasoning", value: breakdown.reasoning },
                     { label: "Knowledge", value: breakdown.textbook_knowledge },
                     { label: "Argumentation", value: breakdown.argumentation },
                     { label: "Communication", value: breakdown.communication },
                   ].map((item) => (
-                    <div key={item.label} style={{ background: "var(--surf2)", borderRadius: 12, padding: "10px 12px", textAlign: "center" as const }}>
-                      <div style={{ fontSize: 22, fontWeight: 900, color: "var(--ind)" }}>{item.value ?? "-"}</div>
-                      <div style={{ fontSize: 10, color: "var(--t3)", fontWeight: 700, marginTop: 2 }}>{item.label}</div>
+                    <div
+                      key={item.label}
+                      style={{
+                        background: "var(--surf2)",
+                        borderRadius: 12,
+                        padding: "10px 12px",
+                        textAlign: "center" as const,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 22,
+                          fontWeight: 900,
+                          color: "var(--ind)",
+                        }}
+                      >
+                        {item.value ?? "-"}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 10,
+                          color: "var(--t3)",
+                          fontWeight: 700,
+                          marginTop: 2,
+                        }}
+                      >
+                        {item.label}
+                      </div>
                     </div>
                   ))}
                 </div>
-                <div style={{ textAlign: "center" as const, padding: "12px 0", borderTop: "1px solid var(--bdr)" }}>
-                  <div style={{ fontSize: 32, fontWeight: 900, color: "var(--em)" }}>{breakdown.total ?? result.scores?.you ?? "-"}</div>
-                  <div style={{ fontSize: 11, color: "var(--t3)" }}>Total Score</div>
+                <div
+                  style={{
+                    textAlign: "center" as const,
+                    padding: "12px 0",
+                    borderTop: "1px solid var(--bdr)",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 32,
+                      fontWeight: 900,
+                      color: "var(--em)",
+                    }}
+                  >
+                    {breakdown.total ?? result.scores?.you ?? "-"}
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--t3)" }}>
+                    Total Score
+                  </div>
                 </div>
               </>
             ) : (
-              <div style={{ display: "flex", alignItems: "center", gap: 16, justifyContent: "center" }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 16,
+                  justifyContent: "center",
+                }}
+              >
                 <div style={{ textAlign: "center" as const }}>
-                  <div style={{ fontSize: 36, fontWeight: 900, color: "var(--ind)" }}>{result.scores?.you || 0}</div>
+                  <div
+                    style={{
+                      fontSize: 36,
+                      fontWeight: 900,
+                      color: "var(--ind)",
+                    }}
+                  >
+                    {result.scores?.you || 0}
+                  </div>
                   <div style={{ fontSize: 11, color: "var(--t3)" }}>You</div>
                 </div>
-                <div style={{ fontSize: 18, fontWeight: 800, color: "var(--t4)" }}>VS</div>
+                <div
+                  style={{ fontSize: 18, fontWeight: 800, color: "var(--t4)" }}
+                >
+                  VS
+                </div>
                 <div style={{ textAlign: "center" as const }}>
-                  <div style={{ fontSize: 36, fontWeight: 900, color: "var(--vio)" }}>{result.scores?.ai || 0}</div>
+                  <div
+                    style={{
+                      fontSize: 36,
+                      fontWeight: 900,
+                      color: "var(--vio)",
+                    }}
+                  >
+                    {result.scores?.ai || 0}
+                  </div>
                   <div style={{ fontSize: 11, color: "var(--t3)" }}>AI</div>
                 </div>
               </div>
             )}
             {!breakdown && (
-              <div style={{ textAlign: "center" as const, marginTop: 10, fontSize: 15, fontWeight: 800, color: (result.scores?.you || 0) >= (result.scores?.ai || 0) ? "var(--em)" : "var(--vio)" }}>
-                {(result.scores?.you || 0) >= (result.scores?.ai || 0) ? "🥇 You won the debate!" : "🤖 AI won this round!"}
+              <div
+                style={{
+                  textAlign: "center" as const,
+                  marginTop: 10,
+                  fontSize: 15,
+                  fontWeight: 800,
+                  color:
+                    (result.scores?.you || 0) >= (result.scores?.ai || 0)
+                      ? "var(--em)"
+                      : "var(--vio)",
+                }}
+              >
+                {(result.scores?.you || 0) >= (result.scores?.ai || 0)
+                  ? "🥇 You won the debate!"
+                  : "🤖 AI won this round!"}
               </div>
             )}
           </div>
 
           {/* ── Feedback Card ── */}
           {feedbackText && (
-            <div style={{ background: "var(--surf)", border: "1px solid var(--bdr)", borderRadius: 18, padding: 18, boxShadow: "var(--sh)" }}>
-              <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".08em", textTransform: "uppercase" as const, color: "var(--t3)", marginBottom: 10 }}>
+            <div
+              style={{
+                background: "var(--surf)",
+                border: "1px solid var(--bdr)",
+                borderRadius: 18,
+                padding: 18,
+                boxShadow: "var(--sh)",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 800,
+                  letterSpacing: ".08em",
+                  textTransform: "uppercase" as const,
+                  color: "var(--t3)",
+                  marginBottom: 10,
+                }}
+              >
                 💡 Feedback
               </div>
-              <div style={{ fontSize: 13, color: "var(--t1)", lineHeight: 1.7 }}>{feedbackText}</div>
+              <div
+                style={{ fontSize: 13, color: "var(--t1)", lineHeight: 1.7 }}
+              >
+                {feedbackText}
+              </div>
             </div>
           )}
 
           {/* ── Recommendations Card ── */}
           {recommendations && (
-            <div style={{ background: "var(--surf)", border: "1px solid var(--bdr)", borderRadius: 18, padding: 18, boxShadow: "var(--sh)" }}>
-              <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".08em", textTransform: "uppercase" as const, color: "var(--t3)", marginBottom: 10 }}>
+            <div
+              style={{
+                background: "var(--surf)",
+                border: "1px solid var(--bdr)",
+                borderRadius: 18,
+                padding: 18,
+                boxShadow: "var(--sh)",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 800,
+                  letterSpacing: ".08em",
+                  textTransform: "uppercase" as const,
+                  color: "var(--t3)",
+                  marginBottom: 10,
+                }}
+              >
                 📈 Recommendations
               </div>
-              <div style={{ display: "flex", flexDirection: "column" as const, gap: 8 }}>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column" as const,
+                  gap: 8,
+                }}
+              >
                 {recommendations.attempt_number && (
                   <div style={{ fontSize: 12.5, color: "var(--t2)" }}>
-                    Attempt <strong style={{ color: "var(--ind)" }}>#{recommendations.attempt_number}</strong> on this topic
+                    Attempt{" "}
+                    <strong style={{ color: "var(--ind)" }}>
+                      #{recommendations.attempt_number}
+                    </strong>{" "}
+                    on this topic
                   </div>
                 )}
-                {recommendations.needs_retry && recommendations.retry_suggestion && (
-                  <div style={{ fontSize: 12.5, color: "var(--t2)", padding: "8px 12px", background: "rgba(239,68,68,.07)", borderRadius: 10, border: "1px solid rgba(239,68,68,.15)" }}>
-                    🔁 {recommendations.retry_suggestion}
-                  </div>
-                )}
+                {recommendations.needs_retry &&
+                  recommendations.retry_suggestion && (
+                    <div
+                      style={{
+                        fontSize: 12.5,
+                        color: "var(--t2)",
+                        padding: "8px 12px",
+                        background: "rgba(239,68,68,.07)",
+                        borderRadius: 10,
+                        border: "1px solid rgba(239,68,68,.15)",
+                      }}
+                    >
+                      🔁 {recommendations.retry_suggestion}
+                    </div>
+                  )}
                 {recommendations.next_topic_suggestion && (
-                  <div style={{ fontSize: 12.5, color: "var(--t2)", padding: "8px 12px", background: "rgba(16,185,129,.07)", borderRadius: 10, border: "1px solid rgba(16,185,129,.15)" }}>
-                    ➡️ Next topic: <strong>{recommendations.next_topic_suggestion}</strong>
+                  <div
+                    style={{
+                      fontSize: 12.5,
+                      color: "var(--t2)",
+                      padding: "8px 12px",
+                      background: "rgba(16,185,129,.07)",
+                      borderRadius: 10,
+                      border: "1px solid rgba(16,185,129,.15)",
+                    }}
+                  >
+                    ➡️ Next topic:{" "}
+                    <strong>{recommendations.next_topic_suggestion}</strong>
                   </div>
                 )}
                 {recommendations.history_based_suggestions?.length > 0 && (
                   <div style={{ fontSize: 12, color: "var(--t3)" }}>
-                    {recommendations.history_based_suggestions.map((s: string, i: number) => (
-                      <div key={i} style={{ marginTop: 4 }}>• {s}</div>
-                    ))}
+                    {recommendations.history_based_suggestions.map(
+                      (s: string, i: number) => (
+                        <div key={i} style={{ marginTop: 4 }}>
+                          • {s}
+                        </div>
+                      ),
+                    )}
                   </div>
                 )}
               </div>
@@ -10224,9 +10777,32 @@ function DebateResults({ result, onNew }: { result: any; onNew: () => void }) {
 
           {/* ── Transcript Card ── */}
           {turns.length > 0 && (
-            <div style={{ background: "var(--surf)", border: "1px solid var(--bdr)", borderRadius: 18, padding: 18, boxShadow: "var(--sh)" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".08em", textTransform: "uppercase" as const, color: "var(--t3)" }}>
+            <div
+              style={{
+                background: "var(--surf)",
+                border: "1px solid var(--bdr)",
+                borderRadius: 18,
+                padding: 18,
+                boxShadow: "var(--sh)",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: 12,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 800,
+                    letterSpacing: ".08em",
+                    textTransform: "uppercase" as const,
+                    color: "var(--t3)",
+                  }}
+                >
                   💬 Transcript ({turns.length} turns)
                 </div>
                 <button
@@ -10237,24 +10813,56 @@ function DebateResults({ result, onNew }: { result: any; onNew: () => void }) {
                   📥 Download
                 </button>
               </div>
-              <div style={{ display: "flex", flexDirection: "column" as const, gap: 10, maxHeight: 320, overflowY: "auto" as const }}>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column" as const,
+                  gap: 10,
+                  maxHeight: 320,
+                  overflowY: "auto" as const,
+                }}
+              >
                 {turns.map((t: any, i: number) => {
-                  const isAI = t.role === "assistant" || t.speakerId === "ai-debater";
-                  const speaker = t.speakerName || (isAI ? "AI Debater" : "You");
+                  const isAI =
+                    t.role === "assistant" || t.speakerId === "ai-debater";
+                  const speaker =
+                    t.speakerName || (isAI ? "AI Debater" : "You");
                   const msg = t.message || t.transcript || t.text || "";
                   return (
-                    <div key={t.id || i} style={{ display: "flex", flexDirection: "column" as const, alignItems: isAI ? "flex-start" : "flex-end" as const }}>
-                      <div style={{ fontSize: 10, color: "var(--t4)", marginBottom: 3, fontWeight: 700 }}>{speaker}</div>
-                      <div style={{
-                        maxWidth: "85%",
-                        padding: "8px 12px",
-                        borderRadius: 12,
-                        fontSize: 12.5,
-                        lineHeight: 1.6,
-                        background: isAI ? "rgba(139,92,246,.1)" : "rgba(99,102,241,.12)",
-                        border: isAI ? "1px solid rgba(139,92,246,.2)" : "1px solid rgba(99,102,241,.2)",
-                        color: "var(--t1)",
-                      }}>
+                    <div
+                      key={t.id || i}
+                      style={{
+                        display: "flex",
+                        flexDirection: "column" as const,
+                        alignItems: isAI ? "flex-start" : ("flex-end" as const),
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 10,
+                          color: "var(--t4)",
+                          marginBottom: 3,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {speaker}
+                      </div>
+                      <div
+                        style={{
+                          maxWidth: "85%",
+                          padding: "8px 12px",
+                          borderRadius: 12,
+                          fontSize: 12.5,
+                          lineHeight: 1.6,
+                          background: isAI
+                            ? "rgba(139,92,246,.1)"
+                            : "rgba(99,102,241,.12)",
+                          border: isAI
+                            ? "1px solid rgba(139,92,246,.2)"
+                            : "1px solid rgba(99,102,241,.2)",
+                          color: "var(--t1)",
+                        }}
+                      >
                         {msg}
                       </div>
                     </div>
@@ -10268,7 +10876,10 @@ function DebateResults({ result, onNew }: { result: any; onNew: () => void }) {
 
       <div className="res-actions">
         {result.hasRecording && (
-          <button className="btn-s" onClick={() => result.recorder?.download("debate.webm")}>
+          <button
+            className="btn-s"
+            onClick={() => result.recorder?.download("debate.webm")}
+          >
             📥 Download Recording
           </button>
         )}
@@ -10301,66 +10912,66 @@ type Screen =
 export default function DebatePage() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
- // ── Clear stale session if this is a join link ──────────────────────────
-const isJoinRoute = Boolean(
-  new URLSearchParams(window.location.search).get("room") ||
-  new URLSearchParams(window.location.search).get("session") ||
-  new URLSearchParams(window.location.search).get("sessionId")
-);
-if (isJoinRoute) {
-  sessionStorage.removeItem("dp-screen");
-}
-// ────────────────────────────────────────────────────────────────────────
-
-const [screen, setScreen, clearScreen] = useSessionState<Screen>(
-  "dp-screen",
-  "setup",
-);
-const [config, setConfig, clearConfig] = useSessionState<any>(
-  "dp-config",
-  null,
-);
-
-useEffect(() => {
-  const handleUnload = () => {
+  // ── Clear stale session if this is a join link ──────────────────────────
+  const isJoinRoute = Boolean(
+    new URLSearchParams(window.location.search).get("room") ||
+    new URLSearchParams(window.location.search).get("session") ||
+    new URLSearchParams(window.location.search).get("sessionId"),
+  );
+  if (isJoinRoute) {
     sessionStorage.removeItem("dp-screen");
-  };
-  window.addEventListener("beforeunload", handleUnload);
-  return () => window.removeEventListener("beforeunload", handleUnload);
-}, []);
+  }
+  // ────────────────────────────────────────────────────────────────────────
 
-useEffect(() => {
-  const handleError = (event: ErrorEvent) => {
-    debateDebug("[GLOBAL_ERROR]", {
-      message: event.message,
-      stack: event.error?.stack || null,
-    });
-  };
-  const handleRejection = (event: PromiseRejectionEvent) => {
-    const reason = event.reason;
-    debateDebug("[UNHANDLED_REJECTION]", {
-      reason: typeof reason === "string" ? reason : String(reason),
-      stack: reason?.stack || null,
-    });
-  };
-  window.addEventListener("error", handleError);
-  window.addEventListener("unhandledrejection", handleRejection);
-  return () => {
-    window.removeEventListener("error", handleError);
-    window.removeEventListener("unhandledrejection", handleRejection);
-  };
-}, []);
+  const [screen, setScreen, clearScreen] = useSessionState<Screen>(
+    "dp-screen",
+    "setup",
+  );
+  const [config, setConfig, clearConfig] = useSessionState<any>(
+    "dp-config",
+    null,
+  );
 
-useEffect(() => {
-  if (!config) return;
-  debateDebug("[SESSION] dp-config loaded", {
-    roomId: config.sessionId || config.roomId || null,
-    userId: config.candidateId || config.userId || null,
-    sessionId: config.sessionId || null,
-    participantId: config.participantId || config.candidateId || null,
-    role: config.role || config.userRole || null,
-  });
-}, [config]);
+  useEffect(() => {
+    const handleUnload = () => {
+      sessionStorage.removeItem("dp-screen");
+    };
+    window.addEventListener("beforeunload", handleUnload);
+    return () => window.removeEventListener("beforeunload", handleUnload);
+  }, []);
+
+  useEffect(() => {
+    const handleError = (event: ErrorEvent) => {
+      debateDebug("[GLOBAL_ERROR]", {
+        message: event.message,
+        stack: event.error?.stack || null,
+      });
+    };
+    const handleRejection = (event: PromiseRejectionEvent) => {
+      const reason = event.reason;
+      debateDebug("[UNHANDLED_REJECTION]", {
+        reason: typeof reason === "string" ? reason : String(reason),
+        stack: reason?.stack || null,
+      });
+    };
+    window.addEventListener("error", handleError);
+    window.addEventListener("unhandledrejection", handleRejection);
+    return () => {
+      window.removeEventListener("error", handleError);
+      window.removeEventListener("unhandledrejection", handleRejection);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!config) return;
+    debateDebug("[SESSION] dp-config loaded", {
+      roomId: config.sessionId || config.roomId || null,
+      userId: config.candidateId || config.userId || null,
+      sessionId: config.sessionId || null,
+      participantId: config.participantId || config.candidateId || null,
+      role: config.role || config.userRole || null,
+    });
+  }, [config]);
   const [result, setResult] = useState<any>(null);
   const [role, setRole] = useState("student");
   const [entrySessionId, setEntrySessionId] = useState("");
@@ -10386,9 +10997,9 @@ useEffect(() => {
   const entryMicTrack = entryMicStream?.getAudioTracks?.()[0] || null;
   const entryMicReady = Boolean(
     entryMicStream &&
-      entryMicTrack &&
-      entryMicTrack.readyState === "live" &&
-      entryMicTrack.enabled,
+    entryMicTrack &&
+    entryMicTrack.readyState === "live" &&
+    entryMicTrack.enabled,
   );
 
   useEffect(() => {
@@ -10412,16 +11023,16 @@ useEffect(() => {
   useEffect(() => {
     if (screen !== "entry" || !showEntryMicModal) return;
     const entryTrack = entryMicStream?.getAudioTracks?.()[0] || null;
-    console.log("[MIC] entry modal state", {
-      entryMicState,
-      hasStream: Boolean(entryMicStream),
-      trackReadyState: entryTrack?.readyState || null,
-      trackEnabled: entryTrack?.enabled ?? null,
-      entryMicEnabled,
-      entryCanProceed,
-      entryMicReady,
-      entryError,
-    });
+    // console.log("[MIC] entry modal state", {
+    //   entryMicState,
+    //   hasStream: Boolean(entryMicStream),
+    //   trackReadyState: entryTrack?.readyState || null,
+    //   trackEnabled: entryTrack?.enabled ?? null,
+    //   entryMicEnabled,
+    //   entryCanProceed,
+    //   entryMicReady,
+    //   entryError,
+    // });
   }, [
     screen,
     showEntryMicModal,
@@ -10451,11 +11062,11 @@ useEffect(() => {
       setEntryError(null);
       setEntrySessionId(linkedSessionId);
       if (!entryMicReady) {
-        console.log("[MIC] join blocked until mic is ready", {
-          entryMicState,
-          entryCanProceed,
-          entryMicReady,
-        });
+        // console.log("[MIC] join blocked until mic is ready", {
+        //   entryMicState,
+        //   entryCanProceed,
+        //   entryMicReady,
+        // });
         setShowEntryMicModal(true);
         setScreen("entry");
         setEntryLoading(false);
@@ -10582,16 +11193,16 @@ useEffect(() => {
 
   async function handleEntryMicContinue() {
     const entryTrack = entryMicStream?.getAudioTracks?.()[0] || null;
-    console.log("[MIC] entry continue clicked", {
-      entryMicState,
-      hasStream: Boolean(entryMicStream),
-      trackReadyState: entryTrack?.readyState || null,
-      trackEnabled: entryTrack?.enabled ?? null,
-      entryMicEnabled,
-      entryCanProceed,
-      entryMicReady,
-      entryError,
-    });
+    // console.log("[MIC] entry continue clicked", {
+    //   entryMicState,
+    //   hasStream: Boolean(entryMicStream),
+    //   trackReadyState: entryTrack?.readyState || null,
+    //   trackEnabled: entryTrack?.enabled ?? null,
+    //   entryMicEnabled,
+    //   entryCanProceed,
+    //   entryMicReady,
+    //   entryError,
+    // });
     if (!entryMicReady) {
       setEntryError(
         "Please allow and enable your microphone before continuing.",
@@ -10613,35 +11224,36 @@ useEffect(() => {
   }
 
   async function handleRequestEntryMic() {
-    console.log("[MIC] entry allow clicked", {
-      entryMicState,
-      hasStreamBefore: Boolean(entryMicStream),
-      entryMicEnabled,
-      entryCanProceed,
-      entryMicReady,
-    });
+    // console.log("[MIC] entry allow clicked", {
+    //   entryMicState,
+    //   hasStreamBefore: Boolean(entryMicStream),
+    //   entryMicEnabled,
+    //   entryCanProceed,
+    //   entryMicReady,
+    // });
     const stream = await requestEntryMic();
     const track = stream?.getAudioTracks?.()[0] || null;
-    console.log("[MIC] entry allow result", {
-      granted: Boolean(stream),
-      hasStream: Boolean(stream),
-      trackReadyState: track?.readyState || null,
-      trackEnabled: track?.enabled ?? null,
-      entryMicStateAfter: entryMicState,
-      entryMicEnabledAfter: track?.enabled ?? entryMicEnabled,
-      entryMicReadyAfter: Boolean(
-        stream &&
-          track &&
-          track.readyState === "live" &&
-          (track.enabled ?? false),
-      ),
-      entryCanProceedAfter: Boolean(
-        stream &&
-          track &&
-          track.readyState === "live" &&
-          (track.enabled ?? false),
-      ),
-    });
+    // console.log("[MIC] entry allow result", {
+    //   granted: Boolean(stream),
+    //   hasStream: Boolean(stream),
+    //   trackReadyState: track?.readyState || null,
+    //   trackEnabled: track?.enabled ?? null,
+    //   entryMicStateAfter: entryMicState,
+    //   entryMicEnabledAfter: track?.enabled ?? entryMicEnabled,
+    //   entryMicReadyAfter: Boolean(
+    //     stream &&
+    //       track &&
+    //       track.readyState === "live" &&
+    //       (track.enabled ?? false),
+    //   ),
+
+    //   entryCanProceedAfter: Boolean(/
+    //     stream &&
+    //       track &&
+    //       track.readyState === "live" &&
+    //       (track.enabled ?? false),
+    //   ),
+    // });
     if (!stream) {
       setEntryError(
         "Microphone permission is required to enter the debate room. Please allow browser access and retry.",
@@ -10814,14 +11426,17 @@ useEffect(() => {
                         onToggle={() => {
                           const track =
                             entryMicStream?.getAudioTracks?.()[0] || null;
-                          console.log("[DebatePage][ParticipantMic] toggle mic", {
-                            hasStream: Boolean(entryMicStream),
-                            trackReadyState: track?.readyState || null,
-                            trackEnabledBefore: track?.enabled ?? null,
-                            entryMicEnabled,
-                            entryCanProceed,
-                            entryMicReady,
-                          });
+                          console.log(
+                            "[DebatePage][ParticipantMic] toggle mic",
+                            {
+                              hasStream: Boolean(entryMicStream),
+                              trackReadyState: track?.readyState || null,
+                              trackEnabledBefore: track?.enabled ?? null,
+                              entryMicEnabled,
+                              entryCanProceed,
+                              entryMicReady,
+                            },
+                          );
                           setEntryMicEnabled(!entryMicEnabled);
                         }}
                         error={entryMicError}

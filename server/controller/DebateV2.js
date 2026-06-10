@@ -62,24 +62,15 @@ function normalizeRoomWarnings(room = {}, respondData = null) {
   const warnings = [];
 
   if (respondData?.ai_moderation) {
-    warnings.push({
-      type: "warning",
-      message: respondData.ai_moderation,
-      candidateId: respondData.candidate_id || null,
-      createdAt: new Date(),
-    });
+    warnings.push(String(respondData.ai_moderation));
   }
 
   (room.messages || [])
     .filter((message) => message.type === "warning" || message.type === "removal")
     .slice(-5)
     .forEach((message) => {
-      warnings.push({
-        type: message.type,
-        message: message.content,
-        candidateId: message.target_candidate || message.candidate_id || null,
-        createdAt: message.timestamp || new Date(),
-      });
+      const text = message.content || message.message || "Warning";
+      warnings.push(String(text));
     });
 
   return warnings;
@@ -497,14 +488,41 @@ const controller = {
       });
 
       const teams = ensureBalancedTeamsForRoom(mapRoomTeams(data), liveSession);
+
+      // Pick first speaker: random team, first human member by teamOrder
+      const startingTeamKey = Math.random() < 0.5 ? "A" : "B";
+      const startingTeam = teams[startingTeamKey] || [];
+      const firstSpeaker = startingTeam
+        .filter((p) => !p.isAi)
+        .sort((a, b) => (a.teamOrder || 0) - (b.teamOrder || 0))[0] || null;
+
+      // Fallback to Team A if chosen team has no humans
+      const resolvedFirstSpeaker = firstSpeaker
+        || (teams["A"] || []).filter((p) => !p.isAi).sort((a, b) => (a.teamOrder || 0) - (b.teamOrder || 0))[0]
+        || null;
+      const resolvedTeam = resolvedFirstSpeaker
+        ? (teams["A"].find((p) => p.id === resolvedFirstSpeaker.id) ? "A" : "B")
+        : "A";
+
+      // Build AI greeting that names the first speaker
+      const basePythonGreeting = data.ai_opening || "";
+      const firstSpeakerName = resolvedFirstSpeaker?.name || "first speaker";
+      const greetingWithSpeaker = basePythonGreeting
+        ? `${basePythonGreeting} ${firstSpeakerName} from Team ${resolvedTeam}, you have the floor first.`
+        : `Welcome everyone! The debate on "${liveSession.topic || "today's topic"}" is now starting. ${firstSpeakerName} from Team ${resolvedTeam}, you have the floor first. State your opening argument.`;
+
       const updatedSession = await startRoomSession({
         sessionId,
         teams,
-        aiOpening: data.ai_opening,
+        aiOpening: greetingWithSpeaker,
+        firstSpeakerId: resolvedFirstSpeaker?.id || null,
+        firstSpeakerTeam: resolvedTeam,
         metadata: {
           ...(liveSession.metadata || {}),
           ...data,
           hasAiStudent: Boolean(data.has_ai_student),
+          firstSpeakerId: resolvedFirstSpeaker?.id || null,
+          firstSpeakerTeam: resolvedTeam,
         },
       });
 
@@ -512,6 +530,9 @@ const controller = {
         status: true,
         data: {
           ...data,
+          firstSpeakerId: resolvedFirstSpeaker?.id || null,
+          firstSpeakerTeam: resolvedTeam,
+          aiGreeting: greetingWithSpeaker,
           liveSession: updatedSession,
         },
       });
@@ -522,6 +543,7 @@ const controller = {
       });
     }
   },
+
 
   async submitRoomTurn(req, res) {
     try {
@@ -583,10 +605,6 @@ const controller = {
       const pythonRoom = await callPython({
         path: `/debate/room/${encodeURIComponent(sessionId)}`,
       }).catch(() => null);
-
-      if (pythonRoom) {
-        await syncRoomParticipantsFromPython(sessionId, pythonRoom);
-      }
 
       const warnings = normalizeRoomWarnings(pythonRoom, {
         ...pythonRespond,
@@ -713,7 +731,66 @@ const controller = {
       });
     }
   },
+async getLivekitToken(req, res) {
+    try {
+      const sessionId = req.body.sessionId || req.body.session_id;
+      const candidateId = req.body.candidateId || req.body.candidate_id;
+      const candidateName = req.body.candidateName || req.body.candidate_name || "Participant";
 
+      if (!sessionId || !candidateId) {
+        return res.status(400).json({
+          status: false,
+          message: "sessionId and candidateId are required",
+        });
+      }
+
+      const liveSession = await getSession(sessionId);
+      if (!liveSession) {
+        return res.status(404).json({ status: false, message: "Session not found" });
+      }
+
+      const apiKey = process.env.LIVEKIT_API_KEY;
+      const apiSecret = process.env.LIVEKIT_API_SECRET;
+
+      if (!apiKey || !apiSecret) {
+        return res.status(500).json({
+          status: false,
+          message: "Livekit is not configured on the server",
+        });
+      }
+
+      const { AccessToken } = require("livekit-server-sdk");
+      const token = new AccessToken(apiKey, apiSecret, {
+        identity: String(candidateId),
+        name: candidateName,
+        ttl: "4h",
+      });
+
+      token.addGrant({
+        roomJoin: true,
+        room: sessionId,
+        canPublish: true,
+        canSubscribe: true,
+        canPublishData: true,
+      });
+
+      const jwt = await token.toJwt();
+
+      return res.status(200).json({
+        status: true,
+        data: {
+          token: jwt,
+          livekitUrl: process.env.LIVEKIT_URL,
+          room: sessionId,
+        },
+      });
+    } catch (error) {
+      return res.status(500).json({
+        status: false,
+        message: error.message || "Failed to generate Livekit token",
+      });
+    }
+  },
   async end(req, res) {
     try {
       const sessionId = req.body.sessionId || req.body.session_id;
@@ -920,3 +997,55 @@ const controller = {
 };
 
 module.exports = controller;
+
+
+
+  // async startRoom(req, res) {
+  //   try {
+  //     const sessionId = req.body.sessionId || req.body.session_id;
+  //     const candidate = getCandidate(req.body);
+  //     const liveSession = await getSession(sessionId);
+
+  //     if (!liveSession) {
+  //       return res.status(404).json({ status: false, message: "Debate session not found" });
+  //     }
+
+  //     if (String(liveSession.hostCandidateId) !== String(candidate.candidate_id)) {
+  //       return res.status(403).json({
+  //         status: false,
+  //         message: "Only the host can start the debate.",
+  //       });
+  //     }
+
+  //     const data = await callPython({
+  //       method: "post",
+  //       path: "/debate/room/start",
+  //       data: { session_id: sessionId },
+  //     });
+
+  //     const teams = ensureBalancedTeamsForRoom(mapRoomTeams(data), liveSession);
+  //     const updatedSession = await startRoomSession({
+  //       sessionId,
+  //       teams,
+  //       aiOpening: data.ai_opening,
+  //       metadata: {
+  //         ...(liveSession.metadata || {}),
+  //         ...data,
+  //         hasAiStudent: Boolean(data.has_ai_student),
+  //       },
+  //     });
+
+  //     return res.status(200).json({
+  //       status: true,
+  //       data: {
+  //         ...data,
+  //         liveSession: updatedSession,
+  //       },
+  //     });
+  //   } catch (error) {
+  //     return res.status(error.statusCode || 500).json({
+  //       status: false,
+  //       message: error.message || "Failed to start debate room",
+  //     });
+  //   }
+  // },

@@ -27,7 +27,7 @@ const { logRequestSummary } = require("./utils/logger");
 const { initializeSubjectUploadQueue } = require("./services/adminSubjectService");
 
 // Allowing only added origins (i.e client side access)
-const allowedOrigins = [process.env.FE_URL,process.env.VITE_API_BASE_URL];
+const allowedOrigins = [process.env.FE_URL,process.env.VITE_API_BASE_URL,process.env.FE_URL_2,"http://192.168.1.36:3000"];
 app.use(express.json());
 [
   ["uploads", "uploads"],
@@ -91,8 +91,15 @@ mongoose
   .catch((err) => console.log(err));
 
 
-//Server Start  
-const PORT = process.env.PORT || 8000;
-app.listen(PORT, () => {
+// //Server Start  
+// const PORT = process.env.PORT || 8000;
+// app.listen(PORT, () => {
+//   console.log(`Server is Running at ${PORT}`);
+// });
+const http = require("http");
+const PORT = process.env.PORT || 8000; 
+const server = http.createServer(app);
+server.listen(PORT, () => {
   console.log(`Server is Running at ${PORT}`);
 });
+module.exports = { app, server };

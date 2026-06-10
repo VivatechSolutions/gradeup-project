@@ -19,5 +19,6 @@ router.get("/session/:sessionId", controller.getSession);
 router.get("/room/:sessionId", controller.getRoom);
 router.get("/history", controller.getHistory);
 router.get("/recommendations/:sessionId", controller.getRecommendations);
+router.post("/room/livekit-token", controller.getLivekitToken);
 
 module.exports = router;
