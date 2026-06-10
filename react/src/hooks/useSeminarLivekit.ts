@@ -114,7 +114,7 @@ export function useSeminarLivekit({
 
         room.on(RoomEvent.ConnectionStateChanged, (state: ConnectionState) => {
           if (state === ConnectionState.Connected) setConnected(true);
-          if (state === ConnectionState.Disconnected || state === ConnectionState.Failed) {
+          if (state === ConnectionState.Disconnected) {
             setConnected(false);
           }
         });

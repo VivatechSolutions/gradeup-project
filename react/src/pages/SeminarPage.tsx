@@ -2235,7 +2235,7 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
           session_mode: "main",
           file: uploadedFile || null,
         });
-        const sessionId = session?.session_id || session?.sessionId || roomId.current;
+        const sessionId = session?.liveSession?.sessionId || session?.session_id || session?.sessionId || roomId.current;
         onLaunch({
           name,
           candidateId: candidate.candidateId,
@@ -4568,17 +4568,9 @@ function PresenterRoom({config,onEnd}) {
 
   useEffect(()=>{
     if(roomStatus === "active" && !greetingPlayedRef.current){
-      const greeting =
-        liveSession?.metadata?.ai_greeting ||
-        liveSession?.metadata?.message ||
-        liveSession?.turns?.find((turn)=>turn.turnType === "greeting")?.message ||
-        "";
-      if(greeting){
-        greetingPlayedRef.current = true;
-        aiVoice.speak(greeting);
-      }
+      greetingPlayedRef.current = true;
     }
-  },[aiVoice.speak, liveSession, roomStatus]);
+  },[roomStatus]);
 
   async function handleStartRoom(){
     setStarting(true);

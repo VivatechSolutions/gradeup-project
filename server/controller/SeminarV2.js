@@ -257,7 +257,7 @@ const controller = {
         topic: body.topic,
         unit,
         role: existingLiveSession ? "host" : "participant",
-        status: "active",
+        status: "waiting",
         hostCandidateId: existingLiveSession?.hostCandidateId || candidate.candidate_id,
         hostCandidateName: existingLiveSession?.hostCandidateName || candidate.candidate_name,
         shareLink: existingLiveSession?.shareLink || body.roomLink || body.shareLink || null,
@@ -368,9 +368,13 @@ const controller = {
         return res.status(403).json({ status: false, message: "Only the host can start the seminar." });
       }
 
-      req.body.sessionId = sessionId;
-      req.body.mode = "main";
-      return controller.start(req, res);
+      const LiveSessionModel = require("../model/LiveSession");
+      await LiveSessionModel.findOneAndUpdate(
+        { sessionId },
+        { $set: { status: "active" } },
+      );
+      const updated = await getSession(sessionId);
+      return res.status(200).json({ status: true, data: { liveSession: updated } });
     } catch (error) {
       return res.status(error.statusCode || 500).json({
         status: false,
