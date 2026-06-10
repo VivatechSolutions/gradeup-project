@@ -923,7 +923,8 @@ function useAIVoice() {
           throw new Error("Missing audio data");
         }
         window.speechSynthesis?.cancel();
-        if (audioRef.current) {
+     if (audioRef.current) {
+          audioRef.current.onended = null;
           audioRef.current.pause();
         }
         const player = new Audio(audio.dataUrl);
@@ -935,10 +936,14 @@ function useAIVoice() {
         };
         player.onerror = () => {
           setIsSpeaking(false);
+          onStart?.();          // advance greetingState to "speaking" before fallback
           speakWithBrowserVoice();
         };
-        player.play().catch(() => {
+        player.play().then(() => {
+          // play() resolved — audio started (onplay will also fire, that's fine)
+        }).catch(() => {
           setIsSpeaking(false);
+          onStart?.();          // ensure greetingState advances to "speaking"
           speakWithBrowserVoice();
         });
       })
@@ -949,6 +954,9 @@ function useAIVoice() {
   const cancel = useCallback(()=>{
     window.speechSynthesis?.cancel();
     if (audioRef.current) {
+      audioRef.current.onended = null;
+      audioRef.current.onplay = null;
+      audioRef.current.onerror = null;
       audioRef.current.pause();
       audioRef.current = null;
     }
@@ -2495,6 +2503,7 @@ function PrepareWithAIRoom({config,onEnd}) {
   const [demoTimer,setDemoTimer]=useState(0);
   const [demoRunning,setDemoRunning]=useState(false);
   const [micOn,setMicOn]=useState(false);
+  const localStreamRef=useRef(null);
   const [sessionId,setSessionId]=useState(config.sessionId || "");
   const [activeSeminarMode,setActiveSeminarMode]=useState(config.sessionSubMode === "demo" ? "demo" : "practice");
   const [speechRecording,setSpeechRecording]=useState(false);
@@ -2601,8 +2610,17 @@ function PrepareWithAIRoom({config,onEnd}) {
   useEffect(()=>{voiceAskStopRef.current = voiceAsk.stop;},[voiceAsk.stop]);
   useEffect(()=>{aiCancelRef.current = aiVoice.cancel;},[aiVoice.cancel]);
   useEffect(()=>{roomStreamRef.current = config.stream;},[config.stream]);
-  useEffect(()=>{
+useEffect(()=>{
     prepareRoomMountedRef.current = true;
+    // Request mic on mount so stream is always available
+    navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+      .then((stream)=>{
+        if(!prepareRoomMountedRef.current){ stream.getTracks().forEach(t=>t.stop()); return; }
+        localStreamRef.current = stream;
+        // mute tracks until user explicitly unmutes
+        stream.getAudioTracks().forEach(t=>{ t.enabled = false; });
+      })
+      .catch(()=>{ console.warn("[PrepareRoom] mic permission denied or unavailable"); });
     return ()=>{
       prepareRoomMountedRef.current = false;
       if(greetingTimeoutRef.current){
@@ -2610,14 +2628,18 @@ function PrepareWithAIRoom({config,onEnd}) {
         greetingTimeoutRef.current = null;
       }
       captureStartingRef.current = false;
+      // stop local stream on unmount
+      localStreamRef.current?.getTracks().forEach(t=>t.stop());
+      localStreamRef.current = null;
     };
   },[]);
 
   const setMicEnabled = useCallback((enabled)=>{
     micPreferenceRef.current = enabled;
     setMicOn(enabled);
-    if(config.stream&&typeof config.stream.getAudioTracks==="function"){
-      config.stream.getAudioTracks().forEach(track=>{track.enabled = enabled;});
+    const s = localStreamRef.current || config.stream;
+    if(s && typeof s.getAudioTracks==="function"){
+      s.getAudioTracks().forEach(track=>{ track.enabled = enabled; });
     }
   },[config.stream]);
 
@@ -2653,7 +2675,7 @@ function PrepareWithAIRoom({config,onEnd}) {
       !prepareRoomMountedRef.current ||
       !sessionId ||
       !micPreferenceRef.current ||
-      isGreetingPending ||
+      (isGreetingPending && activeSeminarMode !== "demo") ||
       speechRecording ||
       speechProcessing ||
       aiVoice.isSpeaking ||
@@ -2663,12 +2685,13 @@ function PrepareWithAIRoom({config,onEnd}) {
     ){
       return;
     }
-    const localStream = config.stream instanceof MediaStream ? config.stream : null;
+    const localStream = localStreamRef.current instanceof MediaStream ? localStreamRef.current : (config.stream instanceof MediaStream ? config.stream : null);
     const audioTrack = localStream?.getAudioTracks?.()[0];
     if(!audioTrack){
-      toast$("Microphone is not available for seminar capture.","warn");
+      toast$("Microphone is not available. Please allow mic access and try again.","warn");
       return;
     }
+    audioTrack.enabled = true;
     const recordingStream = new MediaStream([audioTrack]);
     const mimeTypes = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
     const supportedMimeType = mimeTypes.find((value)=>typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported?.(value));
@@ -2757,7 +2780,7 @@ function PrepareWithAIRoom({config,onEnd}) {
             aiReply
           );
           setGuideStatusText("");
-          speakAiReplyRef.current?.(aiReply, { resumeCapture: false });
+    speakAiReplyRef.current?.(aiReply, { resumeCapture: activeSeminarMode === "demo" });
         } else {
           setGuideStatusText("");
         }
@@ -2777,14 +2800,14 @@ function PrepareWithAIRoom({config,onEnd}) {
       toast$("Seminar voice recording failed to start.","error");
     };
     try{
-      recorder.start();
+      recorder.start(250);
     } catch(error){
       captureStartingRef.current = false;
       speechRecorderRef.current = null;
       cleanupSpeechDetection();
       setSpeechRecording(false);
       setSpeechProcessing(false);
-      toast$("Seminar voice recording could not start in this browser.","error");
+      console.error("recorder.start() failed", error);
       return;
     }
     setSpeechRecording(true);
@@ -2917,11 +2940,14 @@ function PrepareWithAIRoom({config,onEnd}) {
       if(isGreeting){
         setGreetingState("ready");
       }
-      if(unlockMicOnDone || shouldRestoreMic){
+if(unlockMicOnDone || shouldRestoreMic){
         setMicEnabled(true);
       }
-      if(resumeCapture && manualSpeakRequestedRef.current && sessionId && !speechRecording && !speechProcessing && !timer.isPaused){
-        beginSpeechCapture();
+      if(resumeCapture && sessionId && !speechRecording && !speechProcessing && !timer.isPaused){
+        if(manualSpeakRequestedRef.current || activeSeminarMode === "demo"){
+          micPreferenceRef.current = true;
+          beginSpeechCapture();
+        }
       }
     },{
       onStart: ()=>{
@@ -2939,7 +2965,7 @@ function PrepareWithAIRoom({config,onEnd}) {
     speakAiReplyRef.current = speakAiReply;
   },[speakAiReply]);
 
-  useEffect(()=>{
+useEffect(()=>{
     setGreetingState("connecting");
     roomToastRef.current(activeSeminarMode === "demo" ? "Connecting to your AI seminar coach..." : "Preparing your AI seminar coach...", "info");
     const greeting =
@@ -2948,8 +2974,8 @@ function PrepareWithAIRoom({config,onEnd}) {
     setMessages([{ from:"ai", text: greeting }]);
     if(!initialGreetingPlayedRef.current){
       initialGreetingPlayedRef.current = true;
-      if(!prepareRoomMountedRef.current) return;
-      speakAiReply(greeting,{ resumeCapture: false, isGreeting: true, unlockMicOnDone: false });
+      console.log("[greeting] prepareRoomMountedRef.current =", prepareRoomMountedRef.current);
+      speakAiReplyRef.current(greeting,{ resumeCapture: false, isGreeting: true, unlockMicOnDone: false });
     }
     return()=>{
       if(greetingTimeoutRef.current){
@@ -2969,7 +2995,7 @@ function PrepareWithAIRoom({config,onEnd}) {
       if(presentAnalysisRef.current)clearInterval(presentAnalysisRef.current);
       if(roomStreamRef.current&&typeof roomStreamRef.current.getTracks==="function")roomStreamRef.current.getTracks().forEach(t=>t.stop());
     };
-  },[activeSeminarMode, cleanupSpeechDetection, config.initialFacilitatorMessage, config.subject, config.topic, config.unit, speakAiReply]);
+  },[]);
 
   // Demo timer
   useEffect(()=>{
@@ -2986,7 +3012,7 @@ function PrepareWithAIRoom({config,onEnd}) {
     }
     stuckCheckRef.current=setInterval(()=>{
       const silentFor=(Date.now()-lastSpeechTimeRef.current)/1000;
-      if(silentFor>=12&&!aiPausedForSuggestion&&activeSeminarMode!=="demo"){
+    if(silentFor>=15&&!aiPausedForSuggestion&&activeSeminarMode==="demo"){
         triggerAISuggestionRef.current();
       }
     },3000);
@@ -3015,39 +3041,28 @@ function PrepareWithAIRoom({config,onEnd}) {
     }
   },[activePanel, isPracticeMode]);
 
-  function triggerAISuggestion(){
-    const suggestion=AI_STUCK_SUGGESTIONS[Math.floor(Math.random()*AI_STUCK_SUGGESTIONS.length)];
+ function triggerAISuggestion(){
+    if(speechRecorderRef.current){
+      stopSpeechCapture("help-prompt");
+    }
     setDemoRunning(false);
     timer.pause();
     setAiPausedForSuggestion(true);
-    setAiSuggestion(suggestion);
-    setPanelOpen(true);
-    setActivePanel("chat");
-    setMessages(m=>[...m,{from:"system",text:"⏸ Session auto-paused — AI detected you may be stuck"},{from:"ai",text:`💡 ${suggestion}`}]);
-    aiVoice.speak(suggestion);
-    toast$("🤖 AI suggestion — session paused","info");
+    setAiSuggestion(true);
+    setPendingGuideTranscript(latestTranscriptHistoryRef.current.join("\n"));
   }
 
   triggerAISuggestionRef.current = triggerAISuggestion;
 
   function handleAISuggestionDismiss(){
     setAiSuggestion(null);
-    let count=12;
-    setResumeCountdown(count);
-    resumeCountdownRef.current=setInterval(()=>{
-      count--;
-      setResumeCountdown(count);
-      if(count<=0){
-        clearInterval(resumeCountdownRef.current);
-        setResumeCountdown(0);
-        setAiPausedForSuggestion(false);
-        setDemoRunning(true);
-        timer.resume();
-        lastSpeechTimeRef.current=Date.now();
-        setMessages(m=>[...m,{from:"system",text:"▶ Session resumed — continue your presentation"}]);
-        toast$("▶ Session resumed","success");
-      }
-    },1000);
+    setAiPausedForSuggestion(false);
+    setPendingGuideTranscript("");
+    setDemoRunning(true);
+    timer.resume();
+    lastSpeechTimeRef.current = Date.now();
+    micPreferenceRef.current = true;
+    beginSpeechCapture();
   }
 
   function handleManualResume(){
@@ -3086,7 +3101,7 @@ function PrepareWithAIRoom({config,onEnd}) {
   }
 
   async function sendAIRequest(text=aiInput){
-    const q=text.trim();if(!q||!sessionId)return;
+  const q=text.trim();if(!q)return;
     setMessages(m=>[...m,{from:"me",text:q}]);setAiInput("");setIsAITyping(true);setExchanges(x=>x+1);
     try{
       const response = await respondSeminar({ sessionId, message: q });
@@ -3113,7 +3128,7 @@ function PrepareWithAIRoom({config,onEnd}) {
       setIsAITyping(false);
       setMessages(m=>[...m,{from:"ai",text:reply}]);
       addNote(q.length>55?q.slice(0,55)+"…":q,reply);
-      aiVoice.speak(reply.split("\n")[0]);setExchanges(x=>x+1);
+       setExchanges(x=>x+1);
     },900+Math.random()*400);
   }
 
@@ -3125,17 +3140,17 @@ function PrepareWithAIRoom({config,onEnd}) {
          {label: "Prepare Presentation File", action: "prepare_file"},
          {label: "Take to Seminar Session", action: "go_session"}
       ]);
-      aiVoice.speak("Here are the steps to present effectively. 1. Hook your audience. 2. Introduce the topic. 3. Present your points. 4. Conclude. Now, do you want to prepare your presentation file, or go straight to the seminar session?");
+      
     } else if (action === "prepare_file") {
       setChatOptions([{label: "Take to Seminar Session", action: "go_session"}]);
       setSetupPhase("preparing");
       setMessages(m=>[...m, {from:"me", text:"I want to prepare my presentation file."}, {from:"ai", text:"Great! Let's prepare your presentation. What is the main theme you want to focus on? You can use the chat or voice to brainstorm with me."}]);
-      aiVoice.speak("Great! Let's prepare your presentation. What is the main theme you want to focus on?");
+      
     } else if (action === "go_session") {
       setChatOptions([]);
       setSetupPhase("session");
       setMessages(m=>[...m, {from:"me", text:"Take me to the seminar session."}, {from:"ai", text:"You are now in the seminar session. The controls at the bottom are unlocked. You can start your demo or present your screen!"}]);
-      aiVoice.speak("You are now in the seminar session. The controls at the bottom are unlocked.");
+      
       toast$("Seminar Session Controls Unlocked", "success");
     }
   }
@@ -3283,7 +3298,7 @@ function PrepareWithAIRoom({config,onEnd}) {
     const candidate = getCandidateContext({ firstName: config.name || "Guest", lastName: "" });
     setActionLoader({label:"Preparing Demo", sublabel:`Analysing ${demoFile.name} and launching AI demo...`});
     try{
-      const selectedUnit = availableUnits.find((item) => item.id === config.unitId);
+      const selectedUnit = null;
       const response = await startSeminar({
         unitId: config.unitId,
         candidateId: candidate.candidateId,
@@ -3314,7 +3329,10 @@ function PrepareWithAIRoom({config,onEnd}) {
         `Demo mode activated for "${config.topic}". Begin your seminar when you are ready.`;
       setMessages(m=>[...m,{from:"system",text:"▶️ Demo Mode Started — Present now"},{from:"ai",text:msg}]);
       addNote("Demo mode started",`Source file: ${demoFile.name}`);
-      speakAiReply(msg,{ resumeCapture: false });
+speakAiReply(msg,{ resumeCapture: true });
+            speakAiReply(msg,{ resumeCapture: true });
+      micPreferenceRef.current = true;
+      setMicOn(true);
       toast$("▶️ Demo started — speak freely","info");
       setPanelOpen(false);
     } catch(error){
@@ -3389,9 +3407,13 @@ function PrepareWithAIRoom({config,onEnd}) {
       }
       setMessages(m=>[...m,{from:"ai",text:guideText}]);
       setExchanges(x=>x+1);
-      setGuideStatusText("");
+        setGuideStatusText("");
       setPendingGuideTranscript("");
-      speakAiReply(guideText,{ resumeCapture: false });
+      setAiSuggestion(null);
+      setDemoRunning(true);
+      timer.resume();
+      lastSpeechTimeRef.current = Date.now();
+      speakAiReply(guideText,{ resumeCapture: true });
     } catch(error){
       setGuideStatusText("");
       toast$(getErrorMessage(error, "Unable to fetch seminar guidance."),"error");
@@ -3542,14 +3564,19 @@ function PrepareWithAIRoom({config,onEnd}) {
                   </div>
                 )}
                 {/* AI stuck banner */}
-                {aiSuggestion&&!resumeCountdown&&(
-                  <div className="ai-suggestion-banner">
-                    <div className="ai-icon">🤖</div>
-                    <div className="ai-content">
-                      <div className="ai-label">AI Coach — You seem stuck</div>
-                      <div className="ai-text">{aiSuggestion}</div>
+                           {aiSuggestion&&!resumeCountdown&&(
+                  <div className="ai-suggestion-banner" style={{flexDirection:"column",gap:10,minWidth:300}}>
+                    <div style={{display:"flex",gap:10,alignItems:"center"}}>
+                      <div className="ai-icon">🤖</div>
+                      <div className="ai-content">
+                        <div className="ai-label">AI Coach — You seem stuck</div>
+                        <div className="ai-text">You've been silent for a while. Need help with your next point?</div>
+                      </div>
                     </div>
-                    <button className="ai-close" onClick={handleAISuggestionDismiss}>✓</button>
+                    <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+                      <button className="ai-close" style={{width:"auto",padding:"4px 12px",fontSize:11,fontWeight:700}} onClick={handleAISuggestionDismiss}>Resume</button>
+                      <button style={{padding:"4px 14px",borderRadius:6,border:"none",background:"rgba(255,255,255,.9)",color:"#030a14",fontSize:11,fontWeight:800,cursor:"pointer"}} onClick={requestSeminarHelp} disabled={requestingGuide}>{requestingGuide?"Preparing…":"Help me"}</button>
+                    </div>
                   </div>
                 )}
                 {/* Countdown */}
@@ -3677,14 +3704,19 @@ function PrepareWithAIRoom({config,onEnd}) {
               )}
 
               {/* AI stuck suggestion banner */}
-              {aiSuggestion&&!resumeCountdown&&(
-                <div className="ai-suggestion-banner">
-                  <div className="ai-icon">🤖</div>
-                  <div className="ai-content">
-                    <div className="ai-label">AI Coach — You seem stuck</div>
-                    <div className="ai-text">{aiSuggestion}</div>
+             {aiSuggestion&&!resumeCountdown&&(
+                <div className="ai-suggestion-banner" style={{flexDirection:"column",gap:10,minWidth:300}}>
+                  <div style={{display:"flex",gap:10,alignItems:"center"}}>
+                    <div className="ai-icon">🤖</div>
+                    <div className="ai-content">
+                      <div className="ai-label">AI Coach — You seem stuck</div>
+                      <div className="ai-text">You've been silent for a while. Need help with your next point?</div>
+                    </div>
                   </div>
-                  <button className="ai-close" onClick={handleAISuggestionDismiss}>✓</button>
+                  <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+                    <button className="ai-close" style={{width:"auto",padding:"4px 12px",fontSize:11,fontWeight:700}} onClick={handleAISuggestionDismiss}>Resume</button>
+                    <button style={{padding:"4px 14px",borderRadius:6,border:"none",background:"rgba(255,255,255,.9)",color:"#030a14",fontSize:11,fontWeight:800,cursor:"pointer"}} onClick={requestSeminarHelp} disabled={requestingGuide}>{requestingGuide?"Preparing…":"Help me"}</button>
+                  </div>
                 </div>
               )}
 
@@ -4086,7 +4118,7 @@ function PrepareWithAIRoom({config,onEnd}) {
           </div>
         </div>
       )}
-      {showHelpPrompt&&(
+      {/* {showHelpPrompt&&(
         <div className="overlay" onClick={()=>setShowHelpPrompt(false)}>
           <div className="modal" style={{maxWidth:360,background:"#0c1422",border:"1px solid rgba(255,255,255,.1)"}} onClick={e=>e.stopPropagation()}>
             <div style={{background:"linear-gradient(135deg,#060e1c,#081a10)",padding:"22px 18px",textAlign:"center"}}>
@@ -4099,18 +4131,21 @@ function PrepareWithAIRoom({config,onEnd}) {
               </div>
             </div>
             <div className="mf" style={{borderColor:"rgba(255,255,255,.08)",background:"#0c1422"}}>
-              <button className="btn-s" style={{background:"rgba(255,255,255,.04)",borderColor:"rgba(255,255,255,.1)",color:"rgba(255,255,255,.5)"}} onClick={()=>{
+                          <button className="btn-s" style={{background:"rgba(255,255,255,.04)",borderColor:"rgba(255,255,255,.1)",color:"rgba(255,255,255,.5)"}} onClick={()=>{
                 setShowHelpPrompt(false);
                 setAiPausedForSuggestion(false);
-                manualSpeakRequestedRef.current = false;
-              }}>Cancel</button>
+                setPendingGuideTranscript("");
+                lastSpeechTimeRef.current = Date.now();
+                manualSpeakRequestedRef.current = true;
+                beginSpeechCapture();
+              }}>Continue</button>
               <button className="btn-p" style={{width:"auto"}} onClick={requestSeminarHelp} disabled={requestingGuide}>
                 {requestingGuide ? "Preparing..." : "Yes"}
               </button>
             </div>
           </div>
         </div>
-      )}
+      )} */}
       {guideStatusText&&(
         <div style={{position:"fixed",bottom:20,right:20,zIndex:760,maxWidth:320,padding:"11px 14px",borderRadius:12,background:"rgba(16,185,129,.12)",border:"1px solid rgba(16,185,129,.28)",color:"#d1fae5",fontSize:12.5,fontWeight:700,boxShadow:"var(--sh2)"}}>
           {guideStatusText}
@@ -4849,6 +4884,7 @@ function ObserverRoom({config,onEnd}) {
   const [panelTab,setPanelTab]=useState("chat");
   const [chatInput,setChatInput]=useState("");
   const [micOn,setMicOn]=useState(false);
+  // const localStreamRef=useRef(null);
   const [showEnd,setShowEnd]=useState(false);
   const [showReactions,setShowReactions]=useState(false);
   const [reaction,setReaction]=useState(null);
