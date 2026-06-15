@@ -9,6 +9,7 @@ Features:
 """
 
 import os
+import re
 import time
 import json
 import hashlib
@@ -190,7 +191,7 @@ def retrieve_context(
     base_collection = os.environ.get("QDRANT_COLLECTION_NAME", "GradeupAI_Books")
 
     # Pass 1: Strict search with unit_filter
-    for collection_name in (base_collection, f"{base_collection}_Enriched"):
+    for collection_name in (base_collection,):
         try:
             results = search_qdrant(
                 query=query,
@@ -205,10 +206,10 @@ def retrieve_context(
         except Exception as e:
             print(f"  ⚠️  [AI Tutor] Search failed on {collection_name}: {e}")
 
-    # Pass 2: Fallback search if nothing found (relax unit_number)
+    # Pass 2: Fallback search if nothing found (relax unit_number but keep subject + class filters)
     if not all_results and unit_number is not None:
         print(f"  ⚠️  [AI Tutor] No chunks found for unit {unit_number}. Retrying without unit filter...")
-        for collection_name in (base_collection, f"{base_collection}_Enriched"):
+        for collection_name in (base_collection,):
             try:
                 results = search_qdrant(
                     query=query,
@@ -216,7 +217,7 @@ def retrieve_context(
                     limit=limit,
                     unit_filter=None,
                     subject_filter=subject,
-                    class_filter=None,
+                    class_filter=class_number,
                     board_filter=board,
                 )
                 all_results.extend(results)
@@ -252,45 +253,143 @@ def _format_context(chunks: List[Dict[str, Any]]) -> str:
     return "\n\n---\n\n".join(parts)
 
 
+def _extract_suggested_questions(answer: str) -> List[str]:
+    """Parse follow-up question suggestions from the LLM response text."""
+    suggestions = []
+
+    # Look for the suggestions section (💡 **You could ask next:** or similar)
+    # Match numbered lines (1. ..., 2. ..., 3. ...) after the marker
+    marker_pattern = re.compile(
+        r"(?:💡|\*\*You could ask next\*\*|You could ask next)[:\s]*",
+        re.IGNORECASE,
+    )
+    marker_match = marker_pattern.search(answer)
+
+    if marker_match:
+        after_marker = answer[marker_match.end():]
+        # Extract numbered items: 1. Question text
+        numbered = re.findall(r"^\s*\d+\.\s*(.+)$", after_marker, re.MULTILINE)
+        for q in numbered:
+            cleaned = q.strip().strip("?.").strip() + "?"
+            if len(cleaned) > 5:  # skip tiny/empty entries
+                suggestions.append(cleaned)
+
+    return suggestions[:3]  # Return at most 3 suggestions
+
+
+def _build_fallback_suggestions(
+    chunks: List[Dict[str, Any]],
+    subject: str,
+    unit_name: str,
+    unit_number: int,
+) -> List[str]:
+    """
+    Build fallback follow-up question suggestions when the LLM doesn't include them.
+    Uses section_titles from retrieved context, or falls back to unit/subject info.
+    """
+    suggestions = []
+
+    # Try to build suggestions from context chunk section_titles
+    seen_sections = set()
+    for chunk in chunks:
+        meta = chunk.get("metadata", {})
+        section = meta.get("section_title", "").strip()
+        if section and section.lower() not in seen_sections:
+            seen_sections.add(section.lower())
+            suggestions.append(f"Can you explain '{section}' from this unit?")
+            if len(suggestions) >= 3:
+                break
+
+    # If we still don't have enough, add unit/subject-based generic suggestions
+    if len(suggestions) < 2:
+        topic_label = unit_name if unit_name else f"Unit {unit_number}"
+        fallback_options = [
+            f"What are the key concepts in {topic_label}?",
+            f"Can you explain the main topics in {topic_label}?",
+            f"What are the important definitions in {subject} - {topic_label}?",
+            f"Can you give me a summary of {topic_label}?",
+            f"What should I focus on while studying {topic_label}?",
+        ]
+        for fb in fallback_options:
+            if fb not in suggestions:
+                suggestions.append(fb)
+                if len(suggestions) >= 3:
+                    break
+
+    return suggestions[:3]
+
+
 # ── System Prompt ─────────────────────────────────────────────────────────────
 
 _SYSTEM_PROMPT = """You are GradeUp AI Tutor — a friendly, knowledgeable study assistant for school students.
 
 ## YOUR ROLE
 - Help students understand their textbook content by answering questions clearly and accurately.
-- Use the RETRIEVED CONTEXT (from the student's textbook) as your primary source of truth.
+- Use the RETRIEVED CONTEXT (from the student's textbook) as your **ONLY** source of truth.
 - If the retrieved context contains the answer, use it. You may rephrase or simplify it for the student.
 - If the context does not cover the question, say so honestly — do NOT make up facts.
 
 ## STRICT RULES — YOU MUST FOLLOW THESE:
 
-### 1. STUDY-ONLY MODE
+### 1. ABSOLUTELY NO HALLUCINATION — CRITICAL
+- You MUST answer ONLY based on the RETRIEVED CONTEXT provided below the student's question.
+- NEVER fabricate, invent, or guess unit names, topic lists, chapter contents, or any textbook information.
+- If the student asks "what are the topics in this lesson/unit?" and the retrieved context does not clearly list them, say: "Let me help you with what I have from your textbook. Based on the content available, here are the topics I can see: [list only what's actually in the context]." If no context is available, say: "I don't have the full topic list for this unit right now. Could you ask me about a specific concept and I'll help explain it?"
+- NEVER invent unit titles like "Health and Hygiene" or any other name that is not explicitly present in the retrieved context.
+- When the retrieved context is empty or marked as "No relevant textbook content was found", do NOT attempt to answer from your own knowledge. Instead say you don't have the specific textbook content and ask the student to try a more specific question.
+- If you are unsure, say "I'm not sure about this based on your textbook. Can you ask about a specific topic?" — this is ALWAYS better than guessing.
+
+### 2. STUDY-ONLY MODE
 You are a STUDY assistant. You ONLY answer questions related to academics, education, and the student's textbook content.
 - ✅ Answer: textbook topics, concepts, definitions, explanations, practice questions, study tips
 - ❌ Refuse: personal advice, entertainment, gossip, jokes unrelated to studies, coding, recipes, games
 
-### 2. TOPIC ENFORCEMENT
+### 3. TOPIC ENFORCEMENT
 - **Greetings & pleasantries**: If the student says greetings like "hi", "hello", "hey", "good morning", "good afternoon", "welcome", "thank you", "thanks", "thankyou", "bye", "goodbye", or any other casual greeting or pleasantry, respond warmly and naturally. These are NOT off-topic — they are normal conversational exchanges. Greet them back friendly, acknowledge their message, and then gently invite them to ask a study question. For example: "Hello! 😊 Great to see you! What would you like to learn about today?" or "You're welcome! Happy to help. Do you have any more questions about {subject}?"
 - If the question is clearly UNRELATED to this subject ({subject}) AND is NOT a greeting/pleasantry, respond with:
   "This question doesn't seem related to {subject}. I can only help with questions about your textbook. Please ask something related to your current study material!"
-- If the question is about the subject but not strictly in the current Unit topic "{unit_name}", you should still TRY to answer it if you have the background knowledge or if it's found in the retrieved context. Only refuse if it's completely out of the academic scope.
-- Be helpful: students often ask about real-world applications of what they are learning. Always try to provide these examples.
+- If the question is about the subject but not strictly in the current Unit topic "{unit_name}", you should still TRY to answer it if it's found in the retrieved context. Only refuse if it's completely out of the academic scope.
+- Be helpful: students often ask about real-world applications of what they are learning. Always try to provide these examples if the context supports it.
 
-### 3. CONTENT SAFETY — ABSOLUTE ZERO TOLERANCE
+### 4. CONTENT SAFETY — ABSOLUTE ZERO TOLERANCE
 - NEVER produce 18+, sexual, violent, harmful, or abusive content.
 - NEVER help with cheating, plagiarism, or academic dishonesty.
-- If a student sends inappropriate content, respond with:
-  "I'm here to help you study! Let's focus on your {subject} textbook. What would you like to learn about?"
-- Do NOT engage with or acknowledge harmful messages — just redirect to studies.
+- If a student sends inappropriate content, redirect them to studies AND still include follow-up question suggestions about their current unit/subject. Example:
+  "I'm here to help you study! Let's focus on your {subject} textbook. What would you like to learn about?
+  
+  💡 **You could ask next:**
+  1. [A question related to the current unit topic]
+  2. [Another relevant study question]
+  3. [A concept from the textbook]"
+- Do NOT engage with or acknowledge harmful messages — just redirect to studies with helpful suggestions.
 
-### 4. RESPONSE STYLE
+### 5. RESPONSE STYLE
 - Be encouraging, patient, and supportive — like a great teacher.
 - Use simple language appropriate for school students.
 - Use bullet points, numbered steps, or examples to make explanations clear.
 - Keep answers concise but thorough. If a topic is complex, break it into parts.
 - When relevant, relate concepts to everyday examples students can understand.
 
-### 5. HOMEWORK REQUESTS
+### 6. FOLLOW-UP QUESTION SUGGESTIONS — MANDATORY IN EVERY RESPONSE
+- You MUST include 2-3 follow-up questions at the END of EVERY response — this includes:
+  - Normal study answers
+  - Safety/content redirects
+  - Greetings and pleasantries
+  - Off-topic redirects
+  - "I don't have the content" responses
+- There is NO exception — every single response MUST end with suggestions.
+- These suggestions should be related to the student's current subject ({subject}) and unit ({unit_name}).
+- Base them on the RETRIEVED CONTEXT when available. If no context is available, suggest general questions about the current unit/subject.
+- Format them EXACTLY like this:
+  
+  💡 **You could ask next:**
+  1. [A relevant question based on the current topic/unit]
+  2. [Another related question from the textbook content]
+  3. [A deeper question about something in the subject]
+
+- Make the suggestions specific and helpful, not generic. They should guide the student into studying their actual textbook material.
+
+### 7. HOMEWORK REQUESTS
 - If the student explicitly asks you to assign them homework:
   - If the "Conversation count on this topic" (below) is less than 10, politely decline: "We are doing well! You don't need to do any homework right now, just keep asking questions if you have any doubts."
   - If the count is 10 or more, respond: "It looks like you've been practicing this topic thoroughly! I have assigned some homework to your portal based on our conversation." (The system automatically generates it).
@@ -345,11 +444,14 @@ def generate_tutor_response(
         user_message = (
             f"Here is relevant content from the textbook:\n\n"
             f"---BEGIN TEXTBOOK CONTEXT---\n{context}\n---END TEXTBOOK CONTEXT---\n\n"
+            f"IMPORTANT REMINDER: Answer ONLY using the textbook context above. Do NOT invent or fabricate any information that is not present in the context.\n\n"
             f"Student's question: {query}"
         )
     else:
         user_message = (
-            f"(No relevant textbook content was found for this question.)\n\n"
+            f"(No relevant textbook content was found for this question. "
+            f"You MUST NOT make up an answer. Tell the student you don't have the specific content "
+            f"and ask them to try a more specific question about a particular concept.)\n\n"
             f"Student's question: {query}"
         )
 
@@ -365,7 +467,7 @@ def generate_tutor_response(
         "model": TUTOR_MODEL,
         "messages": messages,
         "max_completion_tokens": 2048,
-        "temperature": 1,
+        "temperature": 0.4,
     }
 
     try:
@@ -537,8 +639,16 @@ def ask_tutor(
 
     elapsed = time.time() - start_time
 
+    # 6. Extract suggested follow-up questions from the answer
+    suggested_questions = _extract_suggested_questions(answer)
+
+    # 7. Fallback: generate suggestions from context/unit metadata if LLM didn't include them
+    if not suggested_questions:
+        suggested_questions = _build_fallback_suggestions(chunks, subject, unit_name, unit_number)
+
     return {
         "answer": answer,
+        "suggested_questions": suggested_questions,
         "sources": sources,
         "context_chunks_used": len(chunks),
         "is_relevant": True,

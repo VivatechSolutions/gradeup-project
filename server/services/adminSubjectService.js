@@ -275,7 +275,7 @@ async function sendPdfToPython({ endpoint, filePath, fileName, payload }) {
 
   try {
     const response = await axios.post(endpoint, formData, {
-      timeout: PYTHON_REQUEST_TIMEOUT_MS,
+      timeout: 0,
       maxBodyLength: Infinity,
       maxContentLength: Infinity,
       headers: {
@@ -333,10 +333,14 @@ async function createOrUpdateSubjectUnit({
   pythonResponse,
   structuredData,
   enrichedData,
+  debateTopicsData,
   requestId,
 }) {
   const normalizedStructuredData = appendImageUrlsLast(structuredData);
   const normalizedEnrichedData = appendImageUrlsLast(enrichedData);
+  const normalizedDebateTopicsData = isPlainObject(debateTopicsData)
+    ? debateTopicsData
+    : null;
   const structuredUnit =
     normalizedStructuredData?.units?.[0] || normalizedStructuredData || {};
   const enrichedUnit = normalizedEnrichedData?.units?.[0] || {};
@@ -367,6 +371,7 @@ async function createOrUpdateSubjectUnit({
     },
     structuredData: normalizedStructuredData,
     enrichedData: normalizedEnrichedData,
+    debateTopics: normalizedDebateTopicsData,
     readerIndex: getReaderIndex(normalizedStructuredData),
   };
 
@@ -445,6 +450,9 @@ async function processSingleUnitUpload(upload) {
   const enrichedData = pythonResponse.has_enriched
     ? await fetchJsonOrNull(`${pythonBaseUrl}/enrich/${pythonResponse.document_id}`)
     : null;
+  const debateTopicsData = await fetchJsonOrNull(
+    `${pythonBaseUrl}/debate-topics/${pythonResponse.document_id}`,
+  );
 
   const unit = await createOrUpdateSubjectUnit({
     uploadId: upload._id,
@@ -458,6 +466,7 @@ async function processSingleUnitUpload(upload) {
     pythonResponse,
     structuredData,
     enrichedData,
+    debateTopicsData,
     requestId,
   });
 
@@ -551,6 +560,9 @@ async function processWholeSubjectUpload(upload) {
     const enrichedData = item.has_enriched
       ? await fetchJsonOrNull(`${pythonBaseUrl}/enrich/${item.document_id}`)
       : null;
+    const debateTopicsData = await fetchJsonOrNull(
+      `${pythonBaseUrl}/debate-topics/${item.document_id}`,
+    );
 
     const unit = await createOrUpdateSubjectUnit({
       uploadId: upload._id,
@@ -564,6 +576,7 @@ async function processWholeSubjectUpload(upload) {
       pythonResponse: item,
       structuredData,
       enrichedData,
+      debateTopicsData,
       requestId,
     });
 

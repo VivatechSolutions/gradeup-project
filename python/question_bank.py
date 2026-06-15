@@ -397,6 +397,8 @@ Rules:
                 "type": q.get("type", "unknown"),
                 "options": q.get("options", []),
                 "correct_answer": q.get("correct_answer"),
+                "is_choice_based": q.get("is_choice_based", False),
+                "questions_to_attempt": q.get("questions_to_attempt", 1),
                 # Scored features
                 "unit_number": scoring.get("unit_number", unit_number),
                 "section_title": scoring.get("section_title", "General"),

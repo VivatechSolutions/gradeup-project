@@ -241,6 +241,66 @@ export const PAPER_DATA: Record<
       },
     ],
   },
+  Science: {
+    part1: [
+      { q: "What is photosynthesis?", unit: "Nutrition in Plants" },
+      { q: "Name one good conductor of heat.", unit: "Heat" },
+      { q: "What is the SI unit of speed?", unit: "Motion and Time" },
+      { q: "Which acid is present in lemon juice?", unit: "Acids and Bases" },
+      { q: "Name the instrument used to measure rainfall.", unit: "Weather and Climate" },
+      { q: "What do humans breathe in for respiration?", unit: "Respiration" },
+    ],
+    part2: [
+      {
+        q: "Differentiate between autotrophic and heterotrophic nutrition with one example each.",
+        unit: "Nutrition in Plants",
+      },
+      {
+        q: "Explain conduction of heat with an everyday example.",
+        unit: "Heat",
+      },
+      {
+        q: "A car travels 120 km in 3 hours. Calculate its average speed.",
+        unit: "Motion and Time",
+      },
+      {
+        q: "What is neutralisation? Write one example from daily life.",
+        unit: "Acids and Bases",
+      },
+      {
+        q: "Why do we see water droplets outside a cold glass on a humid day?",
+        unit: "Weather and Climate",
+      },
+    ],
+    part3: [
+      {
+        q: "Describe the process of nutrition in plants. Include the role of chlorophyll, sunlight, carbon dioxide, and water.",
+        unit: "Nutrition in Plants",
+      },
+      {
+        q: "Compare conduction, convection, and radiation. Give one example for each mode of heat transfer.",
+        unit: "Heat",
+      },
+      {
+        q: "Draw a simple distance-time graph for uniform motion and explain how speed can be found from it.",
+        unit: "Motion and Time",
+      },
+      {
+        q: "Explain aerobic respiration and anaerobic respiration. Mention where each can occur.",
+        unit: "Respiration",
+      },
+    ],
+    part4: [
+      {
+        q: "A student records the distance covered by a toy car every 10 seconds. Explain how the student can use the data to find average speed and decide whether the motion is uniform.",
+        unit: "Motion and Time",
+      },
+      {
+        q: "Design an experiment to test whether a given solution is acidic, basic, or neutral using indicators. Include observations and precautions.",
+        unit: "Acids and Bases",
+      },
+    ],
+  },
   History: {
     part1: [
       { q: "In which year did India gain independence?", unit: "Independence" },

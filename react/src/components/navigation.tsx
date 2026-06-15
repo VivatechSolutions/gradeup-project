@@ -356,6 +356,7 @@ const TEACHER_LINKS: NavLinkItem[] = [
 const DASHBOARD_ROOTS = new Set(["/", "/dashboard"]);
 const MAX_HISTORY = 50;
 const NAV_HISTORY_KEY = "gradeup_nav_history_v1";
+const stripQuery = (path: string) => path.split("?")[0];
 
 export default function Navigation({ currentRole }: NavigationProps) {
   const { user, logoutMutation } = useAuth();
@@ -387,7 +388,11 @@ export default function Navigation({ currentRole }: NavigationProps) {
     const stack = historyStack.current;
     const top   = stack[stack.length - 1];
     if (location !== top) {
-      stack.push(location);
+      if (stripQuery(location) === stripQuery(top)) {
+        stack[stack.length - 1] = location;
+      } else {
+        stack.push(location);
+      }
       if (stack.length > MAX_HISTORY) stack.splice(0, stack.length - MAX_HISTORY);
     }
     try {
@@ -398,6 +403,13 @@ export default function Navigation({ currentRole }: NavigationProps) {
   const goBack = useCallback(() => {
     const stack = historyStack.current;
     while (stack.length > 0 && stack[stack.length - 1] === location) stack.pop();
+    while (
+      stack.length > 0 &&
+      stripQuery(location) === "/ai-tutor" &&
+      stripQuery(stack[stack.length - 1]) === "/studio/quiz"
+    ) {
+      stack.pop();
+    }
     const target = stack[stack.length - 1] ?? "/dashboard";
     if (stack.length === 0) stack.push(target);
     try { sessionStorage.setItem(NAV_HISTORY_KEY, JSON.stringify(stack)); } catch {}
@@ -422,8 +434,16 @@ export default function Navigation({ currentRole }: NavigationProps) {
 
   const prevLabel = (() => {
     const stack = historyStack.current;
-    if (stack.length < 2) return "Dashboard";
-    const prevPath = stack[stack.length - 2];
+    const candidates = stack.slice(0, -1);
+    while (
+      candidates.length > 0 &&
+      stripQuery(location) === "/ai-tutor" &&
+      stripQuery(candidates[candidates.length - 1]) === "/studio/quiz"
+    ) {
+      candidates.pop();
+    }
+    if (candidates.length < 1) return "Dashboard";
+    const prevPath = candidates[candidates.length - 1];
     if (prevPath === "/dashboard" || prevPath === "/") return "Dashboard";
     return Object.entries(PAGE_LABELS).sort((a, b) => b[0].length - a[0].length).find(([k]) => prevPath.startsWith(k))?.[1] ?? "Back";
   })();

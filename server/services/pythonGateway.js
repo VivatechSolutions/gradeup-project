@@ -121,9 +121,9 @@ async function callPython({
       : {}),
     ...(headers || {}),
   };
-  console.log(
-    `Calling Python service: {url:url,method:method,data:data,params:params}`,
-  );
+  // console.log(
+  //   `Calling Python service: ${{url:url,method:method,data:data,params:params}}`,
+  // );
   try {
     const response = await axios({
       method,

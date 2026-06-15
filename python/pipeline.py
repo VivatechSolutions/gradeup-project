@@ -113,6 +113,7 @@ class DocumentPipeline:
         skip_qdrant: bool = False,
         skip_enrichment: bool = False,
         filter_qr_codes: bool = False,
+        enrichment_style: str = "avatar_classroom_teaching",
     ) -> Dict[str, Any]:
         """Process a single PDF through the entire pipeline."""
         if not OCR_AVAILABLE:
@@ -139,13 +140,14 @@ class DocumentPipeline:
             skip_enrichment=skip_enrichment,
             board=board,
             class_number=class_number,
+            enrichment_style=enrichment_style,
         )
         
         # ── Run Verification Agent ────────────────────────────────────────────
         # After extraction, verify all TOC units were extracted and fix gaps
         if (result.get("has_structured") and VERIFICATION_AVAILABLE
                 and OPENAI_API_KEY_TEXT and not skip_llm_refinement):
-            doc_out_dir = OUTPUTS_DIR / pdf_path.stem
+            doc_out_dir = OUTPUTS_DIR / result["document_id"]
             structured_path = doc_out_dir / "structured.json"
             content_path = doc_out_dir / "content.md"
             if structured_path.exists() and content_path.exists():
@@ -182,6 +184,78 @@ class DocumentPipeline:
                     )
                 except Exception as ve:
                     print(f"  ⚠️  Verification agent error: {ve}")
+
+        # ── Enrichment & Qdrant Upload (Moved here to run AFTER Verification) ──
+        if result.get("has_structured"):
+            doc_out_dir = OUTPUTS_DIR / result["document_id"]
+            structured_path = doc_out_dir / "structured.json"
+            
+            # Enrichment
+            if not skip_enrichment and ENRICHMENT_AVAILABLE:
+                print(f"\n  🧠 Running subject-aware enrichment...")
+                try:
+                    enriched_path = doc_out_dir / "enriched.json"
+                    enrichment_ok = enrich_document(
+                        structured_json_path=structured_path,
+                        output_path=enriched_path,
+                        subject=result.get("subject"),
+                        enrichment_style=enrichment_style,
+                    )
+                    result["has_enriched"] = enrichment_ok
+                    if enrichment_ok:
+                        print(f"  ✅ Enrichment complete → {enriched_path.name}")
+                    else:
+                        print(f"  ⚠️  Enrichment finished with errors — check enriched.json")
+                except Exception as e:
+                    print(f"  ⚠️  Enrichment failed: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    result["has_enriched"] = False
+            
+            # Qdrant Upload
+            if not skip_qdrant and QDRANT_AVAILABLE:
+                print(f"\n  📦 Uploading to Qdrant vector DB...")
+                try:
+                    _q_client = self.qdrant_client
+                    if _q_client is None:
+                        print(f"  ⚠️  Qdrant upload skipped — could not connect to Qdrant")
+                        result["qdrant_uploaded"] = False
+                    else:
+                        _doc_id = result["document_id"]
+                        _doc_name = pdf_path.name
+                        _uploaded = False
+                        if structured_path.exists():
+                            print(f"  📤 Uploading structured.json to Qdrant...")
+                            _uploaded = process_and_upload_document(
+                                structured_json_path=structured_path,
+                                document_id=_doc_id,
+                                document_name=_doc_name,
+                                board=board,
+                                class_number=class_number,
+                                qdrant_client=_q_client
+                            )
+                        result["qdrant_uploaded"] = _uploaded
+                        if _uploaded:
+                            print(f"  ✅ Qdrant upload complete (document_id={_doc_id})")
+                        else:
+                            print(f"  ⚠️  Qdrant upload failed for structured data")
+                except Exception as _qe:
+                    print(f"  ⚠️  Qdrant upload error: {_qe}")
+                    import traceback
+                    traceback.print_exc()
+                    result["qdrant_uploaded"] = False
+            
+            # Re-save summary.json with updated has_enriched and qdrant_uploaded
+            try:
+                summary_path = doc_out_dir / "summary.json"
+                if summary_path.exists():
+                    import orjson as _orjson
+                    summary_data = _orjson.loads(summary_path.read_bytes())
+                    summary_data["has_enriched"] = result.get("has_enriched", False)
+                    summary_data["qdrant_uploaded"] = result.get("qdrant_uploaded", False)
+                    summary_path.write_bytes(_orjson.dumps(summary_data, option=_orjson.OPT_INDENT_2))
+            except Exception as e:
+                print(f"  ⚠️  Failed to update summary.json: {e}")
         
         return {"success": True, **result}
     
@@ -199,6 +273,7 @@ class DocumentPipeline:
         skip_qdrant: bool = False,
         skip_enrichment: bool = False,
         filter_qr_codes: bool = False,
+        enrichment_style: str = "avatar_classroom_teaching",
     ) -> Dict[str, Any]:
         """
         Process a single PDF through the pipeline with subject-aware extraction.
@@ -250,12 +325,13 @@ class DocumentPipeline:
                 part=part,
                 board=board,
                 class_number=class_number,
+                enrichment_style=enrichment_style,
             )
             
             # ── Run Verification Agent ────────────────────────────────────────
             if (result.get("has_structured") and VERIFICATION_AVAILABLE
                     and OPENAI_API_KEY_TEXT and not skip_llm_refinement):
-                doc_out_dir = OUTPUTS_DIR / pdf_path.stem
+                doc_out_dir = OUTPUTS_DIR / result["document_id"]
                 structured_path = doc_out_dir / "structured.json"
                 content_path = doc_out_dir / "content.md"
                 if structured_path.exists() and content_path.exists():
@@ -292,6 +368,78 @@ class DocumentPipeline:
                         )
                     except Exception as ve:
                         print(f"  ⚠️  Verification agent error: {ve}")
+
+            # ── Enrichment & Qdrant Upload (Moved here to run AFTER Verification) ──
+            if result.get("has_structured"):
+                doc_out_dir = OUTPUTS_DIR / result["document_id"]
+                structured_path = doc_out_dir / "structured.json"
+                
+                # Enrichment
+                if not skip_enrichment and ENRICHMENT_AVAILABLE:
+                    print(f"\n  🧠 Running subject-aware enrichment...")
+                    try:
+                        enriched_path = doc_out_dir / "enriched.json"
+                        enrichment_ok = enrich_document(
+                            structured_json_path=structured_path,
+                            output_path=enriched_path,
+                            subject=result.get("subject"),
+                            enrichment_style=enrichment_style,
+                        )
+                        result["has_enriched"] = enrichment_ok
+                        if enrichment_ok:
+                            print(f"  ✅ Enrichment complete → {enriched_path.name}")
+                        else:
+                            print(f"  ⚠️  Enrichment finished with errors — check enriched.json")
+                    except Exception as e:
+                        print(f"  ⚠️  Enrichment failed: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        result["has_enriched"] = False
+                
+                # Qdrant Upload
+                if not skip_qdrant and QDRANT_AVAILABLE:
+                    print(f"\n  📦 Uploading to Qdrant vector DB...")
+                    try:
+                        _q_client = self.qdrant_client
+                        if _q_client is None:
+                            print(f"  ⚠️  Qdrant upload skipped — could not connect to Qdrant")
+                            result["qdrant_uploaded"] = False
+                        else:
+                            _doc_id = result["document_id"]
+                            _doc_name = pdf_path.name
+                            _uploaded = False
+                            if structured_path.exists():
+                                print(f"  📤 Uploading structured.json to Qdrant...")
+                                _uploaded = process_and_upload_document(
+                                    structured_json_path=structured_path,
+                                    document_id=_doc_id,
+                                    document_name=_doc_name,
+                                    board=board,
+                                    class_number=class_number,
+                                    qdrant_client=_q_client
+                                )
+                            result["qdrant_uploaded"] = _uploaded
+                            if _uploaded:
+                                print(f"  ✅ Qdrant upload complete (document_id={_doc_id})")
+                            else:
+                                print(f"  ⚠️  Qdrant upload failed for structured data")
+                    except Exception as _qe:
+                        print(f"  ⚠️  Qdrant upload error: {_qe}")
+                        import traceback
+                        traceback.print_exc()
+                        result["qdrant_uploaded"] = False
+                
+                # Re-save summary.json with updated has_enriched and qdrant_uploaded
+                try:
+                    summary_path = doc_out_dir / "summary.json"
+                    if summary_path.exists():
+                        import orjson as _orjson
+                        summary_data = _orjson.loads(summary_path.read_bytes())
+                        summary_data["has_enriched"] = result.get("has_enriched", False)
+                        summary_data["qdrant_uploaded"] = result.get("qdrant_uploaded", False)
+                        summary_path.write_bytes(_orjson.dumps(summary_data, option=_orjson.OPT_INDENT_2))
+                except Exception as e:
+                    print(f"  ⚠️  Failed to update summary.json: {e}")
             
             return {"success": True, **result}
             
@@ -346,7 +494,8 @@ class DocumentPipeline:
         document_id: str,
         include_sections: bool = True,
         include_web: bool = True,
-        fast_mode: bool = True
+        fast_mode: bool = True,
+        enrichment_style: str = "avatar_classroom_teaching"
     ) -> Dict[str, Any]:
         """Enrich an already-extracted document."""
         if not ENRICHMENT_AVAILABLE:
@@ -363,7 +512,8 @@ class DocumentPipeline:
             output_path=output_path,
             include_sections=include_sections,
             include_web=include_web,
-            fast_mode=fast_mode
+            fast_mode=fast_mode,
+            enrichment_style=enrichment_style
         )
         
         if success:
@@ -372,7 +522,7 @@ class DocumentPipeline:
                 "success": True,
                 "document_id": document_id,
                 "enriched_at": enriched_data.get("enriched_at"),
-                "units_count": len(enriched_data.get("units", []))
+                "units_count": len(enriched_data.get("units", []) or enriched_data.get("chapters", []))
             }
         
         return {"success": False, "error": "Enrichment failed"}
@@ -405,24 +555,11 @@ class DocumentPipeline:
                 book_content="structured"
             )
 
-        success_enriched = False
-        if enriched_path.exists():
-            success_enriched = process_and_upload_document(
-                structured_json_path=enriched_path,
-                document_id=document_id,
-                document_name=f"{document_id}.pdf",
-                board=board,
-                class_number=class_number,
-                qdrant_client=self.qdrant_client,
-                book_content="enrichment",
-                collection_name=os.environ.get("QDRANT_COLLECTION_NAME", "GradeupAI_Books") + "_Enriched"
-            )
-        
         return {
-            "success": success_structured or success_enriched,
+            "success": success_structured,
             "document_id": document_id,
             "structured_uploaded": success_structured,
-            "enriched_uploaded": success_enriched
+            "enriched_uploaded": False
         }
     
     def search(

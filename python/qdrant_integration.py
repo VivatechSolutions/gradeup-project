@@ -431,11 +431,28 @@ def _merge_sub_items_into_content(section: Dict[str, Any], global_media_map: Dic
     if metadata.get("author"):
         merged_parts.append(f"Author: {metadata['author']}")
 
-    image_urls = section.get("image_urls") or []
+    image_urls = []
+    if isinstance(section.get("image_urls"), list):
+        image_urls.extend(section["image_urls"])
+    if isinstance(section.get("images"), list):
+        for img in section["images"]:
+            if isinstance(img, dict) and img.get("url"):
+                image_urls.append(img["url"])
+            elif isinstance(img, str):
+                image_urls.append(img)
+
     sub_items_image_urls = []
     if sub_items:
         for sub in sub_items:
-            sub_image_urls = sub.get("image_urls") or []
+            sub_image_urls = []
+            if isinstance(sub.get("image_urls"), list):
+                sub_image_urls.extend(sub["image_urls"])
+            if isinstance(sub.get("images"), list):
+                for img in sub["images"]:
+                    if isinstance(img, dict) and img.get("url"):
+                        sub_image_urls.append(img["url"])
+                    elif isinstance(img, str):
+                        sub_image_urls.append(img)
             sub_items_image_urls.extend(sub_image_urls)
             
     all_image_urls = []

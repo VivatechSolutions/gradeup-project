@@ -14,6 +14,7 @@ interface Subject {
 interface SubjectSelectionProps {
   subjects: Subject[];
   onSelectSubject: (id: number) => void;
+  isLoading?: boolean;
 }
 
 /* ─── CSS matching dashboard design system ─── */
@@ -282,12 +283,40 @@ const css = `
   .ss-card-name { font-size: 15px; }
   .ss-card-emoji { font-size: 32px; }
 }
+/* ── SKELETON LOADER ── */
+.ss-skeleton-card {
+  aspect-ratio: 4/3.6;
+  border-radius: 22px;
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+}
+.dark .ss-skeleton-card {
+  background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
+  background-size: 200% 100%;
+}
+@keyframes skeleton-loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.ss-skeleton-recent {
+  height: 68px;
+  border-radius: 16px;
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+}
+.dark .ss-skeleton-recent {
+  background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
+}
+
 @media (max-width: 480px) {
   .ss-recent-grid { grid-template-columns: 1fr; }
   .ss-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
   .ss-card { aspect-ratio: 3/2.6; padding: 14px; border-radius: 16px; }
   .ss-card-name { font-size: 13.5px; margin-bottom: 7px; }
   .ss-card-emoji { font-size: 28px; }
+  .ss-skeleton-card { aspect-ratio: 3/2.6; }
 }
 `;
 
@@ -322,6 +351,7 @@ const ICON_GRAD: Record<string, { bg: string; color: string }> = {
 export const SubjectSelection: React.FC<SubjectSelectionProps> = ({
   subjects: initialSubjects,
   onSelectSubject,
+  isLoading = false,
 }) => {
   const [searchQuery, setSearchQuery]   = useState("");
   const [recentIds,   setRecentIds]     = useState<number[]>([]);
@@ -424,7 +454,13 @@ export const SubjectSelection: React.FC<SubjectSelectionProps> = ({
           </div>
 
           {/* Cards grid */}
-          {filtered.length > 0 ? (
+          {isLoading ? (
+            <div className="ss-grid">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={`skeleton-${i}`} className="ss-skeleton-card" />
+              ))}
+            </div>
+          ) : filtered.length > 0 ? (
             <div className="ss-grid">
               {filtered.map(sub => (
                 <button key={sub.id} className={`ss-card ${sub.color}`} onClick={() => handleSelect(sub)}>

@@ -22,19 +22,18 @@ import {
   Heart, MessageCircle, Share2, Trash2, Plus, Search, Filter,
   BookOpen, Trophy, Zap, ArrowLeft, Loader2, Lightbulb, Code,
   BrainCircuit, GraduationCap, XCircle, Vote, ShieldAlert,
-  Target, Star, BarChart3, Award, TrendingUp
-  } from "lucide-react";
-  import { TrendingTopics } from "../components/TrendingTopics";
-  import { useToast } from "../hooks/use-toast";
-  import { useTheme } from '../hooks/use-theme';
-  import { useNotificationStore } from "../lib/notification-store";
-  import { buildApiUrl } from "../lib/apiBase";
-  import { queryClient } from "../lib/queryClient";
-  import Navigation from "../components/navigation";
-  import { useAuth } from "../hooks/use-auth";
-  import FunnyLoader from "../components/ui/FunnyLoader";
+  TrendingUp, Award, Target, Star, BarChart3
+} from "lucide-react";
+import { TrendingTopics } from "../components/TrendingTopics";
+import { useToast } from "../hooks/use-toast";
+import { useTheme } from '../hooks/use-theme';
+import { useNotificationStore } from "../lib/notification-store";
+import FunnyLoader from "../components/ui/FunnyLoader";
+import { queryClient } from "../lib/queryClient";
+import Navigation from "../components/navigation";
+import { useAuth } from "../hooks/use-auth";
 
-  const MotionButton = motion(UIButton);
+const MotionButton = motion(UIButton);
 
 /* ── Dashboard-matched CSS ── */
 const communityStyles = `
@@ -428,6 +427,8 @@ const mockCommunityPolls: CommunityPoll[] = [
   ], totalVotes: 75, userVoted: true, icon: 'XCircle' },
 ];
 
+
+
 interface User { id: number; username: string; firstName: string; lastName: string; email: string; role: string; profileImage?: string; }
 interface Group { id: string; name: string; members: number[]; messages: any[]; }
 interface Channel { id: string; name: string; groups: Group[]; }
@@ -477,7 +478,7 @@ export default function CommunityPage() {
 
   const createPostMutation = useMutation({
     mutationFn: async (data: any) => {
-      const r = await fetch(buildApiUrl("/api/community/posts"), { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data), credentials:"include" });
+      const r = await fetch("/api/community/posts", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data) });
       if (!r.ok) throw new Error('Failed'); return r.json();
     },
     onSuccess: (data) => { 
@@ -490,7 +491,7 @@ export default function CommunityPage() {
 
   const likePostMutation = useMutation({
     mutationFn: async (postId: number) => {
-      const r = await fetch(buildApiUrl(`/api/community/posts/${postId}/like`), { method:"POST", headers:{"Content-Type":"application/json"}, credentials:"include" });
+      const r = await fetch(`/api/community/posts/${postId}/like`, { method:"POST", headers:{"Content-Type":"application/json"} });
       if (!r.ok) throw new Error('Failed'); return r.json();
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey:["/api/community/posts"] }),
@@ -498,7 +499,7 @@ export default function CommunityPage() {
 
   const commentPostMutation = useMutation({
     mutationFn: async ({ postId, content }: { postId: number; content: string }) => {
-      const r = await fetch(buildApiUrl(`/api/community/posts/${postId}/comments`), { method:"POST", body:JSON.stringify({ content }), headers:{"Content-Type":"application/json"}, credentials:"include" });
+      const r = await fetch(`/api/community/posts/${postId}/comments`, { method:"POST", body:JSON.stringify({ content }), headers:{"Content-Type":"application/json"} });
       if (!r.ok) throw new Error('Failed'); return r.json();
     },
     onSuccess: (data, vars) => {
@@ -511,7 +512,7 @@ export default function CommunityPage() {
 
   const createPrivateMessageMutation = useMutation({
     mutationFn: async (data: any) => {
-      const r = await fetch(buildApiUrl("/api/community/messages"), { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data), credentials:"include" });
+      const r = await fetch("/api/community/messages", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data) });
       if (!r.ok) throw new Error('Failed'); return r.json();
     },
     onSuccess: (data) => { 
@@ -523,7 +524,7 @@ export default function CommunityPage() {
 
   const createGroupMessageMutation = useMutation({
     mutationFn: async (data: any) => {
-      const r = await fetch(buildApiUrl("/api/community/group-messages"), { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data), credentials:"include" });
+      const r = await fetch("/api/community/group-messages", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data) });
       if (!r.ok) throw new Error('Failed'); return r.json();
     },
     onSuccess: (data) => { 

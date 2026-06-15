@@ -133,10 +133,26 @@ def _is_main_section(section: Dict[str, Any]) -> bool:
             return False
 
     # Must have some content
-    content = section.get("content") or ""
-    if isinstance(content, list):
-        content = "\n".join(str(c) for c in content)
-    if len(content.strip()) < 50:
+    content_parts = []
+    main_content = section.get("content") or ""
+    if isinstance(main_content, list):
+        main_content = "\n".join(str(c) for c in main_content)
+    content_parts.append(main_content)
+
+    for sub in section.get("sub_items", []) or []:
+        sub_content = sub.get("content") or ""
+        if isinstance(sub_content, list):
+            sub_content = "\n".join(str(c) for c in sub_content)
+        content_parts.append(sub_content)
+
+    for sub in section.get("subsections", []) or []:
+        sub_content = sub.get("content") or ""
+        if isinstance(sub_content, list):
+            sub_content = "\n".join(str(c) for c in sub_content)
+        content_parts.append(sub_content)
+
+    full_content = "\n".join(content_parts)
+    if len(full_content.strip()) < 50:
         return False
 
     return True

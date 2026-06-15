@@ -25,6 +25,11 @@ import base64
 import os
 import re
 import sys
+try:
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
+except Exception:
+    pass
 import shutil
 import time
 from dataclasses import dataclass
@@ -39,11 +44,25 @@ except ImportError:
     # mistralai v2.x moved Mistral to mistralai.client
     from mistralai.client import Mistral
 
-SUBJECT_AWARE_AVAILABLE = False
-
-if not SUBJECT_AWARE_AVAILABLE:
-    # Dummy stubs to prevent NameError and satisfy IDE type checker
-    # since subject_aware_extraction.py was removed.
+try:
+    from subject_aware_extraction import (
+        get_universal_system_prompt,
+        create_universal_user_prompt,
+        validate_universal_structure
+    )
+    # Re-map legacy names to the new universal equivalents
+    get_system_prompt_for_subject = lambda subject: get_universal_system_prompt()
+    create_user_prompt = lambda content, num, subject: create_universal_user_prompt(content, num, subject)
+    validate_structure = lambda data: validate_universal_structure(data)
+    
+    def strip_ncert_watermarks(text: str, *args, **kwargs) -> str: return text
+    def is_ncert_book(*args, **kwargs) -> bool: return False
+    def detect_subject_from_content(*args, **kwargs) -> str: return "science"
+    
+    SUBJECT_AWARE_AVAILABLE = True
+except ImportError:
+    SUBJECT_AWARE_AVAILABLE = False
+    # Dummy stubs to prevent NameError
     def get_system_prompt_for_subject(*args, **kwargs): return ""
     def create_user_prompt(*args, **kwargs): return ""
     def validate_structure(*args, **kwargs): return True
@@ -3905,8 +3924,6 @@ def organize_images_by_unit(
     return images_by_unit
 
 
-
-
 def _remove_ncert_watermark(img_bytes: bytes) -> bytes:
     """Pass-through function since LaMa watermark removal was disabled."""
     return img_bytes
@@ -3969,7 +3986,7 @@ def _patch_structured_json_with_s3_urls(
             new_obj = {}
             for k, v in obj.items():
                 # Special case: if this is an image object with a specific image pointer key
-                if k in ("file", "src", "path", "filename", "image_name") and isinstance(v, str):
+                if k in ("file", "src", "path", "filename", "image_name", "url") and isinstance(v, str):
                     # Check if the value matches any of our filenames
                     v_norm = v.strip()
                     if v_norm in flat_map:
@@ -4009,11 +4026,21 @@ def _patch_structured_json_with_s3_urls(
             # Replace image refs in all text content
             structured_data[units_key][i] = _walk_and_replace(unit)
 
-            # ── Cleanup: strip bare "image" placeholders from image_urls in sections ──
+            # ── Cleanup: strip bare "image" placeholders from image_urls or images in sections ──
             # If the LLM extracted "image" as a literal string (from OCR's ![...](image)),
             # remove it since it's not a valid URL or filename.
             def _clean_image_urls(obj):
                 if isinstance(obj, dict):
+                    if "images" in obj and isinstance(obj["images"], list):
+                        cleaned = []
+                        for img in obj["images"]:
+                            if isinstance(img, dict):
+                                url = img.get("url")
+                                if isinstance(url, str) and url.strip().lower() != "image":
+                                    cleaned.append(img)
+                            elif isinstance(img, str) and img.strip().lower() != "image":
+                                cleaned.append({"url": img, "explanation": ""})
+                        obj["images"] = cleaned
                     if "image_urls" in obj and isinstance(obj["image_urls"], list):
                         obj["image_urls"] = [
                             url for url in obj["image_urls"]
@@ -4144,8 +4171,6 @@ def save_images_universal(
 
 
 
-
-
 def _fix_image_placeholders(markdown: str, raw_ocr: Dict[str, Any]) -> str:
     """Replace bare ![...](image) placeholders with actual image filenames from OCR.
 
@@ -4259,6 +4284,7 @@ def process_pdf(
     llm_max_length: int = 100000,
     part: Optional[str] = None,
     class_number: Optional[str] = None,
+    enrichment_style: str = "avatar_classroom_teaching",
 ) -> Dict[str, Any]:
     """TRULY UNIVERSAL: Works with ANY textbook!"""
     
@@ -4270,10 +4296,15 @@ def process_pdf(
     safe_subject = "".join([c if c.isalnum() else "_" for c in (subject if isinstance(subject, str) else str(subject))]) if subject else "Unknown_Subject"
     
     prefix = f"{safe_board}_{safe_class}_{safe_subject}".replace("__", "_")
-    doc_out_dir = outputs_dir / f"{prefix}_{pdf_path.stem}"
+    
+    # Truncate stem to prevent Windows MAX_PATH (260 char) errors
+    safe_stem = pdf_path.stem[:40].rstrip('_.-')
+    doc_out_dir = outputs_dir / f"{prefix}_{safe_stem}"
     ensure_outputs_dir(doc_out_dir)
     
-    pdf_dest = doc_out_dir / pdf_path.name
+    # Also truncate the copied filename just in case
+    safe_filename = pdf_path.stem[:50].rstrip('_.-') + pdf_path.suffix
+    pdf_dest = doc_out_dir / safe_filename
     if not pdf_dest.exists():
         shutil.copy2(pdf_path, pdf_dest)
     
@@ -4601,111 +4632,9 @@ def process_pdf(
     
     print(f"\n  ✅ Complete! {len(units)} units extracted, {image_count} images saved")
 
-    # ── Enrichment ────────────────────────────────────────────────────────────
-    # skip_enrichment=False (default) means enrichment SHOULD run.
-    if not skip_enrichment and ENRICHMENT_AVAILABLE and openai_api_key:
-        print(f"\n  🧠 Running subject-aware enrichment ({str(subject)})...")
-        try:
-            enriched_path = doc_out_dir / "enriched.json"
-            enrichment_ok = run_enrichment(
-                structured_json_path=structured_path,
-                output_path=enriched_path,
-            )
-            summary["has_enriched"] = enrichment_ok
-            if enrichment_ok:
-                print(f"  ✅ Enrichment complete → {enriched_path.name}")
-            else:
-                print(f"  ⚠️  Enrichment finished with errors — check enriched.json")
-        except Exception as e:
-            print(f"  ⚠️  Enrichment failed: {e}")
-            import traceback
-            traceback.print_exc()
-            summary["has_enriched"] = False
-    elif skip_enrichment:
-        print(f"\n  ⏭️  Enrichment skipped (skip_enrichment=True)")
-        summary["has_enriched"] = False
-    else:
-        if not ENRICHMENT_AVAILABLE:
-            print(f"\n  ⚠️  Enrichment module not available — skipping")
-        summary["has_enriched"] = False
-
-    # Re-save summary with enrichment status
-    save_json(summary, doc_out_dir / "summary.json")
-
-    # ── Qdrant upload ─────────────────────────────────────────────────────────
-    # skip_qdrant=False (default) means upload SHOULD happen.
-    # We upload enriched.json if it exists, otherwise fall back to structured.json.
-    if not skip_qdrant and QDRANT_INTEGRATION_AVAILABLE:
-        print(f"\n  📦 Uploading to Qdrant vector DB...")
-        try:
-            _q_client = qdrant_client
-            if _q_client is None:
-                from qdrant_integration import initialize_qdrant_client as _init_q
-                _q_client = _init_q()
-
-            if _q_client is None:
-                print(f"  ⚠️  Qdrant upload skipped — could not connect to Qdrant")
-                summary["qdrant_uploaded"] = False
-            else:
-                _doc_id   = doc_out_dir.name
-                _doc_name = pdf_path.name
-                _uploaded = False
-
-                if structured_path.exists():
-                    print(f"  📤 Uploading structured.json to Qdrant...")
-                    _uploaded = process_and_upload_document(
-                        structured_json_path=structured_path,
-                        document_id=_doc_id,
-                        document_name=_doc_name,
-                        board=board,
-                        class_number=class_number,
-                        qdrant_client=_q_client
-                        # process_and_upload_document now uses ChunkMetadata(book_content="structured") by default
-                    )
-                else:
-                    print(f"  ⚠️  No structured.json found to upload")
-
-                # Also upload explicitly to an enriched collection if enriched data exists and not skipped
-                enriched_path = doc_out_dir / "enriched.json"
-                if not skip_enrichment and enriched_path.exists():
-                    print(f"  📤 Uploading enriched.json to Qdrant...")
-                    # We can use the same function, but we need a way to pass book_content="enrichment"
-                    # However, process_and_upload_document doesn't accept book_content explicitly yet
-                    # For now, we'll upload it. We need to modify process_and_upload_document in qdrant_integration.py to accept book_content.
-                    _uploaded_enriched = process_and_upload_document(
-                        structured_json_path=enriched_path,
-                        document_id=_doc_id,
-                        document_name=_doc_name,
-                        board=board,
-                        class_number=class_number,
-                        qdrant_client=_q_client,
-                        book_content="enrichment",
-                        collection_name=os.environ.get("QDRANT_COLLECTION_NAME", "GradeupAI_Books") + "_Enriched"
-                    )
-                    if _uploaded_enriched:
-                        print(f"  ✅ Qdrant upload complete for enriched data")
-                    else:
-                        print(f"  ⚠️  Qdrant upload failed for enriched data")
-
-                summary["qdrant_uploaded"] = _uploaded
-                if _uploaded:
-                    print(f"  ✅ Qdrant upload complete (document_id={_doc_id})")
-                else:
-                    print(f"  ⚠️  Qdrant upload failed for structured data — check Qdrant connection and logs")
-        except Exception as _qe:
-            print(f"  ⚠️  Qdrant upload error: {_qe}")
-            import traceback as _tb
-            _tb.print_exc()
-            summary["qdrant_uploaded"] = False
-    elif skip_qdrant:
-        print(f"\n  ⏭️  Qdrant upload skipped (skip_qdrant=True)")
-        summary["qdrant_uploaded"] = False
-    else:
-        if not QDRANT_INTEGRATION_AVAILABLE:
-            print(f"\n  ⚠️  Qdrant module not available — skipping upload")
-        summary["qdrant_uploaded"] = False
-
-    # Re-save summary including Qdrant upload status
+    # ── Enrichment & Qdrant (Moved to pipeline.py after Verification) ─────────
+    summary["has_enriched"] = False
+    summary["qdrant_uploaded"] = False
     save_json(summary, doc_out_dir / "summary.json")
 
     return {"success": True, **summary}

@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
-import { Document, Page, pdfjs } from "react-pdf";
+import { pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import { useAuth } from "../../hooks/use-auth";
 import Navigation from "../../components/navigation";
+import { PAPER_DATA, PARTS } from "../../lib/mock-paper-data";
 import {
   ArrowLeft, Download, Eye, Search, X, Printer,
   Timer, Bookmark, ArrowUp, Sparkles,
@@ -289,6 +290,61 @@ const CSS = `
 .qb-watermark { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; opacity:.04; transform:rotate(-45deg); font-size:80px; font-weight:900; text-transform:uppercase; white-space:nowrap; color:#0f172a; z-index:30; letter-spacing:-2px; }
 .qb-pdf-verified { position:absolute; bottom:12px; right:14px; font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.15em; color:#94a3b8; opacity:.5; z-index:40; }
 
+.qb-mobile-parts { display:none; }
+.ep-paper-wrapper {
+  width:100%; max-width:860px; margin:0 auto; padding:34px 44px 42px;
+  background:#fff; color:#111827; border:1px solid #d8dee8; border-radius:2px;
+  box-shadow:0 12px 36px rgba(15,23,42,.16);
+}
+.ep-paper-header { text-align:center; padding-bottom:18px; }
+.ep-paper-school { font-family:Georgia,'Times New Roman',serif; font-size:13px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:#475569; }
+.ep-paper-exam-title { margin-top:8px; font-family:Georgia,'Times New Roman',serif; font-size:25px; font-weight:700; color:#111827; line-height:1.2; }
+.ep-paper-subject { margin-top:4px; font-size:13px; font-weight:600; color:#64748b; }
+.ep-paper-meta-row {
+  margin:18px auto 0; display:grid; grid-template-columns:repeat(3,minmax(0,1fr));
+  max-width:520px; border:1px solid #cbd5e1; border-radius:2px; overflow:hidden;
+}
+.ep-paper-meta-item { padding:10px 12px; border-right:1px solid #cbd5e1; background:#f8fafc; }
+.ep-paper-meta-item:last-child { border-right:none; }
+.ep-paper-meta-val { font-size:16px; line-height:1; font-weight:800; color:#111827; }
+.ep-paper-meta-lbl { margin-top:4px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:#64748b; }
+.ep-paper-divider { margin-top:18px; height:2px; background:#111827; position:relative; }
+.ep-paper-divider::after { content:''; position:absolute; left:0; right:0; top:5px; height:1px; background:#cbd5e1; }
+.ep-part-section { padding:24px 0 4px; border-bottom:1px solid #e5e7eb; scroll-margin-top:24px; }
+.ep-part-section:last-child { border-bottom:none; padding-bottom:0; }
+.ep-part-header {
+  display:flex; align-items:flex-start; justify-content:space-between; gap:14px;
+  padding:0 0 12px; margin-bottom:12px; border-bottom:1px solid #111827;
+}
+.ep-part-left { display:flex; align-items:flex-start; gap:12px; min-width:0; }
+.ep-part-badge {
+  width:34px; height:34px; border-radius:2px; border:1px solid #111827;
+  display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  font-size:15px; font-weight:800; color:#111827; background:#fff;
+}
+.ep-part-title { font-family:Georgia,'Times New Roman',serif; font-size:17px; font-weight:700; color:#111827; line-height:1.25; }
+.ep-part-subtitle { margin-top:3px; font-size:12px; font-weight:600; color:#64748b; }
+.ep-paper-questions { display:flex; flex-direction:column; gap:10px; }
+.ep-paper-qn {
+  display:grid; grid-template-columns:32px minmax(0,1fr) auto; gap:12px; align-items:flex-start;
+  padding:0 0 10px; border-bottom:1px dashed #d1d5db; background:#fff;
+}
+.ep-paper-qn:last-child { border-bottom:none; padding-bottom:0; }
+.ep-paper-qn-num {
+  width:28px; height:28px; border-radius:50%; border:1px solid #cbd5e1;
+  display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:800; color:#111827;
+}
+.ep-paper-qn-text { font-family:Georgia,'Times New Roman',serif; font-size:15px; line-height:1.65; color:#111827; overflow-wrap:anywhere; }
+.ep-paper-qn-unit {
+  max-width:160px; padding:4px 8px; border-radius:2px; background:#f8fafc; border:1px solid #e2e8f0;
+  font-size:10px; line-height:1.2; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:#64748b;
+  white-space:normal; text-align:right;
+}
+.ep-paper-empty {
+  padding:28px 18px; border:1px dashed #cbd5e1; background:#f8fafc;
+  text-align:center; font-size:13px; font-weight:600; color:#64748b;
+}
+
 .qb-predictor-overlay { position:absolute; inset:0; z-index:60; background:rgba(15,23,42,.55); backdrop-filter:blur(6px); display:flex; align-items:center; justify-content:center; padding:24px; }
 .qb-predictor-card { background:#fff; border-radius:20px; max-width:400px; width:100%; overflow:hidden; box-shadow:0 24px 60px rgba(0,0,0,.2); }
 .qb-predictor-head { padding:18px 22px; border-bottom:1px solid #f1f5f9; display:flex; align-items:center; justify-content:space-between; }
@@ -322,7 +378,19 @@ const CSS = `
 
 /* ── RESPONSIVE ── */
 @media (max-width:1024px) { .qb-viewer-sb { width:220px; } }
-@media (max-width:900px)  { .qb-viewer-sb { display:none; } }
+@media (max-width:900px)  {
+  .qb-viewer-sb { display:none; }
+  .qb-mobile-parts {
+    position:sticky; top:0; z-index:20; display:flex; gap:8px; overflow-x:auto;
+    margin:-28px -20px 18px; padding:12px 16px; background:rgba(248,250,252,.96);
+    border-bottom:1px solid #e2e8f0; backdrop-filter:blur(8px);
+  }
+  .qb-mobile-part-btn {
+    flex:0 0 auto; height:34px; padding:0 12px; border-radius:2px; border:1px solid #cbd5e1;
+    background:#fff; color:#334155; font-family:'Plus Jakarta Sans',system-ui,sans-serif;
+    font-size:12px; font-weight:800; cursor:pointer;
+  }
+}
 @media (max-width:768px) {
   .qb-hero { padding:24px 20px; margin-bottom:20px; }
   .qb-hero-right { display:none; }
@@ -332,12 +400,24 @@ const CSS = `
   .qb-filters { gap:8px; }
   .qb-search-wrap { max-width:none; }
   .qb-subj-chips { display:none; }   /* hide on mobile — use dropdown only */
+  .qb-pdf-area { padding:28px 14px 20px; }
+  .ep-paper-wrapper { padding:24px 18px 28px; }
+  .ep-paper-exam-title { font-size:21px; }
+  .ep-paper-meta-row { grid-template-columns:1fr; max-width:none; }
+  .ep-paper-meta-item { border-right:none; border-bottom:1px solid #cbd5e1; }
+  .ep-paper-meta-item:last-child { border-bottom:none; }
+  .ep-paper-qn { grid-template-columns:28px minmax(0,1fr); }
+  .ep-paper-qn-unit { grid-column:2; justify-self:start; max-width:100%; text-align:left; }
 }
 @media (max-width:480px) {
   .qb-paper-foot { flex-direction:column; }
   .qb-filters { flex-wrap:wrap; }
   .qb-search-wrap { min-width:100%; order:1; }
   .qb-year-wrap   { order:2; }
+  .qb-viewer-head-title { max-width:180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .qb-vhbtn-dl { padding:0 12px; }
+  .ep-part-title { font-size:15px; }
+  .ep-paper-qn-text { font-size:14px; line-height:1.6; }
 }
 `;
 
@@ -355,25 +435,25 @@ const QUESTION_BANK_DATA = [
   },
   {
     id:2, subjectId:2, year:2025, type:"Board Exam",
-    title:"Class 12 Physics (8317 - Set B)",
-    fileUrl:"/pdfs/tn-board-class-12-physics-8317-set-b-2025.pdf",
-    difficulty:"Hard", duration:"3.00 Hours", topics:["Optics","Electromagnetism","Electronics"],
+    title:"Class 7 Science (8317 - Set B)",
+    fileUrl:"/pdfs/class-7-science-8317-set-b-2025.pdf",
+    difficulty:"Hard", duration:"3.00 Hours", topics:["Nutrition","Heat","Motion"],
     sections:[{label:"Part I (MCQs)",page:1,diff:45},{label:"Part II (2-Marks)",page:7,diff:55},{label:"Part III (3-Marks)",page:8,diff:70},{label:"Part IV (5-Marks)",page:9,diff:90}],
-    aiHint:"Focus on Fizeau's method for light speed and DeMorgan's theorems in digital logic.",
-    crackStrategy:"Master the induction of emf by changing area and Brewster's Law for Part IV.",
-    topicWeightage:"Optics: 30%, Electromagnetism: 40%, Atomic Physics: 30%",
-    mistakeRadar:"Watch out for the specific requirement of drawing the forward biased p-n junction diode circuit diagram.",
+    aiHint:"Focus on nutrition in plants, heat transfer, and interpreting distance-time graphs.",
+    crackStrategy:"Revise diagrams for plant nutrition and practice short numerical questions from motion and time.",
+    topicWeightage:"Nutrition: 30%, Heat: 35%, Motion and Time: 35%",
+    mistakeRadar:"Commonly missed: Confusing conduction, convection, and radiation examples.",
   },
   {
     id:3, subjectId:2, year:2024, type:"Board Exam",
-    title:"Class 12 Physics (7417 - Set A)",
-    fileUrl:"/pdfs/tn-board-class-12-physics-7417-set-a-2024.pdf",
-    difficulty:"Hard", duration:"3.00 Hours", topics:["Electrostatics","Nuclear","Optics"],
+    title:"Class 7 Science (7417 - Set A)",
+    fileUrl:"/pdfs/class-7-science-7417-set-a-2024.pdf",
+    difficulty:"Hard", duration:"3.00 Hours", topics:["Acids and Bases","Weather","Respiration"],
     sections:[{label:"Part I (MCQs)",page:1,diff:35},{label:"Part II (2-Marks)",page:7,diff:50},{label:"Part III (3-Marks)",page:8,diff:65},{label:"Part IV (5-Marks)",page:10,diff:95}],
-    aiHint:"Recurring derivations include Einstein's photoelectric equation and Maxwell's modification of Ampere's law.",
-    crackStrategy:"Review nuclear reactor components (Moderators/Control rods) as they are standard Part IV theory questions.",
-    topicWeightage:"Electrostatics: 35%, Nuclear Physics: 30%, Optics: 35%",
-    mistakeRadar:"Commonly missed: Distinguishing between near point and normal focusing in simple microscopes.",
+    aiHint:"Recurring areas include neutralisation, weather instruments, and aerobic respiration.",
+    crackStrategy:"Practice indicator color changes, simple weather-data interpretation, and labelled respiration diagrams.",
+    topicWeightage:"Acids and Bases: 35%, Weather and Climate: 30%, Respiration: 35%",
+    mistakeRadar:"Commonly missed: Distinguishing breathing from cellular respiration.",
   },
   {
     id:4, subjectId:3, year:2025, type:"Board Exam",
@@ -391,6 +471,26 @@ const QUESTION_BANK_DATA = [
 const diffColor   = (d:string) => d==="Hard"?"#ef4444":d==="Medium"?"#f59e0b":"#10b981";
 const diffTagCls  = (d:string) => d==="Hard"?"qb-tag-hard":d==="Medium"?"qb-tag-medium":"qb-tag-easy";
 const barColor    = (diff:number) => diff>80?"#ef4444":diff>60?"#f59e0b":"#10b981";
+const PAPER_SUBJECT_BY_ID: Record<number, string> = {
+  1: "Mathematics",
+  2: "Science",
+  3: "Computer Science",
+};
+const EMPTY_PAPER_DATA = {
+  part1: [],
+  part2: [],
+  part3: [],
+  part4: [],
+};
+
+const getPaperSubject = (paper: (typeof QUESTION_BANK_DATA)[number]) => {
+  const subjectFromTitle = Object.keys(PAPER_DATA).find(subject =>
+    paper.title.toLowerCase().includes(subject.toLowerCase())
+  );
+  const mappedSubject = PAPER_SUBJECT_BY_ID[paper.subjectId];
+
+  return subjectFromTitle || mappedSubject || "Mathematics";
+};
 
 // Derive all unique years from data, sorted descending
 const ALL_YEARS = [...new Set(QUESTION_BANK_DATA.map(p => p.year))].sort((a,b)=>b-a);
@@ -477,7 +577,6 @@ export default function QuestionBank() {
   const [search,   setSearch]   = useState("");
   const [yearFilt, setYearFilt] = useState("all");
   const [preview,  setPreview]  = useState<(typeof QUESTION_BANK_DATA)[0]|null>(null);
-  const [numPages, setNumPages] = useState<number|null>(null);
   const [showTop,  setShowTop]  = useState(false);
   const [showPred, setShowPred] = useState(false);
   const [showMobSb,setShowMobSb]= useState(false);
@@ -489,6 +588,9 @@ export default function QuestionBank() {
 
   const params      = new URLSearchParams(window.location.search);
   const activeSubId = params.get("subjectId") ? parseInt(params.get("subjectId")!) : null;
+  const activeSubjectLabel = activeSubId
+    ? PAPER_SUBJECT_BY_ID[activeSubId] || `Subject ${activeSubId}`
+    : null;
 
   const filteredPapers = QUESTION_BANK_DATA.filter(p => {
     const ms = activeSubId ? p.subjectId === activeSubId : true;
@@ -499,7 +601,10 @@ export default function QuestionBank() {
 
   const dl    = (url:string,name:string) => { const a=document.createElement("a");a.href=url;a.download=name;a.click(); };
   const print = (url:string) => { const w=window.open(url,"_blank");if(w) w.onload=()=>w.print(); };
-  const scrollTo  = (page:number) => { const el=document.getElementById(`qbp_${page}`);if(el) el.scrollIntoView({behavior:"smooth",block:"start"}); };
+  const scrollToPart = (partKey:string) => {
+    const el = document.getElementById(`qbank-part-${partKey}`);
+    if (el) el.scrollIntoView({ behavior:"smooth", block:"start" });
+  };
   const scrollTop = () => { pdfRef.current?.scrollTo({top:0,behavior:"smooth"}); };
 
   const hasActiveFilters = yearFilt !== "all" || !!search;
@@ -519,8 +624,8 @@ export default function QuestionBank() {
                 <div className="qb-hero-badge"><GraduationCap size={13}/>GradeUp Vault</div>
                 <div className="qb-hero-title">Premium Question Bank 📚</div>
                 <div className="qb-hero-sub">
-                  {activeSubId
-                    ? `Showing papers for Subject ${activeSubId}`
+                  {activeSubjectLabel
+                    ? `Showing papers for ${activeSubjectLabel}`
                     : "Official board papers with AI-powered insights, section analysis & topic weightage."}
                 </div>
               </div>
@@ -648,7 +753,7 @@ export default function QuestionBank() {
                     </div>
                   </div>
                   <div className="qb-paper-foot">
-                    <button className="qb-btn-preview" onClick={()=>{setPreview(paper);setNumPages(null);}}>
+                    <button className="qb-btn-preview" onClick={()=>{setPreview(paper);}}>
                       <Eye size={15}/>Preview
                     </button>
                     <button className="qb-btn-download" onClick={()=>dl(paper.fileUrl,`${paper.title}.pdf`)}>
@@ -665,6 +770,11 @@ export default function QuestionBank() {
   }
 
   // ── PDF Viewer view ───────────────────────────────────────────────────────
+  const subject = getPaperSubject(preview);
+  const paperData = PAPER_DATA[subject] || EMPTY_PAPER_DATA;
+  const totalQuestions = PARTS.reduce((acc, p) => acc + ((paperData as any)[p.key]?.length || 0), 0);
+  const totalMarks = PARTS.reduce((acc, p) => acc + ((paperData as any)[p.key]?.length || 0) * p.marks, 0);
+
   return (
     <div className="qb">
       <style>{CSS}</style>
@@ -672,7 +782,7 @@ export default function QuestionBank() {
 
         <div className="qb-viewer-head">
           <div className="qb-viewer-head-left">
-            <button className="qb-vhclose" onClick={()=>{setPreview(null);setNumPages(null);setShowTop(false);setShowPred(false);}}>
+            <button className="qb-vhclose" onClick={()=>{setPreview(null);setShowTop(false);setShowPred(false);}}>
               <X size={18}/>
             </button>
             <div style={{width:1,height:28,background:"#f1f5f9"}}/>
@@ -695,14 +805,14 @@ export default function QuestionBank() {
           <div className="qb-viewer-sb">
             <div>
               <div className="qb-sb-section-title"><Bookmark size={12}/>Quick Links</div>
-              {preview.sections.map((s,i)=>(
-                <div key={i} className="qb-sec-item" onClick={()=>scrollTo(s.page)}>
+              {PARTS.map((part)=>(
+                <div key={part.key} className="qb-sec-item" onClick={()=>scrollToPart(part.key)}>
                   <div className="qb-sec-item-top">
-                    <span className="qb-sec-lbl">{s.label}</span>
-                    <span className="qb-sec-diff-badge" style={{background:`${barColor(s.diff)}18`,color:barColor(s.diff)}}>{s.diff}%</span>
+                    <span className="qb-sec-lbl">{part.label}</span>
+                    <span className="qb-sec-diff-badge" style={{background:"rgba(15,23,42,.06)",color:"#334155"}}>{part.marks} mark{part.marks > 1 ? "s" : ""}</span>
                   </div>
-                  <div className="qb-sec-page" style={{marginBottom:6}}>Page {s.page}</div>
-                  <div className="qb-sec-bar-bg"><div className="qb-sec-bar-fill" style={{width:`${s.diff}%`,background:barColor(s.diff)}}/></div>
+                  <div className="qb-sec-page" style={{marginBottom:6}}>{part.desc}</div>
+                  <div className="qb-sec-bar-bg"><div className="qb-sec-bar-fill" style={{width:"100%",background:"#111827"}}/></div>
                 </div>
               ))}
             </div>
@@ -720,15 +830,82 @@ export default function QuestionBank() {
           </div>
 
           <div className="qb-pdf-area" ref={pdfRef} onScroll={e=>{setShowTop((e.target as HTMLElement).scrollTop>600);}}>
-            <Document file={preview.fileUrl} onLoadSuccess={({numPages})=>setNumPages(numPages)}>
-              {Array.from(new Array(numPages),(_, idx)=>(
-                <div key={`qbp_${idx+1}`} id={`qbp_${idx+1}`} className="qb-pdf-page-wrap">
-                  <div className="qb-watermark">GradeUp AI</div>
-                  <Page pageNumber={idx+1} renderTextLayer={false} renderAnnotationLayer={false} width={Math.min(800,window.innerWidth-80)} className="z-10"/>
-                  <div className="qb-pdf-verified">Verified Resource 2026</div>
-                </div>
+            <div className="qb-mobile-parts">
+              {PARTS.map(part => (
+                <button key={part.key} className="qb-mobile-part-btn" onClick={()=>scrollToPart(part.key)}>
+                  {part.label}
+                </button>
               ))}
-            </Document>
+            </div>
+
+            <div className="ep-paper-wrapper">
+              <div className="ep-paper-header">
+                <div className="ep-paper-school">Model Question Paper</div>
+                <div className="ep-paper-exam-title">{subject}</div>
+                <div className="ep-paper-subject">All Units</div>
+                <div className="ep-paper-meta-row">
+                  <div className="ep-paper-meta-item">
+                    <div className="ep-paper-meta-val">
+                      {totalQuestions}
+                    </div>
+                    <div className="ep-paper-meta-lbl">Questions</div>
+                  </div>
+                  <div className="ep-paper-meta-item">
+                    <div className="ep-paper-meta-val">
+                      {totalMarks}
+                    </div>
+                    <div className="ep-paper-meta-lbl">Total Marks</div>
+                  </div>
+                  <div className="ep-paper-meta-item">
+                    <div className="ep-paper-meta-val">3 hrs</div>
+                    <div className="ep-paper-meta-lbl">Duration</div>
+                  </div>
+                </div>
+                <div className="ep-paper-divider" />
+              </div>
+
+              {totalQuestions === 0 && (
+                <div className="ep-paper-empty">
+                  Questions for this subject are not available yet.
+                </div>
+              )}
+
+              {PARTS.map((part) => {
+                const qs = (paperData as any)[part.key] as { q: string; unit: string }[];
+                if (!qs || qs.length === 0) return null;
+                return (
+                  <div
+                    id={`qbank-part-${part.key}`}
+                    key={part.key}
+                    className={`ep-part-section ${part.cls}`}
+                  >
+                    <div className="ep-part-header">
+                      <div className="ep-part-left">
+                        <div className="ep-part-badge">{part.icon}</div>
+                        <div>
+                          <div className="ep-part-title">
+                            {part.label} — {part.desc}
+                          </div>
+                          <div className="ep-part-subtitle">
+                            Each question carries {part.marks} mark{part.marks > 1 ? "s" : ""}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="ep-paper-questions">
+                      {qs.map((q, qi) => (
+                        <div key={qi} className="ep-paper-qn">
+                          <div className="ep-paper-qn-num">{qi + 1}</div>
+                          <div className="ep-paper-qn-text">{q.q}</div>
+                          <span className="ep-paper-qn-unit">{q.unit}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           {showPred && (

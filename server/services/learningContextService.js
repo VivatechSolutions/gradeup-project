@@ -126,6 +126,232 @@ function createTopicRecord({
   };
 }
 
+function normalizeDebateText(value = "") {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeStoredDebateTopicItem(topic = {}, unit = {}, section = {}, index = 0) {
+  const topicTitle = normalizeDebateText(
+    topic.topic_title || topic.topicTitle || topic.title || topic.label,
+  );
+
+  if (!topicTitle) {
+    return null;
+  }
+
+  const sectionTitle = normalizeDebateText(
+    topic.section_title || topic.sectionTitle || section.section_title || section.sectionTitle,
+  );
+  const unitTitle = normalizeDebateText(
+    topic.unit_title || topic.unitTitle || unit.unitTitle || unit.unitLabel,
+  );
+  const unitNumber =
+    Number(topic.unit_number ?? topic.unitNumber ?? unit.unitNumber ?? section.unit_number) ||
+    null;
+  const topicPath = Array.isArray(topic.topic_path) && topic.topic_path.length
+    ? topic.topic_path.map((value) => normalizeDebateText(value)).filter(Boolean)
+    : [unit.subject, unitTitle, sectionTitle, topicTitle].filter(Boolean);
+
+  return {
+    topic_id:
+      normalizeDebateText(topic.topic_id || topic.topicId) ||
+      `${unit.documentId}:${unitNumber ?? "unit"}:${sectionTitle || "section"}:${index}`,
+    topic_title: topicTitle,
+    topic_description:
+      normalizeDebateText(topic.topic_description || topic.topicDescription) || null,
+    key_concepts: Array.isArray(topic.key_concepts)
+      ? topic.key_concepts.map((value) => normalizeDebateText(value)).filter(Boolean)
+      : [],
+    source_unit: normalizeDebateText(topic.source_unit || unitTitle) || null,
+    source_section: sectionTitle || null,
+    subject: normalizeDebateText(topic.subject || unit.subject) || null,
+    subject_key: getSubjectGroupLookup(unit),
+    unit_number: unitNumber,
+    unit_title: unitTitle || null,
+    section_title: sectionTitle || null,
+    topic_path: topicPath,
+  };
+}
+
+function normalizeStoredDebateSections(unit, sections = []) {
+  return sections
+    .map((section, sectionIndex) => {
+      const sectionTitle = normalizeDebateText(section.section_title || section.sectionTitle);
+      const debateTopics = Array.isArray(section.debate_topics) ? section.debate_topics : [];
+      const normalizedTopics = debateTopics
+        .map((topic, topicIndex) =>
+          normalizeStoredDebateTopicItem(topic, unit, section, topicIndex),
+        )
+        .filter(Boolean);
+
+      if (!sectionTitle || !normalizedTopics.length) {
+        return null;
+      }
+
+      return {
+        section_title: sectionTitle,
+        topics_count: Number(section.topics_count || normalizedTopics.length || 0),
+        debate_topics: normalizedTopics,
+        section_index: sectionIndex,
+      };
+    })
+    .filter(Boolean);
+}
+
+function buildStoredDebateHierarchy(unit, debateTopicsData, filters = {}) {
+  const rawUnits = Array.isArray(debateTopicsData?.units) ? debateTopicsData.units : [];
+  if (!rawUnits.length) {
+    return null;
+  }
+
+  const unitNumberFilter =
+    filters.unitNumber !== undefined &&
+    filters.unitNumber !== null &&
+    String(filters.unitNumber) !== "";
+  const sectionFilter = normalizeDebateText(filters.sectionTitle).toLowerCase();
+
+  const normalizedUnits = rawUnits
+    .map((entry, index) => {
+      const unitNumber =
+        Number(entry.unit_number ?? entry.unitNumber ?? unit.unitNumber ?? index + 1) || null;
+      const unitTitle = normalizeDebateText(entry.unit_title || entry.unitTitle || unit.unitTitle);
+      const sections = normalizeStoredDebateSections(unit, entry.sections || []);
+      const filteredSections = sections.filter((section) => {
+        if (!sectionFilter) {
+          return true;
+        }
+        return section.section_title.toLowerCase() === sectionFilter;
+      });
+
+      if (unitNumberFilter && Number(unitNumber) !== Number(filters.unitNumber)) {
+        return null;
+      }
+
+      if (!filteredSections.length) {
+        return null;
+      }
+
+      return {
+        unit_number: unitNumber,
+        unit_title: unitTitle || unit.unitTitle || null,
+        sections: filteredSections,
+      };
+    })
+    .filter(Boolean);
+
+  if (!normalizedUnits.length) {
+    return null;
+  }
+
+  return {
+    success: true,
+    generated_at: debateTopicsData?.generated_at || null,
+    subject: debateTopicsData?.subject || unit.subject || null,
+    total_topics: normalizedUnits.reduce(
+      (count, currentUnit) =>
+        count +
+        currentUnit.sections.reduce(
+          (sectionCount, section) => sectionCount + (section.debate_topics || []).length,
+          0,
+        ),
+      0,
+    ),
+    total_sections: normalizedUnits.reduce(
+      (count, currentUnit) => count + currentUnit.sections.length,
+      0,
+    ),
+    units: normalizedUnits,
+  };
+}
+
+function buildFallbackDebateHierarchy(unit) {
+  const fallbackTopics = extractSectionTopicsForUnit(unit);
+  if (!fallbackTopics.length) {
+    return {
+      success: true,
+      generated_at: null,
+      subject: unit.subject || null,
+      total_topics: 0,
+      total_sections: 0,
+      units: [],
+    };
+  }
+
+  const sections = [];
+  const seenSections = new Set();
+
+  fallbackTopics.forEach((topic, index) => {
+    const sectionTitle = normalizeDebateText(topic.sectionTitle || topic.label);
+    if (!sectionTitle) {
+      return;
+    }
+
+    const sectionKey = sectionTitle.toLowerCase();
+    if (seenSections.has(sectionKey)) {
+      return;
+    }
+    seenSections.add(sectionKey);
+
+    sections.push({
+      section_title: sectionTitle,
+      topics_count: 1,
+      debate_topics: [
+        {
+          topic_id: topic.id || `${unit.documentId}:${sectionKey}:${index}`,
+          topic_title: sectionTitle,
+          topic_description: null,
+          key_concepts: [],
+          source_unit: unit.unitTitle || unit.unitLabel || null,
+          source_section: sectionTitle,
+          subject: unit.subject || null,
+          subject_key: getSubjectGroupLookup(unit),
+          unit_number: unit.unitNumber ?? null,
+          unit_title: unit.unitTitle || null,
+          section_title: sectionTitle,
+          topic_path: [unit.subject, unit.unitTitle, sectionTitle].filter(Boolean),
+        },
+      ],
+    });
+  });
+
+  return {
+    success: true,
+    generated_at: unit.updatedAt || null,
+    subject: unit.subject || null,
+    total_topics: sections.length,
+    total_sections: sections.length,
+    units: [
+      {
+        unit_number: unit.unitNumber ?? null,
+        unit_title: unit.unitTitle || unit.unitLabel || null,
+        sections,
+      },
+    ],
+  };
+}
+
+function buildDebateTopicHierarchyForUnit(unit, filters = {}) {
+  if (!unit) {
+    return {
+      success: true,
+      generated_at: null,
+      subject: null,
+      total_topics: 0,
+      total_sections: 0,
+      units: [],
+    };
+  }
+
+  const storedHierarchy = buildStoredDebateHierarchy(unit, unit.debateTopics, filters);
+  if (storedHierarchy?.units?.length) {
+    return storedHierarchy;
+  }
+
+  return buildFallbackDebateHierarchy(unit);
+}
+
 function extractTopicsFromValue(value, unit, collected, seen) {
   if (!value) {
     return;
@@ -384,6 +610,7 @@ function toUnitSummary(unit) {
     readerIndex: unit.readerIndex,
     hasStructuredData: Boolean(unit.structuredData),
     hasEnrichedData: Boolean(unit.enrichedData),
+    debateTopics: unit.debateTopics || null,
     sectionTopics: extractSectionTopicsForUnit(unit),
     createdAt: unit.createdAt,
     updatedAt: unit.updatedAt,
@@ -635,6 +862,7 @@ module.exports = {
   extractFaqsForUnit,
   resolveSubjectUnit,
   getPythonLearningContext,
+  buildDebateTopicHierarchyForUnit,
   toUnitSummary,
   getSubjectVisual,
 };

@@ -102,7 +102,8 @@ async def upload_with_subject(
     class_number: Optional[str] = Form(None, alias="class_name", description="Class number/name (e.g. '11', '10')"),
     skip_enrichment: bool = Form(False),
     skip_qdrant: bool = Form(False),
-    skip_llm_refinement: bool = Form(False)
+    skip_llm_refinement: bool = Form(False),
+    enrichment_style: str = Form("avatar_classroom_teaching", description="Enrichment style (e.g. 'classroom_teaching', 'avatar_classroom_teaching')")
 ):
     """
     Upload a PDF and process it with subject-aware extraction.
@@ -193,7 +194,8 @@ async def upload_with_subject(
                     skip_qdrant=skip_qdrant,
                     skip_enrichment=skip_enrichment,
                     board=board,
-                    class_number=class_number
+                    class_number=class_number,
+                    enrichment_style=enrichment_style
                 )
                 results.append(unit_res)
 
@@ -241,7 +243,8 @@ async def upload_with_subject(
             skip_qdrant=skip_qdrant,
             skip_enrichment=skip_enrichment,
             board=board,
-            class_number=class_number
+            class_number=class_number,
+            enrichment_style=enrichment_style
         )
     
     if not result.get("success"):
@@ -294,7 +297,8 @@ async def split_pdf_endpoint(
     auto_upload: bool = Form(True, description="Automatically process split units via subject-aware pipeline"),
     skip_enrichment: bool = Form(False),
     skip_qdrant: bool = Form(False),
-    skip_llm_refinement: bool = Form(False)
+    skip_llm_refinement: bool = Form(False),
+    enrichment_style: str = Form("avatar_classroom_teaching", description="Enrichment style (e.g. 'classroom_teaching', 'avatar_classroom_teaching')")
 ):
     """
     Upload a textbook PDF → get it split into one PDF per unit.
@@ -373,7 +377,8 @@ async def split_pdf_endpoint(
                         skip_enrichment=skip_enrichment,
                         filter_qr_codes=False, # Keep fast OCR for units
                         board=board,
-                        class_number=class_number
+                        class_number=class_number,
+                        enrichment_style=enrichment_style
                     )
                     processing_results.append({
                         "unit_number": unit["unit_number"],
@@ -1241,6 +1246,23 @@ async def upload_question_paper_pdf(
         if hasattr(ocr_response, "pages"):
             for page in ocr_response.pages:
                 markdown_text += page.markdown + "\n\n"
+                
+        with open("raw_ocr_dump.txt", "w", encoding="utf-8") as f:
+            f.write(markdown_text)
+        
+        # 2.5 Pre-process markdown to fix OCR math errors (e.g., 4x6=20 -> 4x5=20)
+        import re
+        def _fix_ocr_math(match):
+            q_count = int(match.group(1))
+            marks = int(match.group(2))
+            total = int(match.group(3))
+            if q_count > 0 and marks > 0 and q_count * marks != total:
+                if total % q_count == 0:
+                    fixed_marks = total // q_count
+                    return f"{q_count}x{fixed_marks}={total}"
+            return match.group(0)
+            
+        markdown_text = re.sub(r'(\d+)\s*[xX*]\s*(\d+)\s*=\s*(\d+)', _fix_ocr_math, markdown_text)
         
         # 3. LLM extraction to List[dict]
         api_key_openai = os.environ.get("OPENAI_API_KEY_TEXT") or os.environ.get("OPENAI_API_KEY")
@@ -1252,24 +1274,78 @@ async def upload_question_paper_pdf(
             "Content-Type": "application/json",
         }
         
-        prompt = f'''Extract all questions from the following text into a JSON array of objects.
-Each object must have:
-- "question": string
-- "marks": int (default 1 if not specified)
-- "type": string (e.g., "mcq", "short_answer", "long_answer", "fill_in_the_blanks")
-- "options": array of strings (for MCQ only)
-- "correct_answer": string (if available, otherwise empty)
+        prompt = f'''You are an expert question paper parser. Extract all questions from the following question paper into a JSON array of objects.
 
-Text:
+=== CRITICAL RULES FOR MARKS EXTRACTION ===
+
+STEP 1: IDENTIFY SECTION STRUCTURE FIRST
+Before extracting questions, identify ALL sections/parts of the paper and their marks scheme.
+Typical board exam structure:
+- PART I / Section A: MCQs (1 mark each) — formula like "10x1=10" or "14x1=14"
+- PART II / Section B: Short answers (2 marks each) — formula like "10x2=20"  
+- PART III / Section C: Brief answers (4 marks each) — formula like "7x4=28"
+- PART IV / Section D: Long answers (5 marks each) — formula like "4x5=20"
+
+STEP 2: ASSIGN MARKS FROM SECTION HEADERS (HIGHEST PRIORITY)
+- If a section header says "PART - III (4 marks)" or "Part III 7x4=28", ALL questions in that section are 4 marks each.
+- The formula "NxM=T" means N questions, M marks each, T total marks. The marks per question is M (the MIDDLE number).
+- DO NOT use fallback defaults if section headers define marks.
+
+STEP 3: EXPLICIT PER-QUESTION MARKS (OVERRIDE)
+- If an individual question explicitly states its marks (e.g., "[3]", "(5 marks)"), use that value instead.
+
+STEP 4: FALLBACK (ONLY if no section header or explicit marks exist)
+- MCQ / Fill in the blanks / True or False = 1 mark
+- Short answer = 2 marks, Long answer / Essay = 5 marks
+
+=== CRITICAL RULES FOR MCQ OPTIONS vs QUESTION NUMBERING ===
+
+⚠️ DO NOT CONFUSE MCQ OPTIONS WITH QUESTION NUMBERS!
+- MCQ options are labeled (a), (b), (c), (d) or A), B), C), D) or i), ii), iii), iv). These are CHOICES within ONE question, NOT separate questions!
+- Question numbers are labeled 1., 2., 3., etc. or Q1, Q2, etc. or i., ii., iii. at the QUESTION level.
+- An MCQ has ONE question stem + multiple options (a/b/c/d). Extract all options into the "options" array. Do NOT create separate question entries for each option.
+- Example: If the paper has "1. Light year is the unit of _______ (a) distance (b) time (c) density (d) Both length and time" — this is ONE question with 4 options, NOT 4 separate questions.
+
+=== CRITICAL RULES FOR SUB-QUESTIONS ===
+
+⚠️ MERGE SUB-QUESTIONS INTO THEIR PARENT QUESTION!
+- If a main numbered question has sub-parts (e.g., "3. Fill in the Blanks: (i) ... (ii) ... (iii) ..."), you MUST include ALL sub-parts inside the "question" field as a single combined text.
+- DO NOT extract the header alone (like "Fill in the Blanks." or "Match the following." or "State True or False.") as a standalone question without its sub-items.
+- DO NOT extract each sub-part (i), (ii), (iii) as separate main-level questions. They belong together under the parent question number.
+- The parent question text must contain the instruction AND all sub-items concatenated together.
+- Example: If the paper says:
+    "14. Fill in the Blanks.
+     (i) The SI unit of speed is _______
+     (ii) 1 kg = _______ g"
+  Then extract as ONE question with text: "Fill in the Blanks.\n(i) The SI unit of speed is _______\n(ii) 1 kg = _______ g"
+- Similarly for "Match the following", "State True or False", "Write the symbols", "Give reasons" type questions — combine the instruction with ALL its sub-parts.
+- The marks for the combined question should be the marks assigned to that question number from the section header, NOT the sum of sub-parts.
+
+=== DO NOT SKIP ANY QUESTIONS (CRITICAL) ===
+- Extract EVERY numbered question from the paper. 
+- Do not skip analogy questions, true/false questions, fill-in-the-blanks, match-the-following, or any short questions.
+- Count your extracted questions against the section totals to verify you haven't missed any.
+
+=== OUTPUT FORMAT ===
+Each object must have:
+- "question": string (the FULL question text. For questions with sub-parts, include the instruction AND all sub-items in a single string separated by newlines)
+- "marks": int (MUST be inferred from section headers / math formulas — NOT always 1. A question in "Part III 7x4=28" section MUST have marks=4)
+- "type": string (one of: "mcq", "short_answer", "long_answer", "fill_in_the_blanks", "match_the_following", "true_or_false")
+- "options": array of strings (for MCQ only — the answer choices like ["distance", "time", "density", "Both"]. Empty array for all other types)
+- "correct_answer": string (if available, otherwise empty string)
+- "is_choice_based": boolean (true if the section says "Answer any X out of Y". false if all questions must be answered)
+- "questions_to_attempt": int (if section says "Answer any 15 out of 20", this is 15. If no choice is given, this equals the total number of questions in the section)
+
+Question Paper Text:
 {markdown_text[:30000]}
 
-Return ONLY the JSON array.'''
+Return ONLY the JSON array. No markdown formatting, no explanation.'''
 
         payload = {
             "model": "gpt-4o-mini",
             "messages": [{"role": "user", "content": prompt}],
-            "max_completion_tokens": 3000,
-            "temperature": 1,
+            "max_completion_tokens": 12000,
+            "temperature": 0.2,
         }
         
         resp = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload, timeout=120)
@@ -1286,8 +1362,61 @@ Return ONLY the JSON array.'''
             extracted_questions = json.loads(content)
         except json.JSONDecodeError:
             raise HTTPException(500, "Failed to parse LLM extracted questions as JSON.")
+        
+        # 3.5 Post-processing: fix common LLM extraction issues
+        
+        # A) Filter out standalone section headers extracted as questions
+        #    (e.g., "Fill in the Blanks." with no actual blanks content)
+        header_only_patterns = [
+            r'^fill\s+in\s+the\s+blanks\.?\s*$',
+            r'^match\s+the\s+following\.?\s*$',
+            r'^state\s+true\s+or\s+false.*\.?\s*$',
+            r'^write\s+the\s+symbols?\s+for\s+the\s+following.*\.?\s*$',
+            r'^answer\s+the\s+following.*\.?\s*$',
+            r'^choose\s+the\s+correct\s+answer.*\.?\s*$',
+        ]
+        
+        cleaned_questions = []
+        for q in extracted_questions:
+            q_text = q.get("question", "").strip()
+            # Check if this is just a section header with no actual content
+            is_header_only = False
+            for pattern in header_only_patterns:
+                if re.match(pattern, q_text, re.IGNORECASE):
+                    is_header_only = True
+                    break
             
-        # 4. Pass to QuestionBankManager
+            if is_header_only:
+                print(f"  ⚠️  [QuestionBank] Filtered out standalone section header: '{q_text}'")
+                continue
+            
+            cleaned_questions.append(q)
+        
+        extracted_questions = cleaned_questions
+        
+        # B) Parse section marks structure from OCR text for validation (LOG ONLY)
+        #    The N in "NxM=T" is "questions to attempt", NOT total questions printed
+        #    (e.g., "Answer any 10 out of 15" → formula says 10x2=20 but 15 questions exist).
+        #    So we CANNOT reliably map question indices to section ranges.
+        #    Instead, just build the set of valid marks values for sanity-check logging.
+        valid_marks_from_ocr = set()
+        
+        # Find NxM=T formulas  
+        for m in re.finditer(r'(\d+)\s*[xX×*]\s*(\d+)\s*=\s*(\d+)', markdown_text[:30000]):
+            n_questions = int(m.group(1))
+            marks_each = int(m.group(2))
+            total = int(m.group(3))
+            if n_questions > 0 and marks_each > 0 and n_questions * marks_each == total:
+                valid_marks_from_ocr.add(marks_each)
+        
+        if valid_marks_from_ocr:
+            print(f"  📋  [QuestionBank] Detected valid marks from paper: {sorted(valid_marks_from_ocr)}")
+            for idx, q in enumerate(extracted_questions):
+                q_marks = q.get("marks")
+                if q_marks not in valid_marks_from_ocr:
+                    print(f"  ⚠️  [QuestionBank] Q{idx+1} has marks={q_marks} which is not in detected marks set {sorted(valid_marks_from_ocr)} — please verify")
+        
+
         logical_doc_id = f"qb_pdf_{board.strip().replace(' ', '_')}_{subject.strip().replace(' ', '_')}"
         
         manager = get_question_bank_manager()
@@ -1932,6 +2061,224 @@ class SeminarChatRespondRequest(BaseModel):
     message: str
 
 
+# ── Avatar Teaching Models ────────────────────────────────────────────────────
+
+
+class AvatarStartRequest(BaseModel):
+    """Start an avatar teaching session."""
+    candidate_id: str
+    candidate_name: str
+    board: str
+    class_number: str
+    subject: str
+    unit_number: int
+    unit_name: str = ""
+    section_title: str
+
+
+class AvatarRaiseHandRequest(BaseModel):
+    """Student raises hand or responds to flashcard offer."""
+    session_id: str
+    student_doubt: Optional[str] = None
+    student_response: Optional[str] = None
+
+
+class AvatarResumeRequest(BaseModel):
+    """Resume avatar from where it paused."""
+    session_id: str
+
+
+class AvatarEndRequest(BaseModel):
+    """End the avatar teaching session."""
+    session_id: str
+
+
+# ── Avatar Teaching Endpoints ─────────────────────────────────────────────────
+
+
+@app.post("/avatar/start")
+def avatar_start(request: AvatarStartRequest):
+    """
+    Start an avatar teaching session for a specific section.
+
+    The avatar loads the enrichment data (segments with emotions + inline flashcards)
+    and returns the full teaching script for the frontend to play.
+
+    Returns session_id, all segments, and an empty session history.
+    """
+    try:
+        from avatar_engine import get_avatar_engine
+    except ImportError:
+        raise HTTPException(500, "Avatar engine module not available. Ensure avatar_engine.py is present.")
+
+    engine = get_avatar_engine()
+    result = engine.start_session(
+        candidate_id=request.candidate_id,
+        candidate_name=request.candidate_name,
+        board=request.board,
+        class_number=request.class_number,
+        subject=request.subject,
+        unit_number=request.unit_number,
+        unit_name=request.unit_name,
+        section_title=request.section_title,
+    )
+
+    if result.get("error"):
+        raise HTTPException(404, result["error"])
+
+    return {"success": True, **result}
+
+
+@app.get("/avatar/enrichment")
+def avatar_get_enrichment(
+    board: str = Query(..., description="Board name"),
+    subject: str = Query(..., description="Subject name"),
+    unit_number: int = Query(..., description="Unit number"),
+    section_title: str = Query(..., description="Section title"),
+    class_number: Optional[str] = Query(None, description="Class number"),
+):
+    """
+    Pre-fetch enrichment data for a section (no session created).
+
+    Returns the avatar explanation segments, FAQs, practice questions,
+    and doubt context without starting a teaching session.
+    """
+    try:
+        from avatar_engine import _load_section_enrichment
+    except ImportError:
+        raise HTTPException(500, "Avatar engine module not available.")
+
+    data = _load_section_enrichment(
+        board=board, class_number=class_number or "",
+        subject=subject, unit_number=unit_number,
+        section_title=section_title,
+    )
+
+    if not data:
+        raise HTTPException(404, f"Enrichment data not found for section '{section_title}' in unit {unit_number}")
+
+    return {
+        "success": True,
+        "subject": subject,
+        "unit_number": unit_number,
+        "unit_title": data.get("unit_title", ""),
+        "section_title": data.get("section_title", ""),
+        "enrichment": data.get("enrichment", {}),
+    }
+
+
+@app.post("/avatar/raise-hand")
+def avatar_raise_hand(request: AvatarRaiseHandRequest):
+    """
+    Student raises hand during avatar teaching or responds to a flashcard offer.
+    """
+    try:
+        from avatar_engine import get_avatar_engine
+    except ImportError:
+        raise HTTPException(500, "Avatar engine module not available.")
+
+    engine = get_avatar_engine()
+    
+    if request.student_response:
+        result = engine.respond_to_flashcard_offer(
+            session_id=request.session_id,
+            student_response=request.student_response,
+        )
+    elif request.student_doubt:
+        result = engine.raise_hand(
+            session_id=request.session_id,
+            student_doubt=request.student_doubt,
+        )
+    else:
+        raise HTTPException(400, "Must provide either student_doubt or student_response")
+
+    if result.get("error"):
+        status = 404 if "not found" in result["error"].lower() else 400
+        raise HTTPException(status, result["error"])
+
+    return {"success": True, **result}
+
+
+@app.post("/avatar/resume")
+def avatar_resume(request: AvatarResumeRequest):
+    """
+    Resume avatar from where it paused after doubt is cleared.
+
+    Marks the latest doubt as resolved and returns the remaining
+    segments from the pause point onwards.
+    """
+    try:
+        from avatar_engine import get_avatar_engine
+    except ImportError:
+        raise HTTPException(500, "Avatar engine module not available.")
+
+    engine = get_avatar_engine()
+    result = engine.resume_session(session_id=request.session_id)
+
+    if result.get("error"):
+        status = 404 if "not found" in result["error"].lower() else 400
+        raise HTTPException(status, result["error"])
+
+    return {"success": True, **result}
+
+
+@app.get("/avatar/session/{session_id}")
+def avatar_get_session(session_id: str):
+    """Get full avatar session details including temp history."""
+    try:
+        from avatar_engine import get_avatar_engine
+    except ImportError:
+        raise HTTPException(500, "Avatar engine module not available.")
+
+    engine = get_avatar_engine()
+    session = engine.get_session(session_id)
+    if not session:
+        raise HTTPException(404, f"Avatar session not found: {session_id}")
+
+    return {"success": True, **session}
+
+
+@app.get("/avatar/history/{candidate_id}")
+def avatar_history(
+    candidate_id: str,
+    subject: Optional[str] = Query(None, description="Filter by subject"),
+    unit_number: Optional[int] = Query(None, description="Filter by unit"),
+):
+    """List all avatar teaching sessions for a student."""
+    try:
+        from avatar_engine import get_avatar_engine
+    except ImportError:
+        raise HTTPException(500, "Avatar engine module not available.")
+
+    engine = get_avatar_engine()
+    sessions = engine.get_history(candidate_id, subject, unit_number)
+
+    return {"success": True, "candidate_id": candidate_id, "sessions": sessions, "count": len(sessions)}
+
+
+@app.post("/avatar/end")
+def avatar_end(request: AvatarEndRequest):
+    """
+    End the avatar teaching session.
+
+    Saves the session summary to student performance and returns
+    completion stats (segments completed, doubts raised, flashcards generated).
+    """
+    try:
+        from avatar_engine import get_avatar_engine
+    except ImportError:
+        raise HTTPException(500, "Avatar engine module not available.")
+
+    engine = get_avatar_engine()
+    result = engine.end_session(session_id=request.session_id)
+
+    if result.get("error"):
+        status = 404 if "not found" in result["error"].lower() else 400
+        raise HTTPException(status, result["error"])
+
+    return {"success": True, **result}
+
+
 # ── 1-on-1 AI Debate Endpoints ───────────────────────────────────────────────
 
 
@@ -2418,22 +2765,7 @@ async def seminar_start(
             "PDF or PPT file upload is mandatory for demo and main seminar sessions. "
             "Please upload your presentation material (PDF or PPTX) to start the session."
         )
-request_body = {
-    "candidate_id": candidate_id,
-    "candidate_name": candidate_name,
-    "subject": subject,
-    "unit_number": unit_number,
-    "board": board,
-    "class_number": class_number,
-    "unit_name": unit_name,
-    "topic": topic,
-    "session_mode": session_mode,
-    "file_name": file.filename if file else None,
-    "uploaded_content_available": bool(uploaded_content),
-    "uploaded_content_length": len(uploaded_content) if uploaded_content else 0,
-}
 
-print("Seminar start request body:", request_body)
     engine = get_seminar_engine()
     result = engine.start_seminar(
         candidate_id=candidate_id,
@@ -2447,6 +2779,7 @@ print("Seminar start request body:", request_body)
         session_mode=session_mode,
         uploaded_content=uploaded_content,
     )
+
     if result.get("error"):
         raise HTTPException(400, result["error"])
 

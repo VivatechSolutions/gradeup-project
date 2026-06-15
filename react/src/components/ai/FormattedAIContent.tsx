@@ -1,9 +1,12 @@
-import React, { Fragment } from "react";
-
+import React, { Fragment, useEffect } from "react";
+import { InlineMath, BlockMath } from "react-katex";
+import "katex/dist/katex.min.css";
 type FormattedAIContentProps = {
   value: unknown;
   className?: string;
   compact?: boolean;
+  highlightEnabled?: boolean;
+  currentWordIndex?: number;
 };
 
 type MarkdownBlock =
@@ -46,7 +49,13 @@ const inlineCodeStyle: React.CSSProperties = {
   background: "rgba(15,23,42,0.08)",
   fontSize: "0.92em",
 };
-
+const highlightStyle: React.CSSProperties = {
+  background: "linear-gradient(135deg,#fef3c7,#fde68a)",
+  borderRadius: 3,
+  padding: "0 2px",
+  color: "#1a1a1a",
+  fontWeight: 600,
+};
 function normalizeLabel(key: string) {
   return key
     .replace(/[_-]+/g, " ")
@@ -60,56 +69,237 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function tokenizeInline(text: string) {
-  const tokens: Array<{ type: "text" | "strong" | "code"; value: string }> = [];
+function tokenizeInline(
+  text: string,
+  highlightEnabled = false,
+  currentWordIndex = -1,
+  wordCounterRef?: { current: number },
+) {
+  const tokens: Array<{
+    type: "text" | "strong" | "code";
+    value: string;
+  }> = [];
+
   const pattern = /(`[^`]+`|\*\*[^*]+\*\*)/g;
+
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
   while ((match = pattern.exec(text)) !== null) {
     if (match.index > lastIndex) {
-      tokens.push({ type: "text", value: text.slice(lastIndex, match.index) });
+      tokens.push({
+        type: "text",
+        value: text.slice(lastIndex, match.index),
+      });
     }
+
     const value = match[0];
+
     if (value.startsWith("`")) {
-      tokens.push({ type: "code", value: value.slice(1, -1) });
+      tokens.push({
+        type: "code",
+        value: value.slice(1, -1),
+      });
     } else {
-      tokens.push({ type: "strong", value: value.slice(2, -2) });
+      tokens.push({
+        type: "strong",
+        value: value.slice(2, -2),
+      });
     }
+
     lastIndex = match.index + value.length;
   }
 
   if (lastIndex < text.length) {
-    tokens.push({ type: "text", value: text.slice(lastIndex) });
+    tokens.push({
+      type: "text",
+      value: text.slice(lastIndex),
+    });
   }
 
   return tokens;
 }
+function renderWordHighlightedText(
+  text: string,
+  highlightEnabled: boolean,
+  currentWordIndex: number,
+  wordCounterRef: { current: number },
+) {
+  const parts = text.split(/(\s+)/);
 
-function renderInline(text: string) {
-  const parts = text.split("\n");
-  return parts.map((part, lineIndex) => (
-    <Fragment key={`${part}-${lineIndex}`}>
-      {tokenizeInline(part).map((token, tokenIndex) => {
-        if (token.type === "strong") {
-          return <strong key={tokenIndex}>{token.value}</strong>;
+  return parts.map((part, index) => {
+    if (!part.trim()) {
+      return <Fragment key={index}>{part}</Fragment>;
+    }
+
+    const currentIndex = wordCounterRef.current++;
+
+    return (
+      <span
+        key={index}
+        style={
+          highlightEnabled && currentIndex === currentWordIndex
+            ? highlightStyle
+            : undefined
         }
-        if (token.type === "code") {
+      >
+        {part}
+      </span>
+    );
+  });
+}
+function renderMathAwareText(
+  text: string,
+  highlightEnabled: boolean,
+  currentWordIndex: number,
+  wordCounterRef: { current: number },
+) {
+  const segments = [];
+
+  const regex =
+    /(\$\$[\s\S]*?\$\$|\$[^$]+\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\))/g;
+
+  let lastIndex = 0;
+  let match;
+
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      segments.push({
+        type: "text",
+        content: text.slice(lastIndex, match.index),
+      });
+    }
+
+    segments.push({
+      type: "math",
+      content: match[0],
+    });
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < text.length) {
+    segments.push({
+      type: "text",
+      content: text.slice(lastIndex),
+    });
+  }
+
+  return segments.map((segment, index) => {
+    if (segment.type === "math") {
+      let expression = segment.content;
+
+      if (expression.startsWith("\\[") && expression.endsWith("\\]")) {
+        expression = expression.replace(/^\\\[/, "").replace(/\\\]$/, "");
+
+        return <BlockMath key={index} math={expression} />;
+      }
+
+      if (expression.startsWith("$$") && expression.endsWith("$$")) {
+        expression = expression.slice(2, -2);
+
+        return <BlockMath key={index} math={expression} />;
+      }
+
+      if (expression.startsWith("\\(") && expression.endsWith("\\)")) {
+        expression = expression.replace(/^\\\(/, "").replace(/\\\)$/, "");
+
+        return <InlineMath key={index} math={expression} />;
+      }
+
+      expression = expression.slice(1, -1);
+
+      return <InlineMath key={index} math={expression} />;
+    }
+
+    return (
+      <Fragment key={index}>
+        {renderWordHighlightedText(
+          segment.content,
+          highlightEnabled,
+          currentWordIndex,
+          wordCounterRef,
+        )}
+      </Fragment>
+    );
+  });
+}
+function renderInline(
+  text: string,
+  highlightEnabled = false,
+  currentWordIndex = -1,
+  wordCounterRef?: { current: number },
+) {
+  const blockMaths: string[] = [];
+
+  const normalizedText = text.replace(
+    /\\\[\s*([\s\S]*?)\s*\\\]/g,
+    (_, formula) => {
+      const index = blockMaths.length;
+
+      blockMaths.push(formula);
+
+      return `@@BLOCK_MATH_${index}@@`;
+    },
+  );
+
+  const parts = normalizedText.split("\n");
+
+  return parts.map((part, lineIndex) => {
+    const blockMatch = part.match(/^@@BLOCK_MATH_(\d+)@@$/);
+
+    if (blockMatch) {
+      const formula = blockMaths[Number(blockMatch[1])];
+
+      return <BlockMath key={`math-${lineIndex}`} math={formula} />;
+    }
+    return (
+      <Fragment key={`${part}-${lineIndex}`}>
+        {tokenizeInline(part).map((token, tokenIndex) => {
+          console.log("PART:", part);
+          if (token.type === "strong") {
+            return (
+              <strong key={tokenIndex}>
+                {renderMathAwareText(
+                  token.value,
+                  highlightEnabled,
+                  currentWordIndex,
+                  wordCounterRef!,
+                )}
+              </strong>
+            );
+          }
+
+          if (token.type === "code") {
+            return (
+              <code key={tokenIndex} style={inlineCodeStyle}>
+                {token.value}
+              </code>
+            );
+          }
+
           return (
-            <code key={tokenIndex} style={inlineCodeStyle}>
-              {token.value}
-            </code>
+            <Fragment key={tokenIndex}>
+              {renderMathAwareText(
+                token.value,
+                highlightEnabled,
+                currentWordIndex,
+                wordCounterRef!,
+              )}
+            </Fragment>
           );
-        }
-        return <Fragment key={tokenIndex}>{token.value}</Fragment>;
-      })}
-      {lineIndex < parts.length - 1 ? <br /> : null}
-    </Fragment>
-  ));
+        })}
+
+        {lineIndex < parts.length - 1 ? <br /> : null}
+      </Fragment>
+    );
+  });
 }
 
 function parseMarkdown(text: string): MarkdownBlock[] {
-  const lines = String(text || "").replace(/\r\n/g, "\n").split("\n");
+  const lines = String(text || "")
+    .replace(/\r\n/g, "\n")
+    .split("\n");
   const blocks: MarkdownBlock[] = [];
   let paragraph: string[] = [];
   let listType: "unordered-list" | "ordered-list" | null = null;
@@ -196,7 +386,8 @@ function parseMarkdown(text: string): MarkdownBlock[] {
     }
 
     if (listType) {
-      listItems[listItems.length - 1] = `${listItems[listItems.length - 1]}\n${trimmed}`;
+      listItems[listItems.length - 1] =
+        `${listItems[listItems.length - 1]}\n${trimmed}`;
       continue;
     }
 
@@ -246,7 +437,9 @@ function renderStructuredValue(value: unknown, depth = 0): React.ReactNode {
   return (
     <div style={{ display: "grid", gap: depth === 0 ? "0.8rem" : "0.55rem" }}>
       {Object.entries(value)
-        .filter(([, child]) => child !== null && child !== undefined && child !== "")
+        .filter(
+          ([, child]) => child !== null && child !== undefined && child !== "",
+        )
         .map(([key, child]) => (
           <div
             key={key}
@@ -280,11 +473,13 @@ export default function FormattedAIContent({
   value,
   className,
   compact = false,
+  highlightEnabled = false,
+  currentWordIndex = -1,
 }: FormattedAIContentProps) {
   if (value === null || value === undefined || value === "") {
     return null;
   }
-
+  const wordCounter = { current: 0 };
   if (typeof value !== "string") {
     return (
       <div className={className} style={containerStyle}>
@@ -292,9 +487,9 @@ export default function FormattedAIContent({
       </div>
     );
   }
-
+  const wordCounterRef = { current: 0 };
   const blocks = parseMarkdown(value);
-
+  console.log(value);
   return (
     <div className={className} style={containerStyle}>
       {blocks.map((block, index) => {
@@ -302,7 +497,8 @@ export default function FormattedAIContent({
           const size = compact
             ? [1.04, 1, 0.96, 0.92, 0.88, 0.85][block.level - 1] || 0.85
             : [1.2, 1.12, 1.04, 0.98, 0.92, 0.88][block.level - 1] || 0.88;
-          const HeadingTag = (`h${Math.min(block.level, 6)}` as keyof JSX.IntrinsicElements);
+          const HeadingTag =
+            `h${Math.min(block.level, 6)}` as keyof JSX.IntrinsicElements;
           return (
             <HeadingTag
               key={index}
@@ -313,7 +509,12 @@ export default function FormattedAIContent({
                 fontWeight: 800,
               }}
             >
-              {renderInline(block.text)}
+              {renderInline(
+                block.text,
+                highlightEnabled,
+                currentWordIndex,
+                wordCounterRef,
+              )}
             </HeadingTag>
           );
         }
@@ -321,7 +522,12 @@ export default function FormattedAIContent({
         if (block.type === "paragraph") {
           return (
             <p key={index} style={paragraphStyle}>
-              {renderInline(block.text)}
+              {renderInline(
+                block.text,
+                highlightEnabled,
+                currentWordIndex,
+                wordCounterRef,
+              )}
             </p>
           );
         }
@@ -331,7 +537,12 @@ export default function FormattedAIContent({
             <ul key={index} style={listStyle}>
               {block.items.map((item, itemIndex) => (
                 <li key={itemIndex} style={{ marginBottom: "0.35rem" }}>
-                  {renderInline(item)}
+                  {renderInline(
+                    item,
+                    highlightEnabled,
+                    currentWordIndex,
+                    wordCounterRef,
+                  )}
                 </li>
               ))}
             </ul>
@@ -343,7 +554,12 @@ export default function FormattedAIContent({
             <ol key={index} style={listStyle}>
               {block.items.map((item, itemIndex) => (
                 <li key={itemIndex} style={{ marginBottom: "0.35rem" }}>
-                  {renderInline(item)}
+                  {renderInline(
+                    item,
+                    highlightEnabled,
+                    currentWordIndex,
+                    wordCounterRef,
+                  )}
                 </li>
               ))}
             </ol>

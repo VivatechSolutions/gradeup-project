@@ -24,6 +24,11 @@ KEY IMPROVEMENTS IN THIS VERSION:
 
 import os
 import sys
+try:
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
+except Exception:
+    pass
 import time
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
@@ -114,18 +119,35 @@ Return STRICT JSON:
 
 MATH_SECTION_ENRICH_PROMPT = """
 You are an expert Class 10 mathematics teacher.
-Given a math section/subsection, produce a teaching block for deep understanding.
+Given a math section/subsection, produce an avatar teaching script.
 
 STYLE: Lead with intuition. State the core point plainly. Give a memorable analogy.
 List important properties. Flag common misconceptions.
+For the avatar script: Speak naturally, build concepts step by step, insert inline flashcards (UML or real-world example).
 
-Return STRICT JSON:
+Return STRICT JSON containing ONLY the avatar explanation:
 {
-  "summary": "",
-  "key_idea": "",
-  "analogy": "",
-  "important_properties": [""],
-  "common_misconceptions": [""]
+  "avatar_explanation": {
+    "teaching_style": "socratic or visual_analogy",
+    "total_duration_estimate": "X minutes",
+    "segments": [
+      {
+        "segment_id": "seg_001",
+        "type": "teaching",
+        "text": "What the avatar says",
+        "emotion": "enthusiastic"
+      },
+      {
+        "segment_id": "fc_001",
+        "type": "flashcard",
+        "card_title": "Flashcard title",
+        "front": "Diagram or real-world example",
+        "front_style": "uml_diagram or real_world_example",
+        "avatar_line": "What avatar says",
+        "avatar_emotion": "encouraging"
+      }
+    ]
+  }
 }
 """
 
@@ -133,41 +155,63 @@ MATH_EXAMPLE_ENRICH_PROMPT = """
 You are an expert Class 10 mathematics teacher explaining a solved example.
 
 For EVERY step: explain WHAT was done, show the WORKING, and explain WHY.
+Create an avatar teaching script where the avatar walks the student through the problem step-by-step.
 
-Return STRICT JSON:
+Return STRICT JSON containing ONLY the avatar explanation:
 {
-  "concept_being_tested": "",
-  "approach": "",
-  "steps": [
-    {
-      "step_number": 1,
-      "part": "",
-      "action": "",
-      "working": "",
-      "explanation": ""
-    }
-  ],
-  "key_takeaway": "",
-  "exam_tip": "",
-  "common_mistakes": [""],
-  "similar_problem": ""
+  "avatar_explanation": {
+    "teaching_style": "step_by_step",
+    "total_duration_estimate": "X minutes",
+    "segments": [
+      {
+        "segment_id": "seg_001",
+        "type": "teaching",
+        "text": "What the avatar says",
+        "emotion": "enthusiastic"
+      },
+      {
+        "segment_id": "fc_001",
+        "type": "flashcard",
+        "card_title": "Working step",
+        "front": "Mathematical working or formula",
+        "front_style": "math_formula",
+        "avatar_line": "Explaining the step",
+        "avatar_emotion": "encouraging"
+      }
+    ]
+  }
 }
 """
 
 MATH_ILLUSTRATION_ENRICH_PROMPT = """
 You are an expert Class 10 mathematics teacher explaining an illustration.
-An Illustration in a TN math textbook is a short numeric worked example
-that demonstrates a concept immediately after its introduction.
+An Illustration in a TN math textbook is a short numeric worked example.
 
-Return STRICT JSON:
+Create an avatar teaching script walking the student through the illustration.
+
+Return STRICT JSON containing ONLY the avatar explanation:
 {
-  "concept_being_illustrated": "",
-  "walkthrough": [
-    {"step": 1, "explanation": ""}
-  ],
-  "key_insight": "",
-  "connection_to_theory": "",
-  "try_it_yourself": ""
+  "avatar_explanation": {
+    "teaching_style": "visual_walkthrough",
+    "total_duration_estimate": "X minutes",
+    "segments": [
+      {
+        "segment_id": "seg_001",
+        "type": "teaching",
+        "text": "What the avatar says",
+        "emotion": "enthusiastic"
+      },
+      {
+        "segment_id": "fc_001",
+        "type": "flashcard",
+        "card_title": "Visual or step",
+        "front": "The visual concept",
+        "front_style": "real_world_example",
+        "avatar_line": "Connecting concept to the problem",
+        "avatar_emotion": "encouraging"
+      }
+    ]
+  }
 }
 """
 
@@ -178,13 +222,31 @@ theorem accessible to students.
 Start with WHY this definition exists. Rephrase in plain language first.
 Give a concrete example that SATISFIES it and one that does NOT.
 
-Return STRICT JSON:
+Create an avatar teaching script to explain this concept to the student.
+
+Return STRICT JSON containing ONLY the avatar explanation:
 {
-  "intuitive_explanation": "",
-  "formal_statement_explained": "",
-  "example_satisfying": "",
-  "example_not_satisfying": "",
-  "why_it_matters": ""
+  "avatar_explanation": {
+    "teaching_style": "concept_builder",
+    "total_duration_estimate": "X minutes",
+    "segments": [
+      {
+        "segment_id": "seg_001",
+        "type": "teaching",
+        "text": "What the avatar says",
+        "emotion": "enthusiastic"
+      },
+      {
+        "segment_id": "fc_001",
+        "type": "flashcard",
+        "card_title": "Concept Example",
+        "front": "Example satisfying the definition",
+        "front_style": "real_world_example",
+        "avatar_line": "This is why it matters...",
+        "avatar_emotion": "thoughtful"
+      }
+    ]
+  }
 }
 """
 
@@ -216,10 +278,69 @@ Return STRICT JSON:
 }
 """
 
+AVATAR_ENRICH_PROMPT = """
+You are an experienced, expressive school teacher preparing a lesson for an AI avatar.
+The avatar will SPEAK each segment aloud to a student, with emotions.
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  DATACLASSES
-# ══════════════════════════════════════════════════════════════════════════════
+Your job: Convert the textbook content into an engaging, elaborated teaching script.
+
+STYLE:
+- Speak naturally as if you're in a live classroom. Use "we", "let's", "notice how".
+- Build concepts step by step. Use cause-effect reasoning.
+- Insert flashcards IN BETWEEN your teaching to reinforce key points.
+- Each flashcard is FRONT-ONLY (no back side) — it's a visual summary, not a quiz.
+
+FLASHCARD FRONT CONTENT — You must DECIDE for each flashcard:
+- If the concept involves a PROCESS, FLOW, CLASSIFICATION, LIFECYCLE, or RELATIONSHIP → include a UML/Mermaid diagram in the front with a clear explanation below the diagram.
+- If the concept is a FACT, DEFINITION, FORMULA, or REAL-WORLD APPLICATION → include a real-world example with a relatable scenario and connection to the student's life.
+- NEVER include both. Pick the ONE that helps the student understand best.
+- Set "front_style" to "uml_diagram" or "real_world_example" to indicate your choice.
+
+EMOTIONS (use ONLY these 10 values — no sad, angry, or negative emotions):
+  enthusiastic, curious, encouraging, surprised, thoughtful, playful, empathetic, confident, warm, inspiring
+
+STRUCTURE — Return STRICT JSON:
+{
+  "concept_overview": "One short paragraph introducing the topic",
+  "avatar_explanation": {
+    "teaching_style": "storytelling or socratic or visual_analogy",
+    "total_duration_estimate": "X minutes",
+    "segments": [
+      {
+        "segment_id": "seg_001",
+        "type": "teaching",
+        "text": "What the avatar says",
+        "emotion": "enthusiastic",
+        "visual_aid": null
+      },
+      {
+        "segment_id": "fc_001",
+        "type": "flashcard",
+        "card_title": "Flashcard title",
+        "front": "Single-side content — if UML: include Mermaid diagram code block (```mermaid ... ```) followed by explanation. If real-world: include a relatable scenario with title and connection to student's life.",
+        "front_style": "uml_diagram or real_world_example",
+        "avatar_line": "What avatar says while showing the card",
+        "avatar_emotion": "encouraging"
+      }
+    ]
+  },
+  "faqs": [{"question": "", "answer": ""}],
+  "practice_questions": [{"question": ""}],
+  "doubt_context": {
+    "related_sections": ["list of related section titles"]
+  }
+}
+
+RULES:
+1. Generate 6-10 teaching segments and 2-4 inline flashcards.
+2. Flashcards must appear BETWEEN teaching segments, not at the end.
+3. Start with an engaging introduction (enthusiastic), end with a confident summary.
+4. Each segment should be 2-4 sentences max.
+5. Use varied emotions — don't repeat the same emotion consecutively.
+6. Each flashcard MUST include either a UML/Mermaid diagram (for processes, flows, classifications) OR a real-world example (for facts, definitions). Set front_style accordingly.
+7. FAQs: 3-4 Q&A pairs. Practice questions: 3-4 questions. These are UNCHANGED from standard enrichment.
+"""
+
 
 @dataclass
 class FAQ:
@@ -239,9 +360,7 @@ class SectionEnrichment:
     practice_questions: List[PracticeQuestion] = field(default_factory=list)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
 #  HELPERS
-# ══════════════════════════════════════════════════════════════════════════════
 
 def load_env() -> None:
     for env_file in (".env.local", ".env"):
@@ -430,7 +549,7 @@ class ContentEnricher:
         title = section.get("section_title") or section.get("subsection_title", "")
         ctx   = f"Chapter: {chapter_title}\nSection: {title}\n\nContent:\n{full_content[:8000]}"
         user  = f"Explain this math section to a Class 10 student.\n\n{ctx}\n\nReturn in the JSON format specified."
-        raw   = self._call_llm(MATH_SECTION_ENRICH_PROMPT, user, max_tokens=2000)
+        raw   = self._call_llm(MATH_SECTION_ENRICH_PROMPT, user, max_tokens=3000)
         return self._parse_json_response(raw) if raw else None
 
     # ── Math chapter overview ─────────────────────────────────────────────────
@@ -461,7 +580,7 @@ class ContentEnricher:
             f"PROBLEM:\n{problem}\n\nTEXTBOOK SOLUTION:\n{solution}"
         )
         user = f"Explain this solved maths example step by step to a Class 10 student.\n\n{ctx}\n\nReturn in the JSON format specified."
-        raw  = self._call_llm(MATH_EXAMPLE_ENRICH_PROMPT, user, max_tokens=3000)
+        raw  = self._call_llm(MATH_EXAMPLE_ENRICH_PROMPT, user, max_tokens=4000)
         return self._parse_json_response(raw) if raw else None
 
     # ── Math illustration enrichment ──────────────────────────────────────────
@@ -478,7 +597,7 @@ class ContentEnricher:
             + f"\n\nCONTENT:\n{content[:6000]}"
         )
         user = f"Explain this maths illustration to a Class 10 student.\n\n{ctx}\n\nReturn in the JSON format specified."
-        raw  = self._call_llm(MATH_ILLUSTRATION_ENRICH_PROMPT, user, max_tokens=2000)
+        raw  = self._call_llm(MATH_ILLUSTRATION_ENRICH_PROMPT, user, max_tokens=3000)
         return self._parse_json_response(raw) if raw else None
 
     # ── Math definition/theorem enrichment ───────────────────────────────────
@@ -548,6 +667,89 @@ class ContentEnricher:
             time.sleep(RATE_LIMIT_DELAY)
         return enriched
 
+    # ── Avatar section enrichment ─────────────────────────────────────────────
+
+    def enrich_section_avatar_style(self, content: str, section_title: str,
+                                     unit_title: str = "") -> Optional[Dict]:
+        """Generate avatar-style enrichment with emotion segments + inline flashcards."""
+        if not content.strip() or len(content) < 50:
+            return None
+        ctx = f"Unit: {unit_title}\nSection: {section_title}\n\nContent:\n{content[:8000]}"
+        user = (
+            f"Create an avatar teaching script for this topic. "
+            f"Include teaching segments with emotions AND inline flashcards "
+            f"with real-world examples.\n\n{ctx}\n\nReturn in the JSON format specified."
+        )
+        raw = self._call_llm(AVATAR_ENRICH_PROMPT, user, max_tokens=4000)
+        if not raw:
+            return None
+        parsed = self._parse_json_response(raw)
+        if not parsed:
+            return None
+
+        # Validate and fix segment IDs
+        segments = parsed.get("avatar_explanation", {}).get("segments", [])
+        seg_counter, fc_counter = 0, 0
+        for seg in segments:
+            if seg.get("type") == "flashcard":
+                fc_counter += 1
+                if not seg.get("segment_id"):
+                    seg["segment_id"] = f"fc_{fc_counter:03d}"
+            else:
+                seg_counter += 1
+                seg["type"] = "teaching"
+                if not seg.get("segment_id"):
+                    seg["segment_id"] = f"seg_{seg_counter:03d}"
+
+        # Build enrichment dict with avatar + standard fields
+        enrichment = {
+            "concept_overview": parsed.get("concept_overview", ""),
+            "avatar_explanation": parsed.get("avatar_explanation", {}),
+            "faqs": parsed.get("faqs", []),
+            "practice_questions": parsed.get("practice_questions", []),
+            "doubt_context": parsed.get("doubt_context", {}),
+        }
+        return enrichment
+
+    # ── Batch avatar enrichment ───────────────────────────────────────────────
+
+    def batch_enrich_avatar_sections(self, sections: List[Dict], unit_title: str,
+                                      board: str = "", class_number: str = "",
+                                      subject: str = "", unit_number: int = 0) -> List[Dict]:
+        """Batch enrich sections with avatar-style teaching."""
+        enriched: List[Dict] = []
+        seen: set = set()
+        for section in sections:
+            title = section.get("section_title", "")
+            if not title or title in seen:
+                if title in seen:
+                    print(f"      -> Skipping duplicate: {title}")
+                continue
+            seen.add(title)
+            content = section.get("content") or _build_section_text(section)
+            if len(content.strip()) < 50:
+                print(f"      -> Skipping (too short): {title}")
+                continue
+            print(f"      -> Avatar enriching: {title}")
+            avatar_enrich = self.enrich_section_avatar_style(content, title, unit_title)
+            if avatar_enrich:
+                # Inject full doubt_context metadata
+                dc = avatar_enrich.get("doubt_context", {})
+                dc["board"] = board
+                dc["class_number"] = class_number
+                dc["subject"] = subject
+                dc["unit_number"] = unit_number
+                dc["section_title"] = title
+                dc["max_rag_chunks"] = 5
+                dc["fallback_to_broader_context"] = True
+                avatar_enrich["doubt_context"] = dc
+
+                enriched.append({"section_title": title, "enrichment": avatar_enrich})
+            else:
+                print(f"      -> ⚠️  Failed: {title}")
+            time.sleep(RATE_LIMIT_DELAY)
+        return enriched
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  ENRICHMENT ORCHESTRATOR
@@ -556,13 +758,16 @@ class ContentEnricher:
 class EnrichmentOrchestrator:
     """Orchestrates subject-aware enrichment for a full document."""
 
-    def __init__(self, fast_mode: bool = True, subject: Optional[str] = None):
+    def __init__(self, fast_mode: bool = True, subject: Optional[str] = None, enrichment_style: str = "avatar_classroom_teaching"):
         load_env()
         self.subject   = subject
         self.fast_mode = fast_mode
+        self.enrichment_style = enrichment_style
         self.enricher  = ContentEnricher(subject=subject)
         self.web_tools = WebToolsClient() if WEB_TOOLS_AVAILABLE else None
         self.langfuse  = get_langfuse_client() if LANGFUSE_AVAILABLE else None
+        self.board     = ""
+        self.class_number = ""
 
     # ── Build English virtual sections ───────────────────────────────────────
 
@@ -714,142 +919,168 @@ class EnrichmentOrchestrator:
             if chapter_enrich:
                 enrichment["chapter_enrichment"] = chapter_enrich
 
-            # 1. Sections + subsections
+            # Types we skip entirely (already removed from extraction)
+            _math_discard_types = {
+                "do_you_know", "thinking_corner", "progress_check",
+                "note", "ict_corner", "more_to_know", "try_this",
+                "multiple_choice", "unit_exercise", "points_to_remember",
+            }
+
+            # 1. Process each section — enrich it AND its sub_sections inline
             enriched_sections = []
-            # Universal: type field; Legacy: section_title field
-            _math_skip_types = {"example", "exercise", "illustration", "definition",
-                                 "theorem", "proof", "corollary", "construction",
-                                 "multiple_choice", "unit_exercise", "thinking_corner",
-                                 "progress_check", "note", "ict_corner", "points_to_remember"}
             for section in unit.get("sections", []):
                 stype = section.get("type", "section")
-                if stype in _math_skip_types:
+                if stype in _math_discard_types:
                     continue
+                # Non-section top-level items (stray definitions, etc.) — skip
+                if stype != "section":
+                    continue
+
                 sec_title = (section.get("section_title") or section.get("title")
                              or section.get("id", ""))
-                print(f"      -> Section: {sec_title}")
-                sec_enrich = self.enricher.enrich_math_section(section, unit_title)
+                sec_content = section.get("content", "") or ""
+
+                # ── Build composite content for LLM context ──
+                # If the section body is empty but has sub_sections with content,
+                # combine all sub_section text to give the LLM full context.
+                sub_items = section.get("sub_sections", section.get("subsections", []))
+                composite_parts = []
+                if sec_content.strip():
+                    composite_parts.append(sec_content)
+                for sub in sub_items:
+                    sub_c = sub.get("content", "") or ""
+                    sub_t = sub.get("title", "") or sub.get("id", "") or ""
+                    if sub_c.strip():
+                        composite_parts.append(f"{sub_t}\n{sub_c}" if sub_t else sub_c)
+                    # Also include solution text if present
+                    sol = (sub.get("metadata") or {}).get("solution", "")
+                    if sol:
+                        composite_parts.append(f"Solution:\n{sol}")
+                composite_content = "\n\n".join(composite_parts)
+
+                # Create a temporary section dict with composite content for enrichment
+                section_for_enrich = dict(section)
+                section_for_enrich["content"] = composite_content
+
+                print(f"      -> Section: {sec_title} ({len(composite_content)} chars)")
+                sec_enrich = self.enricher.enrich_math_section(section_for_enrich, unit_title)
+
                 enriched_sec: Dict[str, Any] = {
                     "section_number":     section.get("section_number") or section.get("id", ""),
                     "section_title":      sec_title,
-                    "content":            section.get("content", ""),
+                    "content":            sec_content,
+                    "content_context":    composite_content,
                     "type":               stype,
                     "section_enrichment": sec_enrich or {},
-                    "subsections":        [],
+                    "sub_sections":       [],
                 }
-                for sub in section.get("subsections", []):
-                    sub_title = sub.get("subsection_title") or sub.get("title", "")
-                    print(f"         -> Subsection: {sub_title}")
-                    sub_enrich = self.enricher.enrich_math_section(sub, unit_title)
-                    enriched_sec["subsections"].append({
-                        "subsection_number":  sub.get("subsection_number") or sub.get("id", ""),
-                        "subsection_title":   sub_title,
-                        "content":            sub.get("content", ""),
-                        "section_enrichment": sub_enrich or {},
-                    })
-                    time.sleep(RATE_LIMIT_DELAY)
+
+                # ── Process sub_sections ──
+                for sub in sub_items:
+                    sub_type = sub.get("type", "section")
+                    sub_title = sub.get("subsection_title") or sub.get("title") or sub.get("id", "")
+
+                    # Skip discarded types
+                    if sub_type in _math_discard_types:
+                        continue
+
+                    if sub_type == "example":
+                        ex_num = sub.get("example_number") or sub.get("id", "?")
+                        print(f"         -> Example {ex_num}")
+                        ex_enrich = self.enricher.enrich_math_example(sub, unit_title)
+                        enriched_ex = {
+                            "type":             "example",
+                            "id":               ex_num,
+                            "title":            sub.get("title", ""),
+                            "content":          sub.get("content", ""),
+                            "content_context":  sub.get("content", ""),
+                            "enrichment":       ex_enrich or {},
+                        }
+                        enriched_sec["sub_sections"].append(enriched_ex)
+                        time.sleep(RATE_LIMIT_DELAY)
+
+                    elif sub_type == "illustration":
+                        illus_num = sub.get("illustration_number") or sub.get("id", "?")
+                        print(f"         -> Illustration {illus_num}")
+                        illus_enrich = self.enricher.enrich_math_illustration(sub, unit_title)
+                        enriched_illus = {
+                            "type":             "illustration",
+                            "id":               illus_num,
+                            "title":            sub.get("title", ""),
+                            "content":          sub.get("content", ""),
+                            "content_context":  sub.get("content", ""),
+                            "enrichment":       illus_enrich or {},
+                        }
+                        enriched_sec["sub_sections"].append(enriched_illus)
+                        time.sleep(RATE_LIMIT_DELAY)
+
+                    elif sub_type == "definition":
+                        term = sub.get("term") or sub.get("title") or sub.get("id", "?")
+                        print(f"         -> Definition: {term}")
+                        defn_enrich = self.enricher.enrich_math_definition(sub, unit_title)
+                        enriched_defn = {
+                            "type":             "definition",
+                            "id":               term,
+                            "title":            sub.get("title", ""),
+                            "content":          sub.get("content", ""),
+                            "content_context":  sub.get("content", ""),
+                            "enrichment":       defn_enrich or {},
+                        }
+                        enriched_sec["sub_sections"].append(enriched_defn)
+                        time.sleep(RATE_LIMIT_DELAY)
+
+                    elif sub_type in ("theorem", "proof", "corollary"):
+                        thm_id = sub.get("theorem_number") or sub.get("id", "?")
+                        print(f"         -> {sub_type.capitalize()} {thm_id}")
+                        thm_enrich = self.enricher.enrich_math_definition(sub, unit_title)
+                        enriched_thm = {
+                            "type":             sub_type,
+                            "id":               thm_id,
+                            "title":            sub.get("title", ""),
+                            "content":          sub.get("content", ""),
+                            "content_context":  sub.get("content", ""),
+                            "enrichment":       thm_enrich or {},
+                        }
+                        enriched_sec["sub_sections"].append(enriched_thm)
+                        time.sleep(RATE_LIMIT_DELAY)
+
+                    elif sub_type == "exercise":
+                        # Pass-through exercises without enrichment
+                        enriched_sec["sub_sections"].append({
+                            "type":     "exercise",
+                            "id":       sub.get("id", ""),
+                            "title":    sub.get("title", ""),
+                            "content":  sub.get("content", ""),
+                            "sub_items": sub.get("sub_items", []),
+                        })
+
+                    elif sub_type == "activity":
+                        enriched_sec["sub_sections"].append({
+                            "type":     "activity",
+                            "id":       sub.get("id", ""),
+                            "title":    sub.get("title", ""),
+                            "content":  sub.get("content", ""),
+                        })
+
+                    else:
+                        # Any other type — pass through
+                        print(f"         -> {sub_type.capitalize()} {sub_title}")
+                        enriched_sec["sub_sections"].append({
+                            "type":     sub_type,
+                            "id":       sub.get("id", ""),
+                            "title":    sub.get("title", ""),
+                            "content":  sub.get("content", ""),
+                        })
+
                 enriched_sections.append(enriched_sec)
                 time.sleep(RATE_LIMIT_DELAY)
 
             if enriched_sections:
                 enrichment["sections"] = enriched_sections
 
-            # Helper: pull items by type from universal sections[] or legacy top-level key
-            def _by_type(u, types):
-                if isinstance(types, str): types = [types]
-                results = []
-                for s in u.get("sections", []):
-                    # Check if section itself matches (legacy)
-                    if s.get("type") in types:
-                        results.append(s)
-                    # Check if items inside content array match (universal)
-                    if isinstance(s.get("content"), list):
-                        for item in s["content"]:
-                            if isinstance(item, dict) and item.get("type") in types:
-                                results.append(item)
-                return results
-
-            # 2. Examples
-            examples = unit.get("examples", []) or _by_type(unit, ["example"])
-            if examples:
-                print(f"      -> Enriching {len(examples)} examples...")
-                enriched_examples = []
-                for ex in examples:
-                    ex_num = ex.get("example_number") or ex.get("id", "?")
-                    print(f"         Example {ex_num}...")
-                    ex_enrich = self.enricher.enrich_math_example(ex, unit_title)
-                    enriched_ex = dict(ex)
-                    if ex_enrich:
-                        enriched_ex["enrichment"] = ex_enrich
-                    else:
-                        print(f"         ⚠️  Failed: Example {ex_num}")
-                    enriched_examples.append(enriched_ex)
-                    time.sleep(RATE_LIMIT_DELAY)
-                enrichment["examples"] = enriched_examples
-
-            # 3. Illustrations
-            illustrations = unit.get("illustrations", []) or _by_type(unit, ["illustration"])
-            if illustrations:
-                sorted_illus = sorted(illustrations, key=lambda x: x.get("order_in_chapter") or 999)
-                print(f"      -> Enriching {len(sorted_illus)} illustrations...")
-                enriched_illustrations = []
-                for illus in sorted_illus:
-                    illus_num = illus.get("illustration_number") or illus.get("id", "?")
-                    print(f"         Illustration {illus_num}...")
-                    illus_enrich = self.enricher.enrich_math_illustration(illus, unit_title)
-                    enriched_illus = dict(illus)
-                    if illus_enrich:
-                        enriched_illus["enrichment"] = illus_enrich
-                    else:
-                        print(f"         ⚠️  Failed: Illustration {illus_num}")
-                    enriched_illustrations.append(enriched_illus)
-                    time.sleep(RATE_LIMIT_DELAY)
-                enrichment["illustrations"] = enriched_illustrations
-
-            # 4. Definitions
-            definitions = unit.get("definitions", []) or _by_type(unit, ["definition"])
-            if definitions:
-                print(f"      -> Enriching {len(definitions)} definitions...")
-                enriched_defs = []
-                for defn in definitions:
-                    term = defn.get("term") or defn.get("title") or defn.get("id", "?")
-                    print(f"         Definition: {term}...")
-                    defn_enrich = self.enricher.enrich_math_definition(defn, unit_title)
-                    enriched_defn = dict(defn)
-                    if defn_enrich:
-                        enriched_defn["enrichment"] = defn_enrich
-                    enriched_defs.append(enriched_defn)
-                    time.sleep(RATE_LIMIT_DELAY)
-                enrichment["definitions"] = enriched_defs
-
-            # 5. Theorems
-            theorems = unit.get("theorems", []) or _by_type(unit, ["theorem", "proof", "corollary"])
-            if theorems:
-                print(f"      -> Enriching {len(theorems)} theorems...")
-                enriched_theorems = []
-                for thm in theorems:
-                    thm_num = thm.get("theorem_number") or thm.get("id", "?")
-                    print(f"         Theorem {thm_num}...")
-                    thm_enrich = self.enricher.enrich_math_definition(thm, unit_title)
-                    enriched_thm = dict(thm)
-                    if thm_enrich:
-                        enriched_thm["enrichment"] = thm_enrich
-                    enriched_theorems.append(enriched_thm)
-                    time.sleep(RATE_LIMIT_DELAY)
-                enrichment["theorems"] = enriched_theorems
-
-            # 6. Points to remember
-            ptr = unit.get("points_to_remember", [])
-            if ptr:
-                print(f"      -> Enriching {len(ptr)} points to remember...")
-                enrichment["points_to_remember_enriched"] = (
-                    self.enricher.enrich_points_to_remember(ptr, unit_title)
-                )
-
-            # 7. Pass-through fields
+            # 2. Pass-through fields that remain at top-level
             for key in ("exercises", "unit_exercise", "multiple_choice_questions",
-                        "thinking_corners", "progress_checks", "notes",
-                        "points_to_remember", "ict_corner", "learning_outcomes"):
+                        "points_to_remember", "learning_outcomes"):
                 if (val := unit.get(key)) is not None:
                     enrichment[key] = val
 
@@ -857,7 +1088,17 @@ class EnrichmentOrchestrator:
         elif self.subject == "english":
             sections = self._build_english_sections(unit)
             if sections:
-                enrichment["sections"] = self.enricher.batch_enrich_unit_sections(sections, unit_title)
+                if self.enrichment_style == "avatar_classroom_teaching":
+                    enrichment["sections"] = self.enricher.batch_enrich_avatar_sections(
+                        sections=sections,
+                        unit_title=unit_title,
+                        board=self.board,
+                        class_number=self.class_number,
+                        subject=self.subject,
+                        unit_number=unit_number
+                    )
+                else:
+                    enrichment["sections"] = self.enricher.batch_enrich_unit_sections(sections, unit_title)
 
         # ── GENERAL (Science / Social Science)
         else:
@@ -924,7 +1165,17 @@ class EnrichmentOrchestrator:
                     })
 
             if sections:
-                enrichment["sections"] = self.enricher.batch_enrich_unit_sections(sections, unit_title)
+                if self.enrichment_style == "avatar_classroom_teaching":
+                    enrichment["sections"] = self.enricher.batch_enrich_avatar_sections(
+                        sections=sections,
+                        unit_title=unit_title,
+                        board=self.board,
+                        class_number=self.class_number,
+                        subject=self.subject,
+                        unit_number=unit_number
+                    )
+                else:
+                    enrichment["sections"] = self.enricher.batch_enrich_unit_sections(sections, unit_title)
 
             # BUG FIX 3: Pass through Social Science specific fields to output so they
             # are not silently dropped. These are preserved as-is (not enriched further).
@@ -963,6 +1214,18 @@ class EnrichmentOrchestrator:
 
         structured_data = load_json(structured_path)
         document_id     = structured_path.parent.name
+
+        # Load metadata if available
+        metadata_path = structured_path.parent / "metadata.json"
+        if metadata_path.exists():
+            try:
+                meta = load_json(metadata_path)
+                self.board = meta.get("board", "")
+                self.class_number = meta.get("class_number", "")
+                if meta.get("subject") and not self.subject:
+                    self.subject = meta.get("subject")
+            except Exception as e:
+                print(f"⚠️ Failed to load metadata: {e}")
 
         # Subject auto-detection
         detected = _detect_subject(document_id, structured_data) or self.subject
@@ -1010,10 +1273,14 @@ class EnrichmentOrchestrator:
             "document_id":      document_id,
             "enriched_at":      datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "enrichment_model": self.enricher.model,
-            "enrichment_style": "classroom_teaching",
+            "enrichment_style": self.enrichment_style,
             "subject":          self.subject or "unknown",
-            content_key:        [],
         }
+        if self.board:
+            enriched_data["board"] = self.board
+        if self.class_number:
+            enriched_data["class_number"] = self.class_number
+        enriched_data[content_key] = []
 
         units  = structured_data.get(content_key, [])
         label  = "Chapter" if content_key == "chapters" else "Unit"
@@ -1058,10 +1325,11 @@ class EnrichmentOrchestrator:
 
 def enrich_document(structured_json_path: Path, output_path: Optional[Path] = None,
                     include_sections: bool = True, include_web: bool = True,
-                    fast_mode: bool = True, subject: Optional[str] = None) -> bool:
+                    fast_mode: bool = True, subject: Optional[str] = None,
+                    enrichment_style: str = "avatar_classroom_teaching") -> bool:
     """Main entry point to enrich a document."""
     try:
-        orch = EnrichmentOrchestrator(fast_mode=fast_mode, subject=subject)
+        orch = EnrichmentOrchestrator(fast_mode=fast_mode, subject=subject, enrichment_style=enrichment_style)
         orch.enrich_document(
             structured_path=structured_json_path,
             output_path=output_path,
@@ -1085,6 +1353,7 @@ def main():
     parser.add_argument("--no-sections", action="store_true")
     parser.add_argument("--no-web",      action="store_true")
     parser.add_argument("--slow",        action="store_true")
+    parser.add_argument("--style",       default="classroom_teaching", choices=["classroom_teaching", "avatar_classroom_teaching"])
     args = parser.parse_args()
 
     return 0 if enrich_document(
@@ -1094,6 +1363,7 @@ def main():
         include_web=not args.no_web,
         fast_mode=not args.slow,
         subject=args.subject,
+        enrichment_style=args.style,
     ) else 1
 
 

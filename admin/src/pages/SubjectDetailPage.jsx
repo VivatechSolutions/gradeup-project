@@ -2,6 +2,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { fetchSubjectDetail } from "../api/client";
 
+function normalizeDisplayText(value) {
+  if (Array.isArray(value)) {
+    return value.map(normalizeDisplayText).filter(Boolean).join(", ");
+  }
+
+  if (value && typeof value === "object") {
+    return value.text || value.title || value.name || value.label || JSON.stringify(value);
+  }
+
+  return String(value || "");
+}
+
 function extractSectionImages(section = {}, mediaImages = {}) {
   const urls = [];
 
@@ -14,7 +26,12 @@ function extractSectionImages(section = {}, mediaImages = {}) {
 
   normalizeImageUrls(section.image_urls).forEach(pushUrl);
 
-  const content = section.content || section.enrichment?.detailed_explanation || "";
+  const content =
+    section.content ||
+    section.enrichment?.detailed_explanation ||
+    section.enrichment?.concept_overview ||
+    section.enrichment?.avatar_explanation?.segments?.map((segment) => segment.text).filter(Boolean).join(" ") ||
+    "";
   if (typeof content === "string") {
     [...content.matchAll(/!\[.*?\]\((https?:\/\/[^)]+)\)/g)]
       .map((match) => match[1])
@@ -68,13 +85,60 @@ function SectionBlock({ section, mediaImages, type }) {
   );
 
   if (type === "enriched") {
+    const avatarSegments = section.enrichment?.avatar_explanation?.segments || [];
+    const faqs = section.enrichment?.faqs || [];
+    const practiceQuestions = section.enrichment?.practice_questions || [];
+    const doubtContext = section.enrichment?.doubt_context || null;
+
     return (
       <>
         <p>{section.enrichment?.concept_overview || "No enrichment available."}</p>
         <div className="subpanel">
-          <h4>Detailed explanation</h4>
-          <p>{section.enrichment?.detailed_explanation || "No detailed explanation."}</p>
+          <h4>Avatar explanation</h4>
+          {avatarSegments.length ? (
+            <ul className="reader-bullet-list">
+              {avatarSegments.map((segment, index) => (
+                <li key={`${segment.segment_id || index}`}>
+                  <strong>{segment.type || "segment"}:</strong> {normalizeDisplayText(segment.text)}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p>{section.enrichment?.detailed_explanation || "No detailed explanation."}</p>
+          )}
         </div>
+        {faqs.length ? (
+          <div className="subpanel">
+            <h4>FAQs</h4>
+            <ul className="reader-bullet-list">
+              {faqs.map((faq, index) => (
+                <li key={`${faq.question || index}`}>
+                  <strong>Q:</strong> {normalizeDisplayText(faq.question)}
+                  <br />
+                  <strong>A:</strong> {normalizeDisplayText(faq.answer)}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {practiceQuestions.length ? (
+          <div className="subpanel">
+            <h4>Practice questions</h4>
+            <ul className="reader-bullet-list">
+              {practiceQuestions.map((question, index) => (
+                <li key={`${question.question || index}`}>{normalizeDisplayText(question.question)}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {doubtContext ? (
+          <div className="subpanel">
+            <h4>Doubt context</h4>
+            <p>
+              Related sections: {normalizeDisplayText(doubtContext.related_sections) || "None"}
+            </p>
+          </div>
+        ) : null}
         {images.length ? (
           <div className="reader-image-grid">
             {images.map((imageUrl, index) => (
@@ -241,7 +305,15 @@ export default function SubjectDetailPage() {
   const introduction =
     activeStructuredUnit?.introduction || activeEnrichedUnit?.introduction || "";
   const objectives =
-    activeStructuredUnit?.objectives || activeEnrichedUnit?.objectives || [];
+    activeStructuredUnit?.learning_objectives ||
+    activeEnrichedUnit?.learning_objectives ||
+    activeStructuredUnit?.objectives ||
+    activeEnrichedUnit?.objectives ||
+    [];
+  const pointsToRemember =
+    activeStructuredUnit?.points_to_remember ||
+    activeEnrichedUnit?.points_to_remember ||
+    [];
 
   return (
     <section className="page">
@@ -363,10 +435,21 @@ export default function SubjectDetailPage() {
 
               {Array.isArray(objectives) && objectives.length ? (
                 <section className="reader-doc-section reader-doc-intro">
-                  <h3>Objectives</h3>
+                  <h3>Learning Objectives</h3>
                   <ul className="reader-bullet-list">
                     {objectives.map((objective, index) => (
-                      <li key={`${objective}-${index}`}>{objective}</li>
+                      <li key={`${objective}-${index}`}>{normalizeDisplayText(objective)}</li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+
+              {Array.isArray(pointsToRemember) && pointsToRemember.length ? (
+                <section className="reader-doc-section reader-doc-intro">
+                  <h3>Points to Remember</h3>
+                  <ul className="reader-bullet-list">
+                    {pointsToRemember.map((point, index) => (
+                      <li key={`${point}-${index}`}>{normalizeDisplayText(point)}</li>
                     ))}
                   </ul>
                 </section>

@@ -76,6 +76,10 @@ function normalizeSession(session) {
     unitId: session.unitId,
     documentId: session.documentId,
     subjectGroupKey: session.subjectGroupKey,
+    topicId: session.topicId || null,
+    topicUnitNumber: session.topicUnitNumber ?? null,
+    topicSectionTitle: session.topicSectionTitle || null,
+    topicPath: session.topicPath || [],
     startedAt: session.startedAt,
     endedAt: session.endedAt,
     debateType: session.debateType,
@@ -154,6 +158,10 @@ async function upsertSession({
   candidateId,
   candidateName,
   topic,
+  topicId = null,
+  topicUnitNumber = null,
+  topicSectionTitle = null,
+  topicPath = [],
   unit,
   metadata,
   debateType = "1_vs_ai",
@@ -180,6 +188,10 @@ async function upsertSession({
       $set: {
         candidateName,
         topic,
+        topicId,
+        topicUnitNumber,
+        topicSectionTitle,
+        topicPath,
         unitId: unit._id,
         documentId: unit.documentId,
         subjectGroupKey: unit.subjectGroupKey || [unit.board, unit.standard, unit.subject].join("::"),
@@ -316,6 +328,10 @@ async function createRoomSession({
   candidateId,
   candidateName,
   topic,
+  topicId = null,
+  topicUnitNumber = null,
+  topicSectionTitle = null,
+  topicPath = [],
   unit,
   metadata,
   roomCode = null,
@@ -327,6 +343,10 @@ async function createRoomSession({
     candidateId,
     candidateName,
     topic,
+    topicId,
+    topicUnitNumber,
+    topicSectionTitle,
+    topicPath,
     unit,
     metadata,
     debateType: "team",
@@ -472,21 +492,48 @@ async function saveRoomRoundSubmission({
     activeTeam: normalizedTeam,
     awaitingTeams: ["A", "B"],
   };
-  const awaitingTeams = Array.isArray(currentRound.awaitingTeams)
-    ? currentRound.awaitingTeams.filter((item) => item !== normalizedTeam)
-    : [];
+  // const awaitingTeams = Array.isArray(currentRound.awaitingTeams)
+  //   ? currentRound.awaitingTeams.filter((item) => item !== normalizedTeam)
+  //   : [];
 
-  currentRound.roundNumber = roundNumber || currentRound.roundNumber || 1;
-  currentRound.phase = awaitingTeams.length ? "team_turn" : "waiting_for_ai";
+  // currentRound.roundNumber = roundNumber || currentRound.roundNumber || 1;
+  // currentRound.phase = awaitingTeams.length ? "team_turn" : "waiting_for_ai";
+  // currentRound.awaitingTeams = awaitingTeams;
+  // currentRound.lastSubmission = {
+  //   team: normalizedTeam,
+  //   candidateId,
+  //   candidateName,
+  //   message,
+  //   createdAt: now(),
+  // };
+  // session.currentRound = currentRound;
+  const awaitingTeams = Array.isArray(currentRound.awaitingTeams)
+  ? currentRound.awaitingTeams.filter((item) => item !== normalizedTeam)
+  : [];
+
+currentRound.roundNumber = roundNumber || currentRound.roundNumber || 1;
+
+// ✓ FIX: Proper round transition when all teams have submitted
+if (awaitingTeams.length === 0) {
+  // All teams submitted - wait for AI response
+  currentRound.phase = "waiting_for_ai";
+  // ✓ CRITICAL: Reset for next round
+  currentRound.awaitingTeams = ["A", "B"];
+  currentRound.lastSubmissionTeam = normalizedTeam;
+} else {
+  // Still waiting for other teams
+  currentRound.phase = "team_turn";
   currentRound.awaitingTeams = awaitingTeams;
-  currentRound.lastSubmission = {
-    team: normalizedTeam,
-    candidateId,
-    candidateName,
-    message,
-    createdAt: now(),
-  };
-  session.currentRound = currentRound;
+}
+
+currentRound.lastSubmission = {
+  team: normalizedTeam,
+  candidateId,
+  candidateName,
+  message,
+  createdAt: now(),
+};
+session.currentRound = currentRound;
   if (warnings.length) {
     session.warnings = [...(session.warnings || []), ...normalizeWarnings(warnings)];
   }

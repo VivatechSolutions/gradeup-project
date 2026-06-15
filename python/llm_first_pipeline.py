@@ -96,7 +96,6 @@ OUTPUT SCHEMA
 {
   "unit_number": <integer -- read from "UNIT N" / numbered lesson "1. Title">,
   "title":       <string -- unit theme OR lesson title>,
-  "introduction": <string | null>,
   "learning_objectives": [],
   "sections": [ <Section>, ... ]
 }
@@ -474,7 +473,7 @@ def _merge_unit_chunks(chunks_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         return chunks_data[0]
 
     merged: Dict[str, Any] = {}
-    scalar_fields = ["unit_number", "title", "introduction", "subject"]
+    scalar_fields = ["unit_number", "title", "subject"]
     list_fields = ["sections", "learning_objectives", "points_to_remember", "glossary"]
 
     # Scalar: first non-null value wins

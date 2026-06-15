@@ -17,6 +17,7 @@ export type LibraryUnit = {
     hasGlossary?: boolean;
     hasSummary?: boolean;
   };
+  debateTopics?: any;
   sectionTopics?: Array<{
     id: string;
     sectionId?: string | null;
@@ -292,6 +293,10 @@ export async function startDebate(payload: {
   candidateId: string;
   candidateName: string;
   topic: string;
+  topicId?: string;
+  topicUnitNumber?: number | null;
+  topicSectionTitle?: string | null;
+  topicPath?: string[];
   debateType?: string;
 }) {
   return apiFetch<any>("/api/v1/debate/start", {
@@ -300,27 +305,18 @@ export async function startDebate(payload: {
   });
 }
 
-export async function getDebateTopics(subjectGroupKey?: string) {
+export async function getDebateTopics(subjectGroupKey?: string, unitNumber?: number | string, sectionTitle?: string) {
   const params = new URLSearchParams();
   if (subjectGroupKey) {
     params.set("subjectGroupKey", subjectGroupKey);
   }
-  return apiFetch<
-    Array<{
-      id: string;
-      subjectGroupKey?: string;
-      unitId?: string;
-      unitNumber?: number | null;
-      unitTitle?: string;
-      sectionId?: string | null;
-      sectionNumber?: string | null;
-      sectionTitle?: string;
-      label?: string;
-      topic?: string;
-      title?: string;
-      name?: string;
-    }>
-  >(`/api/v1/debate/topics${params.toString() ? `?${params.toString()}` : ""}`);
+  if (unitNumber !== undefined && unitNumber !== null && String(unitNumber).trim()) {
+    params.set("unitNumber", String(unitNumber));
+  }
+  if (sectionTitle) {
+    params.set("sectionTitle", sectionTitle);
+  }
+  return apiFetch<any>(`/api/v1/debate/topics${params.toString() ? `?${params.toString()}` : ""}`);
 }
 
 export async function getDebateSession(sessionId: string) {
@@ -343,6 +339,10 @@ export async function createDebateRoom(payload: {
   candidateId: string;
   candidateName: string;
   topic: string;
+  topicId?: string;
+  topicUnitNumber?: number | null;
+  topicSectionTitle?: string | null;
+  topicPath?: string[];
   maxParticipants?: number;
   roomLink?: string;
 }) {
@@ -389,6 +389,16 @@ export async function submitDebateRoomTurn(payload: {
   message: string;
 }) {
   return apiFetch<any>("/api/v1/debate/room/submit", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function completeDebateRoomOpening(payload: {
+  sessionId: string;
+  candidateId: string;
+}) {
+  return apiFetch<any>("/api/v1/debate/room/opening-complete", {
     method: "POST",
     body: JSON.stringify(payload),
   });

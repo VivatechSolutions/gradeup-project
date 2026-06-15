@@ -101,7 +101,7 @@ const css = `
 .sb-toggle:hover { background: #6366f1; color: #fff; border-color: #6366f1; transform: scale(1.08); }
 .sb-toggle svg { width: 13px; height: 13px; transition: transform .3s; }
 /* Arrow flips when collapsed */
-.sb-root.collapsed .sb-toggle svg { transform: rotate(180deg); }
+
 
 /* ── NAV AREA ── */
 .sb-nav {
@@ -371,7 +371,7 @@ const STUDENT_MENU: MenuItem[] = [
   { label:"AI Tutor",      href:"/ai-tutor",        icon:"bot",      color:"ce" },
   { label:"Book Library",  href:"/bookExpanded",    icon:"book",     color:"cc" },
   { label:"Homework",      href:"/homework",         icon:"file",     color:"ca" },
-  { label:"Homework Helper",      href:"/homework-helper",         icon:"lightbulb",     color:"cv" },
+  // { label:"Homework Helper",      href:"/homework-helper",         icon:"lightbulb",     color:"cv" },
   { label:"Community",     href:"/community",        icon:"msg",      color:"cp" },
  { label:"Group Chat", href:"/communityNew", icon:"users", color:"cp" },
   { label:"Achievements",  href:"/achievements",     icon:"trophy",   color:"co" },

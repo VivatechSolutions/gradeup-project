@@ -36,6 +36,7 @@ const subjectUnitSchema = new mongoose.Schema(
     },
     structuredData: { type: mongoose.Schema.Types.Mixed, default: null },
     enrichedData: { type: mongoose.Schema.Types.Mixed, default: null },
+    debateTopics: { type: mongoose.Schema.Types.Mixed, default: null },
     readerIndex: {
       sections: { type: [String], default: [] },
       hasGlossary: { type: Boolean, default: false },

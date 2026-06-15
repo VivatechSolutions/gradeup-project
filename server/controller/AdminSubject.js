@@ -59,6 +59,7 @@ function formatUnit(unit) {
     chapterName: unit.chapterName,
     originalFileName: unit.originalFileName,
     processingStatus: unit.processing?.status,
+    debateTopics: unit.debateTopics || null,
     createdAt: unit.createdAt,
     updatedAt: unit.updatedAt,
   };
@@ -438,7 +439,7 @@ const controller = {
       const units = await SubjectUnit.find({ uploadId: upload._id })
         .sort({ unitNumber: 1, createdAt: 1 })
         .select(
-          "_id documentId board standard subject part unitNumber unitLabel unitTitle processing createdAt subjectGroupKey",
+          "_id documentId board standard subject part unitNumber unitLabel unitTitle processing debateTopics createdAt subjectGroupKey",
         );
 
       return res.status(200).json({
@@ -474,6 +475,7 @@ const controller = {
             unitLabel: unit.unitLabel,
             unitTitle: unit.unitTitle,
             processingStatus: unit.processing.status,
+            debateTopics: unit.debateTopics || null,
             createdAt: unit.createdAt,
           })),
         },
@@ -588,6 +590,7 @@ const controller = {
           chapterName: subjectUnit.chapterName,
           structuredData: subjectUnit.structuredData,
           enrichedData: subjectUnit.enrichedData,
+          debateTopics: subjectUnit.debateTopics,
           readerIndex: subjectUnit.readerIndex,
           processing: subjectUnit.processing,
           createdAt: subjectUnit.createdAt,

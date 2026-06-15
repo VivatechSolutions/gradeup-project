@@ -1,4 +1,11 @@
-import { useState, useEffect, useRef, useCallback, useReducer } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useReducer,
+  useMemo,
+} from "react";
 import { useLocation } from "wouter";
 import Navigation from "../components/navigation";
 import FormattedAIContent from "../components/ai/FormattedAIContent";
@@ -6,6 +13,7 @@ import { useAuth } from "../hooks/use-auth";
 import { useSessionState } from "../hooks/useSessionState";
 import {
   createDebateRoom,
+  completeDebateRoomOpening,
   endDebate,
   endDebateRoom,
   getCandidateContext,
@@ -2550,7 +2558,9 @@ function IntegratedDebateSetup({
   const isJoinLinkMode = Boolean(joinLinkSessionId);
   const selectedTopicOption = topicOptions.find((item) => item.id === topic);
   const finalTopic =
-    topic === "__custom__" ? custom : selectedTopicOption?.label || "";
+    topic === "__custom__"
+      ? custom
+      : selectedTopicOption?.title || selectedTopicOption?.label || "";
   const selectedSubjectLabel =
     subjectCatalog.find((item) => item.subjectGroupKey === subject)?.title ||
     subject;
@@ -2558,6 +2568,46 @@ function IntegratedDebateSetup({
     ? subjectCatalog.find((item) => item.subjectGroupKey === subject)?.units ||
       []
     : [];
+  const selectedUnitRecord =
+    availableUnits.find((item) => item.id === selectedUnitId) || null;
+  const selectedUnitNumber = selectedUnitRecord?.unitNumber ?? null;
+  const topicGroups = useMemo(() => {
+    const activeTopics = topicOptions.filter((item) => {
+      if (!selectedUnitNumber) {
+        return true;
+      }
+
+      return Number(item.unitNumber || 0) === Number(selectedUnitNumber);
+    });
+
+    const groups = new Map<
+      string,
+      { key: string; label: string; topics: any[] }
+    >();
+
+    activeTopics.forEach((item) => {
+      const labelParts = [item.unitTitle, item.sectionTitle].filter(Boolean);
+      const groupLabel = labelParts.length
+        ? labelParts.join(" - ")
+        : item.unitTitle || "Topics";
+      const groupKey = `${item.unitNumber || "unit"}::${item.sectionTitle || "section"}`;
+      const existing = groups.get(groupKey);
+      const nextEntry = existing || {
+        key: groupKey,
+        label: groupLabel,
+        topics: [],
+      };
+      nextEntry.topics.push(item);
+      groups.set(groupKey, nextEntry);
+    });
+
+    return Array.from(groups.values()).sort((left, right) =>
+      String(left.label).localeCompare(String(right.label), undefined, {
+        numeric: true,
+        sensitivity: "base",
+      }),
+    );
+  }, [selectedUnitNumber, topicOptions]);
 
   useEffect(() => {
     toastRef.current = toast$;
@@ -2611,24 +2661,62 @@ function IntegratedDebateSetup({
   useEffect(() => {
     let ignore = false;
     async function loadTopics() {
-      if (!subject) {
+      if (!subject || !selectedUnitRecord) {
         setTopicOptions([]);
         setTopicsLoading(false);
         return;
       }
+      setTopicOptions([]);
       setTopicsLoading(true);
       try {
-        const topics = await getDebateTopics(subject);
+        const topics = await getDebateTopics(
+          subject,
+          selectedUnitRecord?.unitNumber,
+        );
         if (!ignore) {
-          const liveTopics = (topics || [])
-            .filter(
-              (item: any) => !selectedUnitId || item.unitId === selectedUnitId,
+          const liveUnits = Array.isArray(topics?.units) ? topics.units : [];
+          const liveTopics = liveUnits
+            .flatMap((unit: any) =>
+              (unit.sections || []).flatMap((section: any) =>
+                (section.debate_topics || []).map(
+                  (item: any, index: number) => ({
+                    id: String(
+                      item.topic_id ||
+                        `${unit.unit_number || "topic"}-${section.section_title || "section"}-${index}`,
+                    ),
+                    title:
+                      item.topic_title ||
+                      item.label ||
+                      item.topic ||
+                      item.title ||
+                      item.name,
+                    label:
+                      item.topic_title ||
+                      item.label ||
+                      item.topic ||
+                      item.title ||
+                      item.name,
+                    unitNumber: unit.unit_number ?? null,
+                    unitTitle: unit.unit_title || "",
+                    sectionTitle: section.section_title || "",
+                    topicDescription: item.topic_description || "",
+                    keyConcepts: Array.isArray(item.key_concepts)
+                      ? item.key_concepts
+                      : [],
+                    topicPath: [
+                      selectedSubjectLabel,
+                      unit.unit_title || "",
+                      section.section_title || "",
+                      item.topic_title ||
+                        item.label ||
+                        item.topic ||
+                        item.title ||
+                        item.name,
+                    ].filter(Boolean),
+                  }),
+                ),
+              ),
             )
-            .map((item: any, index: number) => ({
-              id: String(item.id || `${item.unitId || "topic"}-${index}`),
-              label: item.label || item.topic || item.title || item.name,
-              unitId: item.unitId || "",
-            }))
             .filter((item: any) => item.label);
           setTopicOptions(liveTopics);
         }
@@ -2650,7 +2738,7 @@ function IntegratedDebateSetup({
     return () => {
       ignore = true;
     };
-  }, [selectedUnitId, subject]);
+  }, [selectedSubjectLabel, selectedUnitRecord, selectedUnitId, subject]);
 
   const maxParticipants = Math.min(
     12,
@@ -2734,6 +2822,13 @@ function IntegratedDebateSetup({
           candidateId: candidate.candidateId,
           candidateName,
           topic: finalTopic,
+          topicId: topic === "__custom__" ? undefined : selectedTopicOption?.id,
+          topicUnitNumber:
+            selectedTopicOption?.unitNumber ??
+            selectedUnitRecord?.unitNumber ??
+            null,
+          topicSectionTitle: selectedTopicOption?.sectionTitle || null,
+          topicPath: selectedTopicOption?.topicPath || [],
           debateType: "1_vs_ai",
         });
       } else if (
@@ -2752,6 +2847,14 @@ function IntegratedDebateSetup({
             candidateId: candidate.candidateId,
             candidateName,
             topic: finalTopic,
+            topicId:
+              topic === "__custom__" ? undefined : selectedTopicOption?.id,
+            topicUnitNumber:
+              selectedTopicOption?.unitNumber ??
+              selectedUnitRecord?.unitNumber ??
+              null,
+            topicSectionTitle: selectedTopicOption?.sectionTitle || null,
+            topicPath: selectedTopicOption?.topicPath || [],
             roomLink,
             maxParticipants,
           });
@@ -2979,13 +3082,28 @@ function IntegratedDebateSetup({
                 disabled={topicsLoading && !isJoinLinkMode}
               >
                 <option value="">
-                  {topicsLoading ? "Loading topics..." : "Select a topic..."}
+                  {!selectedUnitRecord
+                    ? "Select a unit first"
+                    : topicsLoading
+                      ? "Loading topics..."
+                      : "Select a topic..."}
                 </option>
-                {topicOptions.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.label}
-                  </option>
+                {topicGroups.map((group) => (
+                  <optgroup key={group.key} label={group.label}>
+                    {group.topics.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
+                {!topicsLoading &&
+                selectedUnitRecord &&
+                topicGroups.length === 0 ? (
+                  <option value="" disabled>
+                    No debate topics available for this unit
+                  </option>
+                ) : null}
                 <option value="__custom__">✏️ Custom topic...</option>
               </select>
             </div>
@@ -3385,6 +3503,8 @@ function TeamDebateRoom({
   const [meetingReady, setMeetingReady] = useState(false);
 
   const [greetingPending, setGreetingPending] = useState(false);
+  const [openingCompletionPending, setOpeningCompletionPending] =
+    useState(false);
   const meetingReadyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -3431,6 +3551,7 @@ function TeamDebateRoom({
   const currentSpeakerIdRef = useRef<string>("");
   // Auto start/stop refs — same pattern as LiveAIDebateRoom
   const startSpeechCaptureRef = useRef<(() => void) | null>(null);
+  const lastSubmitTimeRef = useRef<number | null>(null);
   const autoSilenceIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
     null,
   );
@@ -3503,6 +3624,7 @@ function TeamDebateRoom({
     currentPhase !== "ai_opening" &&
     !aiIsSpeaking &&
     !greetingPending &&
+    !openingCompletionPending &&
     isCurrentUserTurn &&
     !submittingTurn &&
     !speechProcessing &&
@@ -3698,7 +3820,7 @@ function TeamDebateRoom({
         .find(
           (t: any) =>
             t.role === "moderator" &&
-            (t.turnType === "opening" || !t.turnType) &&
+            t.turnType === "opening" &&
             (t.message || t.transcript),
         )?.id ?? null
     );
@@ -3850,7 +3972,7 @@ function TeamDebateRoom({
           volume: greetingAudio.volume,
         });
 
-        const onGreetingEnd = () => {
+        const onGreetingEnd = async () => {
           console.log("[DEBUG] onGreetingEnd called", {
             tokenCheck: playbackToken === greetingPlaybackTokenRef.current,
             playbackToken,
@@ -3901,32 +4023,39 @@ function TeamDebateRoom({
             }
           }
 
-          // ✓ FIX 1C: Mark greeting complete
-          setGreetingPending(false);
-          setAiIsSpeaking(false);
-
-          // ✓ FIX 1D: IMMEDIATELY unmute the first speaker
-          if (
-            serverSpeakerId &&
-            String(serverSpeakerId) === String(candidateId)
-          ) {
-            if (localAudioTrack && !localAudioTrack.enabled) {
-              localAudioTrack.enabled = true;
-              livekitUnmute();
-              console.log("[MIC] greeting ended — auto-unmuted for my turn", {
-                sessionId: config.sessionId,
-                currentSpeakerId: serverSpeakerId,
-                candidateId,
-              });
-            }
-          } else if (localAudioTrack && localAudioTrack.enabled) {
+          setOpeningCompletionPending(true);
+          if (localAudioTrack && localAudioTrack.enabled) {
             localAudioTrack.enabled = false;
-            livekitMute();
-            console.log("[MIC] greeting ended — staying muted (not my turn)", {
+          }
+          livekitMute();
+
+          try {
+            const completed = await completeDebateRoomOpening({
               sessionId: config.sessionId,
-              currentSpeakerId: serverSpeakerId,
-              candidateId,
+              candidateId: String(candidateId),
             });
+            setRoomSnapshot({
+              liveSession: completed?.liveSession || liveSession,
+              ...completed,
+            });
+            console.log("[GREETING] server opening-complete acknowledged", {
+              sessionId: config.sessionId,
+              currentSpeakerId:
+                completed?.liveSession?.currentRound?.currentSpeakerId ||
+                serverSpeakerId ||
+                null,
+              phase: completed?.liveSession?.currentRound?.phase || null,
+            });
+          } catch (error) {
+            console.error("[GREETING] opening-complete failed", {
+              sessionId: config.sessionId,
+              message: error instanceof Error ? error.message : String(error),
+            });
+            syncRoom(false).catch(() => null);
+          } finally {
+            setOpeningCompletionPending(false);
+            setGreetingPending(false);
+            setAiIsSpeaking(false);
           }
         };
 
@@ -3940,32 +4069,48 @@ function TeamDebateRoom({
           } catch {}
           setAiIsSpeaking(false);
           setGreetingPending(false);
+          setOpeningCompletionPending(false);
           activeAudioRef.current = null;
         };
 
-        console.log(liveSession);
-        greetingAudio.addEventListener("ended", onGreetingEnd);
+        console.log("[Live Session]", `${liveSession}`);
+        greetingAudio.addEventListener("ended", () => {
+          onGreetingEnd().catch((error) => {
+            console.error("[GREETING] completion handler failed", {
+              sessionId: config.sessionId,
+              message: error instanceof Error ? error.message : String(error),
+            });
+          });
+        });
         greetingAudio.addEventListener("error", onGreetingError);
 
         // ✓ Timeout fallback in case "ended" event never fires
-        const greetingTimeoutId = setTimeout(() => {
-          if (playbackToken === greetingPlaybackTokenRef.current) {
-            console.warn(
-              "[GREETING] ended event timeout — forcing completion",
-              {
-                sessionId: config.sessionId,
-              },
-            );
-            onGreetingEnd();
-          }
-        }, 10000);
+        // const greetingTimeoutId = setTimeout(() => {
+        //   if (playbackToken === greetingPlaybackTokenRef.current) {
+        //     console.warn(
+        //       "[GREETING] ended event timeout — forcing completion",
+        //       {
+        //         sessionId: config.sessionId,
+        //       },
+        //     );
+        //     onGreetingEnd().catch((error) => {
+        //       console.error("[GREETING] timeout completion failed", {
+        //         sessionId: config.sessionId,
+        //         message:
+        //           error instanceof Error ? error.message : String(error),
+        //       });
+        //     });
+        //   }
+        // }, 10000);
 
         // Store timeout id so cleanup can clear it if a real new greeting starts
-        greetingTimeoutRef.current = greetingTimeoutId;
+        // greetingTimeoutRef.current = greetingTimeoutId;
 
         greetingAudio
           .play()
           .then(() => {
+            greetingAudio.volume = Math.max(0.7, greetingAudio.volume);
+            greetingAudio.muted = false;
             console.log("[GREETING] audio play started", {
               sessionId: config.sessionId,
             });
@@ -3978,9 +4123,10 @@ function TeamDebateRoom({
             try {
               document.body.removeChild(greetingAudio);
             } catch {}
-            clearTimeout(greetingTimeoutId);
+            // clearTimeout(greetingTimeoutId);
             setAiIsSpeaking(false);
             setGreetingPending(false);
+            setOpeningCompletionPending(false);
             activeAudioRef.current = null;
           });
       } catch (error) {
@@ -4025,11 +4171,55 @@ function TeamDebateRoom({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config.sessionId, latestModeratorTurnId]);
   // ✓ FIX 9: CRITICAL - Prevent AI from ever speaking after opening greeting
+
+  // ✓ NEW: Track moderator messages to prevent deduplication issues
+const [displayedModeratorTurns, setDisplayedModeratorTurns] = useState<Set<string>>(new Set());
+
+useEffect(() => {
+  const turns = liveSession?.turns || [];
+  const allModeratorTurns = turns.filter((t: any) => t.role === "moderator");
+  
+  if (allModeratorTurns.length === 0) return;
+
+  // Find moderator turns that haven't been tracked yet
+  const newModeratorTurns = allModeratorTurns.filter((turn: any) => {
+    const turnId = turn.id || `${turn.role}-${turn.roundNumber}-${turn.createdAt}`;
+    return !displayedModeratorTurns.has(turnId);
+  });
+
+  if (newModeratorTurns.length > 0) {
+    const updatedSet = new Set(displayedModeratorTurns);
+    newModeratorTurns.forEach((turn: any) => {
+      const turnId = turn.id || `${turn.role}-${turn.roundNumber}-${turn.createdAt}`;
+      updatedSet.add(turnId);
+      console.log("[MODERATOR] Turn tracked for display", {
+        sessionId: config.sessionId,
+        turnId,
+        turnType: turn.turnType,
+        roundNumber: turn.roundNumber,
+        totalTracked: updatedSet.size,
+      });
+    });
+    setDisplayedModeratorTurns(updatedSet);
+  }
+}, [liveSession?.turns, config.sessionId]);
   useEffect(() => {
     const turns = liveSession?.turns || [];
     const openingGreeting = turns.find(
       (t: any) => t.role === "moderator" && t.turnType === "opening",
     );
+
+    // ✓ All other moderator turns (warnings, responses) are chat-only
+    const otherModeratorTurns = turns.filter(
+      (t: any) => t.role === "moderator" && t.turnType !== "opening",
+    );
+
+    if (otherModeratorTurns.length > 0) {
+      console.log("[MODERATOR] Non-greeting turns (chat-only)", {
+        count: otherModeratorTurns.length,
+        types: otherModeratorTurns.map((t) => t.turnType),
+      });
+    }
 
     if (!openingGreeting) {
       // No greeting yet - waiting for first AI message
@@ -4091,7 +4281,21 @@ function TeamDebateRoom({
       });
       try {
         const snapshot = await getDebateRoom(config.sessionId);
-        setRoomSnapshot(snapshot);
+        const shouldUpdate =
+          !lastSubmitTimeRef.current ||
+          Date.now() - lastSubmitTimeRef.current > 1500;
+
+        if (shouldUpdate) {
+          setRoomSnapshot(snapshot);
+        } else {
+          console.log(
+            "[ROOM] sync skipped (using fresh post-submit snapshot)",
+            {
+              sessionId: config.sessionId,
+              timeSinceSubmit: Date.now() - (lastSubmitTimeRef.current || 0),
+            },
+          );
+        }
         setRoomError(null);
         if (snapshot?.pythonWarning) setRoomWarning(snapshot.pythonWarning);
         const status = snapshot?.liveSession?.status;
@@ -4167,6 +4371,8 @@ function TeamDebateRoom({
   async function submitTurn(message: string) {
     if (!message.trim()) return;
 
+    // ✓ Mark when turn was submitted (for deduplication)
+    lastSubmitTimeRef.current = Date.now();
     // ✓ FIX: Ensure mic is muted during submission
     if (localAudioTrack && localAudioTrack.enabled) {
       localAudioTrack.enabled = false;
@@ -4198,18 +4404,28 @@ function TeamDebateRoom({
           (t: any) => t.role === "moderator",
         ).length,
       });
+      const newSpeakerId = data?.liveSession?.currentRound?.currentSpeakerId;
+      if (newSpeakerId && String(newSpeakerId) !== String(candidateId)) {
+        console.log("[TURN] next speaker assigned via API response", {
+          nextSpeakerId: newSpeakerId,
+          currentSpeaker: candidateId,
+        });
+      }
       setMessageInput("");
 
       // ✓ FIX: Update snapshot with fresh server state
       setRoomSnapshot({
         liveSession: data?.liveSession || liveSession,
-        ...data,
+        ...data, 
       });
+      // ✓ IMMEDIATE sync - don't delay, next speaker needs instant mic access
+      // syncRoom(false).catch(() => null);
+      await syncRoom(false).catch(() => null);
 
-      // ✓ Force immediate sync so all participants get new state consistently
-      setTimeout(() => {
-        syncRoom(false).catch(() => null);
-      }, 500); // Reduced from 800ms for faster sync
+       console.log("[TURN] sync completed, state propagated", {
+        sessionId: config.sessionId,
+        currentSpeakerId: data?.liveSession?.currentRound?.currentSpeakerId,
+      });
     } catch (error: any) {
       console.log("[TURN] submit failed", {
         sessionId: config.sessionId,
@@ -4614,14 +4830,20 @@ function TeamDebateRoom({
       toast$("Microphone granted.", "success");
       return;
     }
-    if (localAudioTrack && !localAudioTrack.enabled) {
+    if (localAudioTrack && !localAudioTrack.enabled && canSpeak) {
       localAudioTrack.enabled = true;
+      livekitUnmute();
       debateDebug("[MIC] track enabled", {
         sessionId: config.sessionId,
         readyState: localAudioTrack.readyState,
       });
       setRoomMicRefresh((value) => value + 1);
       toast$("Microphone enabled.", "success");
+      return;
+    }
+    if (localAudioTrack && !localAudioTrack.enabled) {
+      livekitMute();
+      toast$("Microphone is ready and will unlock on your turn.", "info");
       return;
     }
     toast$("Microphone is already enabled.", "info");
@@ -4642,7 +4864,11 @@ function TeamDebateRoom({
   useEffect(() => {
     if (!meetingReady || !localAudioTrack) return;
 
-    const shouldBeMuted = !isCurrentUserTurn || aiIsSpeaking || greetingPending;
+    const shouldBeMuted =
+      !isCurrentUserTurn ||
+      aiIsSpeaking ||
+      greetingPending ||
+      openingCompletionPending;
 
     if (shouldBeMuted && localAudioTrack.enabled) {
       // ✓ I should be muted
@@ -4653,6 +4879,7 @@ function TeamDebateRoom({
         isCurrentUserTurn,
         aiIsSpeaking,
         greetingPending,
+        openingCompletionPending,
         candidateId,
       });
     } else if (!shouldBeMuted && !localAudioTrack.enabled) {
@@ -4664,6 +4891,7 @@ function TeamDebateRoom({
         isCurrentUserTurn,
         aiIsSpeaking,
         greetingPending,
+        openingCompletionPending,
         candidateId,
       });
     }
@@ -4671,6 +4899,7 @@ function TeamDebateRoom({
     isCurrentUserTurn,
     aiIsSpeaking,
     greetingPending,
+    openingCompletionPending,
     meetingReady,
     localAudioTrack?.enabled,
     currentSpeakerId,
@@ -4688,13 +4917,14 @@ function TeamDebateRoom({
       submittingTurn ||
       !meetingReady ||
       aiIsSpeaking ||
-      greetingPending
+      greetingPending ||
+      openingCompletionPending
     ) {
       return;
     }
 
     // ✓ Include greeting & AI state in turn key to prevent duplicate starts
-    const turnKey = `${liveSession?.currentRound?.roundNumber || 0}:${currentSpeakerId || ""}:${(liveSession?.turns || []).length}:${aiIsSpeaking}:${greetingPending}`;
+    const turnKey = `${liveSession?.currentRound?.roundNumber || 0}:${currentSpeakerId || ""}:${(liveSession?.turns || []).length}:${aiIsSpeaking}:${greetingPending}:${openingCompletionPending}`;
     if (autoTurnStartRef.current === turnKey) return;
     autoTurnStartRef.current = turnKey;
 
@@ -4719,6 +4949,7 @@ function TeamDebateRoom({
     meetingReady,
     aiIsSpeaking,
     greetingPending,
+    openingCompletionPending,
     candidateId,
   ]);
   // ✓ NEW: Stop user recording if AI tries to speak (safety guard)
@@ -4822,8 +5053,10 @@ function TeamDebateRoom({
     turnsTaken: 0,
   };
   const buildTeamTiles = (teamKey: "A" | "B") =>
-    (teams?.[teamKey] || []).map(
-      (participant: any, index: number) =>
+    (teams?.[teamKey] || [])
+      .filter((participant: any) => participant.team === teamKey || !participant.team)
+      .map(
+        (participant: any, index: number) =>
         ({
           id:
             participant.id != null ? String(participant.id) : String(index + 1),
@@ -4853,11 +5086,11 @@ function TeamDebateRoom({
             ? getTeamColor(participant.team)
             : participant.isAi
               ? "#8b5cf6"
-              : getTeamColor(teamKey),
+              : getTeamColor(participant.team || teamKey),
           energy: 84,
           reactionsReceived: 0,
           turnsTaken: Number(participant.turnsTaken || 0),
-          team: teamKey,
+          team: participant.team || teamKey,
           teamOrder: participant.teamOrder,
           hasSpoken: Boolean(participant.hasSpoken),
         }) as Participant,

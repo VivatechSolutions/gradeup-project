@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'wouter';
 import { motion } from 'framer-motion';
-import { Sun, Moon, Rocket, Sparkles, BookOpen, BarChart2, Trophy } from 'lucide-react';
+import { Sun, Moon, Rocket, Sparkles, BookOpen, BarChart2, Trophy, Lock } from 'lucide-react';
 import { useTheme } from '../../hooks/use-theme';
 import { useAuth } from '../../hooks/use-auth';
 import Navigation from '../../components/navigation';
@@ -213,15 +213,18 @@ const QuizBankLanding = () => {
               animate={{ opacity:1, y:0 }}
               transition={{ delay: i*0.1 + 0.1, type:'spring', stiffness:300, damping:22 }}
             >
-              <div className={`qbl-card ${c.type}`} onClick={() => setLocation(c.link)}>
-                <div className="qbl-card-icon">{c.emoji}</div>
+              <div className={`qbl-card ${c.type}`} style={{ cursor: 'not-allowed', position: 'relative' }}>
+                <div style={{ position: 'absolute', top: '16px', right: '16px', background: 'rgba(15, 23, 42, 0.08)', color: '#0f172a', padding: '4px 10px', borderRadius: '12px', fontWeight: 'bold', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  <Lock size={12} /> Coming Soon
+                </div>
+                <div className="qbl-card-icon" style={{ opacity: 0.8 }}>{c.emoji}</div>
                 <div className="qbl-card-title">{c.title}</div>
                 <div className="qbl-card-sub">{c.sub}</div>
                 <div className="qbl-card-chips">
                   {c.chips.map(ch => <span key={ch} className="qbl-chip">{ch}</span>)}
                 </div>
-                <button className="qbl-card-btn" onClick={e => { e.stopPropagation(); setLocation(c.link); }}>
-                  <c.BtnIcon size={15}/> {c.btnLabel}
+                <button className="qbl-card-btn" disabled style={{ background: '#e2e8f0', color: '#94a3b8', boxShadow: 'none', cursor: 'not-allowed' }}>
+                  <Lock size={15}/> Coming Soon
                 </button>
               </div>
             </motion.div>

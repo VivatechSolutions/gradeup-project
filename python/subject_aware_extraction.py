@@ -36,7 +36,6 @@ OUTPUT JSON FORMAT:
 {
   "unit_number": <integer or null>,
   "title": "<unit/chapter title>",
-  "introduction": "<intro text or null>",
   "learning_objectives": ["<objective 1>", ...],
   "sections": [
     {
@@ -45,7 +44,7 @@ OUTPUT JSON FORMAT:
       "title": "<heading text or null>",
       "content": "<FULL text — NEVER truncate>",
       "metadata": {},
-      "image_urls": [],
+      "images": [],
       "sub_items": [
         {"number": "<item number>", "content": "<item text>", "options": []}
       ]
@@ -134,7 +133,7 @@ def merge_universal_chunks(chunk_results: List[Dict[str, Any]]) -> Dict[str, Any
                 seen.add(key)
 
         # Merge top-level scalar fields if missing in first chunk
-        for field in ("unit_number", "title", "introduction", "part"):
+        for field in ("unit_number", "title", "part"):
             if not merged.get(field) and chunk.get(field):
                 merged[field] = chunk[field]
 

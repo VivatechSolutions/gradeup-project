@@ -4,8 +4,9 @@ const { getDebateInviteEmail } = require("../config/EmailTemplate");
 const {
   resolveSubjectUnit,
   getPythonLearningContext,
-  listSectionTopicsForSubjectGroup,
+  buildDebateTopicHierarchyForUnit,
 } = require("../services/learningContextService");
+const { getDebateTopicHierarchy } = require("../services/debateTopicService");
 const {
   createRoomSession,
   upsertSession,
@@ -13,7 +14,6 @@ const {
   touchParticipant,
   completeSession,
   getSession,
-  listSessionTopics,
   saveFeedback,
   startRoomSession,
   saveRoomRoundSubmission,
@@ -26,7 +26,8 @@ const {
 function getCandidate(source = {}) {
   return {
     candidate_id: source.candidateId || source.candidate_id || "guest-user",
-    candidate_name: source.candidateName || source.candidate_name || "GradeUp Learner",
+    candidate_name:
+      source.candidateName || source.candidate_name || "GradeUp Learner",
   };
 }
 
@@ -58,6 +59,34 @@ function buildJoinCode(sessionId) {
     .toUpperCase();
 }
 
+function flattenTopicHierarchy(hierarchy = {}) {
+  return (hierarchy.units || []).flatMap((unit) =>
+    (unit.sections || []).flatMap((section) =>
+      (section.debate_topics || []).map((topic, index) => {
+        const topicTitle =
+          topic.topic_title || topic.label || topic.title || topic.name || "";
+
+        return {
+          id:
+            topic.topic_id ||
+            `${unit.unit_number || "unit"}-${section.section_title || "section"}-${index}`,
+          label: topicTitle,
+          topic: topicTitle,
+          title: topicTitle,
+          name: topicTitle,
+          topicDescription: topic.topic_description || null,
+          keyConcepts: topic.key_concepts || [],
+          subject: hierarchy.subject || topic.subject || null,
+          unitNumber: unit.unit_number ?? null,
+          unitTitle: unit.unit_title || null,
+          sectionTitle: section.section_title || null,
+          topicPath: topic.topic_path || [],
+        };
+      }),
+    ),
+  );
+}
+
 function normalizeRoomWarnings(room = {}, respondData = null) {
   const warnings = [];
 
@@ -66,7 +95,9 @@ function normalizeRoomWarnings(room = {}, respondData = null) {
   }
 
   (room.messages || [])
-    .filter((message) => message.type === "warning" || message.type === "removal")
+    .filter(
+      (message) => message.type === "warning" || message.type === "removal",
+    )
     .slice(-5)
     .forEach((message) => {
       const text = message.content || message.message || "Warning";
@@ -82,7 +113,8 @@ function findLatestAiMessage(room = {}) {
     .find(
       (message) =>
         message.role === "moderator" ||
-        (message.role === "student" && message.candidate_id === "__ai_student__"),
+        (message.role === "student" &&
+          message.candidate_id === "__ai_student__"),
     );
 
   return latest ? latest.content : null;
@@ -102,14 +134,23 @@ function toTeamList(team = [], teamKey) {
 
 function mapRoomTeams(data = {}) {
   const normalized = normalizeTeams(data.teams || {});
-  const teamA = normalized.A.length ? normalized.A : toTeamList(data.teams?.blue_team || [], "A");
-  const teamB = normalized.B.length ? normalized.B : toTeamList(data.teams?.red_team || [], "B");
+  const teamA = normalized.A.length
+    ? normalized.A
+    : toTeamList(data.teams?.blue_team || [], "A");
+  const teamB = normalized.B.length
+    ? normalized.B
+    : toTeamList(data.teams?.red_team || [], "B");
   return { A: teamA, B: teamB };
 }
 
 function ensureBalancedTeamsForRoom(baseTeams = {}, liveSession = null) {
   const humans = (liveSession?.participants || [])
-    .filter((participant) => participant.role !== "observer" && !participant.isAi && participant.status !== "removed")
+    .filter(
+      (participant) =>
+        participant.role !== "observer" &&
+        !participant.isAi &&
+        participant.status !== "removed",
+    )
     .map((participant) => ({
       id: String(participant.id || participant.participantId),
       name: participant.name || "Participant",
@@ -176,8 +217,16 @@ function pickNextSpeaker(liveSession, team) {
         participant.status !== "removed",
     )
     .sort((a, b) => {
-      const aTurns = getSpeakerProgress(liveSession?.turns || [], normalizedTeam, a.id || a.participantId);
-      const bTurns = getSpeakerProgress(liveSession?.turns || [], normalizedTeam, b.id || b.participantId);
+      const aTurns = getSpeakerProgress(
+        liveSession?.turns || [],
+        normalizedTeam,
+        a.id || a.participantId,
+      );
+      const bTurns = getSpeakerProgress(
+        liveSession?.turns || [],
+        normalizedTeam,
+        b.id || b.participantId,
+      );
       if (aTurns !== bTurns) return aTurns - bTurns;
       const aOrder = Number.isFinite(a.teamOrder) ? a.teamOrder : 999;
       const bOrder = Number.isFinite(b.teamOrder) ? b.teamOrder : 999;
@@ -189,7 +238,9 @@ function pickNextSpeaker(liveSession, team) {
 }
 
 function buildRoomSnapshot(pythonRoom, liveSession) {
-  const participantCount = liveSession?.participants?.filter((participant) => !participant.isAi).length || 0;
+  const participantCount =
+    liveSession?.participants?.filter((participant) => !participant.isAi)
+      .length || 0;
   return {
     ...(pythonRoom || {}),
     liveSession,
@@ -256,13 +307,21 @@ const controller = {
         });
 
         const sessionId =
-          roomData?.session_id || roomData?.sessionId || `debate-room-${candidate.candidate_id}-${Date.now()}`;
+          roomData?.session_id ||
+          roomData?.sessionId ||
+          `debate-room-${candidate.candidate_id}-${Date.now()}`;
         const roomCode = buildJoinCode(sessionId);
         const liveSession = await createRoomSession({
           sessionId,
           candidateId: candidate.candidate_id,
           candidateName: candidate.candidate_name,
           topic: req.body.topic,
+          topicId: req.body.topicId || null,
+          topicUnitNumber: req.body.topicUnitNumber ?? null,
+          topicSectionTitle: req.body.topicSectionTitle || null,
+          topicPath: Array.isArray(req.body.topicPath)
+            ? req.body.topicPath
+            : [],
           unit,
           metadata: roomData,
           roomCode,
@@ -297,16 +356,25 @@ const controller = {
 
       const storedSession = await upsertSession({
         sessionType: "debate",
-        sessionId: data?.session_id || data?.sessionId || `debate-${candidate.candidate_id}-${Date.now()}`,
+        sessionId:
+          data?.session_id ||
+          data?.sessionId ||
+          `debate-${candidate.candidate_id}-${Date.now()}`,
         candidateId: candidate.candidate_id,
         candidateName: candidate.candidate_name,
         topic: req.body.topic,
+        topicId: req.body.topicId || null,
+        topicUnitNumber: req.body.topicUnitNumber ?? null,
+        topicSectionTitle: req.body.topicSectionTitle || null,
+        topicPath: Array.isArray(req.body.topicPath) ? req.body.topicPath : [],
         unit,
         metadata: data,
         debateType: req.body.debateType || "1_vs_ai",
       });
 
-      return res.status(200).json({ status: true, data: { ...data, liveSession: storedSession } });
+      return res
+        .status(200)
+        .json({ status: true, data: { ...data, liveSession: storedSession } });
     } catch (error) {
       return res.status(error.statusCode || 500).json({
         status: false,
@@ -321,7 +389,9 @@ const controller = {
 
   async respond(req, res) {
     try {
-      const liveSession = await getSession(req.body.sessionId || req.body.session_id);
+      const liveSession = await getSession(
+        req.body.sessionId || req.body.session_id,
+      );
       if (isTeamDebateRequest(req.body, liveSession)) {
         return controller.submitRoomTurn(req, res);
       }
@@ -371,7 +441,10 @@ const controller = {
         });
       }
 
-      return res.status(200).json({ status: true, data: { ...data, liveSession: updatedSession || touchedSession } });
+      return res.status(200).json({
+        status: true,
+        data: { ...data, liveSession: updatedSession || touchedSession },
+      });
     } catch (error) {
       return res.status(error.statusCode || 500).json({
         status: false,
@@ -383,21 +456,28 @@ const controller = {
   async join(req, res) {
     try {
       const candidate = getCandidate(req.body);
-      const liveSession = await getSession(req.body.sessionId || req.body.session_id);
+      const liveSession = await getSession(
+        req.body.sessionId || req.body.session_id,
+      );
 
       if (isTeamDebateRequest(req.body, liveSession)) {
         const existingParticipant = (liveSession?.participants || []).find(
-          (participant) => String(participant.id) === String(candidate.candidate_id),
+          (participant) =>
+            String(participant.id) === String(candidate.candidate_id),
         );
         const roomStatus = liveSession?.status;
-        const hasStarted = roomStatus === "active" || roomStatus === "waiting_for_ai" || roomStatus === "completed";
+        const hasStarted =
+          roomStatus === "active" ||
+          roomStatus === "waiting_for_ai" ||
+          roomStatus === "completed";
 
         if (hasStarted && !existingParticipant) {
           return res.status(403).json({
             status: false,
-            message: roomStatus === "completed"
-              ? "This debate has already ended."
-              : "This debate has already started. New participants cannot join now.",
+            message:
+              roomStatus === "completed"
+                ? "This debate has already ended."
+                : "This debate has already started. New participants cannot join now.",
           });
         }
 
@@ -434,7 +514,9 @@ const controller = {
           status: hasStarted ? "active" : "waiting",
         });
 
-        const updatedSession = await getSession(req.body.sessionId || req.body.session_id);
+        const updatedSession = await getSession(
+          req.body.sessionId || req.body.session_id,
+        );
         return res.status(200).json({
           status: true,
           data: {
@@ -451,7 +533,9 @@ const controller = {
         status: "active",
       });
 
-      return res.status(200).json({ status: true, data: { liveSession: updatedSession } });
+      return res
+        .status(200)
+        .json({ status: true, data: { liveSession: updatedSession } });
     } catch (error) {
       return res.status(error.statusCode || 500).json({
         status: false,
@@ -471,10 +555,14 @@ const controller = {
       const liveSession = await getSession(sessionId);
 
       if (!liveSession) {
-        return res.status(404).json({ status: false, message: "Debate session not found" });
+        return res
+          .status(404)
+          .json({ status: false, message: "Debate session not found" });
       }
 
-      if (String(liveSession.hostCandidateId) !== String(candidate.candidate_id)) {
+      if (
+        String(liveSession.hostCandidateId) !== String(candidate.candidate_id)
+      ) {
         return res.status(403).json({
           status: false,
           message: "Only the host can start the debate.",
@@ -487,21 +575,27 @@ const controller = {
         data: { session_id: sessionId },
       });
 
-      const teams = ensureBalancedTeamsForRoom(mapRoomTeams(data), liveSession);
-
-      // Pick first speaker: random team, first human member by teamOrder
+      const teams = mapRoomTeams(data);
+      console.log("teams:", JSON.stringify(teams, null, 2));
+      console.log("Map teams:", JSON.stringify(mapRoomTeams(data), null, 2));
       const startingTeamKey = Math.random() < 0.5 ? "A" : "B";
       const startingTeam = teams[startingTeamKey] || [];
-      const firstSpeaker = startingTeam
-        .filter((p) => !p.isAi)
-        .sort((a, b) => (a.teamOrder || 0) - (b.teamOrder || 0))[0] || null;
+      const firstSpeaker =
+        startingTeam
+          .filter((p) => !p.isAi)
+          .sort((a, b) => (a.teamOrder || 0) - (b.teamOrder || 0))[0] || null;
 
       // Fallback to Team A if chosen team has no humans
-      const resolvedFirstSpeaker = firstSpeaker
-        || (teams["A"] || []).filter((p) => !p.isAi).sort((a, b) => (a.teamOrder || 0) - (b.teamOrder || 0))[0]
-        || null;
+      const resolvedFirstSpeaker =
+        firstSpeaker ||
+        (teams["A"] || [])
+          .filter((p) => !p.isAi)
+          .sort((a, b) => (a.teamOrder || 0) - (b.teamOrder || 0))[0] ||
+        null;
       const resolvedTeam = resolvedFirstSpeaker
-        ? (teams["A"].find((p) => p.id === resolvedFirstSpeaker.id) ? "A" : "B")
+        ? teams["A"].find((p) => p.id === resolvedFirstSpeaker.id)
+          ? "A"
+          : "B"
         : "A";
 
       // Build AI greeting that names the first speaker
@@ -544,22 +638,32 @@ const controller = {
     }
   },
 
-
   async submitRoomTurn(req, res) {
     try {
       const sessionId = req.body.sessionId || req.body.session_id;
       const candidate = getCandidate(req.body);
       const liveSession = await getSession(sessionId);
       if (!liveSession) {
-        return res.status(404).json({ status: false, message: "Debate session not found" });
+        return res
+          .status(404)
+          .json({ status: false, message: "Debate session not found" });
       }
 
-      const team = normalizeTeamKey(req.body.team) || normalizeTeamKey(req.body.role) || normalizeTeamKey(
-        liveSession.participants.find((participant) => String(participant.id) === String(candidate.candidate_id))?.team,
-      );
+      const team =
+        normalizeTeamKey(req.body.team) ||
+        normalizeTeamKey(req.body.role) ||
+        normalizeTeamKey(
+          liveSession.participants.find(
+            (participant) =>
+              String(participant.id) === String(candidate.candidate_id),
+          )?.team,
+        );
 
       if (!team) {
-        return res.status(400).json({ status: false, message: "Participant team is not assigned yet." });
+        return res.status(400).json({
+          status: false,
+          message: "Participant team is not assigned yet.",
+        });
       }
 
       const currentRound = liveSession.currentRound || {};
@@ -573,7 +677,10 @@ const controller = {
         });
       }
 
-      if (currentSpeakerId && String(currentSpeakerId) !== String(candidate.candidate_id)) {
+      if (
+        currentSpeakerId &&
+        String(currentSpeakerId) !== String(candidate.candidate_id)
+      ) {
         return res.status(409).json({
           status: false,
           message: "It is not your turn to speak yet.",
@@ -598,8 +705,12 @@ const controller = {
         });
       } catch (pythonErr) {
         // Non-fatal: record the error as a warning and continue advancing the turn
-        pythonRespondWarning = pythonErr?.message || "AI moderation temporarily unavailable.";
-        console.warn("[DEBATE] Python respond failed (non-fatal):", pythonRespondWarning);
+        pythonRespondWarning =
+          pythonErr?.message || "AI moderation temporarily unavailable.";
+        console.warn(
+          "[DEBATE] Python respond failed (non-fatal):",
+          pythonRespondWarning,
+        );
       }
 
       const pythonRoom = await callPython({
@@ -630,12 +741,16 @@ const controller = {
       } catch (saveErr) {
         // Log for debugging but continue — fetch the latest session state so
         // we can still advance to the next speaker
-        console.warn("[DEBATE] saveRoomRoundSubmission failed (non-fatal):", saveErr?.message);
+        console.warn(
+          "[DEBATE] saveRoomRoundSubmission failed (non-fatal):",
+          saveErr?.message,
+        );
         saveWarning = saveErr?.message || "Session save partially failed.";
         updatedAfterTurn = await getSession(sessionId).catch(() => null);
       }
 
-      const remainingTeams = updatedAfterTurn?.currentRound?.awaitingTeams || [];
+      const remainingTeams =
+        updatedAfterTurn?.currentRound?.awaitingTeams || [];
       if (remainingTeams.length) {
         const nextTeam = remainingTeams[0];
         const nextSpeaker = pickNextSpeaker(updatedAfterTurn, nextTeam);
@@ -665,7 +780,10 @@ const controller = {
 
       let aiResponse = findLatestAiMessage(pythonRoom);
       let aiPayload = null;
-      const hasAiStudent = Boolean(updatedAfterTurn?.metadata?.hasAiStudent || liveSession?.metadata?.hasAiStudent);
+      const hasAiStudent = Boolean(
+        updatedAfterTurn?.metadata?.hasAiStudent ||
+        liveSession?.metadata?.hasAiStudent,
+      );
 
       if (hasAiStudent) {
         aiPayload = await callPython({
@@ -682,7 +800,10 @@ const controller = {
 
       const nextRoundTeam = "A";
       const refreshedSession = await getSession(sessionId);
-      const nextSpeaker = pickNextSpeaker(refreshedSession || updatedAfterTurn, nextRoundTeam);
+      const nextSpeaker = pickNextSpeaker(
+        refreshedSession || updatedAfterTurn,
+        nextRoundTeam,
+      );
 
       let finalSession;
       if (aiResponse) {
@@ -731,11 +852,71 @@ const controller = {
       });
     }
   },
-async getLivekitToken(req, res) {
+  async completeRoomOpening(req, res) {
+    try {
+      const sessionId = req.body.sessionId || req.body.session_id;
+      const candidate = getCandidate(req.body);
+      const liveSession = await getSession(sessionId);
+
+      if (!liveSession) {
+        return res
+          .status(404)
+          .json({ status: false, message: "Debate session not found" });
+      }
+
+      const isHost =
+        String(liveSession.hostCandidateId) === String(candidate.candidate_id);
+      const isAssignedSpeaker =
+        liveSession.currentRound?.currentSpeakerId &&
+        String(liveSession.currentRound.currentSpeakerId) ===
+          String(candidate.candidate_id);
+
+      if (!isHost && !isAssignedSpeaker) {
+        return res.status(403).json({
+          status: false,
+          message:
+            "Only the host or assigned first speaker can complete the opening.",
+        });
+      }
+
+      if (liveSession.status !== "active") {
+        return res.status(409).json({
+          status: false,
+          message: "Debate room is not active.",
+        });
+      }
+
+      if (liveSession.currentRound?.phase !== "ai_opening") {
+        return res.status(200).json({
+          status: true,
+          data: { liveSession },
+        });
+      }
+
+      const updatedSession = await updateRoomState(sessionId, {
+        currentRound: {
+          ...(liveSession.currentRound || {}),
+          phase: "team_turn",
+        },
+      });
+
+      return res.status(200).json({
+        status: true,
+        data: { liveSession: updatedSession },
+      });
+    } catch (error) {
+      return res.status(error.statusCode || 500).json({
+        status: false,
+        message: error.message || "Failed to complete debate opening",
+      });
+    }
+  },
+  async getLivekitToken(req, res) {
     try {
       const sessionId = req.body.sessionId || req.body.session_id;
       const candidateId = req.body.candidateId || req.body.candidate_id;
-      const candidateName = req.body.candidateName || req.body.candidate_name || "Participant";
+      const candidateName =
+        req.body.candidateName || req.body.candidate_name || "Participant";
 
       if (!sessionId || !candidateId) {
         return res.status(400).json({
@@ -746,7 +927,9 @@ async getLivekitToken(req, res) {
 
       const liveSession = await getSession(sessionId);
       if (!liveSession) {
-        return res.status(404).json({ status: false, message: "Session not found" });
+        return res
+          .status(404)
+          .json({ status: false, message: "Session not found" });
       }
 
       const apiKey = process.env.LIVEKIT_API_KEY;
@@ -809,7 +992,9 @@ async getLivekitToken(req, res) {
 
       await saveFeedback(sessionId, data, data);
       const updatedSession = await completeSession(sessionId);
-      return res.status(200).json({ status: true, data: { ...data, liveSession: updatedSession } });
+      return res
+        .status(200)
+        .json({ status: true, data: { ...data, liveSession: updatedSession } });
     } catch (error) {
       return res.status(error.statusCode || 500).json({
         status: false,
@@ -843,7 +1028,9 @@ async getLivekitToken(req, res) {
     } catch (error) {
       const sessionId = req.body.sessionId || req.body.session_id;
       if (sessionId) {
-        await updateRoomState(sessionId, { status: "end_error" }).catch(() => null);
+        await updateRoomState(sessionId, { status: "end_error" }).catch(
+          () => null,
+        );
       }
       return res.status(error.statusCode || 500).json({
         status: false,
@@ -871,7 +1058,10 @@ async getLivekitToken(req, res) {
         getSession(req.params.sessionId),
       ]);
 
-      return res.status(200).json({ status: true, data: { ...(pythonSession || {}), liveSession: storedSession } });
+      return res.status(200).json({
+        status: true,
+        data: { ...(pythonSession || {}), liveSession: storedSession },
+      });
     } catch (error) {
       return res.status(error.statusCode || 500).json({
         status: false,
@@ -927,18 +1117,52 @@ async getLivekitToken(req, res) {
 
   async getTopics(req, res) {
     try {
-      let data = [];
+      const filters = {
+        subjectGroupKey: req.query.subjectGroupKey,
+        subject: req.query.subject,
+        unitNumber: req.query.unitNumber,
+        sectionTitle: req.query.sectionTitle,
+      };
+      const hierarchy = await getDebateTopicHierarchy({
+        ...filters,
+      });
+      const hasCatalogTopics = (hierarchy.units || []).some((unit) =>
+        (unit.sections || []).some(
+          (section) => (section.debate_topics || []).length > 0,
+        ),
+      );
 
-      if (req.query.subjectGroupKey) {
-        data = await listSectionTopicsForSubjectGroup(req.query.subjectGroupKey);
-      } else {
-        data = await listSessionTopics({
-          sessionType: "debate",
-          subjectGroupKey: req.query.subjectGroupKey,
-        });
+      let resolvedHierarchy = hierarchy;
+
+      if (
+        !hasCatalogTopics &&
+        (filters.unitNumber !== undefined || filters.sectionTitle)
+      ) {
+        try {
+          const unit = await resolveSubjectUnit({
+            subjectGroupKey: filters.subjectGroupKey,
+            subject: filters.subject,
+            unitNumber: filters.unitNumber,
+          });
+          const fallbackHierarchy = buildDebateTopicHierarchyForUnit(
+            unit,
+            filters,
+          );
+          if (fallbackHierarchy?.units?.length) {
+            resolvedHierarchy = fallbackHierarchy;
+          }
+        } catch {
+          // Leave the catalog result in place when the textbook fallback cannot be resolved.
+        }
       }
 
-      return res.status(200).json({ status: true, data });
+      if (req.query.flat === "true") {
+        const data = flattenTopicHierarchy(resolvedHierarchy);
+
+        return res.status(200).json({ status: true, data });
+      }
+
+      return res.status(200).json({ status: true, data: resolvedHierarchy });
     } catch (error) {
       return res.status(500).json({
         status: false,
@@ -967,7 +1191,11 @@ async getLivekitToken(req, res) {
         senderName: req.body.senderName,
         debateTopic: req.body.topic,
         debateType: req.body.debateType,
-        joinUrl: req.body.joinUrl || process.env.APP_URL || process.env.ADMIN_APP_URL || "",
+        joinUrl:
+          req.body.joinUrl ||
+          process.env.APP_URL ||
+          process.env.ADMIN_APP_URL ||
+          "",
       });
 
       await Promise.all(
@@ -998,54 +1226,52 @@ async getLivekitToken(req, res) {
 
 module.exports = controller;
 
+// async startRoom(req, res) {
+//   try {
+//     const sessionId = req.body.sessionId || req.body.session_id;
+//     const candidate = getCandidate(req.body);
+//     const liveSession = await getSession(sessionId);
 
+//     if (!liveSession) {
+//       return res.status(404).json({ status: false, message: "Debate session not found" });
+//     }
 
-  // async startRoom(req, res) {
-  //   try {
-  //     const sessionId = req.body.sessionId || req.body.session_id;
-  //     const candidate = getCandidate(req.body);
-  //     const liveSession = await getSession(sessionId);
+//     if (String(liveSession.hostCandidateId) !== String(candidate.candidate_id)) {
+//       return res.status(403).json({
+//         status: false,
+//         message: "Only the host can start the debate.",
+//       });
+//     }
 
-  //     if (!liveSession) {
-  //       return res.status(404).json({ status: false, message: "Debate session not found" });
-  //     }
+//     const data = await callPython({
+//       method: "post",
+//       path: "/debate/room/start",
+//       data: { session_id: sessionId },
+//     });
 
-  //     if (String(liveSession.hostCandidateId) !== String(candidate.candidate_id)) {
-  //       return res.status(403).json({
-  //         status: false,
-  //         message: "Only the host can start the debate.",
-  //       });
-  //     }
+//     const teams = ensureBalancedTeamsForRoom(mapRoomTeams(data), liveSession);
+//     const updatedSession = await startRoomSession({
+//       sessionId,
+//       teams,
+//       aiOpening: data.ai_opening,
+//       metadata: {
+//         ...(liveSession.metadata || {}),
+//         ...data,
+//         hasAiStudent: Boolean(data.has_ai_student),
+//       },
+//     });
 
-  //     const data = await callPython({
-  //       method: "post",
-  //       path: "/debate/room/start",
-  //       data: { session_id: sessionId },
-  //     });
-
-  //     const teams = ensureBalancedTeamsForRoom(mapRoomTeams(data), liveSession);
-  //     const updatedSession = await startRoomSession({
-  //       sessionId,
-  //       teams,
-  //       aiOpening: data.ai_opening,
-  //       metadata: {
-  //         ...(liveSession.metadata || {}),
-  //         ...data,
-  //         hasAiStudent: Boolean(data.has_ai_student),
-  //       },
-  //     });
-
-  //     return res.status(200).json({
-  //       status: true,
-  //       data: {
-  //         ...data,
-  //         liveSession: updatedSession,
-  //       },
-  //     });
-  //   } catch (error) {
-  //     return res.status(error.statusCode || 500).json({
-  //       status: false,
-  //       message: error.message || "Failed to start debate room",
-  //     });
-  //   }
-  // },
+//     return res.status(200).json({
+//       status: true,
+//       data: {
+//         ...data,
+//         liveSession: updatedSession,
+//       },
+//     });
+//   } catch (error) {
+//     return res.status(error.statusCode || 500).json({
+//       status: false,
+//       message: error.message || "Failed to start debate room",
+//     });
+//   }
+// },

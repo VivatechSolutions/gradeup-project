@@ -26,11 +26,19 @@ import {
   ChevronLeft,
 } from "lucide-react";
 import { cn } from "../../lib/utils";
-import { mockSubjects, mockUnits } from "../../lib/mockData";
+
 import { ScrollArea } from "../../components/ui/scroll-area";
 import { useAuth } from "../../hooks/use-auth";
 import Navigation from "../../components/navigation";
-
+import FunnyLoader from "../../components/ui/FunnyLoader";
+import { useToast } from "../../hooks/use-toast";
+import {
+  generateQuiz,
+  getCandidateContext,
+  getLibrarySubjects,
+  submitQuiz,
+  type LibrarySubject,
+} from "../../lib/gradeupApi";
 /* ═══════════════════════════════════════════════════════
    DASHBOARD DESIGN TOKENS — exact match
    Font  : Plus Jakarta Sans 400–800
@@ -317,11 +325,8 @@ const CSS = `
 .qp-result-actions button { flex:1; }
 
 /* ── LOADER ── */
-.qp-loader { position:fixed; inset:0; background:#fff; z-index:999; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px; font-family:'Plus Jakarta Sans',system-ui,sans-serif; }
-.qp-loader-ring { width:64px; height:64px; border-radius:20px; display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg,#6366f1,#8b5cf6); box-shadow:0 12px 32px rgba(99,102,241,.35); }
-.qp-loader-msg   { font-size:15px; font-weight:600; color:#64748b; text-align:center; max-width:280px; }
-.qp-loader-dots  { display:flex; gap:6px; }
-.qp-loader-dot   { width:7px; height:7px; border-radius:50%; background:#818cf8; }
+.qp-loader { position:fixed; inset:0; background:#fff; z-index:999; display:flex; align-items:center; justify-content:center; font-family:'Plus Jakarta Sans',system-ui,sans-serif; }
+.dark .qp-loader { background:#0f172a; }
 
 /* Responsive */
 @media (max-width:1024px) { .qp-quiz-body { grid-template-columns:1fr; } .qp-right { display:none; } }
@@ -360,7 +365,83 @@ interface EnrichedUnit {
   subjectName: string;
   subjectId: string;
 }
+function normalizeQuizQuestions(payload: any): Array<{
+  id: string;
+  question: string;
+  questionType: "mcq" | "fill_blank" | "one_word";
+  options: string[];
+  correctAnswer: number | string;
+}> {
+  const source = Array.isArray(payload?.questions)
+    ? payload.questions
+    : Array.isArray(payload)
+      ? payload
+      : [];
 
+  return source
+    .map((item: any, index: number) => {
+      const options = Array.isArray(item.options)
+        ? item.options.map((option: any) =>
+            typeof option === "string"
+              ? option
+              : option?.text || option?.label || "",
+          )
+        : [];
+      const questionType =
+        item.question_type === "fill_in_the_blank" ||
+        item.questionType === "fill_in_the_blank" ||
+        item.type === "fill_in_the_blank" ||
+        item.question_type === "fill_blank" ||
+        item.questionType === "fill_blank" ||
+        item.type === "fill_blank" ||
+        item.question_type === "blank" ||
+        item.questionType === "blank" ||
+        item.type === "blank"
+          ? "fill_blank"
+          : item.question_type === "one_word" ||
+              item.questionType === "one_word" ||
+              item.type === "one_word" ||
+              item.question_type === "oneword" ||
+              item.questionType === "oneword" ||
+              item.type === "oneword"
+            ? "one_word"
+            : !options.length &&
+                /_{2,}|blank/i.test(String(item.question || item.prompt || ""))
+              ? "fill_blank"
+              : "mcq";
+      const correctAnswerValue =
+        item.correct_answer ?? item.correctAnswer ?? item.answer;
+      const correctAnswer =
+        questionType === "fill_blank" || questionType === "one_word"
+          ? String(correctAnswerValue || "").trim()
+          : typeof correctAnswerValue === "number"
+            ? correctAnswerValue
+            : Math.max(
+                0,
+                options.findIndex(
+                  (option: string) =>
+                    option.toLowerCase() ===
+                    String(correctAnswerValue || "").toLowerCase(),
+                ),
+              );
+
+      return {
+        id: item.question_id || item.id || `q-${index + 1}`,
+        question: item.question || item.prompt || `Question ${index + 1}`,
+        questionType,
+        options:
+          questionType === "fill_blank" || questionType === "one_word"
+            ? []
+            : options.length
+              ? options
+              : ["True", "False"],
+        correctAnswer,
+      };
+    })
+    .filter((item) => item.question);
+}
+const isTextEntryQuestion = (questionType: "mcq" | "fill_blank" | "one_word") =>
+  questionType === "fill_blank" || questionType === "one_word";
 // ── Mock Data ──────────────────────────────────────────────────────────
 const QUIZ_BANK = [
   {
@@ -497,23 +578,14 @@ const DIFFICULTIES = [
 const COUNTS = ["5", "10", "15", "20"];
 const TIMES = ["5", "10", "15", "30"];
 
-const allUnits: EnrichedUnit[] = mockSubjects.flatMap((subject) => {
-  const units = mockUnits[subject.id.toString()] || [];
-  return units.map((unit) => ({
-    id: `${subject.id}-${unit.id}`,
-    name: unit.name,
-    subjectName: subject.name,
-    subjectId: subject.id.toString(),
-  }));
-});
-
+const allUnits: EnrichedUnit[] = [];
 // ── Loader ─────────────────────────────────────────────────────────────
 const LOADER_MSGS = [
-  "Summoning the Quiz Master…",
-  "Dusting off ancient scrolls…",
-  "Waking up the trivia hamsters…",
-  "Assembling questions from space…",
-  "Not rocket science… unless it is!",
+  "Preparing your quiz...",
+  "Loading study material...",
+  "Building question flow...",
+  "Checking your setup...",
+  "Almost ready...",
 ];
 const Loader = ({ mini = false }: { mini?: boolean }) => {
   const [msg, setMsg] = useState(LOADER_MSGS[0]);
@@ -527,28 +599,7 @@ const Loader = ({ mini = false }: { mini?: boolean }) => {
   return (
     <div className="qp-loader">
       <style>{CSS}</style>
-      <motion.div
-        className="qp-loader-ring"
-        animate={{ rotate: [0, 180, 360], borderRadius: ["20%", "50%", "20%"] }}
-        transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
-      >
-        <GraduationCap
-          size={28}
-          color="#fff"
-          style={{ position: "relative", zIndex: 1 }}
-        />
-      </motion.div>
-      <p className="qp-loader-msg">{msg}</p>
-      <div className="qp-loader-dots">
-        {[0, 1, 2].map((i) => (
-          <motion.div
-            key={i}
-            className="qp-loader-dot"
-            animate={{ opacity: [0.3, 1, 0.3] }}
-            transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.2 }}
-          />
-        ))}
-      </div>
+      <FunnyLoader text={msg} subtext="GradeUp Quiz Studio" />
     </div>
   );
 };
@@ -573,7 +624,7 @@ const Wizard = ({
     numQuestions: "10",
     timeLimit: "10",
   });
-
+  const hasUnits = units.length > 0;
   const handleStart = () => {
     setLoad(true);
     setTimeout(() => {
@@ -633,6 +684,18 @@ const Wizard = ({
                   </div>
                   <ScrollArea style={{ height: 320 }}>
                     <div className="qp-unit-grid" style={{ padding: 4 }}>
+                      {!hasUnits && (
+                        <div
+                          className="qp-card"
+                          style={{
+                            padding: 20,
+                            textAlign: "center",
+                            color: "#64748b",
+                          }}
+                        >
+                          No data available
+                        </div>
+                      )}
                       {units.map((u) => (
                         <motion.div
                           key={u.id}
@@ -821,6 +884,7 @@ const Wizard = ({
                       className="qp-btn-primary"
                       whileHover={{ scale: 1.03 }}
                       whileTap={{ scale: 0.97 }}
+                      disabled={!hasUnits}
                       onClick={handleStart}
                     >
                       <Trophy size={18} /> Launch Quiz!
@@ -853,51 +917,132 @@ const QuizPage = ({ params }: { params?: { id?: string } }) => {
   const { theme, setTheme } = useTheme();
   const [, setLocation] = useLocation();
   const { userHeader } = useAuth();
-
+  const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(true);
   const [setupOpen, setSetupOpen] = useState(false);
   const [quizStarted, setQuizStarted] = useState(false);
   const [showResult, setShowResult] = useState(false);
   const [quizConfig, setQuizConfig] = useState<QuizConfig | null>(null);
-  const [unitsForWizard, setUnitsForWizard] = useState(allUnits);
+  const [subjectCatalog, setSubjectCatalog] = useState<LibrarySubject[]>([]);
+  const [unitsForWizard, setUnitsForWizard] = useState<EnrichedUnit[]>([]);
+  const [quizSessionId, setQuizSessionId] = useState("");
 
   const [questions, setQuestions] = useState(QUESTIONS.slice(0, 5));
   const [qIdx, setQIdx] = useState(0);
-  const [answers, setAnswers] = useState<(number | null)[]>([]);
+  const [answers, setAnswers] = useState<Array<number | string | null>>([]);
   const [statuses, setStatuses] = useState<QuestionStatus[]>([]);
   const [timeLeft, setTimeLeft] = useState(15 * 60);
-
+  // Add these new state variables
+  const [quizSubmitResponse, setQuizSubmitResponse] = useState<any>(null);
+  const [submitting, setSubmitting] = useState(false);
   useEffect(() => {
-    const p = new URLSearchParams(window.location.search);
-    const sub = p.get("subject"),
-      unit = p.get("unit");
-    if (sub) {
-      const s = mockSubjects.find(
-        (s) => s.name.toLowerCase().replace(/\s/g, "_") === sub,
-      );
-      if (s) {
-        let u = allUnits.filter((u) => u.subjectId === s.id.toString());
-        if (unit) u = u.filter((u) => u.name === unit);
-        setUnitsForWizard(u);
+    let ignore = false;
+
+    async function loadSubjects() {
+      try {
+        const catalog = await getLibrarySubjects();
+        if (ignore) return;
+
+        setSubjectCatalog(catalog);
+        const dynamicUnits = catalog.flatMap((subjectGroup) =>
+          subjectGroup.units.map((unit) => ({
+            id: unit.id,
+            name: unit.unitTitle || unit.unitLabel,
+            subjectName: subjectGroup.title,
+            subjectId: subjectGroup.subjectGroupKey,
+          })),
+        );
+
+        const p = new URLSearchParams(window.location.search);
+        const unitId = p.get("unitId");
+        const subjectGroupKey = p.get("subjectGroupKey");
+        const unit = p.get("unit");
+        let scopedUnits = dynamicUnits;
+
+        if (subjectGroupKey) {
+          scopedUnits = scopedUnits.filter(
+            (item) => item.subjectId === subjectGroupKey,
+          );
+        }
+        if (unitId) {
+          scopedUnits = scopedUnits.filter((item) => item.id === unitId);
+        } else if (unit) {
+          scopedUnits = scopedUnits.filter((item) => item.name === unit);
+        }
+
+        setUnitsForWizard(scopedUnits.length ? scopedUnits : dynamicUnits);
+        if (subjectGroupKey || unitId || unit) {
+          setSetupOpen(true);
+        }
+      } catch (error) {
+        if (!ignore) {
+          setUnitsForWizard([]);
+          toast({
+            title: "Unable to load quiz units",
+            description:
+              error instanceof Error
+                ? error.message
+                : "Failed to load quiz setup data.",
+            variant: "destructive",
+          });
+        }
+      } finally {
+        if (!ignore) {
+          setIsLoading(false);
+        }
       }
-      setSetupOpen(true);
     }
-    setIsLoading(false);
+    loadSubjects();
+
+    return () => {
+      ignore = true;
+    };
   }, []);
 
-  const handleStart = (cfg: QuizConfig) => {
+  const handleStart = async (cfg: QuizConfig) => {
     setQuizConfig(cfg);
     // Cap requested count to however many questions we actually have
-    const requested = parseInt(cfg.numQuestions || "10", 10);
-    const cnt = Math.min(requested, QUESTIONS.length);
-    const qs = QUESTIONS.slice(0, cnt);
-    setQuestions(qs);
-    setTimeLeft(parseInt(cfg.timeLimit || "15", 10) * 60);
-    setAnswers(Array(cnt).fill(null));
-    setStatuses(Array(cnt).fill("unanswered"));
-    setQIdx(0);
-    setQuizStarted(true);
-    setSetupOpen(false);
+    setIsLoading(true);
+
+    try {
+      const candidate = getCandidateContext(userHeader);
+      const response = await generateQuiz({
+        unitId: cfg.unitId,
+        candidateId: candidate.candidateId,
+        candidateName: candidate.candidateName,
+        difficulty: cfg.difficulty.toLowerCase(),
+        numQuestions: parseInt(cfg.numQuestions || "10", 10),
+      });
+      const qs = normalizeQuizQuestions(response);
+      const finalQuestions = qs.length
+        ? qs
+        : QUESTIONS.slice(
+            0,
+            Math.min(parseInt(cfg.numQuestions || "10", 10), QUESTIONS.length),
+          );
+
+      setQuizSessionId(response?.quiz_id || response?.quizId || "");
+      setQuestions(finalQuestions);
+      setTimeLeft(parseInt(cfg.timeLimit || "15", 10) * 60);
+      setAnswers(Array(finalQuestions.length).fill(null));
+      setStatuses(Array(finalQuestions.length).fill("unanswered"));
+      setQIdx(0);
+      setQuizStarted(true);
+      setSetupOpen(false);
+    } catch (error) {
+      setQuizSessionId("");
+      toast({
+        title: "Unable to generate quiz",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Failed to generate quiz from live data.",
+        variant: "destructive",
+      });
+      setSetupOpen(true);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleAnswer = (i: number) => {
@@ -909,32 +1054,74 @@ const QuizPage = ({ params }: { params?: { id?: string } }) => {
     setStatuses(s);
   };
 
+  const handleBlankAnswer = (value: string) => {
+    const a = [...answers];
+    a[qIdx] = value;
+    setAnswers(a);
+    const s = [...statuses];
+    s[qIdx] = value.trim() ? "answered" : "unanswered";
+    setStatuses(s);
+  };
+
   const markForLater = () => {
     const s = [...statuses];
     if (statuses[qIdx] !== "answered") s[qIdx] = "marked";
     setStatuses(s);
   };
 
-  const handleSubmit = () => {
-    setShowResult(true);
-    // Guard: only count indices where both question and answer exist
-    const score = answers.reduce((acc, a, i) => {
-      const q = questions[i];
-      return q && a !== null && a === q.correctAnswer ? acc + 1 : acc;
-    }, 0);
-    try {
-      const rec = JSON.parse(localStorage.getItem("recentExams") || "[]");
-      rec.unshift({
-        subject: quizConfig?.subjectId || "",
-        score,
-        percentage: questions.length > 0 ? (score / questions.length) * 100 : 0,
-        date: new Date().toISOString(),
-        questionCount: questions.length,
-      });
-      localStorage.setItem("recentExams", JSON.stringify(rec.slice(0, 5)));
-    } catch {}
-  };
+  const handleSubmit = async () => {
+    setSubmitting(true);
 
+    try {
+      if (quizSessionId) {
+        const candidate = getCandidateContext(userHeader);
+
+        // Format answers for submission
+        const submissionAnswers = questions.map((question, index) => ({
+          question_id: question.id,
+          answer:
+            answers[index] !== null && answers[index] !== undefined
+              ? isTextEntryQuestion(question.questionType)
+                ? String(answers[index])
+                : question.options[answers[index] as number]
+              : "",
+        }));
+
+        // Submit to API
+        const response = await submitQuiz({
+          quizId: quizSessionId,
+          candidateId: candidate.candidateId,
+          answers: submissionAnswers,
+        });
+        console.log("Quiz submission response:", response);
+        // ✅ STORE API RESPONSE
+        if (response) {
+          setQuizSubmitResponse(response);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to submit quiz:", error);
+      toast?.error("Failed to submit quiz. Please try again.");
+    } finally {
+      setSubmitting(false);
+      setShowResult(true); // Show results AFTER API completes
+    }
+
+    // Update recent exams with API data
+    // try {
+//       const rec = JSON.parse(localStorage.getItem("recentExams") || "[]");
+//       rec.unshift({
+//         subject: quizConfig?.subjectId || "",
+//         score: quizSubmitResponse?.score || 0,
+//         percentage: quizSubmitResponse?.percentage || 0,
+//         date: new Date().toISOString(),
+//         questionCount: questions.length,
+//       });
+//       localStorage.setItem("recentExams", JSON.stringify(rec.slice(0, 5)));
+//     } catch (error) {
+//       console.error("Failed to update recent exams:", error);
+//     }
+  };
   useEffect(() => {
     if (!quizStarted || showResult || timeLeft <= 0) {
       if (quizStarted && timeLeft === 0) handleSubmit();
@@ -953,10 +1140,24 @@ const QuizPage = ({ params }: { params?: { id?: string } }) => {
   if (isLoading) return <Loader />;
 
   // ── Result screen ──
+
+  // Use API response data INSTEAD of local calculations
+  const apiScore = quizSubmitResponse?.score ?? 0;
+  const apiTotal = quizSubmitResponse?.total ?? questions.length;
+  const apiPercentage = quizSubmitResponse?.percentage ?? 0;
   if (showResult) {
     const score = answers.reduce((acc, a, i) => {
       const q = questions[i];
-      return q && a !== null && a === q.correctAnswer ? acc + 1 : acc;
+      if (!q || a === null || a === undefined) return acc;
+      if (isTextEntryQuestion(q.questionType)) {
+        return String(a).trim().toLowerCase() ===
+          String(q.correctAnswer || "")
+            .trim()
+            .toLowerCase()
+          ? acc + 1
+          : acc;
+      }
+      return a === q.correctAnswer ? acc + 1 : acc;
     }, 0);
     const pct = (score / questions.length) * 100;
     const grade =
@@ -978,148 +1179,313 @@ const QuizPage = ({ params }: { params?: { id?: string } }) => {
     return (
       <div className="qp">
         <style>{CSS}</style>
-        <div className="qp-result">
-          <motion.div
-            className="qp-result-hero"
-            style={{ background: gradeBg }}
-            initial={{ opacity: 0, scale: 0.92 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.5, type: "spring" }}
+        {submitting ? (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,.5)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 100,
+            }}
           >
-            <div className="qp-result-score">{pct.toFixed(0)}%</div>
-            <div className="qp-result-label">
-              {grade} You scored {score} out of {questions.length}
-            </div>
-            {/* floating orbs */}
-            <div
-              style={{
-                position: "absolute",
-                top: -40,
-                right: -40,
-                width: 160,
-                height: 160,
-                borderRadius: "50%",
-                background: "rgba(255,255,255,.1)",
-              }}
-            />
-            <div
-              style={{
-                position: "absolute",
-                bottom: -60,
-                left: "20%",
-                width: 120,
-                height: 120,
-                borderRadius: "50%",
-                background: "rgba(255,255,255,.07)",
-              }}
-            />
-          </motion.div>
-          <div className="qp-result-breakdown">
-            {[
-              { v: score, l: "Correct", cls: "g" },
-              { v: questions.length - score, l: "Wrong", cls: "" },
-              { v: marked, l: "Reviewed", cls: "a" },
-            ].map((s) => (
-              <div key={s.l} className={`qp-result-item`}>
-                <div
-                  className={`qp-result-iv`}
-                  style={{
-                    color:
-                      s.cls === "g"
-                        ? "#059669"
-                        : s.cls === "a"
-                          ? "#d97706"
-                          : "#ef4444",
-                  }}
-                >
-                  {s.v}
-                </div>
-                <div className="qp-result-il">{s.l}</div>
-              </div>
-            ))}
+            <FunnyLoader />
           </div>
-          {/* Review answers */}
-          <div className="qp-card" style={{ padding: 20 }}>
-            <div className="qp-section-title" style={{ marginBottom: 12 }}>
-              Answer Review
-            </div>
-            {questions.map((q, i) => (
+        ) : (
+          <div className="qp-result">
+            <motion.div
+              className="qp-result-hero"
+              style={{ background: gradeBg }}
+              initial={{ opacity: 0, scale: 0.92 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.5, type: "spring" }}
+            >
+              <div className="qp-result-score">
+                {" "}
+                {apiPercentage.toFixed(2)}%
+              </div>
+              <div className="qp-result-label">
+                Score: {apiScore}/{apiTotal}
+              </div>
+              {/* floating orbs */}
               <div
-                key={i}
                 style={{
-                  padding: "12px 0",
-                  borderBottom:
-                    i < questions.length - 1 ? "1px solid #f1f5f9" : "none",
+                  position: "absolute",
+                  top: -40,
+                  right: -40,
+                  width: 160,
+                  height: 160,
+                  borderRadius: "50%",
+                  background: "rgba(255,255,255,.1)",
                 }}
-              >
-                <p
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 600,
-                    color: "#374151",
-                    marginBottom: 8,
-                  }}
-                >
-                  {i + 1}. {q.question}
-                </p>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {q.options.map((opt, oi) => {
-                    const isCorrect = oi === q.correctAnswer,
-                      isUser = oi === answers[i];
-                    let bg = "#f8fafc",
-                      border = "#f1f5f9",
-                      color = "#64748b";
-                    if (isCorrect) {
-                      bg = "rgba(16,185,129,.08)";
-                      border = "#10b981";
-                      color = "#059669";
-                    } else if (isUser && !isCorrect) {
-                      bg = "rgba(239,68,68,.07)";
-                      border = "#ef4444";
-                      color = "#dc2626";
-                    }
-                    return (
-                      <span
-                        key={oi}
+              />
+              <div
+                style={{
+                  position: "absolute",
+                  bottom: -60,
+                  left: "20%",
+                  width: 120,
+                  height: 120,
+                  borderRadius: "50%",
+                  background: "rgba(255,255,255,.07)",
+                }}
+              />
+            </motion.div>
+            <div className="qp-result-breakdown">
+              {[
+                { v: apiScore, l: "Correct", cls: "g" },
+                { v: apiTotal - apiScore, l: "Wrong", cls: "" },
+                { v: marked, l: "Reviewed", cls: "a" },
+              ].map((s) => (
+                <div key={s.l} className={`qp-result-item`}>
+                  <div
+                    className={`qp-result-iv`}
+                    style={{
+                      color:
+                        s.cls === "g"
+                          ? "#059669"
+                          : s.cls === "a"
+                            ? "#d97706"
+                            : "#ef4444",
+                    }}
+                  >
+                    {s.v}
+                  </div>
+                  <div className="qp-result-il">{s.l}</div>
+                </div>
+              ))}
+            </div>
+                    {/* Section-wise performance */}
+            <div className="qp-card" style={{ padding: 20 }}>
+              <div className="qp-section-title" style={{ marginBottom: 12 }}>
+                Answer Review
+              </div>
+                          {quizSubmitResponse?.corrections?.length > 0 ? (
+              quizSubmitResponse.corrections.map(
+                (correction: any, i: number) => (
+                  <div
+                    key={correction.question_id}
+                    style={{
+                      padding: "16px",
+                      marginBottom: 12,
+                      borderRadius: 12,
+                      background: correction.is_correct
+                        ? "rgba(16,185,129,.06)"
+                        : "rgba(239,68,68,.06)",
+                      border: `1.5px solid ${
+                        correction.is_correct ? "#10b981" : "#ef4444"
+                      }`,
+                    }}
+                  >
+                    {/* Checkmark/X icon */}
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        alignItems: "flex-start",
+                        marginBottom: 10,
+                      }}
+                    >
+                      <div
                         style={{
-                          fontSize: 11.5,
-                          fontWeight: 600,
-                          padding: "3px 10px",
-                          borderRadius: 20,
-                          background: bg,
-                          border: `1.5px solid ${border}`,
-                          color,
+                          width: 24,
+                          height: 24,
+                          borderRadius: "50%",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: "#fff",
+                          background: correction.is_correct
+                            ? "#10b981"
+                            : "#ef4444",
                         }}
                       >
-                        {String.fromCharCode(65 + oi)}. {opt}
-                      </span>
-                    );
-                  })}
-                </div>
+                        {correction.is_correct ? "✓" : "✗"}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <p
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 600,
+                            color: "#374151",
+                          }}
+                        >
+                          Q{i + 1}. {correction.question}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Answer details */}
+                    <div style={{ display: "grid", gap: 10, marginLeft: 32 }}>
+                      {/* Student's Answer */}
+                      <div>
+                        <span
+                          style={{
+                            fontSize: 11.5,
+                            fontWeight: 700,
+                            color: correction.is_correct
+                              ? "#059669"
+                              : "#dc2626",
+                          }}
+                        >
+                          Your answer:{" "}
+                          <strong>{correction.student_answer}</strong>
+                        </span>
+                      </div>
+
+                      {/* Correct Answer (if wrong) */}
+                      {!correction.is_correct && (
+                        <div>
+                          <span
+                            style={{
+                              fontSize: 11.5,
+                              fontWeight: 700,
+                              color: "#059669",
+                            }}
+                          >
+                            Correct answer:{" "}
+                            <strong>{correction.correct_answer}</strong>
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Explanation */}
+                      {correction.explanation && (
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: "#64748b",
+                            padding: 10,
+                            borderRadius: 8,
+                            background: "rgba(255,255,255,.5)",
+                            fontStyle: "italic",
+                            borderLeft: "3px solid #6366f1",
+                          }}
+                        >
+                          💡 <strong>Explanation:</strong>{" "}
+                          {correction.explanation}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ),
+              )
+            ) : (
+              <div
+                style={{ textAlign: "center", padding: 20, color: "#94a3b8" }}
+              >
+                Loading results...
               </div>
-            ))}
+            )}
+            </div>
+
+                               {quizSubmitResponse?.section_scores && (
+                      <div
+                        className="qp-card"
+                        style={{ padding: 20, marginBottom: 20 }}
+                      >
+                        <div
+                          className="qp-section-title"
+                          style={{ marginBottom: 16 }}
+                        >
+                          Performance by Topic
+                        </div>
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns:
+                              "repeat(auto-fit, minmax(140px, 1fr))",
+                            gap: 12,
+                          }}
+                        >
+                          {Object.entries(
+                            quizSubmitResponse.section_scores,
+                          ).map(([section, score]: [string, any]) => (
+                            <div
+                              key={section}
+                              style={{
+                                padding: 12,
+                                borderRadius: 12,
+                                textAlign: "center",
+                                background:
+                                  score === 100
+                                    ? "rgba(16,185,129,.1)"
+                                    : score === 0
+                                      ? "rgba(239,68,68,.1)"
+                                      : "rgba(245,158,11,.1)",
+                                border:
+                                  score === 100
+                                    ? "1.5px solid #10b981"
+                                    : score === 0
+                                      ? "1.5px solid #ef4444"
+                                      : "1.5px solid #f59e0b",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  color:
+                                    score === 100
+                                      ? "#059669"
+                                      : score === 0
+                                        ? "#dc2626"
+                                        : "#b45309",
+                                  marginBottom: 6,
+                                  whiteSpace: "nowrap",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                }}
+                              >
+                                {section}
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: 18,
+                                  fontWeight: 800,
+                                  color:
+                                    score === 100
+                                      ? "#10b981"
+                                      : score === 0
+                                        ? "#ef4444"
+                                        : "#f59e0b",
+                                }}
+                              >
+                                {score}%
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+
+            <div className="qp-result-actions">
+              <button
+                className="qp-btn-outline"
+                onClick={() => setLocation("/ai-tutor")}
+              >
+                <ArrowLeft size={15} />
+                Back to Chat
+              </button>
+              <button
+                className="qp-btn-primary"
+                onClick={() => {
+                  setShowResult(false);
+                  setQuizStarted(false);
+                  setSetupOpen(true);
+                }}
+              >
+                <RotateCcw size={15} />
+                Try Again
+              </button>
+            </div>
           </div>
-          <div className="qp-result-actions">
-            <button
-              className="qp-btn-outline"
-              onClick={() => setLocation("/ai-tutor")}
-            >
-              <ArrowLeft size={15} />
-              Back to Chat
-            </button>
-            <button
-              className="qp-btn-primary"
-              onClick={() => {
-                setShowResult(false);
-                setQuizStarted(false);
-                setSetupOpen(true);
-              }}
-            >
-              <RotateCcw size={15} />
-              Try Again
-            </button>
-          </div>
-        </div>
+        )}
       </div>
     );
   }
@@ -1129,6 +1495,7 @@ const QuizPage = ({ params }: { params?: { id?: string } }) => {
     return (
       <div className="qp">
         <style>{CSS}</style>
+
         <AnimatePresence>
           {setupOpen && (
             <Wizard
@@ -1188,7 +1555,7 @@ const QuizPage = ({ params }: { params?: { id?: string } }) => {
                 </div>
                 <div className="qp-hero-div" />
                 <div className="qp-hero-stat">
-                  <div className="qp-hero-sv">{allUnits.length}</div>
+                  <div className="qp-hero-sv">{unitsForWizard.length}</div>
                   <div className="qp-hero-sl">Topics</div>
                 </div>
                 <div className="qp-hero-div" />
@@ -1370,7 +1737,11 @@ const QuizPage = ({ params }: { params?: { id?: string } }) => {
               className="qp-q-badge-type"
               style={{ background: "rgba(99,102,241,.1)", color: "#6366f1" }}
             >
-              MCQ
+              {q.questionType === "fill_blank"
+                ? "Fill Blank"
+                : q.questionType === "one_word"
+                  ? "One Word"
+                  : "MCQ"}
             </span>
             <span className="qp-q-marks">1 mark</span>
           </div>
@@ -1384,21 +1755,68 @@ const QuizPage = ({ params }: { params?: { id?: string } }) => {
                 transition={{ duration: 0.2 }}
               >
                 <p className="qp-q-text">{q.question}</p>
-                {q.options.map((opt, i) => {
-                  const isSel = answers[qIdx] === i;
-                  return (
+                {isTextEntryQuestion(q.questionType) ? (
+                  <div
+                    style={{
+                      marginTop: 18,
+                      padding: 18,
+                      borderRadius: 16,
+                      border: "1.5px dashed #cbd5e1",
+                      background: "#f8fafc",
+                    }}
+                  >
                     <div
-                      key={i}
-                      className={`qp-opt${isSel ? " sel" : ""}`}
-                      onClick={() => handleAnswer(i)}
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: "#64748b",
+                        marginBottom: 10,
+                      }}
                     >
-                      <div className="qp-opt-letter">
-                        {String.fromCharCode(65 + i)}
-                      </div>
-                      <span className="qp-opt-text">{opt}</span>
+                      {q.questionType === "one_word"
+                        ? "Type your one-word answer"
+                        : "Type your answer in the blank"}
                     </div>
-                  );
-                })}
+                    <input
+                      value={
+                        typeof answers[qIdx] === "string"
+                          ? (answers[qIdx] as string)
+                          : ""
+                      }
+                      onChange={(event) =>
+                        handleBlankAnswer(event.target.value)
+                      }
+                      placeholder="Enter your answer"
+                      style={{
+                        width: "100%",
+                        padding: "12px 14px",
+                        borderRadius: 12,
+                        border: "1.5px solid #cbd5e1",
+                        fontSize: 14,
+                        fontWeight: 600,
+                        color: "#0f172a",
+                        outline: "none",
+                        background: "#fff",
+                      }}
+                    />
+                  </div>
+                ) : (
+                  q.options.map((opt, i) => {
+                    const isSel = answers[qIdx] === i;
+                    return (
+                      <div
+                        key={i}
+                        className={`qp-opt${isSel ? " sel" : ""}`}
+                        onClick={() => handleAnswer(i)}
+                      >
+                        <div className="qp-opt-letter">
+                          {String.fromCharCode(65 + i)}
+                        </div>
+                        <span className="qp-opt-text">{opt}</span>
+                      </div>
+                    );
+                  })
+                )}
               </motion.div>
             </AnimatePresence>
           </div>

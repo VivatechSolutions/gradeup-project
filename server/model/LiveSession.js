@@ -65,6 +65,10 @@ const liveSessionSchema = new mongoose.Schema(
     unitNumber: { type: Number, default: null },
     unitTitle: { type: String, default: null, trim: true },
     topic: { type: String, required: true, trim: true, index: true },
+    topicId: { type: String, default: null, trim: true, index: true },
+    topicUnitNumber: { type: Number, default: null },
+    topicSectionTitle: { type: String, default: null, trim: true },
+    topicPath: { type: [String], default: [] },
     debateType: {
       type: String,
       default: "1_vs_ai",
@@ -130,5 +134,6 @@ const liveSessionSchema = new mongoose.Schema(
 
 liveSessionSchema.index({ sessionType: 1, subjectGroupKey: 1, status: 1 });
 liveSessionSchema.index({ candidateId: 1, sessionType: 1, updatedAt: -1 });
+liveSessionSchema.index({ topicId: 1, sessionType: 1 });
 
 module.exports = mongoose.model("LiveSession", liveSessionSchema);

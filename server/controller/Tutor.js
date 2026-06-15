@@ -323,6 +323,7 @@ const controller = {
 
       return res.status(200).json({ status: true, data });
     } catch (error) {
+      console.log("Error submitting quiz:", error);
       return res.status(error.statusCode || 500).json({
         status: false,
         message: error.message || "Failed to submit quiz",

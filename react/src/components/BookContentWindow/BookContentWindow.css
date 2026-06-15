@@ -96,7 +96,72 @@ html { scroll-behavior: smooth; }
   width: 12px;
   background: var(--leather-mid);
 }
+/* ═══════════════════════════════════════════════════════════════
+   SKELETON LOADERS
+   ═══════════════════════════════════════════════════════════════ */
 
+@keyframes skeleton-shimmer {
+  0% { background-position: -1000px 0; }
+  100% { background-position: 1000px 0; }
+}
+
+.lib-skeleton-stat-card {
+  height: 120px;
+  border-radius: 16px;
+  background: linear-gradient(90deg, var(--card-bg) 25%, rgba(201, 162, 39, 0.1) 50%, var(--card-bg) 75%);
+  background-size: 1000px 100%;
+  animation: skeleton-shimmer 2s infinite;
+  border: 1px solid var(--border);
+}
+
+.lib-skeleton-book-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  min-height: 380px;
+}
+
+.lib-skeleton-book-cover {
+  width: 100%;
+  aspect-ratio: 3/4;
+  border-radius: 8px;
+  background: linear-gradient(90deg, rgba(201, 162, 39, 0.1) 25%, rgba(201, 162, 39, 0.2) 50%, rgba(201, 162, 39, 0.1) 75%);
+  background-size: 1000px 100%;
+  animation: skeleton-shimmer 2s infinite;
+}
+
+.lib-skeleton-text-line {
+  height: 12px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, rgba(201, 162, 39, 0.1) 25%, rgba(201, 162, 39, 0.2) 50%, rgba(201, 162, 39, 0.1) 75%);
+  background-size: 1000px 100%;
+  animation: skeleton-shimmer 2s infinite;
+}
+
+.lib-skeleton-text-line.title {
+  height: 18px;
+  margin-bottom: 8px;
+  width: 80%;
+}
+
+.lib-skeleton-text-line.subtitle {
+  height: 14px;
+  margin-bottom: 12px;
+  width: 60%;
+}
+
+.lib-skeleton-progress {
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, rgba(201, 162, 39, 0.1) 25%, rgba(201, 162, 39, 0.2) 50%, rgba(201, 162, 39, 0.1) 75%);
+  background-size: 1000px 100%;
+  animation: skeleton-shimmer 2s infinite;
+  margin: 12px 0;
+}
 .loader-text {
   font-family: var(--font-display);
   font-size: 0.7rem;

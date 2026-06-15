@@ -101,7 +101,7 @@ const css = `
 .sb-toggle:hover { background: #6366f1; color: #fff; border-color: #6366f1; transform: scale(1.08); }
 .sb-toggle svg { width: 13px; height: 13px; transition: transform .3s; }
 /* Arrow flips when collapsed */
-.sb-root.collapsed .sb-toggle svg { transform: rotate(180deg); }
+
 
 /* ── NAV AREA ── */
 .sb-nav {
@@ -358,6 +358,9 @@ const ICON_PATHS = {
   close:    "M18 6L6 18M6 6l12 12",
    video: "M23 7l-7 5 7 5V7zM1 5h15v14H1z",
   presentation: "M3 3h18v12H3zM8 21h8M12 15v6",
+  lightbulb: "M9 18h6M10 22h4M12 2a7 7 0 00-4 12c.5.5 1 1.5 1 2h6c0-.5.5-1.5 1-2a7 7 0 00-4-12z",
+  examNew: "M6 2h8a2 2 0 012 2v16l-4-2-4 2-4-2-4 2V4a2 2 0 012-2zm2 6h6M8 10h6M8 12h4",
+  debateNew: "M4 5h10a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V7a2 2 0 012-2zm12 6h4a2 2 0 012 2v4a2 2 0 01-2 2h-2v3l-3-3h-1a2 2 0 01-2-2v-1"
 } as const;
 
 const STUDENT_MENU: MenuItem[] = [
@@ -368,15 +371,16 @@ const STUDENT_MENU: MenuItem[] = [
   { label:"AI Tutor",      href:"/ai-tutor",        icon:"bot",      color:"ce" },
   { label:"Book Library",  href:"/bookExpanded",    icon:"book",     color:"cc" },
   { label:"Homework",      href:"/homework",         icon:"file",     color:"ca" },
+  // { label:"Homework Helper",  href:"/homework-helper",  icon:"lightbulb",  color:"cv" },
   { label:"Community",     href:"/community",        icon:"msg",      color:"cp" },
  { label:"Group Chat", href:"/communityNew", icon:"users", color:"cp" },
   { label:"Achievements",  href:"/achievements",     icon:"trophy",   color:"co" },
   // { label:"Seminar",       href:"/seminar-tool",     icon:"users",    color:"ct" },
   // { label:"Debate",        href:"/debate-tool",      icon:"debate",   color:"cs" },
-  { label:"Debate",        href:"/debatePage",      icon:"debate",   color:"ca" },
+  { label:"Debate",        href:"/debatePage",      icon:"debateNew",   color:"ca" },
   { label: "Meeting", href: "/meetingPage", icon: "video", color: "cs" },
 { label: "Seminar", href: "/seminarPage", icon: "presentation", color: "ct" },
-  { label:"Exams", href:"/exam-preparation", icon:"exam", color:"ci", children:[
+  { label:"Exams", href:"/exam-preparation", icon:"examNew", color:"ci", children:[
     { label:"Prep",      href:"/exam-preparation" },
     { label:"Main Exam", href:"/main-exam" },
   ]},

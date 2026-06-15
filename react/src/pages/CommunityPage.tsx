@@ -55,6 +55,7 @@ import {
   Crown,
   ChevronLeft,
   Hash as HashIcon,
+  Sparkles,
 } from "lucide-react";
 import { useTheme } from "../hooks/use-theme";
 import { cn } from "../lib/utils";
@@ -89,6 +90,7 @@ import {
 import { useAuth } from "../hooks/use-auth";
 import Navigation from "../components/navigation";
 import { useMeetingSystem } from "./MeetingModalSystem";
+import FunnyLoader from "../components/ui/FunnyLoader";
 /* ─────────────────────────────────────────────────────────────
    CSS — matches dashboard design tokens exactly
    #6366f1 accent · #8b5cf6 purple · #ec4899 pink
@@ -259,19 +261,13 @@ export const CSS = `
   transition:background .3s,border-color .3s;
 }
 .cm-sessions{padding:10px 12px;border-bottom:1px solid var(--cm-border);background:linear-gradient(135deg,rgba(99,102,241,.06),rgba(16,185,129,.06));display:flex;gap:8px;overflow-x:auto;flex-shrink:0}
-.cm-sessions-empty{padding:12px 14px;border-radius:12px;border:1px dashed var(--cm-border2);background:var(--cm-surface);min-width:260px}
-.cm-sessions-empty strong{display:block;font-size:12px;font-weight:800;color:var(--cm-text);margin-bottom:4px}
-.cm-sessions-empty span{display:block;font-size:11px;line-height:1.55;color:var(--cm-muted)}
 .cm-session-card{min-width:230px;max-width:280px;border:1px solid var(--cm-border2);background:var(--cm-surface);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:7px;box-shadow:0 2px 10px rgba(0,0,0,.04)}
-.cm-session-top{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;font-weight:800;color:#6366f1;text-transform:uppercase;letter-spacing:.04em}
-.cm-session-status{font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;background:rgba(16,185,129,.1);color:#059669}
-.cm-session-status.scheduled{background:rgba(99,102,241,.08);color:#4f46e5}
+.cm-session-top{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:800;color:#6366f1;text-transform:uppercase;letter-spacing:.04em}
 .cm-session-title{font-size:12.5px;font-weight:800;color:var(--cm-text);line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cm-session-meta{font-size:11px;color:var(--cm-muted);line-height:1.45}
 .cm-session-actions{display:flex;gap:6px}
-.cm-session-btn{flex:1;border:1px solid var(--cm-border2);background:var(--cm-surface2);border-radius:8px;padding:6px 8px;font-size:11px;font-weight:800;color:var(--cm-text2);cursor:pointer}
-.cm-session-btn.primary{background:rgba(16,185,129,.09);border-color:rgba(16,185,129,.24);color:#059669}
-.cm-session-btn:disabled{opacity:.5;cursor:not-allowed}
+.cm-session-actions button{flex:1;border:1px solid var(--cm-border2);background:var(--cm-surface2);border-radius:8px;padding:6px 8px;font-size:11px;font-weight:800;color:var(--cm-text2);cursor:pointer}
+.cm-session-actions button:first-child{background:rgba(16,185,129,.09);border-color:rgba(16,185,129,.24);color:#059669}
 
 .cm-chat-head{
   height:54px;padding:0 14px;display:flex;align-items:center;gap:9px;
@@ -554,6 +550,7 @@ const SUBJECTS_LIST = [
   "Sociology",
 ];
 const ROLES = ["Member", "Moderator", "Admin", "Tutor", "Student Leader"];
+const COMMUNITY_SESSIONS_KEY = "gradeup_community_sessions_v1";
 const SERVER_CATS = [
   "Science & Technology",
   "Arts & Humanities",
@@ -871,7 +868,7 @@ const FloatingChatbot = () => {
                   justifyContent: "center",
                 }}
               >
-                <Bot size={16} color="#fff" />
+                <Sparkles className="animate-pulse" size={16} color="#fff" />
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>
@@ -1180,47 +1177,9 @@ const MsgBubble = ({
 
 /* ── Page Loader ── */
 const PageLoader = () => (
-  <div className="cm-loader">
+  <div className="cm-loader" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
     <style>{CSS}</style>
-    <motion.div
-      initial={{ opacity: 0, scale: 0.85 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.4 }}
-    >
-      <div className="cm-loader-icon">
-        <motion.div
-          style={{
-            position: "absolute",
-            inset: 0,
-            borderRadius: 18,
-            background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
-          }}
-          animate={{
-            rotate: [0, 180, 360],
-            borderRadius: ["20%", "50%", "20%"],
-          }}
-          transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
-        />
-        <GraduationCap
-          size={26}
-          color="#fff"
-          style={{ position: "relative", zIndex: 1 }}
-        />
-      </div>
-    </motion.div>
-    <p style={{ fontSize: 13, fontWeight: 600, color: "#64748b" }}>
-      Launching Academy
-    </p>
-    <div className="cm-loader-dots">
-      {[0, 1, 2].map((i) => (
-        <motion.div
-          key={i}
-          className="cm-loader-dot"
-          animate={{ opacity: [0.3, 1, 0.3] }}
-          transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.2 }}
-        />
-      ))}
-    </div>
+    <FunnyLoader />
   </div>
 );
 
@@ -1241,12 +1200,14 @@ const CommunityNewPage = () => {
   const [studyPoints, setStudyPoints] = useState(0);
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
+  const [isSeminarSidebarOpen, setIsSeminarSidebarOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
   const [showMembers, setShowMembers] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [communitySessions, setCommunitySessions] = useState<any[]>([]);
   const [viewingMember, setViewingMember] = useState<any>(null);
   const [serverModal, setServerModal] = useState(false);
   const [channelModal, setChannelModal] = useState(false);
@@ -1292,6 +1253,27 @@ const CommunityNewPage = () => {
     return () => clearTimeout(t);
   }, []);
   useEffect(() => {
+    const loadSessions = () => {
+      try {
+        setCommunitySessions(JSON.parse(localStorage.getItem(COMMUNITY_SESSIONS_KEY) || "[]"));
+      } catch {
+        setCommunitySessions([]);
+      }
+    };
+    loadSessions();
+    window.addEventListener("storage", loadSessions);
+    return () => window.removeEventListener("storage", loadSessions);
+  }, []);
+
+  const removeCommunitySession = (id: string) => {
+    setCommunitySessions((prev) => {
+      const updated = prev.filter(s => s.id !== id);
+      localStorage.setItem(COMMUNITY_SESSIONS_KEY, JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  useEffect(() => {
     const vp = scrollRef.current?.querySelector(
       "[data-radix-scroll-area-viewport]",
     );
@@ -1323,18 +1305,11 @@ const CommunityNewPage = () => {
   const activeChannel = data.channels[activeServerId]?.find(
     (c: any) => c.id === activeChannelId,
   );
-  const communitySessionCards = Object.entries(data.messages)
-    .filter(([key]) => key.startsWith(`${activeServerId}_`))
-    .flatMap(([, value]: any) =>
-      (value || []).filter((msg: any) => msg?.isMeetingCard && msg?.card),
-    )
-    .map((msg: any) => msg.card)
-    .filter(
-      (card: any, index: number, arr: any[]) =>
-        arr.findIndex((entry) => entry.id === card.id) === index,
-    )
-    .slice(0, 6);
-  const joinCommunitySession = (card: any) => openJoinCard(card);
+  const joinCommunitySession = (session: any, role: "observer" | "participant") => {
+    if (!session?.link) return;
+    const sep = session.link.includes("?") ? "&" : "?";
+    window.location.href = `${session.link}${sep}role=${role}`;
+  };
 
   const triggerStrike = () => {
     const s = strikes + 1;
@@ -1564,7 +1539,7 @@ const CommunityNewPage = () => {
       Tutor: "cm-role-tutor",
       "Student Leader": "cm-role-leader",
     })[r] || "cm-role-member";
-const { meetingUI, openMeeting, openJoinCard, renderMeetingCard } = useMeetingSystem({
+const { meetingUI, openMeeting, renderMeetingCard } = useMeetingSystem({
   isDark: theme === "dark",
   members: members,  // already resolved above, not members[msgKey]
   currentUser: "You",
@@ -1917,66 +1892,43 @@ const { meetingUI, openMeeting, openJoinCard, renderMeetingCard } = useMeetingSy
                 )}
                 <button
                   className="cm-hbtn"
+                  style={{ position: "relative" }}
+                  onClick={() => setIsSeminarSidebarOpen(true)}
+                >
+                  <Video size={14} />
+                  {communitySessions.length > 0 && (
+                    <span
+                      style={{
+                        position: "absolute",
+                        top: -4,
+                        right: -4,
+                        background: "#ef4444",
+                        color: "#fff",
+                        fontSize: 9,
+                        fontWeight: "bold",
+                        width: 14,
+                        height: 14,
+                        borderRadius: 7,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      {communitySessions.length}
+                    </span>
+                  )}
+                </button>
+                <button
+                  className="cm-hbtn"
                   onClick={() => setIsSettingsOpen(true)}
                 >
                   <Settings size={14} />
                 </button>
               </div>
-	            </div>
+            </div>
 
-	            <div className="cm-sessions">
-	              {communitySessionCards.length > 0 ? (
-	                communitySessionCards.map((card: any) => {
-	                  const isScheduled = Boolean(card.date && card.time);
-	                  const joinedCount = Array.isArray(card.joined) ? card.joined.length : 0;
-	                  return (
-	                    <div key={card.id} className="cm-session-card">
-	                      <div className="cm-session-top">
-	                        <span>{card.type === "debate" ? "Debate" : card.type === "seminar" ? "Seminar" : "Meeting"} session</span>
-	                        <span className={`cm-session-status${isScheduled ? " scheduled" : ""}`}>
-	                          {card.ended ? "Ended" : isScheduled ? "Scheduled" : "Live"}
-	                        </span>
-	                      </div>
-	                      <div className="cm-session-title">{card.title}</div>
-	                      <div className="cm-session-meta">
-	                        {card.host || "Community host"}
-	                        {card.roomCode ? ` · Room ${card.roomCode}` : ""}
-	                        <br />
-	                        {isScheduled
-	                          ? `${card.date} at ${card.time}`
-	                          : `${joinedCount} participant${joinedCount === 1 ? "" : "s"} joined`}
-	                      </div>
-	                      <div className="cm-session-actions">
-	                        <button
-	                          className="cm-session-btn primary"
-	                          onClick={() => joinCommunitySession(card)}
-	                          disabled={card.ended}
-	                        >
-	                          Participant
-	                        </button>
-	                        <button
-	                          className="cm-session-btn"
-	                          disabled
-	                          title="Observer join needs a live community session API or seminar observer route wiring."
-	                        >
-	                          Observer
-	                        </button>
-	                      </div>
-	                    </div>
-	                  );
-	                })
-	              ) : (
-	                <div className="cm-sessions-empty">
-	                  <strong>Community sessions will show up here</strong>
-	                  <span>
-	                    This strip is ready for live debate and seminar sessions. It currently surfaces only session cards already posted in this server feed.
-	                  </span>
-	                </div>
-	              )}
-	            </div>
-
-	            {/* Pinned */}
-	            <AnimatePresence>
+            {/* Pinned */}
+            <AnimatePresence>
               {pinnedMsg && (
                 <motion.div
                   className="cm-pinned"
@@ -3554,6 +3506,146 @@ const { meetingUI, openMeeting, openJoinCard, renderMeetingCard } = useMeetingSy
                     <Trash2 size={12} /> Clear message history
                   </button>
                 )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Seminars Sidebar */}
+      <AnimatePresence>
+        {isSeminarSidebarOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 120,
+                background: "rgba(0,0,0,.2)",
+                backdropFilter: "blur(4px)",
+              }}
+              onClick={() => setIsSeminarSidebarOpen(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.97, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.97, y: 8 }}
+              style={{
+                position: "fixed",
+                inset: "76px 16px 16px",
+                left: "auto",
+                width: "100%",
+                maxWidth: 380,
+                zIndex: 130,
+                background: "#fff",
+                borderRadius: 20,
+                boxShadow: "0 20px 48px rgba(0,0,0,.16)",
+                border: "1px solid rgba(0,0,0,.06)",
+                display: "flex",
+                flexDirection: "column",
+                overflow: "hidden",
+                fontFamily: "Plus Jakarta Sans,system-ui,sans-serif",
+              }}
+            >
+              <div
+                style={{
+                  height: 52,
+                  padding: "0 18px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 9,
+                  borderBottom: "1px solid rgba(0,0,0,.06)",
+                  flexShrink: 0,
+                }}
+              >
+                <Video size={15} style={{ color: "#6366f1" }} />
+                <span
+                  style={{ fontWeight: 800, fontSize: 13.5, color: "#0f172a" }}
+                >
+                  Seminars
+                </span>
+                <span
+                  style={{
+                    fontSize: 10,
+                    color: "#94a3b8",
+                    background: "#f8fafc",
+                    padding: "2px 8px",
+                    borderRadius: 20,
+                    marginLeft: 3,
+                  }}
+                >
+                  {communitySessions.length} active
+                </span>
+                <button
+                  onClick={() => setIsSeminarSidebarOpen(false)}
+                  style={{
+                    marginLeft: "auto",
+                    width: 28,
+                    height: 28,
+                    borderRadius: 7,
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "#94a3b8",
+                  }}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              <div style={{ flex: 1, overflowY: "auto", padding: 18, display: "flex", flexDirection: "column", gap: 12 }}>
+                {communitySessions.length === 0 && (
+                  <div style={{ textAlign: "center", color: "#94a3b8", fontSize: 12, marginTop: 20 }}>
+                    No active seminars right now.
+                  </div>
+                )}
+                {communitySessions.map((s: any) => (
+                  <div key={s.id} className="cm-session-card" style={{ maxWidth: "100%", position: "relative" }}>
+                    <button
+                      onClick={() => removeCommunitySession(s.id)}
+                      style={{
+                        position: "absolute",
+                        top: 8,
+                        right: 8,
+                        background: "rgba(255,255,255,0.8)",
+                        border: "1px solid rgba(0,0,0,0.06)",
+                        cursor: "pointer",
+                        color: "#64748b",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        padding: 4,
+                        borderRadius: 6,
+                        zIndex: 10,
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.color = "#ef4444";
+                        e.currentTarget.style.background = "#fee2e2";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.color = "#64748b";
+                        e.currentTarget.style.background = "rgba(255,255,255,0.8)";
+                      }}
+                    >
+                      <X size={12} />
+                    </button>
+                    <div className="cm-session-top">{s.type === "debate" ? "Debate" : "Seminar"} session</div>
+                    <div className="cm-session-title" style={{ paddingRight: 20 }}>{s.title}</div>
+                    <div className="cm-session-meta">
+                      {s.subject || "Community"}{s.unit ? ` · ${s.unit}` : ""}<br />
+                      {s.date || "Scheduled"} {s.time ? `at ${s.time}` : ""}
+                    </div>
+                    <div className="cm-session-actions">
+                      <button onClick={() => { setIsSeminarSidebarOpen(false); joinCommunitySession(s, "observer"); }}>Observer</button>
+                      {/* <button onClick={() => { setIsSeminarSidebarOpen(false); joinCommunitySession(s, "participant"); }}>Participant</button> */}
+                    </div>
+                  </div>
+                ))}
               </div>
             </motion.div>
           </>

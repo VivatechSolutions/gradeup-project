@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { useAuth } from '../hooks/use-auth';
 import Navigation from '../components/navigation';
+import roboImg from "../assets/robo.png";
 
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
@@ -1315,7 +1316,7 @@ export default function ExamPreparationPage() {
                           className="ep-hub-icon"
                           style={{ background: "rgba(139,92,246,.1)" }}
                         >
-                          🤖
+                          <img src={roboImg} alt="AI" style={{ width: "24px", height: "24px", objectFit: "contain" }} />
                         </div>
                         <span className="ep-hub-badge purple">Coming Soon</span>
                       </div>

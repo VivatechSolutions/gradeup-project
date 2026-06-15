@@ -28,13 +28,13 @@ load_dotenv()
 
 _DEFAULT_MODEL = "gpt-5-mini"
 _FALLBACK_MODEL = "gpt-4o"
-_MAX_COMPLETION_TOKENS = 32_768
+_MAX_COMPLETION_TOKENS = 15000
 _DISCOVERY_MAX_TOKENS = 2048
 _API_TIMEOUT = 600
 _MAX_RETRIES = 3
 _BASE_DELAY = 10
-_CHUNK_MAX_CHARS = 40_000
-_CHUNK_OVERLAP_CHARS = 2_000
+_CHUNK_MAX_CHARS = 15_000
+_CHUNK_OVERLAP_CHARS = 1_500
 
 
 # TYPE CATALOG — rules for each section type, used to build dynamic prompts
@@ -54,7 +54,7 @@ TYPE_CATALOG = {
     },
     "section": {
         "description": "A numbered/named content section (e.g. 1.1, 1.2, Chapter 3)",
-        "extract_rule": "Extract the COMPLETE prose into 'content'. Do NOT create subsections. Merge ALL text, including nested subsection headings (e.g. 1.3.1) and their content, directly into the main section's 'content' field as inline text. Merge Illustrations directly into section 'content'.",
+        "extract_rule": "Extract the COMPLETE prose into 'content'. Only merge DEEPER subsections (e.g. 1.3.1 into 1.3). NEVER merge SIBLING sections (e.g. 1.4 is a SEPARATE section from 1.3, NOT a child of 1.3). Do NOT merge Examples or Illustrations.",
         "fields": "id (number), title, content"
     },
     "exercise": {
@@ -157,8 +157,8 @@ TYPE_CATALOG = {
         "fields": "title, content"
     },
     "illustration": {
-        "description": "Illustrated explanation with figures (Merge if part of a section)",
-        "extract_rule": "Usually merged into the parent section's 'content'. If standalone, extract full text.",
+        "description": "Illustrated explanation with figures",
+        "extract_rule": "Extract full text of the illustration. NEVER merge into parent section's 'content'.",
         "fields": "id, title, content"
     },
     "construction": {
@@ -545,7 +545,6 @@ The textbook unit contains these sections (in order):
   "unit_number": <integer or null>,
   "chapter_number": <integer or null>,
   "title": "<unit/chapter title>",
-  "introduction": "<intro text or null>",
   "learning_objectives": ["<objective 1>", ...],
   "sections": [
     {{
@@ -554,7 +553,7 @@ The textbook unit contains these sections (in order):
       "title": "<heading text or null>",
       "content": "<FULL text — NEVER truncate>",
       "metadata": {{}},
-      "image_urls": ["<image.jpg or null>", ...],
+      "image_urls": ["<image_url_1.jpg>", "<image_url_2.jpg>"],
       "sub_items": [
         {{
           "number": "<item number/label>",
@@ -573,10 +572,20 @@ The textbook unit contains these sections (in order):
 2. HIERARCHICAL SECTIONS — NEVER dump multiple N.M main sections into one entry.
    Nested subsections (e.g. 1.7.1, 1.7.3) should be merged smoothly into the "content"
    field of their main parent section (e.g. 1.7).
+   CRITICAL: Sections like 1.4, 1.5 are SIBLINGS of 1.3 — NOT children. Each N.M section
+   (1.1, 1.2, 1.3, 1.4, 1.5, 1.6...) MUST be its own separate section entry with type="section".
 
-3. ILLUSTRATIONS and IMAGES — Extract any image sources (like img-4. SECTION CONTENT — For type="section", put the text directly under the main heading into "content". Include any nested numbering (like 1.1.1) within the "content" field BUT NEVER INLINE standalone entities like Activity, Problem, Example, or Exercise.
+3. ILLUSTRATIONS and IMAGES — Extract any image source URLs or filenames (like img-123.jpg) into the "image_urls" array as plain URL strings. Do NOT use an "images" object array.
 
-5. INLINE BOXES: Activities, Examples, Problems, Exercises, and 'Do You Know' boxes MUST ALWAYS be extracted as their own separate top-level sections. NEVER merge them into a parent section's 'content', even if they appear in the middle of a section.
+16. SUB-HEADINGS IN SOCIAL SCIENCE — For subjects like Social Science / History / Geography / Civics,
+    sub-topic headings (e.g. "Violent Forms of Nationalism", "Immediate Cause") that appear under a
+    main numbered section (e.g. 1.3) should be MERGED into the parent section's "content" field.
+    Do NOT create separate section entries for unnumbered sub-headings. Only N.M numbered headings
+    (like 1.1, 1.2, 1.3) should be separate section entries.
+
+4. SECTION CONTENT — For type="section", put the text directly under the main heading into "content". Include any nested numbering (like 1.1.1) within the "content" field BUT NEVER INLINE standalone entities like Activity, Problem, Example, Illustration, or Exercise.
+
+5. INLINE BOXES: Activities, Examples, Illustrations, Problems, Exercises, and 'Do You Know' boxes MUST ALWAYS be extracted as their own separate top-level sections. NEVER merge them into a parent section's 'content', even if they appear in the middle of a section.
 
 6. GRAMMAR is CRITICAL — extract BOTH the explanation AND all exercises.
    Grammar sections often have sub-exercises (A, B, C, D...) — each becomes a sub_item.
@@ -592,7 +601,7 @@ The textbook unit contains these sections (in order):
 10. IGNORE: Page stamps (.indd lines), timestamps, page numbers, Reprint lines,
     page/book stamps (e.g. '2 / Moments', 'The Lost Child / 3'), QR codes.
 
-11. DO NOT USE PAGES ARRAY: Never output a "pages" array. If the content spans multiple pages, merge them into the appropriate hierarchical "sections". The top-level structure MUST be: unit_number, title, introduction, learning_objectives, sections[].
+11. DO NOT USE PAGES ARRAY: Never output a "pages" array. If the content spans multiple pages, merge them into the appropriate hierarchical "sections". The top-level structure MUST be: unit_number, title, learning_objectives, sections[].
 
 12. Return ONLY valid JSON. No markdown fences. No commentary.
 
@@ -604,6 +613,10 @@ The textbook unit contains these sections (in order):
               "metadata":{{"solution":"Solution 1: ... Solution 2: ..."}} }}
 
     However, ALWAYS create sections for numbered headings (e.g. '2.1', '2.2') even if they follow the title.
+
+14. SIBLING SECTIONS: Sections like 1.1, 1.2, 1.3, 1.4, 1.5, 1.6 are ALL siblings at the same level.
+    NEVER merge 1.4 into 1.3 even if 1.4 appears immediately after 1.3.1. Each X.Y numbered heading
+    MUST be a separate section entry. Only X.Y.Z headings are children of X.Y.
 
 15. CHUNK OVERLAPS: If a text chunk starts in the middle of a paragraph with NO heading visible, skip that partial text. However, if a sub-section heading IS clearly visible (e.g. "## 2.3.3 Uniform acceleration"), you MUST extract it — even if the parent section (2.3) was in a previous chunk. NEVER skip content that has a visible heading. Missing content is the WORST error.
 """
@@ -1129,9 +1142,19 @@ def _postprocess_sections(sections: List[Dict[str, Any]]) -> List[Dict[str, Any]
     # preceding section. We physically nest them inside the parent section's
     # "sub_sections" array so the UI can map section-by-section and get all
     # related content grouped together.
+    # --- Filter 10: Remove unwanted types and nest inline items ---
+    # Step A: Remove types we don't want in the final output for any subject.
+    #         (do_you_know, thinking_corner, progress_check, note, ict_corner)
+    _DISCARD_TYPES = {
+        "do_you_know", "thinking_corner", "progress_check",
+        "note", "ict_corner", "more_to_know", "try_this",
+    }
+    deduped = [s for s in deduped if s.get("type", "") not in _DISCARD_TYPES]
+
+    # Step B: Nest inline items inside their parent numbered section.
     _NESTABLE_TYPES = {
-        "activity", "example", "exercise", "note", "do_you_know", "more_to_know",
-        "try_this", "thinking_corner", "progress_check", "illustration",
+        "activity", "example", "exercise", "illustration", "definition",
+        "theorem", "proof", "corollary", "construction",
     }
     _BACK_MATTER_RESET = {
         "summary", "glossary", "unit_exercise", "multiple_choice",
@@ -1140,21 +1163,16 @@ def _postprocess_sections(sections: List[Dict[str, Any]]) -> List[Dict[str, Any]
     }
     _NUMBERED_SECTION_RE = re.compile(r'^(\d+\.\d+)(?:\s|$)')
 
-    # Build an ordered list: for each item, determine whether it's a parent section,
-    # an inline item to nest, or a standalone top-level item.
-    # We use index-based tracking so we know which parent each inline item belongs to.
-    current_parent_idx = None   # index into deduped list
+    current_parent_idx = None
     current_parent_id = None
 
-    # Map: parent index in deduped → list of inline items to nest
     parent_children: Dict[int, List[Dict]] = {}
-    items_to_remove: set = set()  # indices of inline items that will be nested
+    items_to_remove: set = set()
 
     for idx, section in enumerate(deduped):
         stype = section.get("type", "")
         sid = str(section.get("id", "")).strip()
 
-        # Update current parent when we see a numbered main section
         if stype == "section":
             m = _NUMBERED_SECTION_RE.match(sid)
             if m:
@@ -1162,28 +1180,155 @@ def _postprocess_sections(sections: List[Dict[str, Any]]) -> List[Dict[str, Any]
                 current_parent_id = m.group(1)
                 continue
 
-        # Back-matter types reset the parent
         if stype in _BACK_MATTER_RESET:
             current_parent_idx = None
             current_parent_id = None
             continue
 
-        # Nest inline types inside their parent
         if stype in _NESTABLE_TYPES and current_parent_idx is not None:
             parent_children.setdefault(current_parent_idx, []).append(section)
             items_to_remove.add(idx)
 
-    # Now rebuild the final list: keep only non-nested items, and add sub_sections
     final = []
     for idx, section in enumerate(deduped):
         if idx in items_to_remove:
-            continue  # This item is nested inside a parent — skip it at top level
-        # If this section has children, add them as sub_sections
+            continue
         if idx in parent_children:
-            section["sub_sections"] = parent_children[idx]
+            # Also strip discarded types from sub_sections
+            section["sub_sections"] = [
+                s for s in parent_children[idx]
+                if s.get("type", "") not in _DISCARD_TYPES
+            ]
         final.append(section)
 
-    return final
+    # --- Filter 11: Recover missing sibling sections from bloated parent sections ---
+    # If a section like 1.3 has sub_sections containing examples/illustrations that
+    # belong to 1.4 or 1.5, we attempt to detect this by checking for sequential gaps.
+    # E.g., if we see 1.3, then 1.6, we know 1.4 and 1.5 are missing.
+    _SEC_NUM_RE = re.compile(r'^(\d+)\.(\d+)$')
+    section_ids_in_final = []
+    for s in final:
+        if s.get("type") == "section":
+            m = _SEC_NUM_RE.match(str(s.get("id", "")).strip())
+            if m:
+                section_ids_in_final.append((int(m.group(1)), int(m.group(2)), s))
+
+    if section_ids_in_final:
+        # Group by chapter prefix
+        from collections import defaultdict
+        by_chapter: Dict[int, List] = defaultdict(list)
+        for ch, sec, s in section_ids_in_final:
+            by_chapter[ch].append((sec, s))
+
+        for ch, sec_list in by_chapter.items():
+            sec_list.sort(key=lambda x: x[0])
+            sec_nums = [s[0] for s in sec_list]
+            # Find gaps
+            if len(sec_nums) >= 2:
+                for i in range(len(sec_nums) - 1):
+                    gap_start = sec_nums[i] + 1
+                    gap_end = sec_nums[i + 1]
+                    if gap_end - gap_start > 0:
+                        # There are missing sections between sec_nums[i] and sec_nums[i+1]
+                        # Log the gap for debugging
+                        missing = [f"{ch}.{n}" for n in range(gap_start, gap_end)]
+                        print(f"  ⚠️  Filter 11: Detected missing sections: {missing}")
+                        print(f"       (gap between {ch}.{sec_nums[i]} and {ch}.{sec_nums[i+1]})")
+
+    # --- Filter 12: Convert `images` array to `image_urls` flat list ---
+    # The LLM may return images as [{url, explanation}] objects. Standardize to
+    # flat URL strings for schema consistency across all subjects.
+    for section in final:
+        if 'images' in section:
+            images_arr = section.pop('images')
+            image_urls = section.get('image_urls', [])
+            for img in images_arr:
+                if isinstance(img, dict):
+                    url = img.get('url', '')
+                    if url and url not in image_urls:
+                        image_urls.append(url)
+                elif isinstance(img, str) and img not in image_urls:
+                    image_urls.append(img)
+            section['image_urls'] = image_urls
+        if 'image_urls' not in section:
+            section['image_urls'] = []
+
+    # --- Filter 13: Merge non-numbered sub-heading sections into parent ---
+    # For Social Science (and similar subjects), sub-headings under a main
+    # numbered section (e.g. "Violent Forms of Nationalism" under 1.3) should
+    # be merged into the parent section's content — not left as standalone
+    # duplicate entries.
+    _BACK_MATTER_MERGE = {
+        "summary", "glossary", "unit_exercise", "multiple_choice",
+        "reference_books", "ict_corner", "map_work", "timeline",
+        "points_to_remember", "exercise",
+    }
+    _STANDALONE_MERGE = {"introduction", "learning_objectives"} | _BACK_MATTER_MERGE
+
+    merged_final = []
+    current_numbered_parent = None
+
+    for section in final:
+        stype = section.get("type", "")
+        sid = str(section.get("id", "")).strip()
+
+        # Check if this is a numbered parent section (e.g. "1.1", "2.3")
+        if stype == "section" and _NUMBERED_SECTION_RE.match(sid):
+            current_numbered_parent = section
+            merged_final.append(section)
+            continue
+
+        # Back-matter / standalone types reset parent tracking
+        if stype in _STANDALONE_MERGE:
+            current_numbered_parent = None
+            merged_final.append(section)
+            continue
+
+        # Non-numbered section between two numbered parents → merge into parent
+        if (current_numbered_parent is not None
+                and stype == "section"
+                and not _NUMBERED_SECTION_RE.match(sid)):
+            child_content = (section.get("content") or "").strip()
+            parent_content = (current_numbered_parent.get("content") or "").strip()
+            child_title = (section.get("title") or "").strip()
+
+            # Check if content is already in parent (duplicate from chunking)
+            is_dup = False
+            if child_content:
+                child_snippet = re.sub(r'\s+', ' ', child_content[:200]).strip().lower()
+                parent_norm = re.sub(r'\s+', ' ', parent_content).strip().lower()
+                is_dup = len(child_snippet) > 20 and child_snippet in parent_norm
+
+            if not is_dup and child_content:
+                # Append content with sub-heading as markdown header
+                if child_title:
+                    addition = f"\n\n{child_title}\n\n{child_content}"
+                else:
+                    addition = f"\n\n{child_content}"
+                current_numbered_parent["content"] = parent_content + addition
+
+            # Always merge image_urls (child may have images parent doesn't)
+            child_urls = section.get("image_urls", [])
+            if child_urls:
+                parent_urls = current_numbered_parent.get("image_urls", [])
+                for url in child_urls:
+                    if url not in parent_urls:
+                        parent_urls.append(url)
+                current_numbered_parent["image_urls"] = parent_urls
+
+            # Merge sub_items if child has any
+            child_subs = section.get("sub_items", [])
+            if child_subs:
+                parent_subs = current_numbered_parent.get("sub_items", [])
+                parent_subs.extend(child_subs)
+                current_numbered_parent["sub_items"] = parent_subs
+
+            continue
+
+        # Everything else: keep as-is
+        merged_final.append(section)
+
+    return merged_final
 
 
 def _normalize_schema(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -1383,9 +1528,10 @@ def merge_extracted_chunks(chunks: List[Dict[str, Any]]) -> Dict[str, Any]:
             sec_type = section.get("type", "").strip().lower()
             # If a section's title perfectly matches the main unit title, or its type was marked introduction
             if (unit_title_norm and sec_title_norm == unit_title_norm) or sec_type == "introduction":
-                section["title"] = "Introduction"
-                section["type"] = "section"
+                if not section.get("title"):
+                    section["title"] = "Introduction"
 
+    # Enforce strict schema ordering before returning
     return merged
 
 

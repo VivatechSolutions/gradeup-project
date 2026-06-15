@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useLocation } from "wouter";
 import { useToast } from "../hooks/use-toast";
+import roboImg from "../assets/robo.png";
 import {
   Select,
   SelectContent,
@@ -52,7 +53,6 @@ import {
   Database,
   HelpCircle,
   Menu,
-  Speech,
   Paperclip,
   Image,
   FileText,
@@ -607,6 +607,11 @@ const CSS = `
 .at-attach-del:hover { color: #ef4444; }
 
 .at-textarea-wrap { position: relative; }
+.at-textarea-wrap.listening .at-textarea {
+  border-color: rgba(239,68,68,.45);
+  box-shadow: 0 0 0 3px rgba(239,68,68,.09);
+  background: #fff;
+}
 .at-textarea {
   width: 100%; padding: 11px 15px; padding-right: 128px;
   border-radius: 13px; border: 1.5px solid #e2e8f0;
@@ -624,6 +629,53 @@ const CSS = `
 .at-textarea::placeholder { color: #94a3b8; }
 .dark .at-textarea { background: #0f172a; border-color: rgba(255,255,255,.1); color: #f1f5f9; }
 .dark .at-textarea:focus { background: rgba(99,102,241,.05); }
+.dark .at-textarea-wrap.listening .at-textarea {
+  border-color: rgba(248,113,113,.55);
+  background: rgba(239,68,68,.06);
+}
+
+.at-voice-wave {
+  position: absolute;
+  left: 12px;
+  bottom: 8px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 8px;
+  border-radius: 10px;
+  background: rgba(255,255,255,.9);
+  border: 1px solid rgba(239,68,68,.16);
+  color: #ef4444;
+  pointer-events: none;
+  box-shadow: 0 3px 10px rgba(239,68,68,.08);
+}
+.dark .at-voice-wave {
+  background: rgba(15,23,42,.92);
+  border-color: rgba(248,113,113,.2);
+  color: #f87171;
+}
+.at-voice-wave span {
+  width: 3px;
+  height: 8px;
+  border-radius: 999px;
+  background: currentColor;
+  animation: voiceWave 1s ease-in-out infinite;
+}
+.at-voice-wave span:nth-child(2) { animation-delay: .1s; }
+.at-voice-wave span:nth-child(3) { animation-delay: .2s; }
+.at-voice-wave span:nth-child(4) { animation-delay: .3s; }
+.at-voice-wave span:nth-child(5) { animation-delay: .4s; }
+.at-voice-wave-label {
+  margin-left: 4px;
+  font-size: 10.5px;
+  font-weight: 800;
+  line-height: 1;
+}
+@keyframes voiceWave {
+  0%,100% { transform: scaleY(.45); opacity: .65; }
+  50% { transform: scaleY(1.45); opacity: 1; }
+}
 
 .at-input-actions {
   position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
@@ -668,6 +720,10 @@ const CSS = `
   padding: 8px 12px; border-radius: 10px; margin: 8px 16px 0;
   background: rgba(239,68,68,.06); border: 1px solid rgba(239,68,68,.2);
   font-size: 12px; color: #ef4444; font-weight: 600; flex-shrink: 0;
+}
+.dark .at-error-banner {
+  background: rgba(239,68,68,.15); border-color: rgba(239,68,68,.3);
+  color: #fca5a5;
 }
 
 /* ══════════════════════════════════════════
@@ -1647,7 +1703,8 @@ export default function AITutorModern() {
     if (savedSubject && savedSubject !== "0") {
       setSelectedSubject(parseInt(savedSubject, 10));
       if (savedUnit) setSelectedUnit(savedUnit);
-      setView("tutor");
+      // We no longer auto-set view to "tutor" so the user always sees Subject Selection first.
+      // setView("tutor"); 
     }
   }, []);
 
@@ -1818,15 +1875,17 @@ export default function AITutorModern() {
         : selectedAccent === "indian"
           ? "en-IN"
           : "en-US";
+    recognition.onstart = () => setIsListening(true);
     recognition.onresult = (e: any) => {
       setCurrentMessage(e.results[0][0].transcript);
       setIsListening(false);
     };
-    recognition.onerror = () => {
+    recognition.onerror = (event: any) => {
+      console.error("Speech recognition error:", event.error);
       setIsListening(false);
       toast({
         title: "Speech error",
-        description: "Please try again.",
+        description: `Error: ${event.error}. Please try again.`,
         variant: "destructive",
       });
     };
@@ -1966,8 +2025,12 @@ export default function AITutorModern() {
       toast({ title: "Not supported", variant: "destructive" });
       return;
     }
-    setIsListening(true);
-    recognitionRef.current.start();
+    try {
+      recognitionRef.current.start();
+    } catch (error) {
+      console.error("Failed to start speech recognition:", error);
+      setIsListening(false);
+    }
   };
   const stopListening = () => {
     recognitionRef.current?.stop();
@@ -2283,56 +2346,17 @@ const startNewChat = () => {
     }
   };
 
-  const renderHighlightedText = (text: string) => {
-    // Strip markdown syntax so raw symbols don't show during reading.
-    // We render FormattedAIContent underneath and overlay word highlight on top.
-    const stripMarkdown = (raw: string) =>
-      raw
-        .replace(/#{1,6}\s+/g, "")          // ### headings
-        .replace(/\*\*(.*?)\*\*/g, "$1")    // **bold**
-        .replace(/\*(.*?)\*/g, "$1")        // *italic*
-        .replace(/`{1,3}(.*?)`{1,3}/g, "$1") // `code`
-        .replace(/~~(.*?)~~/g, "$1")        // ~~strikethrough~~
-        .replace(/^\s*[-*+]\s+/gm, "")     // bullet points
-        .replace(/^\s*\d+\.\s+/gm, "")     // numbered lists
-        .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // [link](url)
-        .replace(/\n{2,}/g, " ")
-        .replace(/\n/g, " ")
-        .trim();
-
-    const cleanText = stripMarkdown(text);
-    const words = cleanText.split(/\s+/).filter(Boolean);
-
-    if (!responseWords.length || currentWordIndex === -1) {
-      // Not yet highlighting — show fully formatted content
-      return <FormattedAIContent value={text} />;
-    }
-
-    return (
-      <span style={{ lineHeight: 1.7, fontSize: 13.5 }}>
-        {words.map((word, i) => (
-          <span
-            key={i}
-            style={
-              i === currentWordIndex
-                ? {
-                    background: "linear-gradient(135deg,#fef3c7,#fde68a)",
-                    borderRadius: 3,
-                    padding: "0 2px",
-                    color: "#1a1a1a",
-                    fontWeight: 600,
-                    transition: "all .15s",
-                  }
-                : {}
-            }
-          >
-            {word}
-            {i < words.length - 1 ? " " : ""}
-          </span>
-        ))}
-      </span>
-    );
-  };
+const renderHighlightedText = (text: string) => {
+  return (
+    <FormattedAIContent
+      value={text}
+      highlightEnabled={
+        responseWords.length > 0 && currentWordIndex !== -1
+      }
+      currentWordIndex={currentWordIndex}
+    />
+  );
+};
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) setAttachedFiles(Array.from(e.target.files));
@@ -2581,7 +2605,7 @@ const startNewChat = () => {
               >
                 <ChevronLeft style={{ width: 17, height: 17 }} />
               </button>
-              <span style={{ fontSize: 16 }}>🤖</span> Ask AI
+              <span style={{ fontSize: 16 }}><img src={roboImg} alt="AI" style={{ width: "1.2em", height: "1.2em", objectFit: "contain" }} /></span> Ask AI
             </div>
           </div>
           <AskAIPanel initialQuestion={askAIInitialQuestion} />
@@ -2649,7 +2673,7 @@ const startNewChat = () => {
               { icon: "📝", label: "Quiz" },
               { icon: "📖", label: "Q-Bank" },
               { icon: "❓", label: "FAQ" },
-              { icon: "🤖", label: "Ask AI" },
+              { icon: <img src={roboImg} alt="AI" style={{ width: "2.2em", height: "2.2em", objectFit: "contain" }} />, label: "Ask AI" },
             ].map((item, i) => (
               <WithTooltip key={i} label={item.label} collapsed={true}>
                 <div className="at-col-icon">{item.icon}</div>
@@ -2691,7 +2715,7 @@ const startNewChat = () => {
                     selectedSubjectData.value !== "all"
                   )
                     p.append("subjectGroupKey", selectedSubjectData.value);
-                  p.append("from", "/ai-tutor-modern");
+                  p.append("from", "/ai-tutor");
                   setLocation(`/studio/quiz?${p.toString()}`);
                   if (isMobile) setIsRightPanelOpen(false);
                 }}
@@ -2709,7 +2733,7 @@ const startNewChat = () => {
                 transition={{ delay: 0.1 }}
                 onClick={() => {
                   setLocation(
-                    `/studio/question-bank?subjectId=${selectedSubject !== 0 ? selectedSubject : ""}&from=/ai-tutor-modern`,
+                    `/studio/question-bank?subjectId=${selectedSubject !== 0 ? selectedSubject : ""}&from=/ai-tutor`,
                   );
                   if (isMobile) setIsRightPanelOpen(false);
                 }}
@@ -2757,7 +2781,7 @@ const startNewChat = () => {
               minWidth: 0,
             }}
           >
-            <div className="at-chat-avatar">🤖</div>
+            <div className="at-chat-avatar"><img src={roboImg} alt="AI" style={{ width: "1.2em", height: "1.2em", objectFit: "contain" }} /></div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="at-chat-badge">
                 <Sparkles style={{ width: 9, height: 9 }} /> Gemma 3 12B
@@ -2862,7 +2886,7 @@ const startNewChat = () => {
           </div>
         ) : messages.length === 0 ? (
           <div className="at-empty">
-            <div className="at-empty-icon">🤖</div>
+            <div className="at-empty-icon"><img src={roboImg} alt="AI" style={{ width: "1.2em", height: "1.2em", objectFit: "contain" }} /></div>
             <div className="at-empty-title">Welcome to AI Tutor!</div>
             <div className="at-empty-sub">
               {!selectedUnit
@@ -2902,27 +2926,25 @@ const startNewChat = () => {
                   >
                     {message.type === "user"
                       ? userHeader?.firstName?.[0]?.toUpperCase() || "U"
-                      : "🤖"}
+                      : <img src={roboImg} alt="AI" style={{ width: "1.2em", height: "1.2em", objectFit: "contain" }} />}
                   </div>
                   <div
                     className={`at-bubble${message.type === "user" ? " user" : " bot"}`}
                   >
                     <div style={{ fontSize: 13.5, lineHeight: 1.6 }}>
-                      {message.audioSrc ? (
-                        <audio
-                          controls
-                          src={message.audioSrc}
-                          style={{ maxWidth: "100%" }}
-                        />
-                      ) : message.type === "assistant" &&
-                        isSpeaking &&
-                        messages[messages.length - 1]?.id === message.id ? (
-                        renderHighlightedText(message.content)
-                      ) : message.type === "assistant" ? (
-                        <TypingMarkdown content={message.content} isLast={index === messages.length - 1} />
-                      ) : (
-                        <FormattedAIContent value={message.content} />
-                      )}
+{message.audioSrc ? (
+  <audio
+    controls
+    src={message.audioSrc}
+    style={{ maxWidth: "100%" }}
+  />
+) : message.type === "assistant" &&
+  isSpeaking &&
+  messages[messages.length - 1]?.id === message.id ? (
+  renderHighlightedText(message.content)
+) : (
+  <FormattedAIContent value={message.content} />
+)}
                     </div>
                     <div className="at-bubble-footer">
                       <span className="at-bubble-time">
@@ -2970,7 +2992,7 @@ const startNewChat = () => {
                 initial={{ opacity: 0, y: 7 }}
                 animate={{ opacity: 1, y: 0 }}
               >
-                <div className="at-msg-avatar bot">🤖</div>
+                <div className="at-msg-avatar bot"><img src={roboImg} alt="AI" style={{ width: "1.2em", height: "1.2em", objectFit: "contain" }} /></div>
                 <div className="at-bubble bot" style={{ padding: "13px 15px" }}>
                   <div className="at-typing">
                     <span />
@@ -3057,7 +3079,7 @@ const startNewChat = () => {
             </div>
           </div>
         ) : (
-          <div className="at-textarea-wrap">
+          <div className={`at-textarea-wrap${isListening ? " listening" : ""}`}>
             <textarea
               className="at-textarea"
               value={currentMessage}
@@ -3078,6 +3100,16 @@ const startNewChat = () => {
               disabled={!selectedUnit || isLoading}
               rows={2}
             />
+            {isListening && (
+              <div className="at-voice-wave" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+                <span />
+                <span />
+                <div className="at-voice-wave-label">Listening</div>
+              </div>
+            )}
             <div className="at-input-actions">
               {/* Attach */}
               <span id="tut-attach-btn">
@@ -3091,7 +3123,7 @@ const startNewChat = () => {
                       <Paperclip style={{ width: 15, height: 15 }} />
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent>
+                  <DropdownMenuContent className="bg-white dark:bg-slate-900 dark:text-slate-200 border dark:border-slate-700">
                     <DropdownMenuItem
                       onClick={() => triggerFileInput("image/*")}
                     >
@@ -3111,77 +3143,22 @@ const startNewChat = () => {
               <span id="tut-mic-btn">
                 {isListening ? (
                   <button
-                    className="at-iabtn active"
+                    className="at-iabtn active text-red-500 animate-pulse"
                     onClick={stopListening}
                     disabled={!selectedUnit || isLoading}
                     title="Stop listening"
                   >
-                    <MicOff style={{ width: 15, height: 15 }} />
+                    <Mic style={{ width: 15, height: 15 }} />
                   </button>
                 ) : (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        className="at-iabtn"
-                        disabled={!selectedUnit || isLoading}
-                        title="Voice input"
-                      >
-                        <Mic style={{ width: 15, height: 15 }} />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" side="top">
-                      <DropdownMenuItem onSelect={() => startListening()}>
-                        <Speech className="mr-2 h-4 w-4" />
-                        Speech to Text
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => startRecording()}>
-                        <Mic className="mr-2 h-4 w-4" />
-                        Voice Record
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        disabled
-                        className="text-xs text-muted-foreground pt-1 flex flex-col items-start gap-1.5"
-                      >
-                        <span className="font-medium text-foreground">
-                          Accent
-                        </span>
-                        <div className="flex gap-1.5 w-full">
-                          {(["us", "uk", "indian"] as const).map((a) => (
-                            <button
-                              key={a}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedAccent(a);
-                              }}
-                              className={`flex-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border transition-colors ${selectedAccent === a ? "bg-blue-600 text-white border-blue-600" : "border-gray-200 hover:border-blue-300"}`}
-                            >
-                              {a.toUpperCase()}
-                            </button>
-                          ))}
-                        </div>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        disabled
-                        className="text-xs text-muted-foreground flex flex-col items-start gap-1"
-                      >
-                        <span className="font-medium text-foreground">
-                          Speed: {speechSpeed}x
-                        </span>
-                        <input
-                          type="range"
-                          min={0.5}
-                          max={1.5}
-                          step={0.1}
-                          value={speechSpeed}
-                          onChange={(e) =>
-                            setSpeechSpeed(parseFloat(e.target.value))
-                          }
-                          onClick={(e) => e.stopPropagation()}
-                          className="w-full h-1.5 accent-blue-600 cursor-pointer"
-                        />
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <button
+                    className="at-iabtn"
+                    disabled={!selectedUnit || isLoading}
+                    title="Voice input"
+                    onClick={startListening}
+                  >
+                    <Mic style={{ width: 15, height: 15 }} />
+                  </button>
                 )}
               </span>
               {/* Send */}
@@ -3227,6 +3204,7 @@ const startNewChat = () => {
         <SubjectSelection
           subjects={subjects}
           onSelectSubject={handleSubjectSelect}
+          isLoading={subjectsLoading}
         />
       </div>
     );
@@ -3628,7 +3606,7 @@ const startNewChat = () => {
                             "subjectGroupKey",
                             selectedSubjectData.value,
                           );
-                        p.append("from", "/ai-tutor-modern");
+                        p.append("from", "/ai-tutor");
                         setLocation(`/studio/quiz?${p.toString()}`);
                         setIsRightPanelOpen(false);
                       }}
@@ -3641,7 +3619,7 @@ const startNewChat = () => {
                       className="at-ml-card indigo"
                       onClick={() => {
                         setLocation(
-                          `/studio/question-bank?subjectId=${selectedSubject !== 0 ? selectedSubject : ""}&from=/ai-tutor-modern`,
+                          `/studio/question-bank?subjectId=${selectedSubject !== 0 ? selectedSubject : ""}&from=/ai-tutor`,
                         );
                         setIsRightPanelOpen(false);
                       }}

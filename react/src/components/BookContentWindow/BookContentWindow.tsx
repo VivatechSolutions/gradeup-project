@@ -196,6 +196,24 @@ function serializeEnrichedForGenius(enrichedContent: any, fallbackTitle: string)
         .join("\n"),
     );
   };
+  const pushAvatarExplanation = (value: any) => {
+    const segments = Array.isArray(value?.segments) ? value.segments : [];
+    if (!segments.length) return;
+    lines.push("### Avatar Explanation");
+    segments.forEach((segment: any) => {
+      const text = flattenContentToText(segment?.text || segment).trim();
+      if (!text) return;
+      lines.push(`- ${String(segment?.type || "segment").trim()}: ${text}`);
+    });
+  };
+  const pushKeyValueList = (title: string, value: any) => {
+    const items = Array.isArray(value)
+      ? value.map((item) => flattenContentToText(item).trim()).filter(Boolean)
+      : [];
+    if (!items.length) return;
+    lines.push(`### ${title}`);
+    lines.push(items.map((item) => `- ${item}`).join("\n"));
+  };
 
   const units = Array.isArray(enrichedContent?.units)
     ? enrichedContent.units
@@ -213,6 +231,10 @@ function serializeEnrichedForGenius(enrichedContent: any, fallbackTitle: string)
     if (unitTitle) lines.push(`# ${unitTitle}`);
 
     const sections = Array.isArray(unit?.sections) ? unit.sections : [];
+    pushKeyValueList("Learning Objectives", unit?.learning_objectives || unit?.objectives);
+    pushKeyValueList("Points to Remember", unit?.points_to_remember || unit?.pointsToRemember);
+    pushKeyValueList("Glossary", unit?.glossary?.sub_items || unit?.glossary);
+    pushKeyValueList("Supplementary Info", unit?.supplementary_info || unit?.supplementaryInfo);
     sections.forEach((section: any) => {
       const sectionTitle =
         section?.section_title ||
@@ -226,8 +248,10 @@ function serializeEnrichedForGenius(enrichedContent: any, fallbackTitle: string)
       pushText(enrichment?.detailed_explanation);
       pushList("Real World Connections", enrichment?.real_world_connections);
       pushList("Key Points", enrichment?.key_points || enrichment?.keyPoints || enrichment?.points);
+      pushAvatarExplanation(enrichment?.avatar_explanation);
       pushFaqs(enrichment?.faqs || enrichment?.faq);
       pushPracticeQuestions(enrichment?.practice_questions || enrichment?.practiceQuestions);
+      pushKeyValueList("Doubt Context", enrichment?.doubt_context?.related_sections);
     });
 
     if (!sections.length) {
@@ -235,8 +259,12 @@ function serializeEnrichedForGenius(enrichedContent: any, fallbackTitle: string)
       pushText(enrichment?.concept_overview);
       pushText(enrichment?.detailed_explanation);
       pushList("Real World Connections", enrichment?.real_world_connections);
+      pushAvatarExplanation(enrichment?.avatar_explanation);
       pushFaqs(enrichment?.faqs || enrichment?.faq);
       pushPracticeQuestions(enrichment?.practice_questions || enrichment?.practiceQuestions);
+      pushKeyValueList("Learning Objectives", unit?.learning_objectives || unit?.objectives);
+      pushKeyValueList("Points to Remember", unit?.points_to_remember || unit?.pointsToRemember);
+      pushKeyValueList("Glossary", unit?.glossary?.sub_items || unit?.glossary);
     }
   });
 
@@ -826,8 +854,9 @@ init();
 
   // ── 4. Open as Blob URL (same as original) ──────────────────────────────
   const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-  const url  = URL.createObjectURL(blob);
-  window.open(url, "_blank");
+  const blobUrl = URL.createObjectURL(blob);
+  window.open(blobUrl, "_blank", "noopener,noreferrer");
+  window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
 }
 
 // ─── Library data ─────────────────────────────────────────────────────────────
@@ -1181,6 +1210,12 @@ function flattenContentToText(value: any): string {
     value.explanation,
     value.detailed_explanation,
     value.description,
+    value.learning_objectives,
+    value.points_to_remember,
+    value.glossary,
+    value.supplementary_info,
+    value.avatar_explanation,
+    value.doubt_context,
     value.paragraphs,
     value.blocks,
     value.children,
@@ -1576,6 +1611,12 @@ function buildStructuredLayout(content: any, chapterId: string | number, topicMa
       value.explanation,
       value.detailed_explanation,
       value.description,
+      value.learning_objectives,
+      value.points_to_remember,
+      value.glossary,
+      value.supplementary_info,
+      value.avatar_explanation,
+      value.doubt_context,
       value.markdown,
       value.html,
       value.enrichedContent,
@@ -1612,6 +1653,12 @@ function buildStructuredLayout(content: any, chapterId: string | number, topicMa
           "description",
           "explanation",
           "detailed_explanation",
+          "learning_objectives",
+          "points_to_remember",
+          "glossary",
+          "supplementary_info",
+          "avatar_explanation",
+          "doubt_context",
           "paragraphs",
           "objectives",
           "examples",
@@ -2853,18 +2900,24 @@ const BookContentWindow = () => {
 
           {/* ── Stats row ── */}
           <div className="lib-stats-row">
-            {[
-              { label: "Total Books",    value: booksForLibrary.length, icon: "📚", color: "blue"   },
-              { label: "Available Units", value: booksForLibrary.reduce((sum, book) => sum + book.chapters.length, 0), icon: "📖", color: "indigo" },
-              { label: "Subjects",       value: new Set(booksForLibrary.map(b => b.subject.split(" • ")[0])).size, icon: "🎯", color: "purple" },
-              { label: "Ready to Read",  value: booksForLibrary.filter((book) => book.chapters.length > 0).length, icon: "✅", color: "green"  },
-            ].map((s, i) => (
-              <div key={i} className={`lib-stat-card lib-stat-${s.color}`} style={{ animationDelay: `${0.05 + i * 0.07}s` }}>
-                <div className="lib-stat-icon">{s.icon}</div>
-                <div className="lib-stat-num">{s.value}</div>
-                <div className="lib-stat-label">{s.label}</div>
-              </div>
-            ))}
+            {isLibraryLoading ? (
+              Array.from({ length: 4 }).map((_, i) => (
+                <div key={`skeleton-stat-${i}`} className="lib-skeleton-stat-card" />
+              ))
+            ) : (
+              [
+                { label: "Total Books",    value: booksForLibrary.length, icon: "📚", color: "blue"   },
+                { label: "Available Units", value: booksForLibrary.reduce((sum, book) => sum + book.chapters.length, 0), icon: "📖", color: "indigo" },
+                { label: "Subjects",       value: new Set(booksForLibrary.map(b => b.subject.split(" • ")[0])).size, icon: "🎯", color: "purple" },
+                { label: "Ready to Read",  value: booksForLibrary.filter((book) => book.chapters.length > 0).length, icon: "✅", color: "green"  },
+              ].map((s, i) => (
+                <div key={i} className={`lib-stat-card lib-stat-${s.color}`} style={{ animationDelay: `${0.05 + i * 0.07}s` }}>
+                  <div className="lib-stat-icon">{s.icon}</div>
+                  <div className="lib-stat-num">{s.value}</div>
+                  <div className="lib-stat-label">{s.label}</div>
+                </div>
+              ))
+            )}
           </div>
 
           {/* ── Filter chips ── */}
@@ -2882,51 +2935,69 @@ const BookContentWindow = () => {
 
           {/* ── Book grid ── */}
           <div className="lib-grid">
-            {!isLibraryLoading && filteredBooks.length === 0 && (
-              <div className="lib-empty-card">
-                <div className="lib-empty-icon">📚</div>
-                <div className="lib-empty-title">No data available</div>
-                <div className="lib-empty-copy">No subjects are available for the selected filter yet.</div>
-              </div>
+            {isLibraryLoading ? (
+              Array.from({ length: 8 }).map((_, i) => (
+                <div key={`skeleton-book-${i}`} className="lib-skeleton-book-card">
+                  <div className="lib-skeleton-book-cover" />
+                  <div className="lib-skeleton-text-line subtitle" />
+                  <div className="lib-skeleton-text-line title" style={{ width: '90%' }} />
+                  <div className="lib-skeleton-progress" />
+                  <div className="lib-skeleton-text-line" style={{ height: '10px', width: '70%', marginBottom: '12px' }} />
+                  <div style={{ marginTop: 'auto', display: 'flex', gap: '8px' }}>
+                    <div className="lib-skeleton-text-line" style={{ height: '10px', width: '40%' }} />
+                    <div className="lib-skeleton-text-line" style={{ height: '10px', width: '35%', marginLeft: 'auto' }} />
+                  </div>
+                </div>
+              ))
+            ) : (
+              <>
+                {!isLibraryLoading && filteredBooks.length === 0 && (
+                  <div className="lib-empty-card">
+                    <div className="lib-empty-icon">📚</div>
+                    <div className="lib-empty-title">No data available</div>
+                    <div className="lib-empty-copy">No subjects are available for the selected filter yet.</div>
+                  </div>
+                )}
+                {filteredBooks.map((book, i) => (
+                  <div
+                    key={book.id}
+                    className="lib-book-card"
+                    style={{ animationDelay: `${0.07 + i * 0.07}s` }}
+                    onClick={() => { openBookFromLibrary(book); }}
+                  >
+                    <div className="lib-cover" style={{ background: book.color }}>
+                      {getBookCoverUrl(book) ? (
+                        <img
+                          src={getBookCoverUrl(book) || ""}
+                          alt={book.title}
+                          className="lib-cover-image"
+                          onError={() => setBrokenBookImages((current) => ({ ...current, [book.id]: true }))}
+                        />
+                      ) : null}
+                      <div className="lib-cover-glare" />
+                      <span className="lib-cover-symbol">{getSubjectSymbol(book.subject)}</span>
+                    </div>
+                    <div className="lib-book-info">
+                      <span className="lib-subject-tag">{book.subject}</span>
+                      <h3 className="lib-book-title">{book.title}</h3>
+                      <div className="lib-progress-bg">
+                        <div className="lib-progress-fill" style={{ width: "45%", background: book.color }} />
+                      </div>
+                      <div className="lib-progress-pct">45% complete</div>
+                      <div className="lib-card-footer">
+                        <span className="lib-chapters">{book.chapters.length} Chapters</span>
+                        <button
+                          className="lib-open-btn"
+                          onClick={e => { e.stopPropagation(); openBookFromLibrary(book); }}
+                        >
+                          Open →
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </>
             )}
-            {filteredBooks.map((book, i) => (
-              <div
-                key={book.id}
-                className="lib-book-card"
-                style={{ animationDelay: `${0.07 + i * 0.07}s` }}
-                onClick={() => { openBookFromLibrary(book); }}
-              >
-                <div className="lib-cover" style={{ background: book.color }}>
-                  {getBookCoverUrl(book) ? (
-                    <img
-                      src={getBookCoverUrl(book) || ""}
-                      alt={book.title}
-                      className="lib-cover-image"
-                      onError={() => setBrokenBookImages((current) => ({ ...current, [book.id]: true }))}
-                    />
-                  ) : null}
-                  <div className="lib-cover-glare" />
-                  <span className="lib-cover-symbol">{getSubjectSymbol(book.subject)}</span>
-                </div>
-                <div className="lib-book-info">
-                  <span className="lib-subject-tag">{book.subject}</span>
-                  <h3 className="lib-book-title">{book.title}</h3>
-                  <div className="lib-progress-bg">
-                    <div className="lib-progress-fill" style={{ width: "45%", background: book.color }} />
-                  </div>
-                  <div className="lib-progress-pct">45% complete</div>
-                  <div className="lib-card-footer">
-                    <span className="lib-chapters">{book.chapters.length} Chapters</span>
-                    <button
-                      className="lib-open-btn"
-                      onClick={e => { e.stopPropagation(); openBookFromLibrary(book); }}
-                    >
-                      Open →
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
           </div>
 
         </div>
