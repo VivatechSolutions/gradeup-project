@@ -95,10 +95,32 @@ export function getCandidateContext(user: any) {
   };
 }
 
-export async function getLibrarySubjects(search = "") {
+function getCurrentStudentSubjectFilters() {
+  try {
+    const raw = localStorage.getItem("gradeup_auth_user");
+    if (!raw) return {};
+    const user = JSON.parse(raw);
+    if (user?.role !== "student") return {};
+    return {
+      board: user.board || "",
+      standard: user.class || user.grade || "",
+    };
+  } catch {
+    return {};
+  }
+}
+
+export async function getLibrarySubjects(search = "", filters?: { board?: string; standard?: string; class?: string; grade?: string }) {
   const params = new URLSearchParams();
   if (search) {
     params.set("search", search);
+  }
+  const subjectFilters = filters || getCurrentStudentSubjectFilters();
+  if (subjectFilters.board) {
+    params.set("board", subjectFilters.board);
+  }
+  if (subjectFilters.standard || subjectFilters.class || subjectFilters.grade) {
+    params.set("standard", String(subjectFilters.standard || subjectFilters.class || subjectFilters.grade));
   }
 
   return apiFetch<LibrarySubject[]>(

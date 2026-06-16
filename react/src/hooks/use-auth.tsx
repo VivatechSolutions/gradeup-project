@@ -4,15 +4,30 @@ import {
   useMutation,
   UseMutationResult,
 } from "@tanstack/react-query";
-import { insertUserSchema, User as SelectUser, InsertUser } from "@shared/schema";
 import { getQueryFn, apiRequest, queryClient } from "../lib/queryClient";
 import { useToast } from "../hooks/use-toast";
-import { mockUser, mockTeacher } from "../lib/mockData";
-import { truncate } from "node:fs";
 
-// Set to true to use mock authentication (no backend required)
-const USE_MOCK_AUTH = true;
 const POST_AUTH_REDIRECT_KEY = "gradeup_post_auth_redirect";
+const AUTH_TOKEN_KEY = "gradeup_auth_token";
+const AUTH_USER_KEY = "gradeup_auth_user";
+
+type SelectUser = {
+  id: string;
+  _id?: string;
+  username?: string;
+  name?: string;
+  firstName?: string;
+  lastName?: string;
+  email: string;
+  role: "student" | "teacher" | "admin";
+  grade?: number | string | null;
+  class?: string;
+  board?: string;
+  school?: string;
+  studentId?: string;
+  token?: string;
+  [key: string]: any;
+};
 
 type AuthContextType = {
   user: SelectUser | null;
@@ -21,6 +36,7 @@ type AuthContextType = {
   loginMutation: UseMutationResult<SelectUser, Error, LoginData>;
   logoutMutation: UseMutationResult<void, Error, void>;
   registerMutation: UseMutationResult<SelectUser, Error, RegisterData>;
+  userHeader: { Authorization?: string };
 };
 
 type LoginData = {
@@ -39,6 +55,10 @@ type RegisterData = {
   lastName: string;
   role: string;
   grade?: number;
+  class?: string;
+  board?: string;
+  school?: string;
+  subjects?: string[];
 };
 
 export const AuthContext = createContext<AuthContextType | null>(null);
@@ -54,22 +74,19 @@ function consumePostAuthRedirect() {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
-  const [mockAuthUser, setMockAuthUser] = useState<SelectUser | null>(null);
-  const [mockIsLoading, setMockIsLoading] = useState(true);
+  const [storedUser, setStoredUser] = useState<SelectUser | null>(null);
+  const [storedIsLoading, setStoredIsLoading] = useState(true);
 
-  // Load mock user from localStorage on mount
   useEffect(() => {
-    if (USE_MOCK_AUTH) {
-      const savedUser = localStorage.getItem("gradeup_mock_user");
-      if (savedUser) {
-        try {
-          setMockAuthUser(JSON.parse(savedUser));
-        } catch {
-          localStorage.removeItem("gradeup_mock_user");
-        }
+    const savedUser = localStorage.getItem(AUTH_USER_KEY);
+    if (savedUser) {
+      try {
+        setStoredUser(JSON.parse(savedUser));
+      } catch {
+        localStorage.removeItem(AUTH_USER_KEY);
       }
-      setMockIsLoading(false);
     }
+    setStoredIsLoading(false);
   }, []);
 
   const {
@@ -78,61 +95,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isLoading: apiIsLoading,
   } = useQuery<SelectUser | undefined, Error>({
     queryKey: ["/api/user"],
-    queryFn: getQueryFn({ on401: "returnNull" }),
-    enabled: !USE_MOCK_AUTH,
+    queryFn: async () => {
+      const data = await getQueryFn<any>({ on401: "returnNull" })({
+        queryKey: ["/api/v1/auth/me"],
+      } as any);
+      return data?.data || data || null;
+    },
+    enabled: !!localStorage.getItem(AUTH_TOKEN_KEY),
   });
 
   const loginMutation = useMutation({
     mutationFn: async (credentials: LoginData) => {
-      if (USE_MOCK_AUTH) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-
-        const { email, password, role, captchaAnswer, captchaSessionId } = credentials;
-
-        if (!role || !["student", "teacher"].includes(role)) {
-          throw new Error("Please select whether you are a student or teacher.");
-        }
-
-        if (!email || !password) {
-          throw new Error("Email and password cannot be empty.");
-        }
-
-        if (!/\S+@\S+\.\S+/.test(email)) {
-          throw new Error("Please enter a valid email address.");
-        }
-
-        if (password.length < 6) {
-          throw new Error("Password must be at least 6 characters long.");
-        }
-
-        // Captcha validation
-        if (captchaSessionId) {
-          if (captchaAnswer !== "GRADEUP") {
-            const error = new Error("Incorrect security verification.");
-            (error as any).requiresCaptcha = true;
-            throw error;
-          }
-        }
-
-        if (email.includes("teacher") && role === "teacher") {
-          return { ...mockTeacher, email, role: "teacher" } as SelectUser;
-        }
-        if (role === "teacher") {
-          return { ...mockTeacher, email, role: "teacher" } as SelectUser;
-        }
-        return { ...mockUser, email, role: "student" } as SelectUser;
+      if (!credentials.role || !["student", "teacher"].includes(credentials.role)) {
+        throw new Error("Please select whether you are a student or teacher.");
       }
-
-      const res = await apiRequest("POST", "/api/login", credentials);
-      return await res.json();
+      const endpoint =
+        credentials.role === "teacher"
+          ? "/api/v1/auth/teacher/login"
+          : "/api/v1/auth/student/login";
+      const res = await apiRequest("POST", endpoint, credentials);
+      const payload = await res.json();
+      return payload.data || payload;
     },
     onSuccess: (user: SelectUser) => {
-      if (USE_MOCK_AUTH) {
-        setMockAuthUser(user);
-        localStorage.setItem("gradeup_mock_user", JSON.stringify(user));
-      } else {
-        queryClient.setQueryData(["/api/user"], user);
+      if (user.token) {
+        localStorage.setItem(AUTH_TOKEN_KEY, user.token);
       }
+      setStoredUser(user);
+      localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+      queryClient.setQueryData(["/api/user"], user);
       toast({
         title: "Welcome back!",
         description: "You have successfully logged in.",
@@ -153,72 +144,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const registerMutation = useMutation({
     mutationFn: async (credentials: RegisterData) => {
-      if (USE_MOCK_AUTH) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-
-        if (!credentials.role || !["student", "teacher"].includes(credentials.role)) {
-          throw new Error("Invalid role selection. Please select student or teacher.");
-        }
-
-        if (!credentials.firstName?.trim()) throw new Error("First name is required.");
-        if (!credentials.lastName?.trim())  throw new Error("Last name is required.");
-        if (!credentials.username?.trim())  throw new Error("Username is required.");
-        if (!credentials.email?.trim())     throw new Error("Email is required.");
-
-        if (!/\S+@\S+\.\S+/.test(credentials.email)) {
-          throw new Error("Please enter a valid email address.");
-        }
-
-        if (
-          credentials.email === "student@example.com" ||
-          credentials.email === "teacher@example.com" ||
-          credentials.email === "admin@example.com"
-        ) {
-          throw new Error("Email already registered.");
-        }
-
-        if (
-          credentials.username === "student" ||
-          credentials.username === "teacher" ||
-          credentials.username === "admin"
-        ) {
-          throw new Error("Username already taken.");
-        }
-
-        if (!credentials.password) throw new Error("Password is required.");
-        if (credentials.password.length < 6) {
-          throw new Error("Password must be at least 6 characters long.");
-        }
-
-        const newUser: SelectUser = {
-          id: Math.floor(Math.random() * 100000).toString(),
-          username: credentials.username,
-          email: credentials.email,
-          firstName: credentials.firstName,
-          lastName: credentials.lastName,
-          role: credentials.role as "student" | "teacher" | "admin",
-          grade: credentials.grade || (credentials.role === "student" ? 10 : null),
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          avatar: `https://i.pravatar.cc/40?u=${credentials.username}`,
-          bio: "",
-          points: 0,
-          level: 1,
-          lastLogin: new Date().toISOString(),
-        };
-        return newUser;
+      if (credentials.role === "teacher") {
+        throw new Error("Teacher registration keeps the existing flow.");
       }
-
-      const res = await apiRequest("POST", "/api/register", credentials);
-      return await res.json();
+      const res = await apiRequest("POST", "/api/v1/auth/student/register", credentials);
+      const payload = await res.json();
+      return payload.data || payload;
     },
     onSuccess: (user: SelectUser) => {
-      if (USE_MOCK_AUTH) {
-        setMockAuthUser(user);
-        localStorage.setItem("gradeup_mock_user", JSON.stringify(user));
-      } else {
-        queryClient.setQueryData(["/api/user"], user);
+      if (user.token) {
+        localStorage.setItem(AUTH_TOKEN_KEY, user.token);
       }
+      setStoredUser(user);
+      localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+      queryClient.setQueryData(["/api/user"], user);
       toast({
         title: "Welcome to GradeUp!",
         description: "Your account has been created successfully.",
@@ -236,19 +175,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logoutMutation = useMutation({
     mutationFn: async () => {
-      if (USE_MOCK_AUTH) {
-        await new Promise(resolve => setTimeout(resolve, 300));
-        return;
-      }
-      await apiRequest("POST", "/api/logout");
+      await apiRequest("POST", "/api/v1/auth/logout");
     },
     onSuccess: () => {
-      if (USE_MOCK_AUTH) {
-        setMockAuthUser(null);
-        localStorage.removeItem("gradeup_mock_user");
-      } else {
-        queryClient.setQueryData(["/api/user"], null);
-      }
+      setStoredUser(null);
+      localStorage.removeItem(AUTH_TOKEN_KEY);
+      localStorage.removeItem(AUTH_USER_KEY);
+      queryClient.setQueryData(["/api/user"], null);
       toast({
         title: "Logged out",
         description: "You have been successfully logged out.",
@@ -265,18 +198,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
   });
 
-  const user = USE_MOCK_AUTH ? mockAuthUser : (apiUser ?? null);
-  const isLoading = USE_MOCK_AUTH ? mockIsLoading : apiIsLoading;
+  const user = apiUser ?? storedUser;
+  const isLoading = storedIsLoading || apiIsLoading;
+  const token = localStorage.getItem(AUTH_TOKEN_KEY);
 
   return (
     <AuthContext.Provider
       value={{
         user,
         isLoading,
-        error: USE_MOCK_AUTH ? null : error,
+        error,
         loginMutation,
         logoutMutation,
         registerMutation,
+        userHeader: token ? { Authorization: `Bearer ${token}` } : {},
       }}
     >
       {children}

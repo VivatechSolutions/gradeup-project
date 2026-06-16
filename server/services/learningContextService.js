@@ -7,6 +7,21 @@ function escapeRegExp(value = "") {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function normalizeBoardFilter(value = "") {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "";
+  if (/^state(\s+board)?$/i.test(normalized)) return "State";
+  if (/^cbse$/i.test(normalized)) return "CBSE";
+  return normalized;
+}
+
+function normalizeStandardFilter(value = "") {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "";
+  const number = normalized.match(/\d+/)?.[0];
+  return number || normalized;
+}
+
 function getSubjectGroupLookup(unit) {
   return unit.subjectGroupKey || [unit.board, unit.standard, unit.subject].join("::");
 }
@@ -678,11 +693,14 @@ async function listSubjectGroups(filters = {}) {
     "processing.status": { $ne: "failed" },
   };
 
-  if (filters.board) {
-    query.board = filters.board;
+  const boardFilter = normalizeBoardFilter(filters.board);
+  const standardFilter = normalizeStandardFilter(filters.standard || filters.class || filters.grade);
+
+  if (boardFilter) {
+    query.board = new RegExp(`^${escapeRegExp(boardFilter)}$`, "i");
   }
-  if (filters.standard) {
-    query.standard = filters.standard;
+  if (standardFilter) {
+    query.standard = new RegExp(`^${escapeRegExp(standardFilter)}$`, "i");
   }
   if (filters.subject) {
     query.subject = new RegExp(`^${escapeRegExp(filters.subject)}$`, "i");

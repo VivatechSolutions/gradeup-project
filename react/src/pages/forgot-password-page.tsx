@@ -268,11 +268,15 @@ export default function ForgotPasswordPage() {
 
   // Token verification
   const { data: tokenVerification, isLoading: verifyingToken } = useQuery({
-    queryKey: ["/api/reset-password/verify", tokenFromUrl],
+    queryKey: ["/api/v1/auth/reset-password/verify", tokenFromUrl],
     enabled: !!tokenFromUrl,
     queryFn: async () => {
-      await new Promise(r=>setTimeout(r,500));
-      return { valid: tokenFromUrl === "mock-reset-token-123" };
+      const res = await apiRequest("GET", `/api/v1/auth/reset-password/verify?token=${encodeURIComponent(tokenFromUrl || "")}`);
+      const payload = await res.json();
+      if (payload?.data?.email) {
+        setREmail(payload.data.email);
+      }
+      return { valid: payload?.status !== false };
     },
   });
 
@@ -295,13 +299,12 @@ export default function ForgotPasswordPage() {
   // ── Forgot submit ──
   const forgotMutation = useMutation({
     mutationFn: async () => {
-      await new Promise(r=>setTimeout(r,600));
       if (fCaptcha !== "GRADEUP") throw new Error("Incorrect security verification.");
-      const known = ["student@example.com","teacher@example.com","admin@example.com"];
-      if (!known.includes(fEmail)) throw new Error("No account found with that email. (Mock)");
+      const res = await apiRequest("POST", "/api/v1/auth/forgot-password", { email: fEmail });
+      return res.json();
     },
     onSuccess: () => {
-      toast({ title:"Email sent!", description:"Use token: mock-reset-token-123 and code: 123456" });
+      toast({ title:"Email sent!", description:"If that email exists, a reset link has been sent." });
       setPhase("reset");
       setCaptchaData(null);
       loadCaptcha();
@@ -325,10 +328,13 @@ export default function ForgotPasswordPage() {
   // ── Reset submit ──
   const resetMutation = useMutation({
     mutationFn: async () => {
-      await new Promise(r=>setTimeout(r,600));
       if (rCaptcha !== "GRADEUP") throw new Error("Incorrect security verification.");
-      if ((tokenFromUrl || "reset") !== "mock-reset-token-123") throw new Error("Invalid or expired token.");
-      if (rCode !== "123456") throw new Error("Incorrect verification code.");
+      if (!tokenFromUrl) throw new Error("Open the reset link from your email to continue.");
+      const res = await apiRequest("POST", "/api/v1/auth/reset-password", {
+        token: tokenFromUrl,
+        newPassword: rPw,
+      });
+      return res.json();
     },
     onSuccess: () => {
       setPhase("done");
@@ -343,7 +349,7 @@ export default function ForgotPasswordPage() {
   const handleResetSubmit = () => {
     const errs: Record<string,string> = {};
     if (!rEmail) errs.email = "Required";
-    if (!rCode || rCode.length !== 6) errs.code = "Must be 6 digits";
+    if (!tokenFromUrl && (!rCode || rCode.length !== 6)) errs.code = "Open the reset link from your email";
     if (!rPw || rPw.length < 8) errs.pw = "At least 8 characters";
     if (rPw !== rConf) errs.conf = "Passwords don't match";
     if (!rCaptcha) errs.captcha = "Required";
@@ -518,7 +524,7 @@ export default function ForgotPasswordPage() {
 
                       <div className="fp-alert info">
                         <Sparkles size={14} color="#4f46e5" style={{flexShrink:0,marginTop:1}}/>
-                        <div className="fp-alert-text"><strong>Demo hint:</strong> Use token <code>mock-reset-token-123</code> and code <code>123456</code></div>
+                        <div className="fp-alert-text">Use the reset link sent to your email to finish changing your password.</div>
                       </div>
 
                       <div className="fp-field">

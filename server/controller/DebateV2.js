@@ -22,6 +22,38 @@ const {
   normalizeTeamKey,
   normalizeTeams,
 } = require("../services/liveSessionService");
+const Student = require("../model/Student");
+const DebateResult = require("../model/DebateResult");
+const mongoose = require("mongoose");
+
+async function persistDebateResult(sessionId, result, liveSession) {
+  const candidateId =
+    liveSession?.candidateId ||
+    liveSession?.hostCandidateId ||
+    result?.candidateId ||
+    result?.candidate_id;
+  const filters = candidateId ? [{ studentId: candidateId }, { email: candidateId }] : [];
+  if (candidateId && mongoose.isValidObjectId(candidateId)) {
+    filters.push({ _id: candidateId });
+  }
+  const student = filters.length
+    ? await Student.findOne({ $or: filters }).catch(() => null)
+    : null;
+
+  if (!student && !candidateId) return null;
+
+  return DebateResult.create({
+    student: student?._id,
+    studentId: student?.studentId || candidateId,
+    sessionId,
+    candidateId,
+    result,
+    liveSession,
+  }).catch((error) => {
+    console.log("Failed to persist debate result", error.message);
+    return null;
+  });
+}
 
 function getCandidate(source = {}) {
   return {
@@ -992,6 +1024,7 @@ const controller = {
 
       await saveFeedback(sessionId, data, data);
       const updatedSession = await completeSession(sessionId);
+      await persistDebateResult(sessionId, data, updatedSession);
       return res
         .status(200)
         .json({ status: true, data: { ...data, liveSession: updatedSession } });
@@ -1018,6 +1051,7 @@ const controller = {
         results: data,
         teams: normalizeTeams(data.teams || {}),
       });
+      await persistDebateResult(sessionId, data, updatedSession);
       return res.status(200).json({
         status: true,
         data: {

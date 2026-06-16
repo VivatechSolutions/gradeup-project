@@ -16,6 +16,38 @@ const {
   listSessionTopics,
   saveFeedback,
 } = require("../services/liveSessionService");
+const Student = require("../model/Student");
+const SeminarResult = require("../model/SeminarResult");
+const mongoose = require("mongoose");
+
+async function persistSeminarResult(sessionId, result, liveSession) {
+  const candidateId =
+    liveSession?.candidateId ||
+    liveSession?.hostCandidateId ||
+    result?.candidateId ||
+    result?.candidate_id;
+  const filters = candidateId ? [{ studentId: candidateId }, { email: candidateId }] : [];
+  if (candidateId && mongoose.isValidObjectId(candidateId)) {
+    filters.push({ _id: candidateId });
+  }
+  const student = filters.length
+    ? await Student.findOne({ $or: filters }).catch(() => null)
+    : null;
+
+  if (!student && !candidateId) return null;
+
+  return SeminarResult.create({
+    student: student?._id,
+    studentId: student?.studentId || candidateId,
+    sessionId,
+    candidateId,
+    result,
+    liveSession,
+  }).catch((error) => {
+    console.log("Failed to persist seminar result", error.message);
+    return null;
+  });
+}
 
 function ensureSeminarStartPayload(context = {}) {
   const missing = [];
@@ -507,6 +539,7 @@ const controller = {
         },
         results: data,
       });
+      await persistSeminarResult(liveSession?.sessionId || sessionId, data, updatedLiveSession);
       return res.status(200).json({ status: true, data: { ...data, liveSession: updatedLiveSession } });
     } catch (error) {
       return res.status(error.statusCode || 500).json({
