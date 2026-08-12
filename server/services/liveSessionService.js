@@ -586,6 +586,58 @@ async function saveRoomAiResponse({
   return normalizeSession(session);
 }
 
+async function saveRoomAiStudentResponse({
+  sessionId,
+  message,
+  roundNumber,
+  metadata = null,
+  nextSpeakerAfterAi = null,
+}) {
+  const session = await LiveSession.findOne({ sessionId });
+  if (!session) return null;
+
+  const aiParticipant = (session.participants || []).find(
+    (participant) => String(participant.participantId) === "__ai_student__",
+  );
+  const aiTeam = normalizeTeamKey(aiParticipant?.team) || normalizeTeamKey(metadata?.ai_student_team);
+
+  await appendTurn({
+    sessionId,
+    speakerId: "__ai_student__",
+    speakerName: metadata?.ai_student_name || aiParticipant?.name || "AI Student",
+    role: "assistant",
+    team: aiTeam,
+    turnType: "ai_student_submission",
+    message,
+    transcript: message,
+    roundNumber,
+    metadata,
+  });
+
+  const refreshed = await LiveSession.findOne({ sessionId });
+  if (!refreshed) return null;
+
+  const currentRound = refreshed.currentRound || {};
+  currentRound.phase = "team_turn";
+  currentRound.activeTeam = aiTeam || currentRound.activeTeam || null;
+  currentRound.currentSpeakerId = "__ai_student__";
+  currentRound.aiStudentPendingNextSpeakerId = nextSpeakerAfterAi || null;
+  currentRound.latestAiMessage = message;
+  refreshed.currentRound = currentRound;
+  refreshed.status = "active";
+
+  const participant = (refreshed.participants || []).find(
+    (item) => String(item.participantId) === "__ai_student__",
+  );
+  if (participant) {
+    participant.status = "active";
+    participant.lastSeenAt = now();
+  }
+
+  await refreshed.save();
+  return normalizeSession(refreshed);
+}
+
 async function completeSession(sessionId, patch = {}) {
   const session = await LiveSession.findOneAndUpdate(
     { sessionId },
@@ -690,6 +742,7 @@ module.exports = {
   normalizeTeams,
   saveFeedback,
   saveRoomAiResponse,
+  saveRoomAiStudentResponse,
   saveRoomRoundSubmission,
   startRoomSession,
   touchParticipant,

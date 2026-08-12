@@ -14,6 +14,7 @@ import { useAuth } from "../hooks/use-auth";
 import { useSessionState } from "../hooks/useSessionState";
 import {
   createDebateRoom,
+  completeDebateRoomAiStudent,
   completeDebateRoomOpening,
   endDebate,
   endDebateRoom,
@@ -4459,6 +4460,68 @@ useEffect(() => {
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
+  async function playAiResponse({
+    text,
+    sessionId,
+    speakerId,
+  }: {
+    text: string;
+    sessionId: string;
+    speakerId: string;
+  }) {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      throw new Error("AI response text is empty");
+    }
+
+    debateDebug("[AI-RESPONSE] synthesizing AI student speech", {
+      sessionId,
+      speakerId,
+      textLength: trimmed.length,
+    });
+
+    const speech = await synthesizeDebateSpeech({
+      text: trimmed,
+      format: "mp3",
+    });
+    const dataUrl = speech?.dataUrl;
+    if (!dataUrl) {
+      throw new Error("TTS response did not include audio data");
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const audio = new Audio(dataUrl);
+      let settled = false;
+
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        audio.onended = null;
+        audio.onerror = null;
+        resolve();
+      };
+
+      const fail = () => {
+        if (settled) return;
+        settled = true;
+        audio.onended = null;
+        audio.onerror = null;
+        reject(new Error("AI student audio playback failed"));
+      };
+
+      audio.onended = finish;
+      audio.onerror = fail;
+      audio.play().catch((error) => {
+        reject(error instanceof Error ? error : new Error(String(error)));
+      });
+    });
+
+    debateDebug("[AI-RESPONSE] AI student speech completed", {
+      sessionId,
+      speakerId,
+    });
+  }
+
   async function submitTurn(message: string) {
     if (!message.trim()) return;
 
@@ -4493,12 +4556,17 @@ useEffect(() => {
       const serverNextSpeakerId = data?.liveSession?.currentRound?.currentSpeakerId;
       const serverAiIndicator = data?.ai_speaking_id || null;
       const isNextTurnAiParticipant = serverAiIndicator === "__ai_student__" || String(serverNextSpeakerId || "").startsWith("__ai_student__");
+      const nextSpeakerAfterAi =
+        data?.nextSpeakerAfterAi ||
+        data?.aiStudent?.current_turn_candidate_id ||
+        null;
 
       console.log("[TURN] submit response received - TURN FROM SERVER ONLY", {
         sessionId: config.sessionId,
         serverNextSpeakerId: serverNextSpeakerId,
         serverAiIndicator: serverAiIndicator,
         isNextTurnAiParticipant: isNextTurnAiParticipant,
+        nextSpeakerAfterAi,
         activeTeam: data?.liveSession?.currentRound?.activeTeam || null,
         aiResponse: Boolean(data?.aiResponse),
         moderatorTurns: (data?.liveSession?.turns || []).filter(
@@ -4523,7 +4591,9 @@ useEffect(() => {
 
       if (nextSpeakerInParticipants) {
         const participantIsAi = Boolean(nextSpeakerInParticipants.isAi);
-        const responseIndicatesAi = Boolean(serverNextSpeakerId);
+        const responseIndicatesAi =
+          serverAiIndicator === "__ai_student__" ||
+          String(serverNextSpeakerId || "").startsWith("__ai_student__");
 
         console.log("[TURN-VALIDATION] Next speaker details:", {
           nextSpeakerId: serverNextSpeakerId,
@@ -4544,7 +4614,7 @@ useEffect(() => {
         }
       } else {
         console.warn("[TURN-VALIDATION] Next speaker NOT found in participants", {
-          nextSpeakerId: nextTurnCandidateId,
+          nextSpeakerId: serverNextSpeakerId,
           availableParticipants: data?.liveSession?.participants?.map((p: any) => ({
             id: p.id,
             name: p.name,
@@ -4581,19 +4651,28 @@ useEffect(() => {
         // Set AI speaking flag to prevent other users from interrupting
         setAiIsSpeaking(true);
         
-        // Call TTS API to play AI response
-        // NOTE: You need to implement playAiResponse(data.aiResponse)
-        // which handles TTS synthesis and audio playback
         try {
           await playAiResponse({
             text: data.aiResponse,
             sessionId: config.sessionId,
             speakerId: "__ai_student__",
-          }).finally(() => {
-            setAiIsSpeaking(false);
           });
+
+          const completed = await completeDebateRoomAiStudent({
+            sessionId: config.sessionId,
+            nextSpeakerId: nextSpeakerAfterAi,
+          });
+
+          setRoomSnapshot({
+            ...data,
+            liveSession: completed?.liveSession || data?.liveSession || liveSession,
+            aiCompleted: completed,
+          });
+          await syncRoom(false).catch(() => null);
         } catch (audioErr) {
-          console.error("[AI-RESPONSE] Speech failed:", audioErr?.message);
+          console.error("[AI-RESPONSE] Speech failed:", (audioErr as any)?.message);
+          toast$("AI student audio failed. The turn is still held for AI.", "error");
+        } finally {
           setAiIsSpeaking(false);
         }
       } else if (isNextTurnAiParticipant && !data?.aiResponse) {

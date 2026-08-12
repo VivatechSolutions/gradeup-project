@@ -434,6 +434,16 @@ export async function completeDebateRoomOpening(payload: {
   });
 }
 
+export async function completeDebateRoomAiStudent(payload: {
+  sessionId: string;
+  nextSpeakerId?: string | null;
+}) {
+  return apiFetch<any>("/api/v1/debate/room/ai-student-complete", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function endDebateRoom(sessionId: string) {
   return apiFetch<any>("/api/v1/debate/room/end", {
     method: "POST",

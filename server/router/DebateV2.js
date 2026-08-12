@@ -13,6 +13,7 @@ router.post("/room/submit", controller.submitRoomTurn);
 router.post("/end", controller.end);
 router.post("/room/start", controller.startRoom);
 router.post("/room/opening-complete", controller.completeRoomOpening);
+router.post("/room/ai-student-complete", controller.completeAiStudentTurn);
 router.post("/room/end", controller.endRoom);
 router.post("/room/end/retry", controller.retryEndRoom);
 router.get("/topics", controller.getTopics);

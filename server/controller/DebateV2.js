@@ -16,8 +16,8 @@ const {
   getSession,
   saveFeedback,
   startRoomSession,
+  saveRoomAiStudentResponse,
   saveRoomRoundSubmission,
-  saveRoomAiResponse,
   updateRoomState,
   normalizeTeamKey,
   normalizeTeams,
@@ -105,19 +105,6 @@ function normalizeRoomWarnings(room = {}, respondData = null) {
     });
 
   return warnings;
-}
-
-function findLatestAiMessage(room = {}) {
-  const latest = [...(room.messages || [])]
-    .reverse()
-    .find(
-      (message) =>
-        message.role === "moderator" ||
-        (message.role === "student" &&
-          message.candidate_id === "__ai_student__"),
-    );
-
-  return latest ? latest.content : null;
 }
 
 function toTeamList(team = [], teamKey) {
@@ -667,25 +654,25 @@ console.log
         });
       }
 
-const currentRound = liveSession.currentRound || {};
-const activeTeam = normalizeTeamKey(currentRound.activeTeam) || "A";
-const currentSpeakerId = String(currentRound.currentSpeakerId || "");
-const submittingUserId = String(candidate.candidate_id);
+      const currentRound = liveSession.currentRound || {};
+      const activeTeam = normalizeTeamKey(currentRound.activeTeam) || "A";
+      const currentSpeakerId = String(currentRound.currentSpeakerId || "");
+      const submittingUserId = String(candidate.candidate_id);
 
-// CRITICAL: Only exact speaker ID match can submit (no team substitution)
-// if (currentSpeakerId !== submittingUserId) {
-//   return res.status(409).json({
-//     status: false,
-//     message: `It is not your turn. Current speaker: ${currentSpeakerId}, You: ${submittingUserId}`,
-//   });
-// }
+      // CRITICAL: Only exact speaker ID match can submit when the server has one.
+      if (currentSpeakerId && currentSpeakerId !== submittingUserId) {
+        return res.status(409).json({
+          status: false,
+          message: `It is not your turn. Current speaker: ${currentSpeakerId}, You: ${submittingUserId}`,
+        });
+      }
 
-if (activeTeam && activeTeam !== team) {
-  return res.status(409).json({
-    status: false,
-    message: `It is Team ${activeTeam}'s turn right now.`,
-  });
-}
+      if (!currentSpeakerId && activeTeam && activeTeam !== team) {
+        return res.status(409).json({
+          status: false,
+          message: `It is Team ${activeTeam}'s turn right now.`,
+        });
+      }
 
       // Wrap Python respond in try/catch so a 500 (e.g. Qdrant timeout,
       // OpenAI error) does NOT abort the turn. The message is always saved
@@ -757,45 +744,18 @@ if (activeTeam && activeTeam !== team) {
         updatedAfterTurn = await getSession(sessionId).catch(() => null);
       }
 
-      const remainingTeams =
-        updatedAfterTurn?.currentRound?.awaitingTeams || [];
-      if (remainingTeams.length) {
-        const nextTeam = remainingTeams[0];
-        const nextSpeaker = pickNextSpeaker(updatedAfterTurn, nextTeam);
-        const pending = await updateRoomState(sessionId, {
-          status: "active",
-          currentRound: {
-            ...(updatedAfterTurn?.currentRound || {}),
-            phase: "team_turn",
-            activeTeam: nextTeam,
-            currentSpeakerId: nextSpeaker?.id || null,
-          },
-        });
+      const remainingTeamsForFallback = updatedAfterTurn?.currentRound?.awaitingTeams || [];
+      const fallbackTeam =
+        remainingTeamsForFallback[0] || normalizeTeamKey(activeTeam) || "A";
+      const fallbackSpeaker = pickNextSpeaker(updatedAfterTurn, fallbackTeam);
+      const fallbackSpeakerId = fallbackSpeaker?.id || null;
+      const resolvedNextSpeakerId = nextTurnCandidateId || fallbackSpeakerId;
 
-return res.status(200).json({
-  status: true,
-  data: {
-    ...(pythonRespond || {}),
-    warnings,
-    pythonWarning: pythonRespondWarning || saveWarning || null,
-    current_turn_candidate_id: pythonRespond?.current_turn_candidate_id || null,
-    next_speaker_is_ai: String(pythonRespond?.current_turn_candidate_id || "").startsWith("__ai_student__"),
-    liveSession: pending,
-    waitingForAi: false,
-  },
-});
-      }
-
-      await updateRoomState(sessionId, { status: "waiting_for_ai" });
-
-      let aiResponse = findLatestAiMessage(pythonRoom);
-      let aiPayload = null;
-
-      // ▼ ONLY call AI-student if Python indicator shows AI participant ▼
       if (isNextTurnAiParticipant) {
-        console.log(
-          "[AI-STUDENT] Calling API - Python returned AI participant indicator",
-        );
+        let aiPayload = null;
+        let aiStudentWarning = null;
+
+        console.log("[AI-STUDENT] Calling API - Python returned AI participant indicator");
 
         try {
           aiPayload = await callPython({
@@ -803,90 +763,88 @@ return res.status(200).json({
             path: "/debate/room/ai-student",
             data: { session_id: sessionId },
           });
-
-          aiResponse =
-            aiPayload?.ai_response ||
-            aiPayload?.response ||
-            aiPayload?.message ||
-            aiResponse;
-
-          console.log("[AI-STUDENT] Got response:", {
-            hasResponse: Boolean(aiResponse),
-            length: aiResponse?.length || 0,
-          });
         } catch (aiErr) {
-          console.warn(
-            "[AI-STUDENT] API call failed (non-fatal):",
-            aiErr?.message,
-          );
-          aiPayload = null;
-          // Continue without AI response - non-fatal
+          aiStudentWarning =
+            aiErr?.message || "AI student response temporarily unavailable.";
+          console.warn("[AI-STUDENT] API call failed:", aiStudentWarning);
         }
-      } else {
-        console.log(
-          "[AI-STUDENT] Skipped API call - Python says next is human",
-        );
+
+        const aiResponse =
+          aiPayload?.response ||
+          aiPayload?.ai_response ||
+          aiPayload?.message ||
+          aiStudentWarning ||
+          "AI student response unavailable.";
+        const nextSpeakerAfterAi =
+          aiPayload?.current_turn_candidate_id || fallbackSpeakerId;
+
+        const finalSession = await saveRoomAiStudentResponse({
+          sessionId,
+          message: aiResponse,
+          roundNumber: currentRound.roundNumber || 1,
+          metadata: aiPayload || { warning: aiStudentWarning },
+          nextSpeakerAfterAi,
+        });
+
+        return res.status(200).json({
+          status: true,
+          data: {
+            ...(pythonRespond || {}),
+            success: Boolean(aiPayload?.success !== false && aiResponse),
+            session_id: sessionId,
+            warnings,
+            pythonWarning: pythonRespondWarning || saveWarning || aiStudentWarning || null,
+            current_turn_candidate_id: nextTurnCandidateId,
+            nextSpeakerId: "__ai_student__",
+            next_speaker_is_ai: true,
+            aiResponse,
+            ai_speaking_id: "__ai_student__",
+            aiStudent: aiPayload,
+            nextSpeakerAfterAi,
+            waitingForAi: false,
+            liveSession: finalSession,
+          },
+        });
       }
 
-      const nextRoundTeam = "A";
-      const refreshedSession = await getSession(sessionId);
-      const nextSpeaker = pickNextSpeaker(
-        refreshedSession || updatedAfterTurn,
-        nextRoundTeam,
+      const nextParticipant = (updatedAfterTurn?.participants || []).find(
+        (participant) => String(participant.id) === String(resolvedNextSpeakerId),
       );
+      const nextTeam =
+        normalizeTeamKey(nextParticipant?.team) ||
+        normalizeTeamKey(fallbackSpeaker?.team) ||
+        fallbackTeam;
 
-      let finalSession;
-if (aiResponse) {
-  // AI is speaking - set currentSpeakerId to AI participant
-  finalSession = await saveRoomAiResponse({
-    sessionId,
-    message: aiResponse,
-    roundNumber: currentRound.roundNumber || 1,
-    metadata: aiPayload,
-    nextSpeakerId: "__ai_student__",
-    nextTeam: nextRoundTeam,
-  });
-} else {
-  finalSession = await updateRoomState(sessionId, {
-    status: "active",
-    currentRound: {
-      ...(updatedAfterTurn?.currentRound || {}),
-      phase: "team_turn",
-      roundNumber: Number(currentRound.roundNumber || 1) + 1,
-      awaitingTeams: ["A", "B"],
-      activeTeam: nextRoundTeam,
-      currentSpeakerId: nextSpeaker?.id || null,
-    },
-  });
-}
-return res.status(200).json({
-  status: true,
-  data: {
-    success: true,
-    session_id: sessionId,
-    
-    // ▼ Pass through Python's indicator ▼
-    current_turn_candidate_id: nextTurnCandidateId,
-    
-    // ▼ Derived from indicator (for frontend convenience) ▼
-    next_speaker_is_ai: isNextTurnAiParticipant,
-    
-    // ▼ AI response if we called AI-student API ▼
-    aiResponse: aiResponse || null,
-    
-    // ▼ If AI is speaking, set to AI ID ▼
-    ai_speaking_id: aiResponse ? "__ai_student__" : null,
-    
-    // Other fields
-    ...(pythonRespond || {}),
-    warnings,
-    pythonWarning: pythonRespondWarning || saveWarning || null,
-    waitingForAi: false,
-    
-    // Full session state
-    liveSession: finalSession,
-  },
-});
+      const finalSession = await updateRoomState(sessionId, {
+        status: "active",
+        currentRound: {
+          ...(updatedAfterTurn?.currentRound || {}),
+          phase: "team_turn",
+          activeTeam: nextTeam,
+          currentSpeakerId: resolvedNextSpeakerId,
+          aiStudentPendingNextSpeakerId: null,
+        },
+      });
+
+      return res.status(200).json({
+        status: true,
+        data: {
+          ...(pythonRespond || {}),
+          success: true,
+          session_id: sessionId,
+          warnings,
+          pythonWarning: pythonRespondWarning || saveWarning || null,
+          current_turn_candidate_id: resolvedNextSpeakerId,
+          nextSpeakerId: resolvedNextSpeakerId,
+          next_speaker_is_ai: false,
+          aiResponse: null,
+          ai_speaking_id: null,
+          nextSpeakerAfterAi: null,
+          waitingForAi: false,
+          liveSession: finalSession,
+        },
+      });
+
     } catch (error) {
       return res.status(error.statusCode || 500).json({
         status: false,
@@ -950,6 +908,72 @@ return res.status(200).json({
       return res.status(error.statusCode || 500).json({
         status: false,
         message: error.message || "Failed to complete debate opening",
+      });
+    }
+  },
+  async completeAiStudentTurn(req, res) {
+    try {
+      const sessionId = req.body.sessionId || req.body.session_id;
+      const requestedNextSpeakerId =
+        req.body.nextSpeakerId ||
+        req.body.next_speaker_id ||
+        req.body.current_turn_candidate_id ||
+        null;
+
+      if (!sessionId) {
+        return res.status(400).json({
+          status: false,
+          message: "sessionId is required",
+        });
+      }
+
+      const liveSession = await getSession(sessionId);
+      if (!liveSession) {
+        return res
+          .status(404)
+          .json({ status: false, message: "Debate session not found" });
+      }
+
+      const currentRound = liveSession.currentRound || {};
+      if (String(currentRound.currentSpeakerId || "") !== "__ai_student__") {
+        return res.status(200).json({
+          status: true,
+          data: { liveSession },
+        });
+      }
+
+      const nextSpeakerId =
+        requestedNextSpeakerId || currentRound.aiStudentPendingNextSpeakerId || null;
+      const nextParticipant = (liveSession.participants || []).find(
+        (participant) => String(participant.id) === String(nextSpeakerId),
+      );
+      const nextTeam =
+        normalizeTeamKey(nextParticipant?.team) ||
+        normalizeTeamKey(currentRound.activeTeam) ||
+        "A";
+
+      const updatedSession = await updateRoomState(sessionId, {
+        status: "active",
+        currentRound: {
+          ...currentRound,
+          phase: "team_turn",
+          activeTeam: nextTeam,
+          currentSpeakerId: nextSpeakerId,
+          aiStudentPendingNextSpeakerId: null,
+        },
+      });
+
+      return res.status(200).json({
+        status: true,
+        data: {
+          liveSession: updatedSession,
+          nextSpeakerId,
+        },
+      });
+    } catch (error) {
+      return res.status(error.statusCode || 500).json({
+        status: false,
+        message: error.message || "Failed to complete AI student turn",
       });
     }
   },
