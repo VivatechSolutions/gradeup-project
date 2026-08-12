@@ -25,7 +25,8 @@ try:
     from qdrant_client import QdrantClient
     from qdrant_client.models import (
         Distance, VectorParams, PointStruct,
-        Filter, FieldCondition, MatchValue,
+        Filter, FieldCondition, MatchValue, MatchAny,
+        IsEmptyCondition, PayloadField,
     )
     from langchain_qdrant import QdrantVectorStore
     from langchain_openai import OpenAIEmbeddings
@@ -66,6 +67,9 @@ class ChunkMetadata:
     subject: Optional[str] = None
     class_number: Optional[str] = None
     part: Optional[str] = None
+    # Canonical "term_N" for term-split state books; None for non-term boards
+    # (CBSE/NCERT). Disambiguates unit_number, which restarts in each term book.
+    term: Optional[str] = None
     section_title: Optional[str] = None
     subsection_title: Optional[str] = None
     table_number: Optional[str] = None
@@ -122,6 +126,7 @@ def ensure_payload_indexes(client: "QdrantClient", collection: str):
         ("metadata.subject", "keyword"),
         ("metadata.class_number", "keyword"),
         ("metadata.part", "keyword"),
+        ("metadata.term", "keyword"),
         ("metadata.unit_number", "integer"),
         ("metadata.unit_title", "keyword"),
         ("metadata.content_type", "keyword"),
@@ -220,11 +225,15 @@ def _build_context_header(
     class_number: Optional[str] = None,
     part: Optional[str] = None,
     board: Optional[str] = None,
+    term: Optional[str] = None,
 ) -> str:
     """Build a rich hierarchical context header for a chunk.
 
-    Hierarchy: Board > Class > Subject > Part > Unit > Section
+    Hierarchy: Board > Class > Subject > Part > Term > Unit > Section
     Example:  CBSE | Class 11 | Geography | Fundamentals of Physical Geography | Unit 1: Geography as a Discipline | Section: Branches of Geography
+
+    The header is embedded along with the chunk text, so including the term
+    also improves semantic recall for term-split books — not just filtering.
     """
     parts = []
     if board:
@@ -235,6 +244,9 @@ def _build_context_header(
         parts.append(subject)
     if part:
         parts.append(part)
+    if term:
+        from term_utils import term_label
+        parts.append(term_label(term))
     parts.append(f"Unit {unit_number}: {unit_title}")
     if section_title:
         parts.append(f"Section: {section_title}")
@@ -485,11 +497,24 @@ def chunk_structured_content(
     board: str,
     class_number: Optional[str] = None,
     book_content: str = "structured",
+    term: Optional[str] = None,
+    subject: Optional[str] = None,
+    part: Optional[str] = None,
 ) -> List[TextChunk]:
     """Semantic chunking: merge sub_items, add context headers, smart-split long content.
 
     This produces far fewer, higher-quality chunks than naive per-sub_item chunking.
+
+    `term`, `subject` and `part` are document-level defaults. A per-unit value in
+    the structured JSON wins over them; the default fills in when the extractor
+    did not stamp the unit — which is what the agentic pipeline does, and why
+    subject used to land as None on every chunk it produced.
     """
+    from term_utils import normalize_term
+
+    doc_term = normalize_term(term)
+    doc_subject = subject
+    doc_part = part
     chunks: List[TextChunk] = []
     chunk_index = 0
 
@@ -510,8 +535,9 @@ def chunk_structured_content(
         fallback_unit_idx = unit_number + 1
         
         unit_title = unit.get("unit_title") or unit.get("title", "")
-        subject = unit.get("subject", None)
-        part = unit.get("part", None)
+        subject = unit.get("subject") or doc_subject
+        part = unit.get("part") or doc_part
+        unit_term = normalize_term(unit.get("term")) or doc_term
 
         url_to_media = {}
         media_images = unit.get("media", {}).get("images", {})
@@ -531,6 +557,7 @@ def chunk_structured_content(
                 subject=subject,
                 class_number=class_number,
                 part=part,
+                term=unit_term,
                 chunk_index=chunk_index,
                 book_content=book_content,
                 **overrides,
@@ -538,12 +565,19 @@ def chunk_structured_content(
             chunk_index += 1
             return meta
 
+        # The same slot can be present BOTH as a unit-level field and as a
+        # section of that type. Emitting both puts two chunks for one slot into
+        # the collection, so the section wins (it carries section metadata) and
+        # the unit-level field is only used when no such section exists.
+        _section_types = {str(s.get("type") or "").strip().lower()
+                          for s in unit.get("sections", [])}
+
         # ── Introduction ──
-        if unit.get("introduction"):
+        if unit.get("introduction") and "introduction" not in _section_types:
             header = _build_context_header(
                 unit_number, unit_title, "Introduction",
                 subject=subject, class_number=class_number, part=part,
-                board=board,
+                board=board, term=unit_term,
             )
             chunks.append(TextChunk(
                 text=f"{header}\n\n{unit['introduction']}",
@@ -551,14 +585,14 @@ def chunk_structured_content(
             ))
 
         # ── Learning Objectives ──
-        if unit.get("learning_objectives"):
+        if unit.get("learning_objectives") and "learning_objectives" not in _section_types:
             obj_text = unit["learning_objectives"]
             if isinstance(obj_text, list):
                 obj_text = "\n".join(f"• {o}" for o in obj_text)
             header = _build_context_header(
                 unit_number, unit_title, "Learning Objectives",
                 subject=subject, class_number=class_number, part=part,
-                board=board,
+                board=board, term=unit_term,
             )
             chunks.append(TextChunk(
                 text=f"{header}\n\n{obj_text}",
@@ -573,7 +607,7 @@ def chunk_structured_content(
             header = _build_context_header(
                 unit_number, unit_title, "Points to Remember",
                 subject=subject, class_number=class_number, part=part,
-                board=board,
+                board=board, term=unit_term,
             )
             chunks.append(TextChunk(
                 text=f"{header}\n\n{ptr_text}",
@@ -590,7 +624,7 @@ def chunk_structured_content(
                 unit_number, unit_title,
                 f"Table {table_number}" if table_number else "Table",
                 subject=subject, class_number=class_number, part=part,
-                board=board,
+                board=board, term=unit_term,
             )
             chunks.append(TextChunk(
                 text=f"{header}\n\n{table_content}",
@@ -619,7 +653,7 @@ def chunk_structured_content(
             header = _build_context_header(
                 unit_number, unit_title, section_title,
                 subject=subject, class_number=class_number, part=part,
-                board=board,
+                board=board, term=unit_term,
             )
 
             # Smart-split if too large, or keep as single chunk
@@ -668,7 +702,7 @@ def chunk_structured_content(
                     unit_number, unit_title, section_title,
                     subsection_title=sub_sec_title,
                     subject=subject, class_number=class_number, part=part,
-                    board=board,
+                    board=board, term=unit_term,
                 )
 
                 sub_text = f"{sub_header}\n\n{sub_merged}"
@@ -698,17 +732,24 @@ def chunk_structured_content(
                         ))
 
     # ── Filter out tiny chunks ──
-    # Merge chunks below minimum size with adjacent content
+    # Merge chunks below minimum size with adjacent content.
+    # Merging keeps the EARLIER chunk's metadata, so it must never cross a unit
+    # or term boundary — otherwise a short Unit 2 / Term 2 chunk gets served
+    # under Unit 1 / Term 1's label and term filtering silently returns it.
+    def _mergeable(prev_meta: ChunkMetadata, meta: ChunkMetadata) -> bool:
+        return prev_meta.unit_number == meta.unit_number and prev_meta.term == meta.term
+
     if chunks:
         final_chunks = []
         pending_text = ""
         pending_meta = None
 
         for chunk in chunks:
-            if len(chunk.text) < CHUNK_MIN_SIZE and pending_meta is not None:
+            too_small = len(chunk.text) < CHUNK_MIN_SIZE
+            if too_small and pending_meta is not None and _mergeable(pending_meta, chunk.metadata):
                 # Merge small chunk with pending
                 pending_text += "\n\n" + chunk.text
-            elif len(chunk.text) < CHUNK_MIN_SIZE and final_chunks:
+            elif too_small and final_chunks and _mergeable(final_chunks[-1].metadata, chunk.metadata):
                 # Merge small chunk with previous
                 final_chunks[-1] = TextChunk(
                     text=final_chunks[-1].text + "\n\n" + chunk.text,
@@ -793,7 +834,7 @@ def upsert_chunks_to_qdrant(
                 "book_content": chunk.metadata.book_content,
             }
             # Optional fields — only include if present
-            for attr in ("subject", "class_number", "part", "section_title",
+            for attr in ("subject", "class_number", "part", "term", "section_title",
                          "subsection_title", "table_number", "enrichment_type",
                          "difficulty"):
                 val = getattr(chunk.metadata, attr, None)
@@ -826,6 +867,9 @@ def process_and_upload_document(
     book_content: str = "structured",
     qdrant_client: Optional["QdrantClient"] = None,
     collection_name: Optional[str] = None,
+    term: Optional[str] = None,
+    subject: Optional[str] = None,
+    part: Optional[str] = None,
 ) -> bool:
     """Process a structured.json file and upload chunks to Qdrant.
 
@@ -833,6 +877,7 @@ def process_and_upload_document(
     - Deduplicates by deleting old chunks for the same document_id
     - Uses intelligent chunking (merged sub_items, context headers)
     - Supports class_number metadata for multi-grade filtering
+    - Supports term metadata for term-split state books
     """
     if not QDRANT_AVAILABLE:
         print("Warning: Qdrant integration skipped: missing dependencies")
@@ -861,11 +906,21 @@ def process_and_upload_document(
     _delete_existing_chunks(qdrant_client, document_id, collection)
 
     # ── Chunk with advanced engine ──
-    print(f"  Chunking document: {document_name} (board={board}, class={class_number}, book_content={book_content})")
+    print(f"  Chunking document: {document_name} (board={board}, class={class_number}, "
+          f"subject={subject or 'from-units'}, term={term or 'n/a'}, book_content={book_content})")
     chunks = chunk_structured_content(
         structured_data, document_id, document_name, board,
-        class_number=class_number, book_content=book_content
+        class_number=class_number, book_content=book_content, term=term,
+        subject=subject, part=part,
     )
+
+    # Loud warning: a chunk without a subject is invisible to every
+    # subject-filtered query, which is most of the retrieval surface.
+    if chunks:
+        missing = sum(1 for c in chunks if not c.metadata.subject)
+        if missing:
+            print(f"  WARNING: {missing}/{len(chunks)} chunks have no subject - "
+                  f"they will not match subject-filtered searches")
 
     if not chunks:
         print(f"Warning: No chunks generated from {document_name}")
@@ -901,14 +956,38 @@ def search_qdrant(
     subject_filter: Optional[str] = None,
     board_filter: Optional[str] = None,
     qdrant_client: Optional["QdrantClient"] = None,
+    term_filter: Optional[Any] = None,
+    term_strict: Optional[bool] = None,
 ) -> List[Dict[str, Any]]:
-    """Search Qdrant with optional filters for unit, content_type, class, and subject."""
+    """Search Qdrant with optional filters for unit, content_type, class, subject and term.
+
+    `term_filter` accepts a single term or a list of them ("2", "Term 2",
+    ["term_1", "term_2"], "1,2"). A list is the normal case for exams, which
+    span a scope of terms rather than one — see term_utils.exam_to_terms.
+
+    `term_strict` controls what happens to chunks that carry NO term:
+      - False (default): they still match. Required while the collection holds
+        pre-term chunks, and permanently correct for non-term boards
+        (CBSE/NCERT), whose books are never term-split.
+      - True: only chunks carrying one of the requested terms match.
+    Defaults to the TERM_FILTER_STRICT env var, else False. Do not turn this on
+    globally until the term backfill has run, or every legacy chunk in the
+    collection becomes invisible the moment a term is passed.
+    """
     if not QDRANT_AVAILABLE:
         return []
 
     collection = collection_name or os.environ.get(
         "QDRANT_COLLECTION_NAME", DEFAULT_COLLECTION_NAME
     )
+
+    from term_utils import normalize_term, normalize_terms
+
+    terms = normalize_terms(term_filter)
+    if term_strict is None:
+        strict_terms = os.environ.get("TERM_FILTER_STRICT", "").strip().lower() in ("1", "true", "yes")
+    else:
+        strict_terms = bool(term_strict)
 
     try:
         client = qdrant_client or initialize_qdrant_client()
@@ -945,8 +1024,13 @@ def search_qdrant(
                 FieldCondition(key="metadata.content_type", match=MatchValue(value=content_type_filter))
             )
         if class_filter is not None:
+            class_num_str = str(class_filter).replace("Class ", "").replace("class ", "").strip()
             conditions.append(
-                FieldCondition(key="metadata.class_number", match=MatchValue(value=class_filter))
+                Filter(should=[
+                    FieldCondition(key="metadata.class_number", match=MatchValue(value=class_filter)),
+                    FieldCondition(key="metadata.class_number", match=MatchValue(value=f"Class {class_num_str}")),
+                    FieldCondition(key="metadata.class_number", match=MatchValue(value=class_num_str)),
+                ])
             )
         if subject_filter is not None:
             conditions.append(
@@ -964,8 +1048,27 @@ def search_qdrant(
                     FieldCondition(key="metadata.board", match=MatchValue(value=board_filter)),
                     FieldCondition(key="metadata.board", match=MatchValue(value=board_filter.lower())),
                     FieldCondition(key="metadata.board", match=MatchValue(value=board_filter.upper())),
+                    FieldCondition(key="metadata.board", match=MatchValue(value=board_filter.title())),
+                    # "State Board".capitalize() -> "State board", which is how the
+                    # agentic upload path actually stores it. Without this variant a
+                    # correctly-spelled board filter matches nothing.
+                    FieldCondition(key="metadata.board", match=MatchValue(value=board_filter.capitalize())),
+                    FieldCondition(key="metadata.board", match=MatchValue(value="State Board" if "state" in board_filter.lower() else board_filter)),
                 ])
             )
+        # Terms are canonicalized on write, so one exact MatchAny covers the
+        # scope — no casing fan-out needed like board/subject above.
+        if terms:
+            term_match = FieldCondition(key="metadata.term", match=MatchAny(any=terms))
+            if strict_terms:
+                conditions.append(term_match)
+            else:
+                conditions.append(
+                    Filter(should=[
+                        term_match,
+                        IsEmptyCondition(is_empty=PayloadField(key="metadata.term")),
+                    ])
+                )
 
         filter_qdrant = Filter(must=conditions) if conditions else None
 
@@ -976,13 +1079,17 @@ def search_qdrant(
         except Exception as e:
             err_str = str(e)
             if "Index required but not found" in err_str or "Bad Request" in err_str:
-                print(f"  ⚠️  [Qdrant] Missing index detected. Attempting to create indexes...")
+                # ASCII only: this recovery path runs on a console that may be
+                # cp1252 (Windows). A UnicodeEncodeError here would be caught by
+                # the outer handler and silently turn a recoverable missing-index
+                # into an empty result set.
+                print("  [Qdrant] WARNING: missing index detected. Attempting to create indexes...")
                 try:
                     ensure_payload_indexes(client, collection)
                     time.sleep(1) # Wait briefly for background indexing to start
                     results = vector_store.similarity_search(query, k=limit, filter=filter_qdrant)
                 except Exception as retry_e:
-                    print(f"  ⚠️  [Qdrant] Index retry failed: {retry_e}. Falling back to manual filtering.")
+                    print(f"  [Qdrant] WARNING: index retry failed: {retry_e}. Falling back to manual filtering.")
                     raw_results = vector_store.similarity_search(query, k=limit * 10, filter=None)
                     
                     results = []
@@ -995,11 +1102,25 @@ def search_qdrant(
                             except (ValueError, TypeError): pass
                             
                         if unit_title_filter is not None and meta.get("unit_title") != unit_title_filter: continue
-                        if content_type_filter is not None and meta.get("content_type") != content_type_filter: continue
-                        if class_filter is not None and meta.get("class_number") != class_filter: continue
+                        if class_filter is not None:
+                            meta_class = str(meta.get("class_number", ""))
+                            c_num = str(class_filter).replace("Class ", "").replace("class ", "").strip()
+                            if meta_class != class_filter and meta_class != f"Class {c_num}" and meta_class != c_num: continue
+                            
                         if subject_filter is not None and str(meta.get("subject", "")).lower() != str(subject_filter).lower(): continue
-                        if board_filter is not None and meta.get("board") != board_filter: continue
                         
+                        if board_filter is not None:
+                            meta_board = str(meta.get("board", "")).lower()
+                            b_f = str(board_filter).lower()
+                            if meta_board != b_f and not (b_f == "state board" and "state" in meta_board) and not ("state board" in b_f and "state" in meta_board): continue
+
+                        if terms:
+                            # Mirror the Qdrant-side rule: term-less chunks pass unless strict.
+                            meta_term = normalize_term(meta.get("term"))
+                            if meta_term is None:
+                                if strict_terms: continue
+                            elif meta_term not in terms: continue
+
                         results.append(r)
                         if len(results) >= limit:
                             break

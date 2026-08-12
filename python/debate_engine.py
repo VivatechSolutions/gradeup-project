@@ -320,6 +320,7 @@ Return ONLY valid JSON:
         unit_name: str = "",
         topic: Optional[str] = None,
         student_stance: Optional[str] = None,
+        term: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """
         Start a new 1-on-1 debate session.
@@ -339,7 +340,7 @@ Return ONLY valid JSON:
         # Get RAG context and validate topic
         chunks = retrieve_context(
             query=topic, subject=subject, unit_number=unit_number,
-            board=board, class_number=class_number, limit=5
+            board=board, class_number=class_number, limit=5, term=term
         )
         rag_context = _format_context(chunks)
 
@@ -360,6 +361,8 @@ Keep it engaging and under 5 sentences."""
             greeting_prompt = f"""Start the debate session. Greet {candidate_name}, introduce the debate topic "{topic}" from {subject} Unit {unit_number}.
 Briefly set up the debate — explain your stance (you take the opposing side) and invite the student to present their opening argument.
 Keep it engaging and under 5 sentences."""
+
+
 
         ai_greeting = self._call_llm([
             {"role": "system", "content": system_prompt},

@@ -75,7 +75,6 @@ const css = `
   margin: 0 auto;
   color: var(--an-text);
   min-height: 100vh;
-  background: var(--an-bg);
   transition: color .3s ease, background .3s ease;
 }
 

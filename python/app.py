@@ -7,17 +7,33 @@ This file contains all APIs and main controls for the extraction pipeline.
 
 import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
-from typing import Optional, List
+from typing import Any, Optional, List, Literal
+
+# The pipeline logs progress with emoji (580+ print sites across the codebase).
+# On a console that is not UTF-8 — the Windows cp1252 default — each of those
+# raises UnicodeEncodeError, which in unguarded paths (e.g. question_bank's unit
+# discovery) crashes the request rather than just losing a log line. Linux
+# containers already default to UTF-8, so this is a no-op in production.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        if hasattr(_stream, "reconfigure") and (getattr(_stream, "encoding", "") or "").lower() != "utf-8":
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass  # non-reconfigurable stream (redirected/captured) — leave it alone
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Form
-from fastapi.responses import JSONResponse, FileResponse
-from pydantic import BaseModel
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 
 from config import OUTPUTS_DIR, TEXTBOOKS_DIR
 from pipeline import get_pipeline, DocumentPipeline
 from ocr_pipeline import extract_with_mistral_ocr
+from guardrails import run_query_guardrail
 
 import logging
 
@@ -32,6 +48,19 @@ app = FastAPI(
     description="API for PDF extraction, content enrichment, and semantic search",
     version="1.0.0"
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_error_handler(request, exc: RequestValidationError):
+    """Return a clean 422 JSON body instead of FastAPI's default nested structure."""
+    details = [
+        {"field": " → ".join(str(loc) for loc in err["loc"]), "msg": err["msg"]}
+        for err in exc.errors()
+    ]
+    return JSONResponse(
+        status_code=422,
+        content={"error": "Validation failed", "details": details},
+    )
 
 
 class ProcessRequest(BaseModel):
@@ -54,26 +83,36 @@ class SearchRequest(BaseModel):
     content_type_filter: Optional[str] = None
     class_filter: Optional[str] = None
     subject_filter: Optional[str] = None
+    board_filter: Optional[str] = None
+    # A term ("2", "Term 2") or a scope of them (["term_1","term_2"], "1,2").
+    term_filter: Optional[Any] = None
 
 
 class QdrantUploadRequest(BaseModel):
     board: str
     class_number: Optional[str] = None
+    term: Optional[str] = None
 
 
 class TutorRequest(BaseModel):
     """Request model for AI Tutor queries"""
-    query: str
+    query: Optional[str] = ""
     board: str
-    class_number: Optional[str] = None
+    class_number: str
+    image_base64: Optional[str] = None
     subject: str
     unit_number: int
     unit_name: str = ""
     candidate_name: str
     candidate_id: str
     limit: int = 5
+    # Term-split state books only; omit for CBSE/NCERT.
+    term: Optional[str] = None
 
 
+class EnrichmentAudioRequest(BaseModel):
+    """Request model for generating audio on existing enriched JSON"""
+    message: dict
 # SECTION 1: ADD TO IMPORTS (around line 7-10)
 
 from enum import Enum
@@ -100,6 +139,7 @@ async def upload_with_subject(
     part: Optional[str] = Form(None, description="Book/part name (e.g. 'History', 'Fundamentals of Physical Geography', 'India: Physical Environment')"),
     board: str = Form(..., description="Board name (e.g. 'State Board', 'CBSE')"),
     class_number: Optional[str] = Form(None, alias="class_name", description="Class number/name (e.g. '11', '10')"),
+    term: Optional[str] = Form(None, description="Term for term-split state books: '1', '2', '3' or 'Term 1'. Omit for boards whose books are not term-split (CBSE/NCERT)."),
     skip_enrichment: bool = Form(False),
     skip_qdrant: bool = Form(False),
     skip_llm_refinement: bool = Form(False),
@@ -132,15 +172,21 @@ async def upload_with_subject(
     if not file.filename or not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted")
     
-    logger.info(f"Subject-aware upload: {file.filename}, subject={subject}")
+    logger.info(f"========== /upload-subject START ==========")
+    logger.info(f"  File: {file.filename}")
+    logger.info(f"  Subject: {subject}, Part: {part}, Board: {board}, Class: {class_number}, Term: {term}")
+    logger.info(f"  Flags → skip_enrichment={skip_enrichment}, skip_qdrant={skip_qdrant}, skip_llm_refinement={skip_llm_refinement}")
+    logger.info(f"  Enrichment style: {enrichment_style}")
     
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_pdf_path = Path(temp_dir) / file.filename
         
         content = await file.read()
         temp_pdf_path.write_bytes(content)
+        logger.info(f"  Saved temp PDF: {temp_pdf_path} ({len(content):,} bytes)")
         
         pipeline = get_pipeline()
+        logger.info(f"  Pipeline initialized: {type(pipeline).__name__}")
         
         # ── AUTO-SPLIT LOGIC ──────────────────────────────────────────────────
         import re as _re
@@ -180,11 +226,11 @@ async def upload_with_subject(
         if split_units and len(split_units) > 1:
             logger.info(f"✅ Split textbook into {len(split_units)} units. Processing each independently...")
             results = []
-            for unit in split_units:
+            for unit_idx, unit in enumerate(split_units):
                 unit_pdf_path = Path(unit["output_path"])
                 resolved_part = part if part else unit.get("part", "")
                 
-                logger.info(f"Processing split unit: {unit_pdf_path.name}")
+                logger.info(f"  [SPLIT {unit_idx+1}/{len(split_units)}] Processing: {unit_pdf_path.name}, part={resolved_part}")
                 unit_res = pipeline.process_pdf_file_subject_aware(
                     pdf_path=unit_pdf_path,
                     subject=subject,
@@ -195,34 +241,63 @@ async def upload_with_subject(
                     skip_enrichment=skip_enrichment,
                     board=board,
                     class_number=class_number,
-                    enrichment_style=enrichment_style
+                    enrichment_style=enrichment_style,
+                    term=term,
                 )
+                logger.info(f"  [SPLIT {unit_idx+1}] Pipeline result → success={unit_res.get('success')}, "
+                            f"document_id={unit_res.get('document_id')}, "
+                            f"has_structured={unit_res.get('has_structured')}, "
+                            f"extraction_method={unit_res.get('extraction_method', 'N/A')}")
+                if not unit_res.get('success'):
+                    logger.error(f"  [SPLIT {unit_idx+1}] ❌ Pipeline FAILED: {unit_res.get('error', 'unknown error')}")
                 results.append(unit_res)
 
             # ── Generate debate topics for each split unit (independent of enrichment) ──
+            logger.info(f"  [DEBATE] Starting debate topic generation for {len(results)} split unit(s)...")
             debate_results = []
             try:
                 from debate_topic_generator import generate_and_save_debate_topics
                 for unit_res in results:
                     doc_id = unit_res.get("document_id")
-                    if doc_id and unit_res.get("has_structured"):
-                        structured_path = OUTPUTS_DIR / doc_id / "structured.json"
-                        if structured_path.exists():
-                            logger.info(f"Generating debate topics for {doc_id}...")
-                            dt_result = generate_and_save_debate_topics(
-                                structured_path=structured_path,
-                                subject=subject if subject != "auto" else None,
-                            )
-                            debate_results.append({
-                                "document_id": doc_id,
-                                "debate_topics_generated": dt_result.get("total_topics", 0),
-                                "success": dt_result.get("success", False),
-                            })
-            except ImportError:
-                logger.warning("Debate topic generator module not available — skipping")
+                    has_structured = unit_res.get("has_structured")
+                    logger.info(f"  [DEBATE] Checking unit → doc_id={doc_id}, has_structured={has_structured}")
+                    if not doc_id:
+                        logger.warning(f"  [DEBATE] ⚠️ Skipping — no document_id in result")
+                        continue
+                    if not has_structured:
+                        logger.warning(f"  [DEBATE] ⚠️ Skipping {doc_id} — has_structured is False (LLM refinement may have been skipped or extraction returned no sections)")
+                        continue
+                    structured_path = OUTPUTS_DIR / doc_id / "structured.json"
+                    logger.info(f"  [DEBATE] Checking structured.json at: {structured_path}")
+                    if not structured_path.exists():
+                        logger.error(f"  [DEBATE] ❌ structured.json NOT FOUND at {structured_path} — cannot generate debate topics")
+                        # List what files actually exist in the output directory
+                        doc_dir = OUTPUTS_DIR / doc_id
+                        if doc_dir.exists():
+                            existing_files = [f.name for f in doc_dir.iterdir()]
+                            logger.error(f"  [DEBATE]    Files in {doc_dir.name}/: {existing_files}")
+                        else:
+                            logger.error(f"  [DEBATE]    Output directory does not exist: {doc_dir}")
+                        continue
+                    logger.info(f"  [DEBATE] ✅ structured.json exists ({structured_path.stat().st_size:,} bytes). Generating debate topics for {doc_id}...")
+                    dt_result = generate_and_save_debate_topics(
+                        structured_path=structured_path,
+                        subject=subject if subject != "auto" else None,
+                    )
+                    logger.info(f"  [DEBATE] Result for {doc_id} → success={dt_result.get('success')}, "
+                                f"total_topics={dt_result.get('total_topics', 0)}, "
+                                f"error={dt_result.get('error', 'none')}")
+                    debate_results.append({
+                        "document_id": doc_id,
+                        "debate_topics_generated": dt_result.get("total_topics", 0),
+                        "success": dt_result.get("success", False),
+                    })
+            except ImportError as ie:
+                logger.warning(f"  [DEBATE] ⚠️ Debate topic generator module not available — skipping (ImportError: {ie})")
             except Exception as e:
-                logger.warning(f"Debate topic generation failed: {e}")
+                logger.error(f"  [DEBATE] ❌ Debate topic generation failed with exception: {e}", exc_info=True)
 
+            logger.info(f"========== /upload-subject END (split path, {len(results)} units) ==========")
             return {
                 "success": True,
                 "is_split": True,
@@ -233,7 +308,7 @@ async def upload_with_subject(
             }
         
         # ── SINGLE PDF FALLBACK ───────────────────────────────────────────────
-        logger.info(f"No chapters detected or already a unit. Processing as a single PDF...")
+        logger.info(f"  [SINGLE] No chapters detected or already a unit. Processing as single PDF...")
         result = pipeline.process_pdf_file_subject_aware(
             pdf_path=temp_pdf_path,
             subject=subject,
@@ -244,37 +319,68 @@ async def upload_with_subject(
             skip_enrichment=skip_enrichment,
             board=board,
             class_number=class_number,
-            enrichment_style=enrichment_style
+            enrichment_style=enrichment_style,
+            term=term,
         )
+        logger.info(f"  [SINGLE] Pipeline result → success={result.get('success')}, "
+                    f"document_id={result.get('document_id')}, "
+                    f"has_structured={result.get('has_structured')}, "
+                    f"extraction_method={result.get('extraction_method', 'N/A')}, "
+                    f"subject={result.get('subject', 'N/A')}")
     
     if not result.get("success"):
-        logger.error(f"Processing failed: {result.get('error')}")
+        logger.error(f"  [SINGLE] ❌ Processing FAILED: {result.get('error')}")
+        logger.info(f"========== /upload-subject END (FAILED) ==========")
         raise HTTPException(status_code=500, detail=result.get("error", "Processing failed"))
     
     # ── Generate debate topics for single PDF (independent of enrichment) ──
     debate_info = {}
-    if result.get("has_structured"):
+    has_structured = result.get("has_structured")
+    doc_id = result.get("document_id")
+    logger.info(f"  [DEBATE] Single PDF debate check → doc_id={doc_id}, has_structured={has_structured}")
+    
+    if not has_structured:
+        logger.warning(f"  [DEBATE] ⚠️ Skipping debate topic generation — has_structured is False")
+        logger.warning(f"  [DEBATE]    Possible causes: skip_llm_refinement={skip_llm_refinement}, "
+                       f"or auto-schema extraction returned no sections, or openai_api_key missing")
+    elif not doc_id:
+        logger.warning(f"  [DEBATE] ⚠️ Skipping debate topic generation — no document_id in result")
+    else:
         try:
             from debate_topic_generator import generate_and_save_debate_topics
-            doc_id = result.get("document_id")
-            if doc_id:
-                structured_path = OUTPUTS_DIR / doc_id / "structured.json"
-                if structured_path.exists():
-                    logger.info(f"Generating debate topics for {doc_id}...")
-                    dt_result = generate_and_save_debate_topics(
-                        structured_path=structured_path,
-                        subject=subject if subject != "auto" else None,
-                    )
-                    debate_info = {
-                        "debate_topics_generated": dt_result.get("total_topics", 0),
-                        "debate_topics_success": dt_result.get("success", False),
-                    }
-        except ImportError:
-            logger.warning("Debate topic generator module not available — skipping")
+            structured_path = OUTPUTS_DIR / doc_id / "structured.json"
+            logger.info(f"  [DEBATE] Checking structured.json at: {structured_path}")
+            if not structured_path.exists():
+                logger.error(f"  [DEBATE] ❌ structured.json NOT FOUND at {structured_path}")
+                # List what files actually exist in the output directory
+                doc_dir = OUTPUTS_DIR / doc_id
+                if doc_dir.exists():
+                    existing_files = [f.name for f in doc_dir.iterdir()]
+                    logger.error(f"  [DEBATE]    Files in {doc_dir.name}/: {existing_files}")
+                else:
+                    logger.error(f"  [DEBATE]    Output directory does not exist: {doc_dir}")
+            else:
+                file_size = structured_path.stat().st_size
+                logger.info(f"  [DEBATE] ✅ structured.json exists ({file_size:,} bytes). Generating debate topics...")
+                dt_result = generate_and_save_debate_topics(
+                    structured_path=structured_path,
+                    subject=subject if subject != "auto" else None,
+                )
+                logger.info(f"  [DEBATE] Result → success={dt_result.get('success')}, "
+                            f"total_topics={dt_result.get('total_topics', 0)}, "
+                            f"total_sections={dt_result.get('total_sections', 0)}, "
+                            f"error={dt_result.get('error', 'none')}")
+                debate_info = {
+                    "debate_topics_generated": dt_result.get("total_topics", 0),
+                    "debate_topics_success": dt_result.get("success", False),
+                }
+        except ImportError as ie:
+            logger.warning(f"  [DEBATE] ⚠️ Debate topic generator module not available — skipping (ImportError: {ie})")
         except Exception as e:
-            logger.warning(f"Debate topic generation failed: {e}")
+            logger.error(f"  [DEBATE] ❌ Debate topic generation failed: {e}", exc_info=True)
     
-    logger.info(f"Successfully processed as {result.get('subject', 'unknown')} textbook")
+    logger.info(f"  Final result: subject={result.get('subject', 'unknown')}, debate_info={debate_info}")
+    logger.info(f"========== /upload-subject END (single PDF, success) ==========")
     
     return {
         "success": True,
@@ -284,8 +390,196 @@ async def upload_with_subject(
     }
 
 
+
+@app.post("/upload-agentic")
+async def upload_agentic(
+    file: UploadFile = File(...),
+    subject: str = Form(..., description="Subject name (e.g. Science, Biology, Mathematics, English)"),
+    part: Optional[str] = Form(None, description="Book/part name"),
+    board: str = Form(..., description="Board name (e.g. 'State Board', 'CBSE')"),
+    class_number: Optional[str] = Form(None, alias="class_name", description="Class number/name (e.g. '11', '10')"),
+    term: Optional[str] = Form(None, description="Term for term-split state books: '1', '2', '3' or 'Term 1'. Omit for boards whose books are not term-split (CBSE/NCERT)."),
+    skip_enrichment: bool = Form(False),
+    skip_qdrant: bool = Form(False),
+    skip_llm_refinement: bool = Form(False),
+    enrichment_style: str = Form("avatar_classroom_teaching")
+):
+    """
+    Upload a PDF and run the COMPLETE agentic extraction workflow:
+      Stage 0a: Mistral OCR + watermark clean + OCR quality guard
+      Stage 0b: GPT-4o Vision — text-box detection + bad-page re-OCR
+      Stage 1:  Structure discovery — TOC parse + section type identification
+      Stage 2:  Semantic chunking + LLM extraction (parallel per unit)
+      Stage 3:  Verification convergence loop (≥95% score, max 3 passes)
+      Stage 4:  Enrichment — avatar scripts + TTS audio (parallel per unit)
+      Stage 5:  Debate topic generation (parallel per unit)
+      Stage 6:  Final publish — save JSON + S3 + Qdrant
+    """
+    if not file.filename or not file.filename.lower().endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="Only PDF files are accepted")
+
+    logger.info(f"========== /upload-agentic START ==========")
+    logger.info(f"  file={file.filename} subject={subject} board={board} "
+                f"class={class_number} skip_enrichment={skip_enrichment}")
+
+    # Import new pipeline (lazy so server still starts if not installed yet)
+    try:
+        from document_pipeline_graph import run_document_pipeline
+        PIPELINE_GRAPH_AVAILABLE = True
+    except ImportError as ie:
+        logger.warning(f"  ⚠️  document_pipeline_graph not available: {ie}")
+        PIPELINE_GRAPH_AVAILABLE = False
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_pdf_path = Path(temp_dir) / file.filename
+        content = await file.read()
+        temp_pdf_path.write_bytes(content)
+
+        # ── Single-unit textbook check  ──────────────────────────────────────
+        import re as _re
+        _single_unit_pattern = _re.search(
+            r'(?:Unit[_\s-]?\d+|Chapter[_\s-]?\d+)',
+            file.filename, _re.IGNORECASE
+        )
+
+        # ── Multi-unit: split first, then pipeline each unit ─────────────────
+        split_units = []
+        if not _single_unit_pattern:
+            try:
+                from pdf_unit_splitter import split_pdf_by_units
+                out_dir = OUTPUTS_DIR / temp_pdf_path.stem / "Unit_split"
+                split_units = split_pdf_by_units(
+                    pdf_path=str(temp_pdf_path),
+                    output_dir=str(out_dir),
+                    subject=subject if subject != "auto" else "english",
+                )
+                if len(split_units) == 1:
+                    split_units = []   # treat as single
+            except Exception as e:
+                logger.warning(f"  PDF split check error: {e}")
+
+        resolved_subject = None if subject == "auto" else subject
+
+        if split_units and len(split_units) > 1:
+            logger.info(f"  ✅ Split into {len(split_units)} unit(s) — running pipeline on each...")
+            results = []
+            for unit_info in split_units:
+                unit_pdf = Path(unit_info["output_path"])
+                resolved_part = part if part else unit_info.get("part", "")
+
+                if PIPELINE_GRAPH_AVAILABLE and not skip_llm_refinement:
+                    try:
+                        report = run_document_pipeline(
+                            pdf_path=unit_pdf,
+                            board=board,
+                            class_number=class_number,
+                            subject=resolved_subject,
+                            part=resolved_part,
+                            term=term,
+                            skip_enrichment=skip_enrichment,
+                            skip_debate=False,
+                            skip_qdrant=skip_qdrant,
+                            enrichment_style=enrichment_style,
+                        )
+                        results.append({
+                            "unit_pdf":              unit_pdf.name,
+                            "document_id":           report.get("doc_id"),
+                            "subject":               report.get("subject"),
+                            "is_complete":           report.get("is_complete", False),
+                            "verification_score":    report.get("verification", {}).get("overall_score", 0),
+                            "verification_passed":   report.get("verification", {}).get("passed", False),
+                            "fixes_made":            report.get("verification", {}).get("fixes_made", 0),
+                            "enrichment_units":      report.get("enrichment", {}).get("units_enriched", 0),
+                            "audio_files":           report.get("enrichment", {}).get("audio_files", 0),
+                            "debate_topics_total":   report.get("debate", {}).get("total_topics", 0),
+                            "pipeline_errors":       report.get("errors", []),
+                        })
+                    except Exception as e:
+                        logger.error(f"  ❌ Pipeline failed for {unit_pdf.name}: {e}", exc_info=True)
+                        results.append({"unit_pdf": unit_pdf.name, "error": str(e)})
+                else:
+                    # Fallback: legacy pipeline
+                    try:
+                        pip_result = pipeline.process_pdf_file_subject_aware(
+                            pdf_path=unit_pdf, subject=subject,
+                            auto_detect_subject=(subject == "auto"),
+                            part=resolved_part,
+                            skip_llm_refinement=skip_llm_refinement,
+                            skip_qdrant=skip_qdrant, skip_enrichment=skip_enrichment,
+                            board=board, class_number=class_number,
+                            enrichment_style=enrichment_style,
+                            term=term,
+                        )
+                        results.append(pip_result)
+                    except Exception as e:
+                        results.append({"unit_pdf": unit_pdf.name, "error": str(e)})
+
+            logger.info(f"========== /upload-agentic END (split path, {len(results)} units) ==========")
+            return {
+                "success":         True,
+                "is_split":        True,
+                "units_processed": len(results),
+                "results":         results,
+            }
+
+        # ── Single PDF path ───────────────────────────────────────────────────
+        logger.info(f"  [SINGLE] Processing as single PDF with full agentic pipeline...")
+
+        if PIPELINE_GRAPH_AVAILABLE and not skip_llm_refinement:
+            try:
+                pipeline_obj = get_pipeline()  # still needed for Qdrant upload helper
+                report = run_document_pipeline(
+                    pdf_path=temp_pdf_path,
+                    board=board,
+                    class_number=class_number,
+                    subject=resolved_subject,
+                    part=part,
+                    term=term,
+                    skip_enrichment=skip_enrichment,
+                    skip_debate=False,
+                    skip_qdrant=skip_qdrant,
+                    enrichment_style=enrichment_style,
+                )
+                logger.info(f"========== /upload-agentic END (single PDF) ==========")
+                return {
+                    "success":              True,
+                    "document_id":          report.get("doc_id"),
+                    "subject":              report.get("subject"),
+                    "is_complete":          report.get("is_complete", False),
+                    "verification_score":   report.get("verification", {}).get("overall_score", 0),
+                    "verification_passed":  report.get("verification", {}).get("passed", False),
+                    "fixes_made":           report.get("verification", {}).get("fixes_made", 0),
+                    "enrichment_units":     report.get("enrichment", {}).get("units_enriched", 0),
+                    "audio_files":          report.get("enrichment", {}).get("audio_files", 0),
+                    "debate_topics_total":  report.get("debate", {}).get("total_topics", 0),
+                    "pipeline_errors":      report.get("errors", []),
+                    "message":              f"Successfully processed {file.filename} via agentic pipeline",
+                }
+            except Exception as e:
+                logger.error(f"  ❌ Agentic pipeline failed: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=f"Pipeline failed: {e}")
+
+        # Fallback: legacy single-shot pipeline
+        pipeline_obj = get_pipeline()
+        result = pipeline_obj.process_pdf_file_subject_aware(
+            pdf_path=temp_pdf_path, subject=subject,
+            auto_detect_subject=False, part=part,
+            skip_llm_refinement=skip_llm_refinement,
+            skip_qdrant=skip_qdrant, skip_enrichment=skip_enrichment,
+            board=board, class_number=class_number,
+            enrichment_style=enrichment_style,
+            term=term,
+        )
+        if not result.get("success"):
+            raise HTTPException(status_code=500, detail=result.get("error", "Processing failed"))
+
+        logger.info(f"========== /upload-agentic END (single PDF, legacy fallback) ==========")
+        return {"success": True, **result, "message": f"Processed {file.filename} (legacy pipeline)"}
+
+
 # THAT'S IT! The rest of app.py remains unchanged.
 from pdf_unit_splitter import split_pdf_by_units
+
 
 @app.post("/upload_pdf")
 async def split_pdf_endpoint(
@@ -294,6 +588,7 @@ async def split_pdf_endpoint(
     part: Optional[str] = Form(None, description="Book/part name (e.g. 'History', 'Fundamentals of Physical Geography')"),
     board: str = Form(..., description="Board name (e.g. 'State Board', 'CBSE')"),
     class_number: Optional[str] = Form(None, alias="class_name", description="Class number/name (e.g. '11', '10')"),
+    term: Optional[str] = Form(None, description="Term for term-split state books: '1', '2', '3' or 'Term 1'. Omit for boards whose books are not term-split (CBSE/NCERT)."),
     auto_upload: bool = Form(True, description="Automatically process split units via subject-aware pipeline"),
     skip_enrichment: bool = Form(False),
     skip_qdrant: bool = Form(False),
@@ -378,7 +673,8 @@ async def split_pdf_endpoint(
                         filter_qr_codes=False, # Keep fast OCR for units
                         board=board,
                         class_number=class_number,
-                        enrichment_style=enrichment_style
+                        enrichment_style=enrichment_style,
+                        term=term,
                     )
                     processing_results.append({
                         "unit_number": unit["unit_number"],
@@ -586,6 +882,55 @@ def run_ocr_only(document_id: str):
     return result
 
 
+@app.post("/enrichment/process")
+async def process_enrichment_payload(payload: dict):
+    """
+    Receives {"message": {<structured.json content>}} in the body and returns the enrichment.json.
+    """
+    import tempfile
+    import json
+    from pathlib import Path
+    from enrichment_pipeline import enrich_document
+    from fastapi import HTTPException
+    
+    # Extract the structured data from the "message" key
+    structured_data = payload.get("message")
+    if not structured_data:
+        # Fallback in case they send it at the root level anyway
+        structured_data = payload
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        doc_dir = Path(tmp_dir) / "temp_doc"
+        doc_dir.mkdir(parents=True, exist_ok=True)
+        
+        structured_path = doc_dir / "structured.json"
+        enriched_path = doc_dir / "enriched.json"
+        
+        with open(structured_path, "w", encoding="utf-8") as f:
+            json.dump(structured_data, f)
+            
+        try:
+            success = enrich_document(
+                structured_json_path=structured_path,
+                output_path=enriched_path,
+                include_sections=True,
+                include_web=True,
+                fast_mode=True
+            )
+            if not success:
+                raise Exception("enrich_document returned False")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Enrichment pipeline error: {str(e)}")
+            
+        if not enriched_path.exists():
+            raise HTTPException(status_code=500, detail="Enrichment failed to produce output.")
+            
+        with open(enriched_path, "r", encoding="utf-8") as f:
+            enriched_data = json.load(f)
+            
+        return enriched_data
+
+
 @app.post("/enrich/{document_id}")
 def enrich_document(document_id: str, request: EnrichRequest = EnrichRequest()):
     """Enrich an already-extracted document."""
@@ -645,6 +990,7 @@ def upload_to_qdrant(document_id: str, request: QdrantUploadRequest):
         document_id=document_id,
         board=request.board,
         class_number=request.class_number,
+        term=request.term,
     )
     
     if not result.get("success"):
@@ -664,8 +1010,10 @@ def search_documents(request: SearchRequest):
         content_type_filter=request.content_type_filter,
         class_filter=request.class_filter,
         subject_filter=request.subject_filter,
+        board_filter=request.board_filter,
+        term_filter=request.term_filter,
     )
-    
+
     return {"query": request.query, "results": results, "count": len(results)}
 
 
@@ -677,16 +1025,20 @@ def search_documents_get(
     content_type_filter: Optional[str] = Query(None, description="Filter by content type"),
     class_filter: Optional[str] = Query(None, description="Filter by class (e.g. '11', '10')"),
     subject_filter: Optional[str] = Query(None, description="Filter by subject"),
+    board_filter: Optional[str] = Query(None, description="Filter by board (e.g. 'State Board', 'CBSE')"),
+    term_filter: Optional[str] = Query(None, description="Filter by term for term-split state books: '2', 'Term 2', or a scope like '1,2'"),
 ):
     """Search the vector database (GET method)."""
     pipeline = get_pipeline()
     results = pipeline.search(
         query=query,
-        limit=limit, 
+        limit=limit,
         unit_filter=unit_filter,
         content_type_filter=content_type_filter,
         class_filter=class_filter,
         subject_filter=subject_filter,
+        board_filter=board_filter,
+        term_filter=term_filter,
     )
     
     return {"query": query, "results": results, "count": len(results)}
@@ -708,11 +1060,29 @@ def get_structured_content(document_id: str):
     }
 
 
+@app.get("/debate-topics/{document_id}")
+def get_debate_topics(document_id: str):
+    """Get generated debate topics for a document."""
+    debate_path = OUTPUTS_DIR / document_id / "debate_topics.json"
+    
+    if not debate_path.exists():
+        raise HTTPException(status_code=404, detail="Debate topics not found for this document")
+    
+    import orjson
+    try:
+        debate_data = orjson.loads(debate_path.read_bytes())
+        return debate_data
+    except Exception as e:
+        logger.error(f"Error reading debate topics for {document_id}: {e}")
+        raise HTTPException(status_code=500, detail="Error reading debate topics")
+
+
 @app.get("/textbook/structured")
 def get_whole_textbook_structured(
     subject: Optional[str] = Query(None, description="Filter by subject and populate at root"),
     board: Optional[str] = Query(None, description="Populate board at root"),
-    class_number: Optional[str] = Query(None, description="Filter by class number")
+    class_number: Optional[str] = Query(None, description="Filter by class number"),
+    term: Optional[str] = Query(None, description="Filter by term for term-split state books: '1', '2', '3' or 'Term 1'")
 ):
     """Get all extracted units as a single structured textbook."""
     import orjson
@@ -741,6 +1111,15 @@ def get_whole_textbook_structured(
                         meta_class = str(meta.get("class_number", "")).lower().lstrip("0")
                         req_class = str(class_number).lower().lstrip("0")
                         if meta_class != req_class:
+                            continue
+
+                    # Term books restart unit numbering — without this filter a
+                    # term-split subject returns every term's units interleaved.
+                    if term:
+                        from term_utils import normalize_term
+                        req_term = normalize_term(term)
+                        meta_term = normalize_term(meta.get("term"))
+                        if req_term and meta_term and req_term != meta_term:
                             continue
                 except Exception:
                     pass
@@ -777,6 +1156,7 @@ def get_whole_textbook_structured(
         "subject": subject or (all_units[0].get("subject") if all_units else None),
         "board": board,
         "class_number": class_number,
+        "term": term,
         "total_units": len(all_units),
         "units": all_units
     }
@@ -786,7 +1166,8 @@ def get_whole_textbook_structured(
 def get_whole_textbook_enrichment(
     subject: Optional[str] = Query(None, description="Filter by subject and populate at root"),
     board: Optional[str] = Query(None, description="Populate board at root"),
-    class_number: Optional[str] = Query(None, description="Filter by class number")
+    class_number: Optional[str] = Query(None, description="Filter by class number"),
+    term: Optional[str] = Query(None, description="Filter by term for term-split state books: '1', '2', '3' or 'Term 1'")
 ):
     """Get all enriched units as a single textbook."""
     import orjson
@@ -815,6 +1196,15 @@ def get_whole_textbook_enrichment(
                         meta_class = str(meta.get("class_number", "")).lower().lstrip("0")
                         req_class = str(class_number).lower().lstrip("0")
                         if meta_class != req_class:
+                            continue
+
+                    # Term books restart unit numbering — without this filter a
+                    # term-split subject returns every term's units interleaved.
+                    if term:
+                        from term_utils import normalize_term
+                        req_term = normalize_term(term)
+                        meta_term = normalize_term(meta.get("term"))
+                        if req_term and meta_term and req_term != meta_term:
                             continue
                 except Exception:
                     pass
@@ -850,6 +1240,7 @@ def get_whole_textbook_enrichment(
         "subject": subject or (all_units[0].get("subject") if all_units else None),
         "board": board,
         "class_number": class_number,
+        "term": term,
         "total_units": len(all_units),
         "units": all_units
     }
@@ -913,16 +1304,59 @@ def get_status():
 # ── AI Tutor Endpoints ────────────────────────────────────────────────────────
 
 
+@app.post("/tutor/enrichment/generate-audio")
+def generate_enrichment_audio(request: EnrichmentAudioRequest):
+    """
+    Generate audio for an existing enriched JSON provided in the payload.
+    Generates missing TTS audio for all segments and returns the fully updated JSON.
+    """
+    try:
+        from enrichment_pipeline import generate_audio_for_enriched_data
+        
+        enriched_data = request.message
+        
+        # Extract metadata from JSON if available (used for S3 folder structure)
+        board = enriched_data.get("board", "unknown_board")
+        class_number = enriched_data.get("class_number", "unknown_class")
+        
+        # Subject can be at top level or inside first unit
+        subject = enriched_data.get("subject")
+        if not subject:
+            content_key = "chapters" if "chapters" in enriched_data else "units"
+            units = enriched_data.get(content_key, [])
+            if units and isinstance(units, list):
+                subject = units[0].get("subject")
+        if not subject:
+            subject = "unknown_subject"
+            
+        is_math = subject.lower() in ("mathematics", "math")
+        
+        # Generate audio
+        updated_data = generate_audio_for_enriched_data(
+            enriched_data=enriched_data,
+            board=board,
+            class_number=str(class_number),
+            subject=subject,
+            is_math=is_math
+        )
+        
+        return updated_data
+        
+    except Exception as e:
+        logger.error(f"Error generating audio: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/tutor/ask")
 def tutor_ask(request: TutorRequest):
     """
     Ask the AI Tutor a question.
-
+ 
     The tutor retrieves relevant content from the Qdrant vector DB,
     generates a study-focused answer using GPT-5-mini, and maintains
     per-student chat history (scoped by subject + unit).
-
-    **Rules:**
+ 
+    *Rules:*
     - Only answers study-related questions for the given subject/unit.
     - Rejects 18+, harmful, or off-topic content.
     - Uses textbook content as primary source of truth.
@@ -931,9 +1365,34 @@ def tutor_ask(request: TutorRequest):
         from ai_tutor import ask_tutor
     except ImportError:
         raise HTTPException(500, "AI Tutor module not available. Ensure ai_tutor.py is present.")
+ 
+    if not request.query and not request.image_base64:
+        raise HTTPException(status_code=400, detail="Must provide either a query or an image.")
+
+    actual_query = request.query
+    if not actual_query and request.image_base64:
+        actual_query = "Please explain the content of this image based on the relevant textbook context."
+
+    # ── Guardrails pre-flight ──────────────────────────────────────────────
+    # Intercept homework / external-worksheet requests before they reach the
+    # RAG pipeline.  Returns None when the query is safe to pass through.
+    guardrail_response = run_query_guardrail(
+        query=actual_query,
+        subject=request.subject,
+        unit_number=request.unit_number,
+        candidate_id=request.candidate_id,
+        image_description=None,  # image_base64 is handled inside ask_tutor
+    )
+    if guardrail_response is not None:
+        logger.info(
+            "[Guardrails] Homework intercepted for candidate=%s subject=%s unit=%s",
+            request.candidate_id, request.subject, request.unit_number,
+        )
+        return {"success": True, **guardrail_response}
+    # ── End guardrails ─────────────────────────────────────────────────────
 
     result = ask_tutor(
-        query=request.query,
+        query=actual_query,
         board=request.board,
         class_number=request.class_number or "",
         subject=request.subject,
@@ -942,10 +1401,11 @@ def tutor_ask(request: TutorRequest):
         candidate_name=request.candidate_name,
         candidate_id=request.candidate_id,
         limit=request.limit,
+        image_base64=request.image_base64,
+        term=request.term,
     )
 
     return {"success": True, **result}
-
 
 @app.get("/tutor/history")
 def tutor_get_history(
@@ -1036,6 +1496,10 @@ class QuestionBankUploadRequest(BaseModel):
     unit_number: int
     document_id: str
     questions: List[dict]  # [{question, marks, type, options?, correct_answer?}]
+    board: Optional[str] = None
+    class_number: Optional[str] = None
+    # Override the exam -> term mapping; normally derived from exam_name.
+    term_scope: Optional[str] = None
 
 
 class QuizGenerateRequest(BaseModel):
@@ -1048,6 +1512,8 @@ class QuizGenerateRequest(BaseModel):
     difficulty: str = "easy"  # easy, medium, hard
     num_questions: int = 5
     candidate_name: str = ""
+    # Term-split state books only; omit for CBSE/NCERT.
+    term: Optional[str] = None
 
 
 class QuizSubmitRequest(BaseModel):
@@ -1066,6 +1532,9 @@ class HomeworkAssignRequest(BaseModel):
     unit_name: str = ""
     num_questions: int = 5
     candidate_name: str = ""
+    class_number: Optional[str] = None
+    # Term-split state books only; omit for CBSE/NCERT.
+    term: Optional[str] = None
 
 
 class HomeworkSubmitRequest(BaseModel):
@@ -1073,6 +1542,20 @@ class HomeworkSubmitRequest(BaseModel):
     homework_id: str
     candidate_id: str
     answers: List[dict]  # [{question_id, answer}]
+
+
+class HomeworkChatRequest(BaseModel):
+    """Request model for stateful homework helper chat (GradeUp & school assignments)."""
+    candidate_id: str
+    homework_id: str  # Use "new" or "school" to start a new school homework session
+    message: Optional[str] = ""
+    image_base64: Optional[str] = None
+    subject: Optional[str] = None      # Required if starting a new school homework session
+    unit_number: Optional[int] = None  # Required if starting a new school homework session
+    board: Optional[str] = None
+    class_number: Optional[str] = None
+    # Term-split state books only; omit for CBSE/NCERT.
+    term: Optional[str] = None
 
 
 class FAQTrackRequest(BaseModel):
@@ -1192,11 +1675,23 @@ async def upload_question_paper_pdf(
     board: str = Form(...),
     subject: str = Form(...),
     unit_name: Optional[str] = Form(None),
-    unit_number: Optional[int] = Form(None)
+    unit_number: Optional[int] = Form(None),
+    term_scope: Optional[str] = Form(
+        None,
+        description="Override the terms this exam covers, e.g. '2' or '1,2'. "
+                    "Normally left blank — the scope is derived from exam_name "
+                    "(quarterly=Term 1, half-yearly=Term 2, annual=all terms). "
+                    "Required for unit tests, which map to no fixed term."
+    ),
 ):
     """
     Admin endpoint to upload a PDF question paper.
     Runs Mistral OCR, extracts questions via LLM, and stores via QuestionBankManager.
+
+    **Terms:** you upload by EXAM (quarterly / half-yearly / annual), never by
+    term. The backend derives the term scope from `exam_name`, uses it to scope
+    RAG retrieval, and then derives a single term per question from the unit it
+    maps to. Pass `term_scope` only to override that mapping.
     """
     try:
         from question_bank import get_question_bank_manager
@@ -1417,8 +1912,25 @@ Return ONLY the JSON array. No markdown formatting, no explanation.'''
                     print(f"  ⚠️  [QuestionBank] Q{idx+1} has marks={q_marks} which is not in detected marks set {sorted(valid_marks_from_ocr)} — please verify")
         
 
-        logical_doc_id = f"qb_pdf_{board.strip().replace(' ', '_')}_{subject.strip().replace(' ', '_')}"
-        
+        # Term scope for this exam. An explicit term_scope always wins; otherwise
+        # it comes from the exam name (see term_utils.EXAM_TERM_SCOPE).
+        from term_utils import exam_to_terms, term_slug
+        terms = exam_to_terms(exam_name, override=term_scope)
+        logger.info(f"  [QuestionBank] exam='{exam_name}' term_scope={terms or 'none'}")
+
+        # Class and term belong in the logical document id: without them, Class 6
+        # and Class 10 papers for one board+subject shared a single logical
+        # document, and Term 1 / Term 2 papers would now collide the same way.
+        _qb_parts = [
+            "qb_pdf",
+            board.strip().replace(' ', '_'),
+            str(class_number).strip().replace(' ', '_'),
+            subject.strip().replace(' ', '_'),
+        ]
+        if terms:
+            _qb_parts.append(term_slug(terms))
+        logical_doc_id = "_".join(p for p in _qb_parts if p)
+
         manager = get_question_bank_manager()
         result = manager.process_question_paper(
             questions=extracted_questions,
@@ -1427,10 +1939,13 @@ Return ONLY the JSON array. No markdown formatting, no explanation.'''
             subject=subject,
             unit_number=unit_number,
             document_id=logical_doc_id,
+            terms=terms,
+            board=board,
+            class_number=class_number,
         )
-        
+
         return {
-            "success": True, 
+            "success": True,
             "extracted_count": len(extracted_questions),
             **result
         }
@@ -1438,6 +1953,13 @@ Return ONLY the JSON array. No markdown formatting, no explanation.'''
     finally:
         if pdf_path.exists():
             os.unlink(pdf_path)
+        # Clean up debug OCR dump file
+        try:
+            if os.path.exists("raw_ocr_dump.txt"):
+                os.remove("raw_ocr_dump.txt")
+                print("  🧹 Cleaned up raw_ocr_dump.txt")
+        except OSError as e:
+            print(f"  ⚠️  Failed to delete raw_ocr_dump.txt: {e}")
 
 
 @app.post("/tutor/question-bank/upload")
@@ -1457,6 +1979,9 @@ def upload_question_paper(request: QuestionBankUploadRequest):
     except ImportError:
         raise HTTPException(500, "Question bank module not available.")
 
+    from term_utils import exam_to_terms
+    terms = exam_to_terms(request.exam_name, override=request.term_scope)
+
     manager = get_question_bank_manager()
     result = manager.process_question_paper(
         questions=request.questions,
@@ -1465,6 +1990,9 @@ def upload_question_paper(request: QuestionBankUploadRequest):
         subject=request.subject,
         unit_number=request.unit_number,
         document_id=request.document_id,
+        terms=terms,
+        board=request.board,
+        class_number=request.class_number,
     )
 
     return {"success": True, **result}
@@ -1476,6 +2004,7 @@ def get_question_bank(
     year: Optional[str] = Query(None),
     difficulty: Optional[str] = Query(None),
     unit_number: Optional[int] = Query(None),
+    term: Optional[str] = Query(None, description="Filter by the per-question term: '2' or 'Term 2'"),
 ):
     """List all questions for a document with optional filters."""
     try:
@@ -1489,6 +2018,7 @@ def get_question_bank(
         year=year,
         difficulty=difficulty,
         unit_number=unit_number,
+        term=term,
     )
 
     return {
@@ -1532,13 +2062,15 @@ def generate_quiz(request: QuizGenerateRequest):
     except ImportError:
         raise HTTPException(500, "Quiz engine module not available.")
 
-    # Dynamically resolve document_id from Qdrant
+    # Dynamically resolve document_id from Qdrant. The term must be part of this
+    # lookup: without it a term-split subject resolves to an arbitrary term's book.
     query_text = request.unit_name if request.unit_name else request.subject
     db_results = search_qdrant(
         query=query_text,
         limit=1,
         board_filter=request.board,
         subject_filter=request.subject,
+        term_filter=request.term,
     )
     document_id = db_results[0]["metadata"].get("document_id", "") if db_results else ""
     actual_unit_number = db_results[0]["metadata"].get("unit_number", request.unit_number) if db_results else request.unit_number
@@ -1553,6 +2085,8 @@ def generate_quiz(request: QuizGenerateRequest):
         num_questions=request.num_questions,
         unit_title=request.unit_name,
         candidate_name=request.candidate_name,
+        term=request.term,
+        board=request.board,
     )
 
     return {"success": True, **result}
@@ -1641,6 +2175,8 @@ def assign_homework(request: HomeworkAssignRequest):
         board_filter=request.board,
         subject_filter=request.subject,
         unit_filter=request.unit_number,
+        class_filter=request.class_number,
+        term_filter=request.term,
     )
     document_id = db_results[0]["metadata"].get("document_id", "") if db_results else ""
     actual_unit_number = db_results[0]["metadata"].get("unit_number", request.unit_number) if db_results else request.unit_number
@@ -1654,6 +2190,9 @@ def assign_homework(request: HomeworkAssignRequest):
         num_questions=request.num_questions,
         candidate_name=request.candidate_name,
         unit_title=request.unit_name,
+        term=request.term,
+        board=request.board,
+        class_number=request.class_number,
     )
 
     return {"success": True, **result}
@@ -1683,6 +2222,35 @@ def submit_homework(request: HomeworkSubmitRequest):
         raise HTTPException(400, result["error"])
 
     return result
+
+
+@app.post("/tutor/homework/chat")
+def homework_chat_turn(request: HomeworkChatRequest):
+    """
+    Unified endpoint for stateful Socratic Homework Helper chat.
+    Handles both internal GradeUp homework and external school-assigned worksheets.
+    """
+    try:
+        from homework_engine import get_homework_engine
+    except ImportError:
+        raise HTTPException(500, "Homework engine module not available.")
+
+    engine = get_homework_engine()
+    try:
+        result = engine.execute_socratic_chat_turn(
+            candidate_id=request.candidate_id,
+            homework_id=request.homework_id,
+            message=request.message,
+            image_base64=request.image_base64,
+            subject=request.subject,
+            unit_number=request.unit_number,
+            board=request.board,
+            class_number=request.class_number,
+            term=request.term,
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(400, str(e))
 
 
 @app.get("/tutor/homework/{candidate_id}")
@@ -1802,6 +2370,8 @@ class HighlightRequest(BaseModel):
     class_number: str = ""
     subject: str = ""
     unit_number: Optional[int] = None
+    # Term-split state books only; also keys the highlight reuse cache.
+    term: Optional[str] = None
 
 
 class HighlightAskRequest(BaseModel):
@@ -1811,6 +2381,7 @@ class HighlightAskRequest(BaseModel):
     class_number: str = ""
     subject: str = ""
     unit_number: Optional[int] = None
+    term: Optional[str] = None
     messages: List[dict]  # [{role, content}] — full chat from frontend
 
 
@@ -1824,7 +2395,7 @@ class HighlightReadRequest(BaseModel):
     class_number: str = ""
     subject: str = ""
     unit_number: Optional[int] = None
-
+    term: Optional[str] = None
 
 @app.post("/highlight/explain")
 def highlight_explain_endpoint(request: HighlightRequest):
@@ -1852,6 +2423,7 @@ def highlight_explain_endpoint(request: HighlightRequest):
         class_number=request.class_number,
         subject=request.subject,
         unit_number=request.unit_number,
+        term=request.term,
     )
 
     return {"success": True, **result}
@@ -1883,6 +2455,7 @@ def highlight_summarize_endpoint(request: HighlightRequest):
         class_number=request.class_number,
         subject=request.subject,
         unit_number=request.unit_number,
+        term=request.term,
     )
 
     return {"success": True, **result}
@@ -1915,6 +2488,7 @@ def highlight_ask_endpoint(request: HighlightAskRequest):
         class_number=request.class_number,
         subject=request.subject,
         unit_number=request.unit_number,
+        term=request.term,
     )
 
     return {"success": True, **result}
@@ -1944,6 +2518,7 @@ def highlight_read_endpoint(request: HighlightReadRequest):
         class_number=request.class_number,
         subject=request.subject,
         unit_number=request.unit_number,
+        term=request.term,
     )
 
     if not result.get("success"):
@@ -1965,6 +2540,8 @@ class DebateStartRequest(BaseModel):
     unit_name: str = ""
     topic: str  # mandatory — student selects the topic
     student_stance: Optional[str] = None  # optional — the specific argument/stance the student selected
+    # Term-split state books only; omit for CBSE/NCERT.
+    term: Optional[str] = None
 
 
 class DebateRespondRequest(BaseModel):
@@ -2026,6 +2603,8 @@ class SeminarStartRequest(BaseModel):
     unit_name: str = ""
     topic: str  # mandatory — student selects the topic
     session_mode: str = "main"  # "demo" for hints, "main" for real exam, "practice" for interactive preparation
+    # Term-split state books only; omit for CBSE/NCERT.
+    term: Optional[str] = None
 
 
 class SeminarRespondRequest(BaseModel):
@@ -2045,9 +2624,6 @@ class SeminarGuideRequest(BaseModel):
     session_id: str
 
 
-class SeminarIntroRequest(BaseModel):
-    """Request predefined seminar introduction/guidance before starting."""
-    candidate_name: str = "Student"
 
 
 class SeminarChatStartRequest(BaseModel):
@@ -2059,6 +2635,82 @@ class SeminarChatRespondRequest(BaseModel):
     """Send a message in post-session seminar chat."""
     session_id: str
     message: str
+
+
+# ── PPT Preparation Co-pilot Models ───────────────────────────────────────────
+
+
+class PPTSessionStartRequest(BaseModel):
+    """Start a PPT co-pilot session: create/connect the deck and wire it to the agent."""
+    student_id: str = Field(..., min_length=1, max_length=128,
+                            description="Unique student identifier")
+    # Curriculum coordinates — used to filter RAG (Qdrant) for scaffolding + analysis.
+    board: str = Field(..., min_length=2, max_length=30,
+                       description="Education board, e.g. CBSE, ICSE, IGCSE")
+    class_number: str = Field(
+        ..., pattern=r"^(KG|[1-9]|1[0-2])$",
+        description="Class/grade: KG or 1-12")
+    chapter: int = Field(..., ge=1, le=50,
+                         description="Chapter/unit number (1-50)")
+    title: str = Field(..., min_length=3, max_length=200,
+                       description="Chapter/unit title used as the deck title")
+    subject: Optional[str] = Field(None, max_length=80,
+                                   description="Subject name, e.g. Biology, Mathematics")
+    term: Optional[str] = Field(None, max_length=20,
+                                description="Term for term-split state books: '1', '2', '3' or 'Term 1'. "
+                                            "Omit for CBSE/NCERT. Stored on the session, so later turns inherit it.")
+    deck_ref: Optional[str] = Field(None, max_length=200,
+                                    description="Connect to an existing deck; omit to create new")
+    tool: Literal["gslides"] = Field(
+        "gslides", description="Slide tool backend (currently only gslides is supported)")
+
+
+class PPTConnectRequest(BaseModel):
+    """Start (or check) the student's Google connection via Scalekit."""
+    student_id: str = Field(..., min_length=1, max_length=128)
+
+
+class PPTSessionEndRequest(BaseModel):
+    """End a PPT co-pilot session and get the skill summary."""
+    session_id: str = Field(..., min_length=32, max_length=64,
+                            description="session_id returned by /ppt/session/start")
+
+
+class PPTEditRequest(BaseModel):
+    """
+    Ask the agent to review and improve a slide.
+
+    The agent reads the slide content autonomously, plans the right content
+    and theme ops (via RAG + LLM), and either auto-applies minor fixes or
+    pauses for approval on significant changes.  Students have no manual
+    edit controls — the agent decides everything.
+    """
+    session_id: str = Field(..., min_length=32, max_length=64,
+                            description="session_id from /ppt/session/start")
+    slide_index: int = Field(..., ge=0, le=50,
+                             description="0-based slide index (0 = first slide, max 50)")
+
+
+class PPTSuggestRequest(BaseModel):
+    """Student asks the co-pilot about a slide (verbal points, never edits the deck)."""
+    session_id: str = Field(..., min_length=32, max_length=64)
+    slide_index: int = Field(..., ge=0, le=50,
+                             description="0-based slide index")
+    query: Optional[str] = Field(None, max_length=500,
+                                 description="e.g. 'explain pollination', 'add points on grafting'")
+
+
+class PPTDecideRequest(BaseModel):
+    """Resume a paused PPT agent run with the student's approval decision."""
+    session_id: str = Field(..., min_length=32, max_length=64)
+    decision: Literal["approve", "reject", "skip"] = Field(
+        ..., description="Student's response to the proposed change")
+
+
+class PPTResetThemeRequest(BaseModel):
+    """Re-run theme selection and re-apply it to an existing session's deck."""
+    session_id: str = Field(..., min_length=32, max_length=64,
+                            description="session_id returned by /ppt/session/start")
 
 
 # ── Avatar Teaching Models ────────────────────────────────────────────────────
@@ -2074,6 +2726,9 @@ class AvatarStartRequest(BaseModel):
     unit_number: int
     unit_name: str = ""
     section_title: str
+    segments: Optional[List[dict]] = None  # Segments provided directly in request body
+    # Term-split state books only; omit for CBSE/NCERT.
+    term: Optional[str] = None
 
 
 class AvatarRaiseHandRequest(BaseModel):
@@ -2081,6 +2736,19 @@ class AvatarRaiseHandRequest(BaseModel):
     session_id: str
     student_doubt: Optional[str] = None
     student_response: Optional[str] = None
+
+
+class FlashcardItem(BaseModel):
+    """Single flashcard request item."""
+    flashcard_id: str
+    flashcard_type: str
+    segment_id: str
+
+
+class AvatarGenerateFlashcardRequest(BaseModel):
+    """Generate flashcards (MCQ and/or informative) in a single batch."""
+    session_id: str
+    flash_cards: List[FlashcardItem]
 
 
 class AvatarResumeRequest(BaseModel):
@@ -2101,8 +2769,9 @@ def avatar_start(request: AvatarStartRequest):
     """
     Start an avatar teaching session for a specific section.
 
-    The avatar loads the enrichment data (segments with emotions + inline flashcards)
-    and returns the full teaching script for the frontend to play.
+    Segments can be provided directly in the request body via the `segments` field.
+    If `segments` is provided, local enrichment data is NOT fetched — the session is
+    built entirely from the request body segments.
 
     Returns session_id, all segments, and an empty session history.
     """
@@ -2110,6 +2779,9 @@ def avatar_start(request: AvatarStartRequest):
         from avatar_engine import get_avatar_engine
     except ImportError:
         raise HTTPException(500, "Avatar engine module not available. Ensure avatar_engine.py is present.")
+
+    if request.segments is not None and len(request.segments) == 0:
+        raise HTTPException(400, "'segments' list cannot be empty when provided.")
 
     engine = get_avatar_engine()
     result = engine.start_session(
@@ -2121,6 +2793,8 @@ def avatar_start(request: AvatarStartRequest):
         unit_number=request.unit_number,
         unit_name=request.unit_name,
         section_title=request.section_title,
+        segments=request.segments,
+        term=request.term,
     )
 
     if result.get("error"):
@@ -2180,23 +2854,54 @@ def avatar_raise_hand(request: AvatarRaiseHandRequest):
     engine = get_avatar_engine()
     
     if request.student_response:
-        result = engine.respond_to_flashcard_offer(
+        return engine.respond_to_flashcard_offer(
             session_id=request.session_id,
-            student_response=request.student_response,
+            student_response=request.student_response
         )
     elif request.student_doubt:
-        result = engine.raise_hand(
+        return engine.raise_hand(
             session_id=request.session_id,
-            student_doubt=request.student_doubt,
+            student_doubt=request.student_doubt
         )
     else:
         raise HTTPException(400, "Must provide either student_doubt or student_response")
 
-    if result.get("error"):
-        status = 404 if "not found" in result["error"].lower() else 400
-        raise HTTPException(status, result["error"])
 
-    return {"success": True, **result}
+@app.post("/avatar/flashcard/generate")
+def avatar_flashcard_generate(request: AvatarGenerateFlashcardRequest):
+    """
+    Generate flashcards (MCQ and/or informative) in a single batch.
+    Accepts a list of flash_cards, each with flashcard_id, flashcard_type, and segment_id.
+    """
+    try:
+        from avatar_engine import get_avatar_engine
+    except ImportError:
+        raise HTTPException(500, "Avatar engine module not available.")
+
+    engine = get_avatar_engine()
+    results = []
+
+    for fc in request.flash_cards:
+        if fc.flashcard_type == "informative":
+            result = engine.generate_flashcard_informative(
+                session_id=request.session_id,
+                flashcard_id=fc.flashcard_id,
+                flashcard_type=fc.flashcard_type,
+                segment_id=fc.segment_id
+            )
+        else:
+            result = engine.generate_flashcard_mcq(
+                session_id=request.session_id,
+                flashcard_id=fc.flashcard_id,
+                flashcard_type=fc.flashcard_type,
+                segment_id=fc.segment_id
+            )
+        if result.get("error"):
+            status = 404 if "not found" in result["error"].lower() else 400
+            raise HTTPException(status, result["error"])
+        results.append(result)
+
+    return {"success": True, "flash_cards": results}
 
 
 @app.post("/avatar/resume")
@@ -2309,6 +3014,7 @@ def debate_start(request: DebateStartRequest):
         unit_name=request.unit_name,
         topic=request.topic,
         student_stance=request.student_stance,
+        term=request.term,
     )
 
     if result.get("error"):
@@ -2682,29 +3388,6 @@ def multi_debate_report_download(room_id: str, candidate_id: str):
 # ── AI Seminar Endpoints ─────────────────────────────────────────────────────
 
 
-@app.post("/seminar/intro")
-def seminar_intro(request: SeminarIntroRequest):
-    """
-    Get predefined seminar introduction and guidance.
-
-    Returns static, curated content that every student should see before
-    starting their seminar session. Includes:
-    - Warm greeting
-    - Step-by-step guide on how to deliver a seminar
-    - Camera and posture tips for presentation
-    - Important tips for a successful seminar
-
-    This is NOT an AI call — it returns instantly with predefined content.
-    Call this BEFORE /seminar/start to prepare the student.
-    """
-    try:
-        from seminar_engine import get_seminar_engine
-    except ImportError:
-        raise HTTPException(500, "Seminar engine module not available.")
-
-    engine = get_seminar_engine()
-    return engine.get_seminar_intro(candidate_name=request.candidate_name)
-
 
 @app.post("/seminar/start")
 async def seminar_start(
@@ -2717,6 +3400,7 @@ async def seminar_start(
     unit_name: str = Form(""),
     topic: str = Form(...),
     session_mode: str = Form("main"),
+    term: Optional[str] = Form(None, description="Term for term-split state books: '1', '2', '3'. Omit for CBSE/NCERT."),
     file: Optional[UploadFile] = File(None),
 ):
     """
@@ -2778,6 +3462,7 @@ async def seminar_start(
         topic=topic,
         session_mode=session_mode,
         uploaded_content=uploaded_content,
+        term=term,
     )
 
     if result.get("error"):
@@ -2840,6 +3525,735 @@ def seminar_guide(request: SeminarGuideRequest):
         raise HTTPException(400, result["error"])
 
     return result
+
+
+# ── PPT Preparation Co-pilot ──────────────────────────────────────────────────
+# One compiled LangGraph agent per editing tool (Google Slides now; PowerPoint /
+# Canva later), fronted by ppt_router.pick_agent(). Each agent owns its own
+# MemorySaver checkpoint store, so the two-call approval handshake (/ppt/edit pauses
+# at interrupt(), /ppt/decide resumes) shares state via thread_id = session_id.
+# See SEMINAR_PPT_AUTOMATION_PLAN.md.
+
+def _ppt_agent(deck_ref: str):
+    try:
+        from ppt.ppt_router import pick_agent
+    except ImportError as e:
+        raise HTTPException(500, f"PPT agent modules not available: {e}")
+    try:
+        return pick_agent(deck_ref)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+def _ppt_result_payload(result: dict) -> dict:
+    """Shape the final graph state into an API response."""
+    return {
+        "status": result.get("status", "done"),
+        "ai_feedback": result.get("ai_feedback", ""),
+        "suggestions": result.get("suggestions", []),   # content points to show the student
+        "severity": result.get("severity"),
+        "mode": result.get("mode"),
+        "skill_delta": result.get("skill_delta", {}),
+        "applied_ops": result.get("applied_ops", []),   # ops the agent actually applied
+        "theme_applied": result.get("theme_applied", False),
+        # The deck's agent-chosen design (accent/body/title colors, font, sizes). The frontend
+        # should style its own preview/coach panel with THIS so it matches the real deck theme
+        # instead of using hardcoded colors.
+        "theme_spec": result.get("theme_spec"),
+        # Upgrade #4: speaker notes generated for the slide
+        "speaker_notes": result.get("speaker_notes"),
+        # Upgrade #6: verbal image suggestion (no image inserted, frontend displays as tip)
+        "image_suggestion": result.get("image_suggestion"),
+        # Hybrid RAG: which source fed the answer ("rag" | "web" | "hybrid").
+        "source_used": result.get("source_used"),
+        # Web image search results — shown in the CHAT only, never inserted into the deck.
+        "images": result.get("image_results", []),
+    }
+
+
+def _ppt_require_session(session_id: str) -> dict:
+    from ppt.ppt_session import get_session
+    session = get_session(session_id)
+    if session is None:
+        raise HTTPException(404, "Unknown session_id — call /ppt/session/start first")
+    return session
+
+
+def _ppt_needs_connection_response(student_id: str) -> dict:
+    """Body telling the frontend the student must connect Google via Scalekit first."""
+    from ppt.ppt_scalekit import get_authorization_link
+    return {
+        "status": "needs_connection",
+        "authorization_url": get_authorization_link(student_id),
+        "message": "Connect your Google account to let the co-pilot build your slides.",
+    }
+
+
+def _ppt_auth_provider() -> str:
+    """
+    Which per-student auth backend to use:
+      - "oauth"        : single shared OAuth account (testing; PPT_FORCE_OAUTH).
+      - "google_oauth" : per-student Google OAuth we run ourselves (we hold the token).
+      - "scalekit"     : per-student via Scalekit connected accounts.
+    Set explicitly with PPT_AUTH_PROVIDER; otherwise inferred.
+    """
+    if os.environ.get("PPT_FORCE_OAUTH", "").lower() in ("1", "true", "yes"):
+        return "oauth"
+    p = os.environ.get("PPT_AUTH_PROVIDER", "").strip().lower()
+    if p in ("oauth", "google_oauth", "scalekit"):
+        return p
+    from ppt.ppt_scalekit import is_configured as sk_configured
+    return "scalekit" if sk_configured() else "oauth"
+
+
+def _ppt_auth_context(student_id: str):
+    """
+    Resolve the student's slides auth → (context_manager, needs_connection_body).
+    If a token is needed, returns a mcp_slides_client.access_token(...) context; if the student
+    isn't connected, returns (None, needs_connection body) for the caller to return.
+    """
+    from contextlib import nullcontext
+    import mcp_slides_client
+
+    provider = _ppt_auth_provider()
+
+    if provider == "oauth":
+        return nullcontext(), None   # shared backend OAuth account
+
+    if provider == "google_oauth":
+        from ppt import ppt_google_oauth as g
+        token = g.get_access_token(student_id)
+        if not token:
+            return None, {
+                "status": "needs_connection",
+                "authorization_url": g.auth_url(student_id),
+                "message": "Connect your Google account to let the co-pilot build your slides.",
+            }
+        return mcp_slides_client.access_token(token), None
+
+    # scalekit
+    from ppt.ppt_scalekit import resolve_auth
+    kind, token = resolve_auth(student_id)
+    if kind == "needs_connection":
+        return None, _ppt_needs_connection_response(student_id)
+    if kind == "token":
+        return mcp_slides_client.access_token(token), None
+    return nullcontext(), None   # "global"
+
+
+@app.post("/ppt/connect")
+def ppt_connect(request: PPTConnectRequest):
+    """
+    Begin (or check) the student's Google connection via Scalekit.
+
+    Returns {"connected": true} if the student already authorized Google, otherwise
+    {"connected": false, "authorization_url": ...} — the student clicks the URL to connect.
+    """
+    provider = _ppt_auth_provider()
+
+    if provider == "oauth":
+        return {"connected": True,
+                "note": "Using the shared backend OAuth account (PPT_FORCE_OAUTH)."}
+
+    if provider == "google_oauth":
+        from ppt import ppt_google_oauth as g
+        if not g.is_configured():
+            raise HTTPException(500, "OAuth client not configured (oauth_client.json missing).")
+        if g.is_connected(request.student_id):
+            return {"connected": True}
+        return {"connected": False, "authorization_url": g.auth_url(request.student_id)}
+
+    # scalekit
+    from ppt import ppt_scalekit as sk
+    if not sk.is_configured():
+        raise HTTPException(500, "Scalekit is not configured (SCALEKIT_* env vars missing).")
+    kind, _ = sk.resolve_auth(request.student_id)
+    if kind == "token":
+        return {"connected": True}
+
+    url = sk.get_authorization_link(request.student_id)
+    dbg = sk.connection_debug(request.student_id)
+    resp = {"connected": False, "authorization_url": url, "debug": dbg}
+    # Distinguish "not linked" from "linked but Scalekit won't return the token".
+    if dbg.get("found") and dbg.get("status") == "ACTIVE" and not dbg.get("token_found"):
+        resp["account_status"] = "ACTIVE"
+        resp["token_available"] = False
+        resp["reason"] = (
+            "The Google account is CONNECTED in Scalekit (status ACTIVE), but Scalekit is not "
+            "returning the OAuth access token to the backend — token export is disabled for the "
+            f"'{sk.CONNECTION_NAME}' connection. Re-connecting won't help; enable raw token access "
+            "on that Scalekit connection (or ask Scalekit support how to retrieve the access_token)."
+        )
+    return resp
+
+
+@app.get("/ppt/auth/callback")
+def ppt_auth_callback(code: Optional[str] = Query(None),
+                      state: Optional[str] = Query(None),
+                      error: Optional[str] = Query(None)):
+    """
+    Google OAuth redirect target (provider = google_oauth). Google sends the student here after
+    they authorize; we exchange `code` for tokens and store them for `state` (the student_id).
+
+    Do NOT open this URL directly — start from POST /ppt/connect and open the authorization_url
+    it returns; Google appends `code`/`state` when it redirects here.
+    """
+    from fastapi.responses import HTMLResponse
+
+    def page(title, msg, status=200):
+        return HTMLResponse(
+            "<html><body style='font-family:sans-serif;text-align:center;margin-top:60px'>"
+            f"<h2>{title}</h2><p>{msg}</p></body></html>", status_code=status)
+
+    if error:
+        return page("❌ Authorization was cancelled", f"Google returned: {error}", 400)
+    if not code or not state:
+        return page("This is the OAuth callback",
+                    "Start from <code>POST /ppt/connect</code> and open the "
+                    "<code>authorization_url</code> it returns — Google will redirect here "
+                    "automatically with the sign-in result.", 400)
+
+    from ppt import ppt_google_oauth as g
+    try:
+        g.handle_callback(code, state)
+    except Exception as e:
+        return page("❌ Connection failed", f"OAuth exchange error: {e}", 400)
+    return page("✅ Google connected",
+                "You can close this tab and return to the app to build your seminar deck.")
+
+
+@app.get("/ppt/health")
+def ppt_health(student_id: Optional[str] = Query(None)):
+    """
+    Report the co-pilot's Google auth wiring. Pass ?student_id= to check a specific student.
+
+    Once Scalekit is toggled to expose the token, this shows `token_ready: true` /
+    `student_auth: "token"` — meaning /ppt/session/start will work for that student.
+    """
+    import mcp_slides_client
+    from ppt import ppt_scalekit as sk
+
+    provider = _ppt_auth_provider()
+    out = {
+        "auth_provider": provider,                     # oauth | google_oauth | scalekit
+        "scalekit_configured": sk.is_configured(),
+        "scalekit_connection": sk.CONNECTION_NAME if sk.is_configured() else None,
+        "fallback_credential_kind": mcp_slides_client.credential_kind(),   # oauth | service_account | None
+    }
+    if provider == "google_oauth":
+        from ppt import ppt_google_oauth as g
+        out["google_oauth_redirect_uri"] = g.REDIRECT_URI      # must match your server port + Google Cloud
+        out["oauth_client_present"] = g.is_configured()
+    if student_id:
+        if provider == "google_oauth":
+            from ppt import ppt_google_oauth as g
+            out["student_connected"] = g.is_connected(student_id)
+            out["token_ready"] = bool(g.get_access_token(student_id))
+        elif provider == "scalekit" and sk.is_configured():
+            kind, token = sk.resolve_auth(student_id)
+            out["student_auth"] = kind                 # "token" once the token is exposed
+            out["token_ready"] = bool(token)
+            out["debug"] = sk.connection_debug(student_id)
+        else:
+            out["token_ready"] = True                   # shared oauth account
+    return out
+
+
+@app.post("/ppt/session/start")
+def ppt_session_start(request: PPTSessionStartRequest):
+    """
+    Start a PPT co-pilot session.
+
+    Creates a new deck (or connects to the student's existing one) in the student's Google
+    account (accessed via Scalekit), returns its editable link + embeddable URL, and wires the
+    deck to its tool-specific agent. If the student hasn't connected Google yet, returns
+    {"status": "needs_connection", "authorization_url": ...}.
+    """
+    try:
+        from ppt.ppt_session import start_session
+    except ImportError as e:
+        raise HTTPException(500, f"PPT session module not available: {e}")
+
+    ctx, needs = _ppt_auth_context(request.student_id)
+    if needs:
+        return needs
+
+    try:
+        with ctx:
+            session = start_session(
+                student_id=request.student_id,
+                board=request.board, class_number=request.class_number,
+                unit=request.chapter, title=request.title, subject=request.subject,
+                deck_ref=request.deck_ref, tool=request.tool, term=request.term,
+            )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    _ppt_agent(session["deck_ref"])   # fail fast if no agent exists for this tool
+
+    deck_mode = session.get("deck_mode", "real")
+    response = {
+        "session_id": session["session_id"],
+        "deck_ref": session["deck_ref"],
+        "edit_url": session["urls"]["edit_url"],
+        "embed_url": session["urls"]["embed_url"],
+        "deck_created": session["deck_created"],
+        "deck_mode": deck_mode,                    # Upgrade #8: "real" | "stub"
+        "theme_spec": session.get("theme_spec"),   # agent-chosen deck design
+        "guidance": (
+            f"Let's build your seminar deck on \"{request.title}\" "
+            f"(Class {request.class_number}, {request.board}). I've set up a starting outline — "
+            "keep one idea per slide, and I'll review each change and suggest fixes as you go."
+        ),
+    }
+    # Upgrade #8: surface a notice when running in stub/preview mode
+    if deck_mode == "stub":
+        response["notice"] = (
+            "Preview mode — connect your Google account to create a real Slides deck. "
+            "Call POST /ppt/connect to link your account."
+        )
+    return response
+
+
+@app.post("/ppt/session/end")
+def ppt_session_end(request: PPTSessionEndRequest):
+    """End a PPT co-pilot session and return the accumulated design-skill summary."""
+    from ppt.ppt_session import end_session
+    summary = end_session(request.session_id)
+    if summary is None:
+        raise HTTPException(404, "Unknown session_id")
+    return {"status": "ended", **summary}
+
+
+@app.post("/ppt/session/reset-theme")
+def ppt_session_reset_theme(request: PPTResetThemeRequest):
+    """
+    Re-run theme selection for an existing session and apply it across the deck.
+
+    Useful when a session was created before the theme catalog was deployed (existing
+    sessions retain their original theme_spec). Re-runs llm_choose_theme() with the
+    session's stored curriculum coordinates, patches the session in the DB, and calls
+    apply_theme_to_deck() to update every slide immediately.
+
+    Returns the refreshed theme_spec and the number of slides updated.
+    """
+    session = _ppt_require_session(request.session_id)
+    if session.get("ended_at"):
+        raise HTTPException(400, "Session already ended — cannot reset theme.")
+
+    ctx, needs = _ppt_auth_context(session["student_id"])
+    if needs:
+        return needs
+
+    # Re-run theme selection.
+    try:
+        from ppt.ppt_design import llm_choose_theme
+        new_theme = llm_choose_theme(
+            board=session.get("board", ""),
+            class_number=session.get("class_number", ""),
+            subject=session.get("subject"),
+            unit_title=session.get("unit_title", session.get("title", "")),
+        )
+    except Exception as e:
+        raise HTTPException(500, f"Theme selection failed: {e}")
+
+    # Patch the stored session.
+    try:
+        from ppt.ppt_session import get_session, _save_session
+        sess_data = get_session(request.session_id)
+        if sess_data:
+            sess_data["theme_spec"] = new_theme
+            _save_session(sess_data)
+    except Exception as e:
+        raise HTTPException(500, f"Session save failed: {e}")
+
+    # Apply the new theme to the real deck.
+    slides_updated = 0
+    deck_ref = session.get("deck_ref", "")
+    if deck_ref and not deck_ref.startswith("gslides:STUB-"):
+        try:
+            import mcp_slides_client
+            with ctx:
+                slides_updated = mcp_slides_client.apply_theme_to_deck(deck_ref, new_theme)
+        except Exception as e:
+            # Non-fatal: theme saved but live deck update failed.
+            return {
+                "status": "partial",
+                "theme_spec": new_theme,
+                "slides_updated": 0,
+                "warning": f"Theme saved but deck update failed: {e}",
+            }
+
+    return {
+        "status": "ok",
+        "theme_spec": new_theme,
+        "slides_updated": slides_updated,
+    }
+
+
+def _ppt_deck_context(deck_ref: str, current_index: int):
+    """Read the whole deck once and return (all_titles, other_slide_summaries).
+
+    other_slide_summaries are compact "Title: content" strings for every slide EXCEPT the
+    current one — passed to the layout designer so a restructure stays distinct and doesn't
+    duplicate another slide. Returns (None, None) on any read failure (caller degrades).
+    """
+    try:
+        import mcp_slides_client
+        deck = mcp_slides_client.get_deck_content(deck_ref)
+    except Exception as e:
+        print(f"  [ppt] deck context read failed: {e}")
+        return None, None
+    from ppt.ppt_review import _readable_slide_text
+    titles, others = [], []
+    for i, s in enumerate(deck):
+        title = (s.get("title") or "").strip()
+        titles.append(title)
+        if i == current_index:
+            continue
+        snippet = " ".join(_readable_slide_text(s).split())[:140]
+        others.append(f"{title or 'Untitled'}: {snippet}" if snippet else (title or "Untitled"))
+    return titles, others
+
+
+def _record_applied_layout(session_id: str, slide_index: int, applied_ops) -> None:
+    """If a set_layout op was applied, record its kind so other slides pick a different one."""
+    for op in applied_ops or []:
+        if op.get("op") == "set_layout":
+            kind = (op.get("value") or {}).get("layout")
+            if kind:
+                from ppt.ppt_session import record_layout
+                record_layout(session_id, slide_index, kind)
+            break
+
+
+def _ppt_agent_state(session: dict, slide_index: int,
+                     slide_op: str = "review",
+                     student_query: str = "",
+                     web_source: str = "rag",
+                     student_instruction: str = "",
+                     all_slide_titles: Optional[List[str]] = None,
+                     other_slides: Optional[List[str]] = None,
+                     avoid_layouts: Optional[List[str]] = None) -> dict:
+    """
+    Build the agent input state from the session's stored curriculum coordinates.
+
+    slide_op            : "review" (agent decides content+theme) | "suggest" (verbal Q&A only)
+    student_query       : the student's question when slide_op == "suggest"
+    web_source          : "rag" | "web" | "hybrid" — from ppt_source_router.decide_source()
+    student_instruction : the raw student chat message that drove this turn
+    """
+    return {
+        "session_id": session["session_id"],
+        "student_id": session["student_id"],
+        "deck_ref": session["deck_ref"],
+        "slide_index": slide_index,
+        "slide_op": slide_op,
+        "student_query": student_query,
+        # hybrid RAG routing (see ppt_source_router / ppt_websearch)
+        "web_source": web_source,
+        "student_instruction": student_instruction,
+        # curriculum coordinates → RAG filters in analyze_slide
+        "board": session.get("board"),
+        "class_number": session.get("class_number"),
+        "subject": session.get("subject"),
+        "unit": session.get("unit"),
+        "unit_title": session.get("unit_title"),
+        "term": session.get("term"),
+        # agent-chosen deck design → apply_theme_all_slides_node
+        "theme_spec": session.get("theme_spec"),
+        # Upgrade #5: multi-slide context (duplicate detection, deck length warning).
+        # Prefer freshly-read deck titles; fall back to whatever the session cached.
+        "all_slide_titles": (all_slide_titles if all_slide_titles is not None
+                             else (session.get("all_slide_titles") or [])),
+        # Cross-slide distinctness: "Title: content" summaries of the other slides.
+        "other_slides": other_slides or [],
+        # Design variety: layout kinds already used on other slides (avoid repeating).
+        "avoid_layouts": avoid_layouts or [],
+        # Upgrade #7: adaptive severity — downgrade significant→minor after N rejections
+        "rejection_count": session.get("rejection_count", 0),
+        # Upgrade #8: deck mode for context
+        "deck_mode": session.get("deck_mode", "real"),
+    }
+
+
+@app.post("/ppt/edit")
+def ppt_edit(request: PPTEditRequest):
+    """
+    Agent-driven slide review and improvement.
+
+    The agent autonomously reads the slide, plans content + theme ops via RAG + LLM,
+    and acts based on severity:
+      - good        → verbal feedback only, no change.
+      - minor       → auto-applies the fix (font tweak, small bullet correction) and
+                       enforces the uniform theme across all slides — no student input needed.
+      - significant → returns {"status": "awaiting_approval", "proposed_change": {...}}
+                       (a content rewrite or structural change); call /ppt/decide next.
+
+    Students have no manual edit controls — do NOT send an `edit` field.
+    """
+    session = _ppt_require_session(request.session_id)
+    if session.get("ended_at"):
+        raise HTTPException(400, "Session already ended")
+
+    ctx, needs = _ppt_auth_context(session["student_id"])
+    if needs:
+        return needs
+
+    agent = _ppt_agent(session["deck_ref"])
+    config = {"configurable": {"thread_id": request.session_id}}
+    with ctx:
+        result = agent.invoke(
+            _ppt_agent_state(session, request.slide_index, slide_op="review"), config)
+
+    if "__interrupt__" in result:          # paused at wait_approval (significant change)
+        return {"status": "awaiting_approval",
+                "proposed_change": result["__interrupt__"][0].value}
+
+    from ppt.ppt_session import record_skill
+    record_skill(request.session_id, result.get("skill_delta"))
+    return _ppt_result_payload(result)
+
+
+@app.post("/ppt/suggest")
+def ppt_suggest(request: PPTSuggestRequest):
+    """
+    Main conversational endpoint for the PPT co-pilot (hybrid RAG) — the WHOLE loop
+    runs through here; no separate edit/approve endpoints are needed.
+
+    - If a change is awaiting the student's yes/no (set on a previous turn), this reply
+      is read as the decision (approve / reject / skip) and the paused agent is resumed —
+      the student approves the change right in the chat.
+    - Otherwise the message is routed by ppt_source_router.decide_source() into:
+        · "image"  : web image search — results for the CHAT (nothing touches the deck).
+        · "edit"   : the agent reviews the slide; a significant change pauses and returns
+                     {"status": "awaiting_approval", ...} — the NEXT chat message decides it.
+        · "answer" : answer from the chosen source (RAG / web / both); suggested points to SAY.
+    """
+    session = _ppt_require_session(request.session_id)
+    if session.get("ended_at"):
+        raise HTTPException(400, "Session already ended")
+
+    query = request.query or ""
+    coords = {"unit_title": session.get("unit_title")}
+
+    # 0) APPROVAL TURN — a change from a previous turn is waiting for the student's yes/no.
+    #    Interpret this chat message as the decision and resume the paused agent in place.
+    if session.get("awaiting_approval"):
+        from ppt.ppt_source_router import parse_decision
+        from ppt.ppt_session import clear_pending_approval, record_skill
+        dec = parse_decision(query)
+        if dec is None:
+            # Not a clear yes/no — re-show the pending change and keep waiting.
+            return {"status": "awaiting_approval", "intent": "edit",
+                    "ai_feedback": "Do you want me to apply this change? Reply approve, reject, or skip.",
+                    "proposed_change": session.get("pending_proposal")}
+
+        ctx, needs = _ppt_auth_context(session["student_id"])
+        if needs:
+            return needs
+        from langgraph.types import Command
+        agent = _ppt_agent(session["deck_ref"])
+        config = {"configurable": {"thread_id": request.session_id}}
+        with ctx:
+            result = agent.invoke(Command(resume=dec), config)
+        clear_pending_approval(request.session_id)
+        record_skill(request.session_id, result.get("skill_delta"))
+        if dec == "approve":
+            _record_applied_layout(request.session_id, request.slide_index, result.get("applied_ops"))
+        if dec == "reject":
+            try:
+                from ppt.ppt_session import record_rejection
+                record_rejection(request.session_id)
+            except Exception as e:
+                print(f"  [ppt_suggest] record_rejection failed: {e}")
+        payload = _ppt_result_payload(result)
+        payload["intent"] = "edit"
+        payload["decision"] = dec
+        return payload
+
+    # 1) Route the student's message (intent + source). Never raises.
+    try:
+        from ppt.ppt_source_router import decide_source
+        decision = decide_source(query, coords=coords)
+    except Exception as e:
+        print(f"  [ppt_suggest] routing failed: {e}")
+        decision = {"intent": "answer", "source": "rag", "reason": "router-error"}
+    intent, source = decision["intent"], decision["source"]
+
+    # 2) IMAGE intent — return content images for the CHAT (never inserted into the deck).
+    #    The query is grounded in the SLIDE'S CONTENT (title + text), not the student's vague
+    #    words, so "i need an img for this slide" yields images about the slide's topic.
+    if intent == "image":
+        ctx, needs = _ppt_auth_context(session["student_id"])
+        if needs:
+            return needs
+
+        # Read the current slide so the image query reflects what's actually on it.
+        slide_title, slide_text = "", ""
+        try:
+            with ctx:
+                import mcp_slides_client
+                snap = mcp_slides_client.get_slide_content(session["deck_ref"], request.slide_index)
+            slide_title = snap.get("title", "") or ""
+            from ppt.ppt_review import _readable_slide_text
+            slide_text = _readable_slide_text(snap)
+        except Exception as e:
+            print(f"  [ppt_suggest] slide read for image query failed: {e}")
+
+        unit_title = session.get("unit_title") or ""
+        # Prefer an LLM query grounded in the slide content; fall back to the heuristic.
+        llm_q = ""
+        try:
+            from ppt.ppt_review import llm_image_query
+            llm_q = llm_image_query(query, slide_title, slide_text, unit_title)
+        except Exception as e:
+            print(f"  [ppt_suggest] llm_image_query failed: {e}")
+
+        # Try progressively simpler queries so a flaky/empty result still yields images:
+        # the LLM query → a heuristic subject → the chapter topic. First non-empty wins.
+        images, img_query = [], (llm_q or "")
+        try:
+            from ppt.ppt_websearch import image_search, build_image_query, is_enabled
+            if is_enabled():
+                candidates = [llm_q, build_image_query(query, slide_title or unit_title),
+                              slide_title, unit_title]
+                seen = set()
+                for cand in candidates:
+                    cand = (cand or "").strip()
+                    if not cand or cand.lower() in seen:
+                        continue
+                    seen.add(cand.lower())
+                    images = image_search(cand)
+                    if images:
+                        img_query = cand
+                        break
+        except Exception as e:
+            print(f"  [ppt_suggest] image search failed: {e}")
+        feedback = (f"Here are some images for “{img_query}” — pick any to use in your slide."
+                    if images else "I couldn't find images for that right now.")
+        return {"status": "images", "intent": "image", "source": "web",
+                "ai_feedback": feedback, "image_query": img_query,
+                "images": images, "suggestions": []}
+
+    # 2b) GUIDE intent — the student wants to be TAUGHT how to design this slide (options,
+    #     step-by-step, how to match the deck theme). We don't edit the deck; we coach.
+    if intent == "guide":
+        ctx, needs = _ppt_auth_context(session["student_id"])
+        if needs:
+            return needs
+        slide_title, slide_text = "", ""
+        try:
+            with ctx:
+                import mcp_slides_client
+                snap = mcp_slides_client.get_slide_content(session["deck_ref"], request.slide_index)
+            slide_title = snap.get("title", "") or ""
+            from ppt.ppt_review import _readable_slide_text
+            slide_text = _readable_slide_text(snap)
+        except Exception as e:
+            print(f"  [ppt_suggest] slide read for guidance failed: {e}")
+        guide = {"guidance": "(Design guidance unavailable right now.)", "options": [], "theme_guidance": ""}
+        try:
+            from ppt.ppt_review import llm_design_guidance
+            guide = llm_design_guidance(
+                slide_title, slide_text, session.get("unit_title") or "",
+                session.get("theme_spec") or {}, query)
+        except Exception as e:
+            print(f"  [ppt_suggest] design guidance failed: {e}")
+        return {"status": "guidance", "intent": "guide",
+                "ai_feedback": guide["guidance"],
+                "options": guide.get("options", []),
+                "theme_guidance": guide.get("theme_guidance", ""),
+                "theme_spec": session.get("theme_spec"),
+                "suggestions": []}
+
+    # 3) EDIT / ANSWER intents both run the agent. Edit uses the review + HITL path;
+    #    answer uses the verbal-suggestion path. Both need the student's Google auth.
+    ctx, needs = _ppt_auth_context(session["student_id"])
+    if needs:
+        return needs
+
+    slide_op = "review" if intent == "edit" else "suggest"
+    # For EDIT, student_query must stay empty — a truthy student_query forces analyze_slide
+    # into CONTENT mode (verbal suggestions) and skips the design → propose → approval path.
+    # The raw message still rides along as student_instruction. ANSWER keeps its query.
+    student_query = "" if intent == "edit" else query
+    agent = _ppt_agent(session["deck_ref"])
+    config = {"configurable": {"thread_id": request.session_id}}
+    avoid_layouts = None
+    with ctx:
+        # For an edit, read the whole deck so the redesign stays distinct from other slides
+        # (avoids two slides ending up with identical content), and gather the layouts already
+        # used elsewhere so this slide gets a DIFFERENT design.
+        all_titles, other_slides = (None, None)
+        if intent == "edit":
+            all_titles, other_slides = _ppt_deck_context(session["deck_ref"], request.slide_index)
+            from ppt.ppt_session import layouts_used_elsewhere
+            avoid_layouts = layouts_used_elsewhere(request.session_id, request.slide_index)
+        result = agent.invoke(
+            _ppt_agent_state(
+                session, request.slide_index,
+                slide_op=slide_op,
+                student_query=student_query,
+                web_source=source,
+                student_instruction=query,
+                all_slide_titles=all_titles,
+                other_slides=other_slides,
+                avoid_layouts=avoid_layouts,
+            ), config)
+
+    # Edit path may pause for approval (significant change). Remember the pending change
+    # so the student's NEXT chat message (approve/reject/skip) resolves it — no separate
+    # endpoint. The prompt tells the student how to respond in the same chat.
+    if "__interrupt__" in result:
+        proposal = result["__interrupt__"][0].value
+        from ppt.ppt_session import set_pending_approval
+        set_pending_approval(request.session_id, proposal)
+        return {"status": "awaiting_approval", "intent": "edit",
+                "ai_feedback": "I'd like to make this change — reply approve, reject, or skip.",
+                "proposed_change": proposal}
+
+    from ppt.ppt_session import record_skill
+    record_skill(request.session_id, result.get("skill_delta"))
+    _record_applied_layout(request.session_id, request.slide_index, result.get("applied_ops"))
+    payload = _ppt_result_payload(result)
+    payload["intent"] = intent
+    return payload
+
+
+@app.post("/ppt/decide")
+def ppt_decide(request: PPTDecideRequest):
+    """
+    Resume a paused PPT agent run with the student's decision (approve / reject / skip).
+
+    The router resumes the session's agent — the checkpoint lives inside that agent's
+    MemorySaver, keyed by session_id.
+    """
+    if request.decision not in ("approve", "reject", "skip"):
+        raise HTTPException(400, "decision must be one of: approve, reject, skip")
+
+    from langgraph.types import Command
+    from ppt.ppt_session import record_skill
+
+    session = _ppt_require_session(request.session_id)
+    ctx, needs = _ppt_auth_context(session["student_id"])
+    if needs:
+        return needs
+
+    agent = _ppt_agent(session["deck_ref"])
+    config = {"configurable": {"thread_id": request.session_id}}
+    with ctx:
+        result = agent.invoke(Command(resume=request.decision), config)
+
+    record_skill(request.session_id, result.get("skill_delta"))
+    # Upgrade #7: track rejections so adaptive severity can kick in on future edits
+    if request.decision == "reject":
+        try:
+            from ppt.ppt_session import record_rejection
+            record_rejection(request.session_id)
+        except Exception as e:
+            print(f"  [ppt_decide] record_rejection failed: {e}")
+    return _ppt_result_payload(result)
 
 
 @app.get("/sessions/attended-topics/{candidate_id}")

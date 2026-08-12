@@ -22,38 +22,6 @@ const {
   normalizeTeamKey,
   normalizeTeams,
 } = require("../services/liveSessionService");
-const Student = require("../model/Student");
-const DebateResult = require("../model/DebateResult");
-const mongoose = require("mongoose");
-
-async function persistDebateResult(sessionId, result, liveSession) {
-  const candidateId =
-    liveSession?.candidateId ||
-    liveSession?.hostCandidateId ||
-    result?.candidateId ||
-    result?.candidate_id;
-  const filters = candidateId ? [{ studentId: candidateId }, { email: candidateId }] : [];
-  if (candidateId && mongoose.isValidObjectId(candidateId)) {
-    filters.push({ _id: candidateId });
-  }
-  const student = filters.length
-    ? await Student.findOne({ $or: filters }).catch(() => null)
-    : null;
-
-  if (!student && !candidateId) return null;
-
-  return DebateResult.create({
-    student: student?._id,
-    studentId: student?.studentId || candidateId,
-    sessionId,
-    candidateId,
-    result,
-    liveSession,
-  }).catch((error) => {
-    console.log("Failed to persist debate result", error.message);
-    return null;
-  });
-}
 
 function getCandidate(source = {}) {
   return {
@@ -437,14 +405,14 @@ const controller = {
           message: req.body.message,
         },
       });
-
+     console.log(`[DEBATE] ${candidate.candidate_name} submitted a message in session ${req.body.sessionId || req.body.session_id}:`, req.body.message);
       const touchedSession = await touchParticipant({
         sessionId: req.body.sessionId || req.body.session_id,
         candidateId: candidate.candidate_id,
         candidateName: candidate.candidate_name,
         status: "active",
       });
-
+ console.log(`[DEBATE] ${candidate.candidate_name} touched session ${touchedSession} ${req.body.sessionId || req.body.session_id}`);
       const updatedSession = await appendTurn({
         sessionId: req.body.sessionId || req.body.session_id,
         speakerId: candidate.candidate_id,
@@ -453,7 +421,7 @@ const controller = {
         message: req.body.message,
         transcript: req.body.transcript || req.body.message,
       });
-
+console.log(`[DEBATE] ${candidate.candidate_name} updated session ${updatedSession} ${req.body.sessionId || req.body.session_id}`);
       const aiReply =
         data?.ai_response ||
         data?.ai_greeting ||
@@ -472,7 +440,7 @@ const controller = {
           transcript: aiReply,
         });
       }
-
+console.log
       return res.status(200).json({
         status: true,
         data: { ...data, liveSession: updatedSession || touchedSession },
@@ -674,6 +642,7 @@ const controller = {
     try {
       const sessionId = req.body.sessionId || req.body.session_id;
       const candidate = getCandidate(req.body);
+      console.log(`${JSON.stringify(req.body)} submitted a turn in session ${sessionId}:`, req.body.message);
       const liveSession = await getSession(sessionId);
       if (!liveSession) {
         return res
@@ -698,26 +667,25 @@ const controller = {
         });
       }
 
-      const currentRound = liveSession.currentRound || {};
-      const activeTeam = normalizeTeamKey(currentRound.activeTeam) || "A";
-      const currentSpeakerId = currentRound.currentSpeakerId;
+const currentRound = liveSession.currentRound || {};
+const activeTeam = normalizeTeamKey(currentRound.activeTeam) || "A";
+const currentSpeakerId = String(currentRound.currentSpeakerId || "");
+const submittingUserId = String(candidate.candidate_id);
 
-      if (activeTeam && activeTeam !== team) {
-        return res.status(409).json({
-          status: false,
-          message: `It is Team ${activeTeam}'s turn right now.`,
-        });
-      }
+// CRITICAL: Only exact speaker ID match can submit (no team substitution)
+// if (currentSpeakerId !== submittingUserId) {
+//   return res.status(409).json({
+//     status: false,
+//     message: `It is not your turn. Current speaker: ${currentSpeakerId}, You: ${submittingUserId}`,
+//   });
+// }
 
-      if (
-        currentSpeakerId &&
-        String(currentSpeakerId) !== String(candidate.candidate_id)
-      ) {
-        return res.status(409).json({
-          status: false,
-          message: "It is not your turn to speak yet.",
-        });
-      }
+if (activeTeam && activeTeam !== team) {
+  return res.status(409).json({
+    status: false,
+    message: `It is Team ${activeTeam}'s turn right now.`,
+  });
+}
 
       // Wrap Python respond in try/catch so a 500 (e.g. Qdrant timeout,
       // OpenAI error) does NOT abort the turn. The message is always saved
@@ -736,7 +704,6 @@ const controller = {
           },
         });
       } catch (pythonErr) {
-        // Non-fatal: record the error as a warning and continue advancing the turn
         pythonRespondWarning =
           pythonErr?.message || "AI moderation temporarily unavailable.";
         console.warn(
@@ -744,11 +711,20 @@ const controller = {
           pythonRespondWarning,
         );
       }
+      console.log(pythonRespond);
+      const nextTurnCandidateId =
+        pythonRespond?.current_turn_candidate_id || "";
+      const isNextTurnAiParticipant =
+        String(nextTurnCandidateId).startsWith("__ai_student__");
 
+      console.log("[TURN-DECISION] Python responded with:", {
+        nextTurnCandidateId,
+        isAiParticipant: isNextTurnAiParticipant,
+        indicator: nextTurnCandidateId.substring(0, 20),
+      });
       const pythonRoom = await callPython({
         path: `/debate/room/${encodeURIComponent(sessionId)}`,
       }).catch(() => null);
-
       const warnings = normalizeRoomWarnings(pythonRoom, {
         ...pythonRespond,
         candidate_id: candidate.candidate_id,
@@ -796,38 +772,60 @@ const controller = {
           },
         });
 
-        return res.status(200).json({
-          status: true,
-          data: {
-            ...(pythonRespond || {}),
-            warnings,
-            pythonWarning: pythonRespondWarning || saveWarning || null,
-            liveSession: pending,
-            waitingForAi: false,
-          },
-        });
+return res.status(200).json({
+  status: true,
+  data: {
+    ...(pythonRespond || {}),
+    warnings,
+    pythonWarning: pythonRespondWarning || saveWarning || null,
+    current_turn_candidate_id: pythonRespond?.current_turn_candidate_id || null,
+    next_speaker_is_ai: String(pythonRespond?.current_turn_candidate_id || "").startsWith("__ai_student__"),
+    liveSession: pending,
+    waitingForAi: false,
+  },
+});
       }
 
       await updateRoomState(sessionId, { status: "waiting_for_ai" });
 
       let aiResponse = findLatestAiMessage(pythonRoom);
       let aiPayload = null;
-      const hasAiStudent = Boolean(
-        updatedAfterTurn?.metadata?.hasAiStudent ||
-        liveSession?.metadata?.hasAiStudent,
-      );
 
-      if (hasAiStudent) {
-        aiPayload = await callPython({
-          method: "post",
-          path: "/debate/room/ai-student",
-          data: { session_id: sessionId },
-        }).catch(() => null);
-        aiResponse =
-          aiPayload?.ai_response ||
-          aiPayload?.response ||
-          aiPayload?.message ||
-          aiResponse;
+      // ▼ ONLY call AI-student if Python indicator shows AI participant ▼
+      if (isNextTurnAiParticipant) {
+        console.log(
+          "[AI-STUDENT] Calling API - Python returned AI participant indicator",
+        );
+
+        try {
+          aiPayload = await callPython({
+            method: "post",
+            path: "/debate/room/ai-student",
+            data: { session_id: sessionId },
+          });
+
+          aiResponse =
+            aiPayload?.ai_response ||
+            aiPayload?.response ||
+            aiPayload?.message ||
+            aiResponse;
+
+          console.log("[AI-STUDENT] Got response:", {
+            hasResponse: Boolean(aiResponse),
+            length: aiResponse?.length || 0,
+          });
+        } catch (aiErr) {
+          console.warn(
+            "[AI-STUDENT] API call failed (non-fatal):",
+            aiErr?.message,
+          );
+          aiPayload = null;
+          // Continue without AI response - non-fatal
+        }
+      } else {
+        console.log(
+          "[AI-STUDENT] Skipped API call - Python says next is human",
+        );
       }
 
       const nextRoundTeam = "A";
@@ -838,45 +836,57 @@ const controller = {
       );
 
       let finalSession;
-      if (aiResponse) {
-        finalSession = await saveRoomAiResponse({
-          sessionId,
-          message: aiResponse,
-          roundNumber: currentRound.roundNumber || 1,
-          metadata: aiPayload,
-          nextSpeakerId: nextSpeaker?.id || null,
-          nextTeam: nextRoundTeam,
-        });
-      } else {
-        finalSession = await updateRoomState(sessionId, {
-          status: "active",
-          currentRound: {
-            ...(updatedAfterTurn?.currentRound || {}),
-            phase: "team_turn",
-            roundNumber: Number(currentRound.roundNumber || 1) + 1,
-            awaitingTeams: ["A", "B"],
-            activeTeam: nextRoundTeam,
-            currentSpeakerId: nextSpeaker?.id || null,
-          },
-        });
-      }
-
-      return res.status(200).json({
-        status: true,
-        data: {
-          ...(pythonRespond || {}),
-          warnings,
-          aiResponse: aiResponse || null,
-          pythonWarning:
-            pythonRespondWarning ||
-            saveWarning ||
-            (!aiResponse && !hasAiStudent
-              ? "Python room API did not return a round-level AI response for this even-team room."
-              : null),
-          waitingForAi: false,
-          liveSession: finalSession,
-        },
-      });
+if (aiResponse) {
+  // AI is speaking - set currentSpeakerId to AI participant
+  finalSession = await saveRoomAiResponse({
+    sessionId,
+    message: aiResponse,
+    roundNumber: currentRound.roundNumber || 1,
+    metadata: aiPayload,
+    nextSpeakerId: "__ai_student__",
+    nextTeam: nextRoundTeam,
+  });
+} else {
+  finalSession = await updateRoomState(sessionId, {
+    status: "active",
+    currentRound: {
+      ...(updatedAfterTurn?.currentRound || {}),
+      phase: "team_turn",
+      roundNumber: Number(currentRound.roundNumber || 1) + 1,
+      awaitingTeams: ["A", "B"],
+      activeTeam: nextRoundTeam,
+      currentSpeakerId: nextSpeaker?.id || null,
+    },
+  });
+}
+return res.status(200).json({
+  status: true,
+  data: {
+    success: true,
+    session_id: sessionId,
+    
+    // ▼ Pass through Python's indicator ▼
+    current_turn_candidate_id: nextTurnCandidateId,
+    
+    // ▼ Derived from indicator (for frontend convenience) ▼
+    next_speaker_is_ai: isNextTurnAiParticipant,
+    
+    // ▼ AI response if we called AI-student API ▼
+    aiResponse: aiResponse || null,
+    
+    // ▼ If AI is speaking, set to AI ID ▼
+    ai_speaking_id: aiResponse ? "__ai_student__" : null,
+    
+    // Other fields
+    ...(pythonRespond || {}),
+    warnings,
+    pythonWarning: pythonRespondWarning || saveWarning || null,
+    waitingForAi: false,
+    
+    // Full session state
+    liveSession: finalSession,
+  },
+});
     } catch (error) {
       return res.status(error.statusCode || 500).json({
         status: false,
@@ -1024,7 +1034,6 @@ const controller = {
 
       await saveFeedback(sessionId, data, data);
       const updatedSession = await completeSession(sessionId);
-      await persistDebateResult(sessionId, data, updatedSession);
       return res
         .status(200)
         .json({ status: true, data: { ...data, liveSession: updatedSession } });
@@ -1051,7 +1060,6 @@ const controller = {
         results: data,
         teams: normalizeTeams(data.teams || {}),
       });
-      await persistDebateResult(sessionId, data, updatedSession);
       return res.status(200).json({
         status: true,
         data: {

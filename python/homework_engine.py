@@ -126,7 +126,9 @@ class HomeworkEngine:
             return "hard"
 
     def _get_rag_context_for_sections(
-        self, subject: str, unit_number: int, section_titles: List[str]
+        self, subject: str, unit_number: int, section_titles: List[str],
+        term: Optional[Any] = None, board: Optional[str] = None,
+        class_number: Optional[str] = None,
     ) -> str:
         """Get textbook content for weak sections from Qdrant."""
         try:
@@ -137,6 +139,9 @@ class HomeworkEngine:
                 limit=5,
                 unit_filter=unit_number,
                 subject_filter=subject,
+                board_filter=board,
+                class_filter=class_number,
+                term_filter=term,
             )
             if results:
                 return "\n---\n".join(r.get("text", "")[:600] for r in results)
@@ -441,6 +446,9 @@ Return ONLY the JSON array."""
         candidate_name: str = "",
         unit_title: str = "",
         specific_topic: str = "",
+        term: Optional[Any] = None,
+        board: Optional[str] = None,
+        class_number: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         AI assigns homework based on the student's weak areas.
@@ -512,7 +520,10 @@ Return ONLY the JSON array."""
 
         # Get RAG context
         section_titles = [s.get("section_title", "") for s in weak_sections[:5]]
-        rag_context = self._get_rag_context_for_sections(subject, unit_number, section_titles)
+        rag_context = self._get_rag_context_for_sections(
+            subject, unit_number, section_titles,
+            term=term, board=board, class_number=class_number,
+        )
 
         # Generate questions
         questions = self._generate_homework_with_llm(
@@ -539,6 +550,11 @@ Return ONLY the JSON array."""
             "subject": subject,
             "unit_number": unit_number,
             "unit_title": unit_title,
+            # Persisted so the homework chat can reproduce the same RAG scope.
+            # The chat path already read these keys; nothing wrote them before.
+            "board": board,
+            "class_number": class_number,
+            "term": term,
             "difficulty": difficulty,
             "status": "pending",
             "questions": questions,
@@ -797,6 +813,394 @@ Return ONLY the JSON array."""
                 })
 
         return history
+
+    def get_homework_session_path(self, candidate_id: str, homework_id: str) -> Path:
+        safe_id = candidate_id.strip().lower().replace(" ", "_")
+        return self.data_dir / f"session_{safe_id}__{homework_id}.json"
+
+    def get_or_create_homework_session(
+        self, candidate_id: str, homework_id: str, homework_details: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        path = self.get_homework_session_path(candidate_id, homework_id)
+        session = self._load_json(path)
+        if not session:
+            first_question = homework_details["questions"][0]["question"]
+            session = {
+                "homework_id": homework_id,
+                "candidate_id": candidate_id,
+                "current_question_index": 0,
+                "attempts_count": 0,
+                "status": "pending",
+                "chat_history": [
+                    {
+                        "role": "assistant",
+                        "content": (
+                            f"Hello! I am your GradeUp Socratic Homework Helper. "
+                            f"I've loaded your homework assignment for {homework_details.get('subject', 'Studies')}. "
+                            f"Let's work on Question 1:\n\n{first_question}\n\n"
+                            f"How would you approach solving this problem?"
+                        ),
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    }
+                ]
+            }
+            self._save_json(path, session)
+        return session
+
+    def save_homework_session(
+        self, candidate_id: str, homework_id: str, session: Dict[str, Any]
+    ) -> None:
+        path = self.get_homework_session_path(candidate_id, homework_id)
+        self._save_json(path, session)
+
+    def ingest_school_homework(
+        self,
+        candidate_id: str,
+        image_base64: Optional[str],
+        text_content: Optional[str],
+        subject: str,
+        unit_number: int,
+        board: Optional[str] = None,
+        class_number: Optional[str] = None,
+        term: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """
+        Parses a school homework sheet (via OCR image or text content) into a structured JSON
+        homework assignment, generating expected answer rubrics and progressive hints.
+        """
+        api_key = os.environ.get("OPENAI_API_KEY_TEXT") or os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            raise Exception("OpenAI API Key is missing.")
+
+        # System prompt for structured parsing
+        system_prompt = (
+            "You are an educational assistant that processes raw school homework worksheets or text.\n"
+            "Your goal is to extract the individual questions and structure them into a JSON array.\n\n"
+            "For each question, you MUST generate:\n"
+            "1. 'question': The text of the question.\n"
+            "2. 'type': 'conceptual' | 'numerical' | 'application'.\n"
+            "3. 'section_title': A short title for the specific subtopic/concept (e.g. 'Photosynthesis Rate').\n"
+            "4. 'expected_answer': A detailed, confidential grading rubric/reference answer key.\n"
+            "5. 'marks': Default to 10.\n"
+            "6. 'hints': A JSON list of 2 progressive hints:\n"
+            "   - Hint 1: A high-level conceptual hint or general formula.\n"
+            "   - Hint 2: A more specific, step-by-step guidance hint (but without giving the final answer).\n"
+            "7. 'question_id': A unique 12-character hex ID (generate randomly).\n\n"
+            "Respond ONLY with a JSON object of this structure:\n"
+            "{\n"
+            "  \"questions\": [\n"
+            "    { ... },\n"
+            "    { ... }\n"
+            "  ]\n"
+            "}"
+        )
+
+        messages = [
+            {"role": "system", "content": system_prompt}
+        ]
+
+        if image_base64:
+            user_content = [
+                {"type": "text", "text": f"Extract and structure the questions from this homework sheet. Subject is {subject}, Unit is {unit_number}"},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}
+                }
+            ]
+            model = "gpt-4o"
+        else:
+            user_content = f"Subject: {subject}\nUnit Number: {unit_number}\nText Content:\n{text_content or 'Please explain how to solve my homework'}"
+            model = "gpt-4o-mini"
+
+        messages.append({"role": "user", "content": user_content})
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": model,
+            "messages": messages,
+            "response_format": {"type": "json_object"},
+            "temperature": 0.2,
+        }
+
+        resp = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=45
+        )
+
+        if not resp.ok:
+            raise Exception(f"Failed to ingest homework via OpenAI: {resp.text}")
+
+        result_data = json.loads(resp.json()["choices"][0]["message"]["content"])
+        questions = result_data.get("questions", [])
+
+        if not questions:
+            raise Exception("No questions could be extracted from the uploaded content.")
+
+        # Create homework ID
+        homework_id = "school_" + hashlib.md5(
+            f"{candidate_id}_{subject}_{unit_number}_{time.time()}".encode()
+        ).hexdigest()[:16]
+
+        # Build homework document
+        weak_sections_targeted = list(set(q.get("section_title", "general") for q in questions))
+        homework = {
+            "homework_id": homework_id,
+            "candidate_id": candidate_id,
+            "candidate_name": "Student",
+            "document_id": "school_upload",
+            "subject": subject,
+            "unit_number": unit_number,
+            "unit_title": "School Homework",
+            "board": board,
+            "class_number": class_number,
+            "term": term,
+            "difficulty": "medium",
+            "status": "pending",
+            "questions": questions,
+            "total_questions": len(questions),
+            "max_points": 100,
+            "weak_sections_targeted": weak_sections_targeted,
+            "assigned_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        # Save homework assignment
+        path = self._homework_path(candidate_id, homework_id)
+        self._save_json(path, homework)
+        self._add_to_index(candidate_id, homework_id, subject, unit_number, len(questions))
+
+        return homework
+
+    def execute_socratic_chat_turn(
+        self,
+        candidate_id: str,
+        homework_id: str,
+        message: str,
+        image_base64: Optional[str] = None,
+        subject: Optional[str] = None,
+        unit_number: Optional[int] = None,
+        board: Optional[str] = None,
+        class_number: Optional[str] = None,
+        term: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """
+        Executes a Socratic tutoring turn.
+        If homework_id is 'new' or 'school', it will first ingest the school homework sheet.
+        Otherwise, it loads the existing session and evaluates the student's message conceptually.
+        """
+        # Load homework assignment
+        homework = None
+        if homework_id in ("new", "school"):
+            if not subject or unit_number is None:
+                raise Exception("Subject and unit_number are required to start a new school homework session.")
+            # Ingest image or text as new homework
+            homework = self.ingest_school_homework(
+                candidate_id=candidate_id,
+                image_base64=image_base64,
+                text_content=message,
+                subject=subject,
+                unit_number=unit_number,
+                board=board,
+                class_number=class_number,
+                term=term,
+            )
+            homework_id = homework["homework_id"]
+            # Clear message since the ingestion creates the first question prompt
+            message = ""
+            image_base64 = None
+        else:
+            homework = self.get_homework_detail(candidate_id, homework_id)
+            if not homework:
+                raise Exception(f"Homework assignment '{homework_id}' not found.")
+
+        # Load or initialize stateful session
+        session = self.get_or_create_homework_session(candidate_id, homework_id, homework)
+
+        # If starting a new ingested school session (where message was cleared), return the initial welcome message
+        if not message and not image_base64:
+            first_msg = session["chat_history"][0]
+            return {
+                "success": True,
+                "homework_id": homework_id,
+                "response": first_msg["content"],
+                "current_question": homework["questions"][0]["question"],
+                "current_question_index": 0,
+                "total_questions": len(homework["questions"]),
+                "action": "provide_hint",
+                "status": "pending"
+            }
+
+        # Current question context
+        idx = session["current_question_index"]
+        questions = homework["questions"]
+        
+        if idx >= len(questions):
+            return {
+                "success": True,
+                "homework_id": homework_id,
+                "response": "This homework assignment is already completed! Nice job! 🎉",
+                "current_question": "",
+                "current_question_index": idx,
+                "total_questions": len(questions),
+                "action": "complete_homework",
+                "status": "completed"
+            }
+
+        current_q = questions[idx]
+        
+        # Append student message to history
+        session["chat_history"].append({
+            "role": "user",
+            "content": message if message else "[Student uploaded image of work]",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        })
+
+        # Retrieve textbook context from Qdrant using the current question (RAG integration)
+        textbook_context = ""
+        try:
+            from qdrant_integration import search_qdrant
+            results = search_qdrant(
+                query=current_q["question"],
+                limit=3,
+                unit_filter=homework["unit_number"],
+                subject_filter=homework["subject"],
+                board_filter=homework.get("board"),
+                class_filter=homework.get("class_number"),
+                term_filter=homework.get("term"),
+            )
+            if results:
+                textbook_context = "\n---\n".join(r.get("text", "")[:600] for r in results)
+        except Exception as q_err:
+            print(f"  [HomeworkEngine] RAG retrieval failed: {q_err}")
+
+        # Call OpenAI to run Socratic feedback
+        api_key = os.environ.get("OPENAI_API_KEY_TEXT") or os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            raise Exception("OpenAI API Key is missing.")
+
+        system_prompt = (
+            "You are the GradeUp Socratic Homework Helper.\n"
+            "Your job is to guide the student to solve their active homework question step-by-step.\n"
+            "You MUST NEVER provide the direct solution, final calculation, or answers.\n\n"
+            "## CURRENT ACTIVE QUESTION INFO:\n"
+            f"- Question: {current_q['question']}\n"
+            f"- Hints: {current_q.get('hints', [])}\n"
+            f"- Confidential Rubric/Expected Answer (NEVER REVEAL): {current_q.get('expected_answer', '')}\n"
+            f"- Student's Attempts on this question so far: {session['attempts_count']}\n\n"
+            "## CRITICAL INSTRUCTIONS:\n"
+            "1. Acknowledge and evaluate the student's reasoning/attempt.\n"
+            "2. If their answer is correct: set 'correct': true, congratulate them, briefly explain why they are correct, and set 'action': 'advance_question'.\n"
+            "3. If their answer is incorrect or stuck: set 'correct': false, explain where their thinking might be off without giving the answer, offer the next hint from the list, and ask them a supportive guiding question.\n"
+            "4. Keep explanations short, clear, and age-appropriate (school level).\n"
+            "5. Use LaTeX inline \\( ... \\) or display \\[ ... \\] for formulas where helpful.\n\n"
+            "Respond ONLY with a JSON object matching this structure:\n"
+            "{\n"
+            "  \"correct\": true | false,\n"
+            "  \"assistant_response\": \"Socratic feedback text here...\",\n"
+            "  \"action\": \"advance_question\" | \"provide_hint\"\n"
+            "}"
+        )
+
+        # Construct payload with RAG context
+        user_prompt = f"Student Message: {message}\n\n"
+        if textbook_context:
+            user_prompt += f"--- TEXTBOOK REFERENCE CONTEXT ---\n{textbook_context}\n----------------------------------\n\n"
+        user_prompt += "Evaluate the student's response against the question and expected answer."
+
+        messages = [
+            {"role": "system", "content": system_prompt}
+        ]
+        
+        # Add last 6 messages from session chat history for context
+        for msg in session["chat_history"][-6:]:
+            messages.append({"role": msg["role"], "content": msg["content"]})
+
+        if image_base64:
+            user_content = [
+                {"type": "text", "text": user_prompt},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}
+                }
+            ]
+            model = "gpt-4o"
+        else:
+            user_content = user_prompt
+            model = "gpt-4o-mini"
+
+        messages.append({"role": "user", "content": user_content})
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": model,
+            "messages": messages,
+            "response_format": {"type": "json_object"},
+            "temperature": 0.3,
+        }
+
+        resp = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=40
+        )
+
+        if not resp.ok:
+            raise Exception(f"Socratic LLM request failed: {resp.text}")
+
+        eval_result = json.loads(resp.json()["choices"][0]["message"]["content"])
+        is_correct = eval_result.get("correct", False)
+        assistant_resp = eval_result.get("assistant_response", "Let's keep trying! What do you think is the next step?")
+
+        # Update state based on correctness
+        action = "provide_hint"
+        if is_correct:
+            session["current_question_index"] += 1
+            session["attempts_count"] = 0
+            action = "advance_question"
+            
+            # If all questions are now complete
+            if session["current_question_index"] >= len(questions):
+                session["status"] = "completed"
+                # Update status in general index
+                self._update_index_status(candidate_id, homework_id, "completed", score=100.0, points=100)
+                action = "complete_homework"
+                assistant_resp += "\n\n🎉 **Congratulations! You have completed all questions in this homework assignment!**"
+        else:
+            session["attempts_count"] += 1
+
+        # Append assistant feedback to session history
+        session["chat_history"].append({
+            "role": "assistant",
+            "content": assistant_resp,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        })
+
+        # Save session
+        self.save_homework_session(candidate_id, homework_id, session)
+
+        next_q = ""
+        current_idx = session["current_question_index"]
+        if current_idx < len(questions):
+            next_q = questions[current_idx]["question"]
+
+        return {
+            "success": True,
+            "homework_id": homework_id,
+            "response": assistant_resp,
+            "current_question": next_q or "Homework Completed!",
+            "current_question_index": current_idx,
+            "total_questions": len(questions),
+            "action": action,
+            "status": session["status"]
+        }
 
 
 # ── Global singleton ──────────────────────────────────────────────────────────

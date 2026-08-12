@@ -16,7 +16,13 @@ import VoiceStudyCompanionV3 from "./pages/voice-study-companion-v3";
 import QuizPage from "./pages/quiz-page";
 import HomeworkPage from "./pages/homework-page";
 import TeacherHomeworkPage from "./pages/teacher-homework-page";
+import TeacherCurriculumPlannerPage from './pages/teacher-curriculum-planner-page';
 import TeacherPDFUpload from "./pages/teacher-pdf-upload";
+import TeacherUserManagementPage from "./pages/teacher-user-management-page";
+import TeacherExamCorrectionPage from "./pages/teacher-exam-correction-page";
+import TeacherLayout from "./components/TeacherLayout";
+import TeacherDashboard from "./components/teacher-dashboard";
+import TeacherAttendancePage from "./components/attendance/AttendanceDashboard";
 import AnalyticsPage from "./pages/analytics-page";
 import ContentManagerPage from "./pages/content-manager-page";
 import EnhancedContentManager from "./pages/enhanced-content-manager";
@@ -50,13 +56,32 @@ import ExamPreparationPage from "./pages/exam-preparation";
 import CalendarPage from "./pages/calendar-page";
 import { useAutoLogout } from "./hooks/useAutoLogout";
 import { SessionTimeoutModal } from "./components/SessionTimeoutModal";
+import TeacherAssessmentQuizCreatorPage from "./pages/teacher-assessment-quiz-creator-page";
+import TeacherExamProgressTracker from "./pages/teacher-exam-progress-tracker";
 import MeetingSystem from "./components/Meetingsystem";
 import DebatePage from "./pages/DebatePage";
 import SeminarPage from "./pages/SeminarPage";
 import MeetingPage from "./pages/MeetingPage";
-import TeacherDashboard from "./components/teacher-dashboard";
+import TeacherSeminarPage from "./pages/teacher-seminar-page";
+import TeacherDebatePage from "./pages/teacher-debate-page";
+import TeacherMeetingPage from "./pages/teacher-meeting-page";
+import TeacherSeminarSetupPage from "./pages/teacher-seminar-setup-page";
+import TeacherDebateSetupPage from "./pages/teacher-debate-setup-page";
+import TeacherMeetingSetupPage from "./pages/teacher-meeting-setup-page";
+
 
 const WARNING_SECONDS = 120;
+
+const withTeacherLayout = (
+  Component: React.ComponentType<any>,
+  options: { showSidebar: boolean } = { showSidebar: true }
+) => {
+  return (props: any) => (
+    <TeacherLayout showSidebar={options.showSidebar}>
+      <Component {...props} />
+    </TeacherLayout>
+  );
+};
 
 function AppWithAuth() {
   const { user, logoutMutation, isLoading } = useAuth();
@@ -99,17 +124,29 @@ function AppWithAuth() {
         <ProtectedRoute path="/quiz" component={QuizPage} />
         <ProtectedRoute path="/homework" component={HomeworkPage} />
         <ProtectedRoute path="/homework-helper" component={HomeworkHelperPage} />
-        <ProtectedRoute path="/teacher/homework" component={TeacherHomeworkPage} />
-        <ProtectedRoute path="/teacher/pdf-upload" component={TeacherPDFUpload} />
-        <ProtectedRoute path="/content-manager" component={ContentManagerPage} />
-        <ProtectedRoute path="/enhanced-content-manager" component={EnhancedContentManager} />
-        <ProtectedRoute path="/analytics" component={AnalyticsPage} />
+        <ProtectedRoute path="/teacher/homework" component={withTeacherLayout(TeacherHomeworkPage, { showSidebar: false })} />
+        <ProtectedRoute path="/teacher/attendance" component={withTeacherLayout(TeacherAttendancePage, { showSidebar: false })} />
+        <ProtectedRoute path="/teacher/assessment-quiz-creator" component={withTeacherLayout(TeacherAssessmentQuizCreatorPage, { showSidebar: false })} />
+        <ProtectedRoute path="/teacher/pdf-upload" component={withTeacherLayout(TeacherPDFUpload, { showSidebar: false })} />
+        <ProtectedRoute path="/teacher/user-management" component={TeacherUserManagementPage} />
+        <ProtectedRoute path="/teacher/exam-correction" component={TeacherExamCorrectionPage} />
+        <ProtectedRoute path="/teacher/curriculum-planner" component={withTeacherLayout(TeacherCurriculumPlannerPage, { showSidebar: false })} />
+        <ProtectedRoute path="/teacher/exam-progress" component={withTeacherLayout(TeacherExamProgressTracker, { showSidebar: false })} />
+        {/* <ProtectedRoute path="/teacher/seminars" component={withTeacherLayout(TeacherSeminarPage, { showSidebar: false })} /> */}
+        <ProtectedRoute path="/teacher/seminars" component={withTeacherLayout(TeacherSeminarSetupPage, { showSidebar: false })} />
+        {/* <ProtectedRoute path="/teacher/debates" component={withTeacherLayout(TeacherDebatePage, { showSidebar: false })} /> */}
+        <ProtectedRoute path="/teacher/debates" component={withTeacherLayout(TeacherDebateSetupPage, { showSidebar: false })} />
+        <ProtectedRoute path="/teacher/meetings" component={withTeacherLayout(TeacherMeetingPage, { showSidebar: false })} />
+        <ProtectedRoute path="/teacher/meetings/new" component={withTeacherLayout(TeacherMeetingSetupPage, { showSidebar: false })} />
+        <ProtectedRoute path="/content-manager" component={withTeacherLayout(ContentManagerPage, { showSidebar: false })} />
+        <ProtectedRoute path="/enhanced-content-manager" component={withTeacherLayout(EnhancedContentManager, { showSidebar: false })} />
+        <ProtectedRoute path="/analytics" component={withTeacherLayout(AnalyticsPage, { showSidebar: false })} />
         <ProtectedRoute path="/community" component={CommunityPage} />
         <ProtectedRoute path="/communityNew" component={CommunityNewPage} />
         <ProtectedRoute path="/preparation-exam" component={PreparationExamPage} />
         <ProtectedRoute path="/main-exam" component={MainExamPage} />
-        <ProtectedRoute path="/students" component={StudentsPage} />
-        <ProtectedRoute path="/teachers" component={TeacherDashboard} />
+        <ProtectedRoute path="/students" component={withTeacherLayout(StudentsPage, { showSidebar: false })} />
+        <ProtectedRoute path="/teachers" component={withTeacherLayout(TeacherDashboard)} />
 
         <ProtectedRoute path="/profile" component={ProfilePage} />
         <ProtectedRoute path="/settings" component={SettingsPage} />

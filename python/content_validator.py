@@ -61,6 +61,7 @@ class ValidationReport:
     unmatched_blocks: int
     gaps: List[GapItem] = field(default_factory=list)
     coverage_pct: float = 0.0
+    word_coverage_pct: float = 0.0   # fraction of unique MD words found in structured JSON
     section_types_found: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
 
@@ -71,6 +72,7 @@ class ValidationReport:
             "matched_blocks": self.matched_blocks,
             "unmatched_blocks": self.unmatched_blocks,
             "coverage_pct": round(self.coverage_pct, 1),
+            "word_coverage_pct": round(self.word_coverage_pct, 1),
             "section_types_found": self.section_types_found,
             "gaps": [
                 {
@@ -201,7 +203,7 @@ def parse_structured_json(structured: Dict[str, Any]) -> Tuple[List[str], Set[st
                     texts.append(val.strip())
 
             # Recurse into sub-structures
-            for key in ("sections", "sub_items", "subsections", "questions",
+            for key in ("sections", "sub_items", "subsections", "sub_sections", "questions",
                         "exercises", "activities", "stanzas", "words",
                         "glossary", "notes", "prose", "poetry", "grammar",
                         "vocabulary", "writing_tasks", "speaking_listening",
@@ -387,6 +389,20 @@ def validate_extraction(
             if section_type not in section_types:
                 warnings.append(f"Content contains '{section_type}' headings but type not found in extraction")
 
+    # Compute word coverage
+    all_extracted_text = " ".join(extracted_texts)
+    all_md_text = re.sub(r"<!--.*?-->", "", content_md, flags=re.DOTALL)
+    all_md_text = re.sub(r"!\[.*?\]\(.*?\)", "", all_md_text)
+    md_words  = _word_set(all_md_text)
+    ext_words = _word_set(all_extracted_text)
+    _STOP = {"the","and","for","that","this","with","are","was","not","but",
+             "from","have","had","has","its","they","you","all","can","one"}
+    md_sig  = md_words  - _STOP
+    ext_sig = ext_words - _STOP
+    word_cov = round(
+        len(md_sig & ext_sig) / len(md_sig) * 100 if md_sig else 100.0, 1
+    )
+
     report = ValidationReport(
         is_complete=unmatched == 0,
         total_blocks=total,
@@ -394,6 +410,7 @@ def validate_extraction(
         unmatched_blocks=unmatched,
         gaps=gaps,
         coverage_pct=coverage,
+        word_coverage_pct=word_cov,
         section_types_found=section_types,
         warnings=warnings,
     )
@@ -466,13 +483,23 @@ def fill_gaps_with_llm(
     }
 
     # Subject-aware labels and system prompt
-    is_math = str(subject).lower() == "mathematics"
+    subject_lower = str(subject).lower()
+    is_math    = subject_lower in ("mathematics", "maths")
+    is_english = subject_lower in ("english", "language", "tamil", "hindi")
+    is_science = subject_lower in ("science", "physics", "chemistry", "biology", "environmental_science")
+
     if is_math:
-        type_labels = "definition, illustration, example, note, thinking_corner, activity, progress_check, exercise, unit_exercise, points_to_remember, ict_corner, other"
+        type_labels  = "definition, illustration, example, note, thinking_corner, activity, progress_check, exercise, unit_exercise, points_to_remember, ict_corner, other"
         subject_hint = "This is a MATHEMATICS textbook. Use specialized types: definition, illustration, example, thinking_corner, exercise."
-    else:
-        type_labels = "grammar, vocabulary, exercise, writing_task, speaking, listening, prose, poem, supplementary, about_the_author, activity, note, do_you_know, other"
-        subject_hint = "Use standard textbook types: grammar, vocabulary, prose, exercise."
+    elif is_english:
+        type_labels  = "prose, poem, grammar, vocabulary, exercise, writing_task, speaking, listening, supplementary, about_the_author, note, activity, other"
+        subject_hint = "This is an ENGLISH / LANGUAGE textbook. Use types: prose, poem, grammar, vocabulary, exercise."
+    elif is_science:
+        type_labels  = "section, introduction, activity, definition, example, exercise, do_you_know, points_to_remember, ict_corner, other"
+        subject_hint = "This is a SCIENCE textbook. Use types: section, activity, definition, example, exercise, do_you_know. NEVER use 'prose'."
+    else:  # social science, history, geography, etc.
+        type_labels  = "section, introduction, activity, exercise, points_to_remember, map_work, timeline, other"
+        subject_hint = "This is a SOCIAL SCIENCE / HUMANITIES textbook. Use types: section, activity, exercise. NEVER use 'prose'."
 
     gap_prompt = (
         f"The following textbook content was MISSED in the initial extraction. "
@@ -489,10 +516,12 @@ def fill_gaps_with_llm(
             {"role": "system", "content": (
                 "You are an expert textbook content extractor. "
                 "Extract the missing content into structured sections. "
-                f"Use type labels: {type_labels}. "
-                "For Mathematics, ensure 'example' includes the solution in metadata."
-                if is_math else
-                "Grammar sections must include BOTH explanation AND exercises as sub_items."
+                f"ONLY use these type labels: {type_labels}. "
+                + ("For Mathematics, ensure 'example' includes the solution in metadata."
+                   if is_math else
+                   "Grammar sections must include BOTH explanation AND exercises as sub_items."
+                   if is_english else
+                   "Each distinct heading is a separate section. Do NOT merge sections.")
             )},
             {"role": "user", "content": gap_prompt},
         ],
@@ -520,6 +549,21 @@ def fill_gaps_with_llm(
 
             new_sections = gap_data.get("sections", [])
             if new_sections:
+                # Inline normalization: fix common LLM type mistakes for non-English subjects
+                if not is_english:
+                    _PROSE_TO_SECTION = {"prose", "reading", "passage", "text"}
+                    _VALID_NON_ENGLISH = {
+                        "section", "introduction", "activity", "definition", "example",
+                        "exercise", "do_you_know", "points_to_remember", "ict_corner",
+                        "map_work", "timeline", "summary", "other",
+                    }
+                    for sec in new_sections:
+                        stype = str(sec.get("type") or "").lower()
+                        sec["type"] = stype  # always lowercase
+                        if stype in _PROSE_TO_SECTION:
+                            sec["type"] = "section"  # remap prose → section
+                        elif stype not in _VALID_NON_ENGLISH:
+                            sec["type"] = "section"  # remap unknown → section
                 existing_data.setdefault("sections", []).extend(new_sections)
                 types_added = [s.get("type", "?") for s in new_sections]
                 print(f"  ✅ [Gap Filler] Added {len(new_sections)} missing section(s): {types_added}")

@@ -219,6 +219,7 @@ def _normalize_section_types(sections: list, subject: str = "") -> list:
                 ]
                 print(f"  🎵 Auto-split poem '{title or sec_id}' into {len(raw_stanzas)} stanzas")
 
+
         # ── SKIP image-only sections ─────────────────────────────────────────
         if _IMAGE_ONLY_RE.match(content) and not sec.get("sub_items"):
             continue  # drop entirely
@@ -3836,6 +3837,7 @@ def organize_images_by_unit(
         forced_unit = valid_unit_numbers[0]
         print(f"  🎯 Single-unit extraction detected (Unit {forced_unit}) — forcing all images to this unit")
         images_by_unit: Dict[int, List[Tuple[str, bytes]]] = {forced_unit: []}
+        skipped_text_boxes = 0
         for page in raw_ocr_response.get("pages", []):
             if not isinstance(page, dict): continue
             page_images = page.get("images", [])
@@ -3843,13 +3845,29 @@ def organize_images_by_unit(
                 page_images = [page]
             for img in page_images:
                 if not isinstance(img, dict): continue
+
+                img_name = (img.get("id") or img.get("image_name")
+                            or img.get("name") or img.get("filename") or "image")
+                # Skip images the Vision pass classified as text boxes (scanner
+                # images) — they were already recovered as text and must never
+                # be stored. Mirrors the multi-unit path below.
+                if image_metadata:
+                    img_lookup = img_name if '.' in img_name else f"{img_name}.jpeg"
+                    bare_name = img_name.split('.')[0] if '.' in img_name else img_name
+                    meta = image_metadata.get(img_lookup) or image_metadata.get(bare_name)
+                    if meta and meta.get("is_text_box", False):
+                        skipped_text_boxes += 1
+                        continue
+
                 img_data_b64 = img.get("image_base64") or img.get("image_data") or img.get("data")
                 if img_data_b64:
                     # Strip data URI prefix if present
                     if "," in img_data_b64:
                         img_data_b64 = img_data_b64.split(",", 1)[1]
-                    images_by_unit[forced_unit].append((img.get("id") or "image", base64.b64decode(img_data_b64)))
-        
+                    images_by_unit[forced_unit].append((img_name, base64.b64decode(img_data_b64)))
+
+        if skipped_text_boxes:
+            print(f"  🚫 Skipped {skipped_text_boxes} text-box (scanner) image(s)")
         print(f"  📸 Found {len(images_by_unit[forced_unit])} images across 1 unit(s)")
         return images_by_unit
 
@@ -3951,11 +3969,39 @@ def _patch_structured_json_with_s3_urls(
     for unit_urls in s3_url_map.values():
         flat_map.update(unit_urls)
 
+    _marker_re = re.compile(r'\[Image:\s*([^\]]+)\]')
+
+    def _is_undisplayable(name: str) -> bool:
+        meta = image_metadata.get(name, {})
+        if meta.get("is_text_box", False):
+            return True
+        desc = (meta.get("description") or "").lower()
+        return "qr code" in desc or "qr-code" in desc
+
+    def _resolve_marker(m: "re.Match") -> str:
+        name = m.group(1).strip().split('/')[-1]
+        if _is_undisplayable(name):
+            return ""
+        url = flat_map.get(name)
+        if not url:
+            bare = name.rsplit(".", 1)[0] if "." in name else name
+            for f, u in flat_map.items():
+                if bare == (f.rsplit(".", 1)[0] if "." in f else f):
+                    url = u
+                    break
+        if not url:
+            return m.group(0)
+        return f"![{name}]({url})"
+
     def _replace_in_string(text: str) -> str:
         """Replace image refs in a string."""
         if not isinstance(text, str):
             return text
-            
+
+        # Inline markers from auto-schema extraction: [Image: img-29.jpeg] → ![img-29.jpeg](s3-url)
+        if '[Image:' in text:
+            text = _marker_re.sub(_resolve_marker, text)
+
         # Fast path exact match for isolated filenames (e.g. inside image_urls array)
         text_norm = text.strip()
         if text_norm in flat_map:
@@ -4054,28 +4100,35 @@ def _patch_structured_json_with_s3_urls(
             _clean_image_urls(structured_data[units_key][i])
 
             # Add media schema for AI Tutor UI and lookup
+            def _skip_media_image(meta: Dict[str, str]) -> bool:
+                # Text-box images were already extracted as text; QR codes are
+                # scan-to-view decorations with no display value.
+                if meta.get("is_text_box", False):
+                    return True
+                desc = (meta.get("description") or "").lower()
+                return "qr code" in desc or "qr-code" in desc
+
             if unit_num in s3_url_map and s3_url_map[unit_num]:
                 media_images = {}
                 for filename, s3_url in s3_url_map[unit_num].items():
                     # get metadata for this image if it exists
                     meta = image_metadata.get(filename, {})
-                    # Skip text-box images — their content was already extracted as text
-                    if meta.get("is_text_box", False):
+                    if _skip_media_image(meta):
                         continue
                     media_images[filename] = {
                         "url": s3_url,
                         "description": meta.get("description") or "",
                         "extracted_text": meta.get("extracted_text") or ""
                     }
-                
+
                 # Assign media object
                 structured_data[units_key][i]["media"] = {
                     "images": media_images
                 }
-                # Keep legacy image_urls for compatibility (also filter text-box images)
+                # Keep legacy image_urls for compatibility (same filtering)
                 filtered_urls = {
                     fname: url for fname, url in s3_url_map[unit_num].items()
-                    if not image_metadata.get(fname, {}).get("is_text_box", False)
+                    if not _skip_media_image(image_metadata.get(fname, {}))
                 }
                 structured_data[units_key][i]["image_urls"] = filtered_urls
 
@@ -4285,17 +4338,27 @@ def process_pdf(
     part: Optional[str] = None,
     class_number: Optional[str] = None,
     enrichment_style: str = "avatar_classroom_teaching",
+    term: Optional[str] = None,
 ) -> Dict[str, Any]:
     """TRULY UNIVERSAL: Works with ANY textbook!"""
-    
+
     langfuse = get_langfuse_client() if LANGFUSE_AVAILABLE else None
-    
+
+    from term_utils import normalize_term, term_slug
+    canonical_term = normalize_term(term)
+
     # Clean up names for directory creation
     safe_board = "".join([c if c.isalnum() else "_" for c in board]) if board else "Unknown_Board"
     safe_class = "".join([c if c.isalnum() else "_" for c in class_number]) if class_number else "Unknown_Class"
     safe_subject = "".join([c if c.isalnum() else "_" for c in (subject if isinstance(subject, str) else str(subject))]) if subject else "Unknown_Subject"
-    
+
+    # Term goes in the prefix so two term books of the same subject can't share
+    # an output dir. Empty for non-term boards, keeping their paths unchanged.
+    safe_term = term_slug(canonical_term)
+
     prefix = f"{safe_board}_{safe_class}_{safe_subject}".replace("__", "_")
+    if safe_term:
+        prefix = f"{prefix}_{safe_term}"
     
     # Truncate stem to prevent Windows MAX_PATH (260 char) errors
     safe_stem = pdf_path.stem[:40].rstrip('_.-')
@@ -4343,6 +4406,7 @@ def process_pdf(
         "board": board,
         "class_number": class_number,
         "subject": subject if isinstance(subject, str) else str(subject) if subject else None,
+        "term": canonical_term,
         "document_name": pdf_path.name,
         "timestamp": time.time()
     }
@@ -4496,13 +4560,23 @@ def process_pdf(
     final_part = part or detected_part
     units_key_part = "chapters" if subject == "mathematics" else "units"
     for i, unit in enumerate(structured_data.get(units_key_part, [])):
+        # Normalize keys if LLM hallucinated camelCase
+        if "unitNumber" in unit and "unit_number" not in unit:
+            unit["unit_number"] = unit.pop("unitNumber")
+        if "unitTitle" in unit and "title" not in unit:
+            unit["title"] = unit.pop("unitTitle")
+            
         if final_part and (not unit.get("part") or part):  # Override if user explicitly set part
             unit["part"] = final_part
+        if canonical_term:
+            # Per-unit term lets chunk_structured_content tag each unit even if a
+            # document ever spans terms; the upload-level term stays the default.
+            unit["term"] = canonical_term
         if subject:  # Override LLM subject guess with user-provided subject
             unit["subject"] = subject if isinstance(subject, str) else str(subject)
             # Reorder so part appears right after title
             preferred_order = [
-                "unit_number", "chapter_number", "title", "part", "subject",
+                "unit_number", "chapter_number", "title", "part", "term", "subject",
                 "introduction", "learning_objectives", "points_to_remember",
                 "sections", "glossary",
             ]

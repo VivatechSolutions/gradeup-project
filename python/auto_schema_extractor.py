@@ -48,14 +48,14 @@ TYPE_CATALOG = {
         "fields": "content"
     },
     "learning_objectives": {
-        "description": "Goals/outcomes listed at the start (bullet points)",
-        "extract_rule": "Extract every bullet point as a separate string.",
-        "fields": "content as list of strings"
+        "description": "Goals/outcomes listed at the start of the chapter",
+        "extract_rule": "Extract the heading and the list of objectives/outcomes exactly as formatted in the textbook into 'content'.",
+        "fields": "title, content"
     },
     "section": {
         "description": "A numbered/named content section (e.g. 1.1, 1.2, Chapter 3)",
-        "extract_rule": "Extract the COMPLETE prose into 'content'. Only merge DEEPER subsections (e.g. 1.3.1 into 1.3). NEVER merge SIBLING sections (e.g. 1.4 is a SEPARATE section from 1.3, NOT a child of 1.3). Do NOT merge Examples or Illustrations.",
-        "fields": "id (number), title, content"
+        "extract_rule": "Every numbered heading at ANY depth (1.3, 1.3.1, 1.3.1.2) is its OWN separate section entry with its EXACT number in 'id'. 'content' holds ONLY the text between this heading and the next heading of any depth. NEVER merge a subsection's text into its parent, and NEVER merge SIBLING sections (1.4 is separate from 1.3). Do NOT merge Examples or Illustrations.",
+        "fields": "id (exact section number, e.g. '1.3.1'), title, content"
     },
     "exercise": {
         "description": "Questions, comprehension, fill-in-the-blanks, MCQs, match-the-following",
@@ -157,8 +157,8 @@ TYPE_CATALOG = {
         "fields": "title, content"
     },
     "illustration": {
-        "description": "Illustrated explanation with figures",
-        "extract_rule": "Extract full text of the illustration. NEVER merge into parent section's 'content'.",
+        "description": "Illustrated explanation or worked illustration with figures",
+        "extract_rule": "Extract full text of the worked illustration. Do not merge into parent section's content. Do not create separate section/sub-section entries for simple figure images/captions (like 'Fig 1.1'); embed their image tags inline in the parent section's content.",
         "fields": "id, title, content"
     },
     "construction": {
@@ -258,10 +258,15 @@ _DISCOVERY_SYSTEM_PROMPT = """You are an expert at analyzing textbook structure.
 
 IMPORTANT RULES:
 1. Every distinct block of content MUST be its own entry in the list.
-2. For hierarchical text sections, DO NOT list deep subsections (like 1.3.1) as separate entries. They should just be considered part of their parent main section (e.g. 1.3).
-3. Only main sections (N.M) should be separate "section" entries.
+2. HIERARCHY: every numbered heading at EVERY depth is its own "section" entry —
+   parent sections (1.3), sub-sections (1.3.1) AND sub-sub-sections (1.3.1.2).
+   List them in the exact order they appear in the document, with the full
+   number kept in the title (e.g. "1.3.1 Cell Wall").
+3. This applies to ANY textbook numbering style (1.1 / 1.1.1 / 2.4.3.1 etc.).
+   NEVER invent a number for a heading that has none printed — keep its title as-is.
 4. Illustrations should be part of the preceding section's content.
 5. A story/essay followed by questions = at MINIMUM two entries: prose + exercise.
+6. IGNORE scanned images, figures and figure captions — never create entries for them.
 
 COMMON STRUCTURES YOU MUST DETECT:
 - Story/essay text → type="prose" (even if it has no explicit heading)
@@ -545,15 +550,13 @@ The textbook unit contains these sections (in order):
   "unit_number": <integer or null>,
   "chapter_number": <integer or null>,
   "title": "<unit/chapter title>",
-  "learning_objectives": ["<objective 1>", ...],
   "sections": [
     {{
       "type": "<type from list above>",
-      "id": "<identifier if any — e.g. 'A', 'Example 1.3', 'Exercise 2'>",
+      "id": "<identifier — EXACT section number for numbered headings (e.g. '1.3', '1.3.1'), or 'A', 'Example 1.3', 'Exercise 2'>",
       "title": "<heading text or null>",
       "content": "<FULL text — NEVER truncate>",
       "metadata": {{}},
-      "image_urls": ["<image_url_1.jpg>", "<image_url_2.jpg>"],
       "sub_items": [
         {{
           "number": "<item number/label>",
@@ -569,23 +572,48 @@ The textbook unit contains these sections (in order):
 1. EXTRACT EVERYTHING — every paragraph, every question, every word definition.
    Missing content is the WORST error. When in doubt, extract with type="other".
 
-2. HIERARCHICAL SECTIONS — NEVER dump multiple N.M main sections into one entry.
-   Nested subsections (e.g. 1.7.1, 1.7.3) should be merged smoothly into the "content"
-   field of their main parent section (e.g. 1.7).
-   CRITICAL: Sections like 1.4, 1.5 are SIBLINGS of 1.3 — NOT children. Each N.M section
-   (1.1, 1.2, 1.3, 1.4, 1.5, 1.6...) MUST be its own separate section entry with type="section".
+2. HIERARCHICAL SECTIONS — Every numbered heading at EVERY depth is its own separate
+   section entry: parent sections (1.3), sub-sections (1.3.1) and sub-sub-sections (1.3.1.2)
+   are ALL separate entries with type="section" and the EXACT number in "id".
+   Output them FLAT, in the exact order they appear in the textbook — the parent/child
+   hierarchy is rebuilt later from the "id" numbers.
+   NEVER INVENT OR RENUMBER SECTION NUMBERS: copy the number EXACTLY as printed in the
+   heading. If a heading has NO number printed in the source text, set "id" to null —
+   do NOT assign it the next number in sequence, and do NOT renumber later sections.
+   NEVER merge a subsection's text into its parent's "content".
+   NEVER merge SIBLINGS: 1.4, 1.5 are siblings of 1.3 — NOT children; 1.3.2 is a sibling
+   of 1.3.1. Each numbered heading MUST be its own entry.
 
-3. ILLUSTRATIONS and IMAGES — Extract any image source URLs or filenames (like img-123.jpg) into the "image_urls" array as plain URL strings. Do NOT use an "images" object array.
+3. IMAGES — the text contains inline image reference markers like "[Image: img-5.jpeg]".
+   PRESERVE every marker VERBATIM, in place, inside the "content" of the section or
+   subsection where it appears — the marker tells the reader which stored image belongs
+   there. Do NOT invent markers, do NOT move them, do NOT output raw image markdown/URLs
+   or any "image_urls"/"images" field. Keep figure captions (e.g. "Fig. 1.18") as plain
+   text next to their marker.
 
-16. SUB-HEADINGS IN SOCIAL SCIENCE — For subjects like Social Science / History / Geography / Civics,
-    sub-topic headings (e.g. "Violent Forms of Nationalism", "Immediate Cause") that appear under a
-    main numbered section (e.g. 1.3) should be MERGED into the parent section's "content" field.
-    Do NOT create separate section entries for unnumbered sub-headings. Only N.M numbered headings
-    (like 1.1, 1.2, 1.3) should be separate section entries.
+16. UNNUMBERED SUB-HEADINGS — A sub-topic heading WITHOUT a number (e.g. "Violent Forms
+    of Nationalism", "Immediate Cause") that appears under a numbered section should be
+    MERGED into that section's "content" field (keep the heading text inline as markdown).
+    Only NUMBERED headings become separate section entries.
 
-4. SECTION CONTENT — For type="section", put the text directly under the main heading into "content". Include any nested numbering (like 1.1.1) within the "content" field BUT NEVER INLINE standalone entities like Activity, Problem, Example, Illustration, or Exercise.
+4. SECTION CONTENT — For type="section", "content" holds ONLY the text between this heading
+   and the NEXT heading of ANY depth. Do NOT copy child subsection text into the parent, and
+   NEVER INLINE standalone entities like Activity, Problem, Example, Illustration, or Exercise.
 
-5. INLINE BOXES: Activities, Examples, Illustrations, Problems, Exercises, and 'Do You Know' boxes MUST ALWAYS be extracted as their own separate top-level sections. NEVER merge them into a parent section's 'content', even if they appear in the middle of a section.
+5. INLINE BOXES: Activities, Examples, Illustrations, Problems, Exercises, Theorems,
+   Definitions, and pedagogy boxes ('Do You Know', 'Thinking Corner', 'Progress Check',
+   'Note') MUST ALWAYS be extracted as their own separate top-level sections — NEVER
+   merged into a parent section's 'content', even if they appear mid-section.
+   Give each box its printed heading as "title" (e.g. "Thinking Corner", "Progress Check",
+   "Theorem 2", "Do You Know") and the matching "type" (thinking_corner, progress_check,
+   do_you_know, note, theorem, illustration, activity, example, exercise).
+   The label word decides the type: "Example 2.7" is ALWAYS type='example' (never
+   'exercise'); "Exercise 2.4" is ALWAYS type='exercise'. ALL questions of one exercise
+   (e.g. every question of "Exercise 2.9") go into ONE exercise section as sub_items —
+   NEVER output the same exercise number as multiple separate sections.
+   Do NOT create separate sections for standalone figure captions (like 'Fig. 1.18');
+   keep them inline in the parent section's content. For Mathematics: 'Illustration N'
+   blocks are worked illustrations, so extract them as type='illustration' (never 'example').
 
 6. GRAMMAR is CRITICAL — extract BOTH the explanation AND all exercises.
    Grammar sections often have sub-exercises (A, B, C, D...) — each becomes a sub_item.
@@ -601,7 +629,7 @@ The textbook unit contains these sections (in order):
 10. IGNORE: Page stamps (.indd lines), timestamps, page numbers, Reprint lines,
     page/book stamps (e.g. '2 / Moments', 'The Lost Child / 3'), QR codes.
 
-11. DO NOT USE PAGES ARRAY: Never output a "pages" array. If the content spans multiple pages, merge them into the appropriate hierarchical "sections". The top-level structure MUST be: unit_number, title, learning_objectives, sections[].
+11. DO NOT USE PAGES ARRAY: Never output a "pages" array. If the content spans multiple pages, merge them into the appropriate hierarchical "sections". The top-level structure MUST be: unit_number, title, sections[].
 
 12. Return ONLY valid JSON. No markdown fences. No commentary.
 
@@ -615,8 +643,8 @@ The textbook unit contains these sections (in order):
     However, ALWAYS create sections for numbered headings (e.g. '2.1', '2.2') even if they follow the title.
 
 14. SIBLING SECTIONS: Sections like 1.1, 1.2, 1.3, 1.4, 1.5, 1.6 are ALL siblings at the same level.
-    NEVER merge 1.4 into 1.3 even if 1.4 appears immediately after 1.3.1. Each X.Y numbered heading
-    MUST be a separate section entry. Only X.Y.Z headings are children of X.Y.
+    NEVER merge 1.4 into 1.3 even if 1.4 appears immediately after 1.3.1. Each numbered heading
+    at each depth (X.Y, X.Y.Z, X.Y.Z.W) MUST be a separate section entry in document order.
 
 15. CHUNK OVERLAPS: If a text chunk starts in the middle of a paragraph with NO heading visible, skip that partial text. However, if a sub-section heading IS clearly visible (e.g. "## 2.3.3 Uniform acceleration"), you MUST extract it — even if the parent section (2.3) was in a previous chunk. NEVER skip content that has a visible heading. Missing content is the WORST error.
 """
@@ -662,10 +690,21 @@ _SECTION_BOUNDARY_RE = re.compile(
 )
 
 
+# Exercise headings are HARD chunk boundaries: an exercise block must always
+# start a fresh chunk so it can never straddle two chunks (the "skip partial
+# sections" prompt rule would make both chunks drop it).
+_HARD_BOUNDARY_RE = re.compile(
+    r'^#{0,4}\s*\**\s*(?:Unit\s+)?Exercise\s*[-–—]?\s*\d+(?:\.\d+)*\**\s*$',
+    re.IGNORECASE,
+)
+
+
 def _split_into_chunks(text: str, max_chars: int = 15000, overlap_chars: int = 1500) -> List[str]:
     """
     Split text into chunks with overlap, breaking at section boundaries.
     The overlap ensures sections at chunk boundaries are captured in both chunks.
+    Exercise headings force a flush (no overlap) so each exercise block lands
+    whole inside exactly one chunk.
     """
     if len(text) <= max_chars:
         return [text]
@@ -679,9 +718,17 @@ def _split_into_chunks(text: str, max_chars: int = 15000, overlap_chars: int = 1
         line_len = len(line) + 1
         stripped = line.strip()
         is_boundary = bool(stripped and _SECTION_BOUNDARY_RE.match(stripped))
+        is_hard_boundary = bool(stripped and _HARD_BOUNDARY_RE.match(stripped))
+
+        # Hard flush at exercise headings: new chunk starts exactly at the
+        # heading, no overlap needed (the heading opens a fresh section).
+        if is_hard_boundary and current_len >= max_chars * 0.3 and current_lines:
+            chunks.append('\n'.join(current_lines))
+            current_lines = []
+            current_len = 0
 
         # Flush before a new section if chunk is large enough
-        if is_boundary and current_len >= max_chars * 0.65 and current_lines:
+        elif is_boundary and current_len >= max_chars * 0.65 and current_lines:
             chunks.append('\n'.join(current_lines))
             # Keep overlap: take the last N chars worth of lines
             overlap_lines = []
@@ -737,6 +784,33 @@ _ABBREVIATION_WHITELIST = {
 }
 
 
+_IMG_MD_RE   = re.compile(r'!\[[^\]]*\]\(([^)\s]+)[^)]*\)')
+_IMG_HTML_RE = re.compile(r'<img\b[^>]*?src=["\']?([^"\'\s>]+)["\']?[^>]*>', re.IGNORECASE)
+_IMG_MARKER_RE = re.compile(r'\[Image:\s*([^\]]+)\]')
+
+
+def strip_image_tags(text: str, keep_reference: bool = True) -> str:
+    """
+    Replace markdown/HTML image tags with a lightweight inline reference marker
+    `[Image: <filename>]` so the section/subsection content records WHICH image
+    belongs there (the binary is stored in S3 at the unit level, never embedded).
+
+    Pass keep_reference=False to drop the tags entirely (legacy behaviour).
+    """
+    if not text:
+        return text
+
+    def _md_marker(m: "re.Match") -> str:
+        if not keep_reference:
+            return ''
+        name = m.group(1).strip().split('/')[-1]
+        return f"[Image: {name}]"
+
+    text = _IMG_MD_RE.sub(_md_marker, text)
+    text = _IMG_HTML_RE.sub(_md_marker, text)
+    return text
+
+
 def clean_content_for_extraction(text: str) -> str:
     """
     Clean OCR artifacts while preserving all educational content.
@@ -744,6 +818,10 @@ def clean_content_for_extraction(text: str) -> str:
     """
     # Normalize line endings (handles \r\n from Windows files)
     text = text.replace('\r\n', '\n').replace('\r', '\n')
+
+    # Drop scanned-image tags entirely — images are never stored or embedded
+    text = strip_image_tags(text)
+
     lines = text.split('\n')
     cleaned = []
 
@@ -805,6 +883,206 @@ _CHAPTER_HEADER_RE = re.compile(
     r'^(chapter|unit|lesson)\s*[-–:]?\s*\d+\s*$', re.IGNORECASE
 )
 
+# NESTED-SECTION HOISTING — rescue content trapped inside sibling dicts
+#
+# Some LLM chunks return a section dict with EXTRA type-keyed objects stuffed
+# inside it, e.g. {"type": "example", "id": "Example 2.3", ..., "section":
+# {...2.3 content...}, "theorem": {...}, "note": {...}}. Without hoisting,
+# that trapped content (an entire main section in the observed CBSE Maths
+# run) silently disappears from the output.
+
+_STANDARD_SECTION_KEYS = {
+    "type", "id", "title", "content", "metadata", "sub_items",
+    "sub_sections", "subsections", "image_urls", "images", "order",
+    "number", "options",
+}
+
+
+def _hoist_nested_sections(sections: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Pop type-keyed nested dicts out of section dicts into sibling sections."""
+    out: List[Dict[str, Any]] = []
+    hoist_count = 0
+    for sec in sections:
+        if not isinstance(sec, dict):
+            continue
+        out.append(sec)
+        for key in list(sec.keys()):
+            if key in _STANDARD_SECTION_KEYS or key not in TYPE_CATALOG:
+                continue
+            val = sec.pop(key)
+            vals = val if isinstance(val, list) else [val]
+            for v in vals:
+                if not isinstance(v, dict):
+                    continue
+                if not (v.get("content") or v.get("sub_items") or v.get("title")):
+                    continue
+                v.setdefault("type", key)
+                v.setdefault("title", v.get("id") or "")
+                out.append(v)
+                hoist_count += 1
+    if hoist_count:
+        print(f"  🪝 [Hoist] Rescued {hoist_count} section(s) trapped inside sibling dicts")
+    return out
+
+
+# SECTION-ID REALIGNMENT — trust the textbook headings, not the LLM
+#
+# LLMs sometimes INVENT a section number for an unnumbered heading (e.g. the
+# textbook prints "## Highest Common Factor of three numbers" with no number
+# between 2.3 and 2.4, and the LLM assigns it "2.4") and then renumber every
+# following real section to keep their sequence consistent. This corrupts the
+# whole hierarchy. The fix is deterministic: match each extracted section
+# title against the ACTUAL headings in the source markdown and take the
+# number (or absence of one) from the textbook.
+
+_SRC_HEADING_RE = re.compile(
+    r'^#{1,6}\s*\**\s*(?:(\d+(?:\.\d+)+)\s*[\.\):]*\s*)?(.*?)[\s\*]*$'
+)
+
+# Standalone bold lines that carry a section number act as headings in some
+# OCR outputs (e.g. "**2.2.1 Generalised form of Euclid's division lemma**")
+_BOLD_HEADING_RE = re.compile(
+    r'^\*\*\s*(\d+(?:\.\d+)+)\s*[\.\):]*\s*([^*]+?)\s*\*\*$'
+)
+
+
+def _norm_heading_text(text: str) -> str:
+    """Normalize a heading/title for fuzzy comparison."""
+    text = text.replace('$', '').lower()
+    text = re.sub(r'[^\w\s]', ' ', text)
+    return re.sub(r'\s+', ' ', text).strip()
+
+
+def parse_source_headings(source_md: str) -> List[Tuple[Optional[str], str]]:
+    """Ordered (section_number_or_None, normalized_title) for every md heading."""
+    headings: List[Tuple[Optional[str], str]] = []
+    for line in source_md.split('\n'):
+        s = line.strip()
+        if not s.startswith('#'):
+            m_b = _BOLD_HEADING_RE.match(s)
+            if m_b:
+                headings.append((m_b.group(1), _norm_heading_text(m_b.group(2))))
+            continue
+        m = _SRC_HEADING_RE.match(s)
+        if not m:
+            continue
+        num = m.group(1)
+        title = _norm_heading_text(m.group(2) or "")
+        if not title and not num:
+            continue
+        headings.append((num, title))
+    return headings
+
+
+def realign_section_ids(
+    sections: List[Dict[str, Any]],
+    source_md: str,
+) -> List[Dict[str, Any]]:
+    """
+    Fix LLM-invented / renumbered section ids on a FLAT section list (run
+    before hierarchy building):
+
+    - Title matches a NUMBERED textbook heading   → id forced to that number.
+    - Title matches an UNNUMBERED textbook heading → id cleared, so the
+      section is merged/nested under its parent exactly as printed.
+    - Claimed number that doesn't exist anywhere in the source → id cleared.
+
+    Matching walks the source headings with a forward cursor so repeated
+    titles resolve in textbook order.
+    """
+    if not source_md or not sections:
+        return sections
+
+    headings = parse_source_headings(source_md)
+    if not headings:
+        return sections
+
+    valid_nums = {num for num, _ in headings if num}
+    _NUM_RE = re.compile(r'^(\d+(?:\.\d+)+)')
+    cursor = 0
+    fixed = cleared = 0
+
+    def _contains(idx: int, title_norm: str) -> bool:
+        # Containment fallback with a length-ratio guard, so a short generic
+        # heading (e.g. a "Points to Remember" recap line) can never swallow
+        # a longer unrelated title and derail the cursor.
+        h_title = headings[idx][1]
+        if not h_title or len(h_title) < 9 or len(title_norm) < 9:
+            return False
+        shorter, longer = sorted((h_title, title_norm), key=len)
+        return shorter in longer and len(shorter) / len(longer) >= 0.7
+
+    def _find_heading(title_norm: str) -> Optional[int]:
+        if not title_norm or len(title_norm) < 3:
+            return None
+        # Pass 1: EXACT title matches always win (forward-first, then wrap)
+        for rng in (range(cursor, len(headings)), range(0, cursor)):
+            for j in rng:
+                if headings[j][1] == title_norm:
+                    return j
+        # Pass 2: guarded containment (forward-first, then wrap)
+        for rng in (range(cursor, len(headings)), range(0, cursor)):
+            for j in rng:
+                if _contains(j, title_norm):
+                    return j
+        return None
+
+    for sec in sections:
+        if sec.get("type") != "section":
+            continue
+        sid = str(sec.get("id") or "").strip()
+        title = str(sec.get("title") or "").strip()
+
+        m_id = _NUM_RE.match(sid)
+        m_title = re.match(r'^\s*(\d+(?:\.\d+)+)\s*[\.\):]?\s*(.*)$', title)
+        claimed = m_id.group(1) if m_id else (m_title.group(1) if m_title else None)
+        bare_title = m_title.group(2).strip() if m_title else title
+        if not bare_title:
+            # Mangled id like "2.4 Fundamental Theorem of Arithmetic" with an
+            # empty title — recover the title text from the id itself
+            m_id_full = re.match(r'^(\d+(?:\.\d+)+)\s+(\S.*)$', sid)
+            if m_id_full:
+                bare_title = m_id_full.group(2).strip()
+        title_norm = _norm_heading_text(bare_title)
+
+        j = _find_heading(title_norm)
+        if j is not None:
+            src_num = headings[j][0]
+            if src_num:
+                if claimed != src_num:
+                    fixed += 1
+                sec["id"] = src_num
+                if not (sec.get("title") or "").strip() and bare_title:
+                    sec["title"] = bare_title
+            else:
+                # Unnumbered in the textbook — never give it a number
+                if claimed:
+                    cleared += 1
+                sec["id"] = ""
+                sec["title"] = bare_title
+            if j >= cursor:
+                cursor = j + 1
+            continue
+
+        # Title not found in source headings — number can't be verified.
+        # Clear ids whose number doesn't exist anywhere in the textbook.
+        if claimed and claimed not in valid_nums:
+            sec["id"] = ""
+            sec["title"] = bare_title
+            cleared += 1
+        elif claimed:
+            # Number is real but title unverifiable — keep it, normalized to
+            # the bare number so dedup and hierarchy building work
+            sec["id"] = claimed
+            if not (sec.get("title") or "").strip() and bare_title:
+                sec["title"] = bare_title
+
+    if fixed or cleared:
+        print(f"  🔧 [ID Realign] {fixed} id(s) corrected from source headings, "
+              f"{cleared} invented id(s) cleared")
+    return sections
+
+
 def _postprocess_sections(sections: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Clean up common LLM extraction issues:
@@ -813,9 +1091,91 @@ def _postprocess_sections(sections: List[Dict[str, Any]]) -> List[Dict[str, Any]
     """
     cleaned = []
 
+    # Rescue any sections still trapped inside sibling dicts (idempotent —
+    # merge_extracted_chunks already hoists, this covers direct callers)
+    sections = _hoist_nested_sections(sections)
+
     for section in sections:
         stype = section.get("type", "")
         title = (section.get("title") or "").strip()
+
+        # Normalize mangled ids like "2.4 Fundamental Theorem of Arithmetic":
+        # numeric part -> id, text part -> title (when title is empty)
+        sid_raw = str(section.get("id") or "").strip()
+        m_idtext = re.match(r'^(\d+\.\d+(?:\.\d+)*)\s+(\S.*)$', sid_raw)
+        if m_idtext:
+            section["id"] = m_idtext.group(1)
+            if not title:
+                title = m_idtext.group(2).strip()
+                section["title"] = title
+
+        # Labelled entities (Exercise 2.4, Example 2.54, Activity 3, Theorem 5,
+        # Illustration 2) must NEVER hold a bare dotted number as their id —
+        # that number belongs to the real section 2.4/2.54 and corrupts gap
+        # detection, dedup and hierarchy building. Re-key them to their label.
+        # The label word also decides the TYPE: LLMs regularly emit
+        # "Example 2.7" as type='exercise' (which blocks nesting) — the printed
+        # label always wins over a wrong/generic type.
+        _LABEL_TYPE_MAP = {
+            "exercise": "exercise", "example": "example", "activity": "activity",
+            "theorem": "theorem", "illustration": "illustration", "problem": "example",
+        }
+        _RETYPABLE = {"", "section", "prose", "other",
+                      "exercise", "example", "activity", "theorem", "illustration"}
+        m_label = re.match(
+            r'^(Exercise|Example|Activity|Theorem|Illustration|Problem)s?\s+(\d+(?:\.\d+)*)\s*$',
+            title, re.IGNORECASE,
+        )
+        if m_label:
+            label_word = m_label.group(1).lower()
+            label_type = _LABEL_TYPE_MAP[label_word]
+            sid_now = str(section.get("id") or "").strip()
+            if re.match(r'^\d+(?:\.\d+)*$', sid_now) or not sid_now:
+                section["id"] = title
+            if stype in _RETYPABLE and stype != label_type:
+                section["type"] = label_type
+                stype = label_type
+
+        # Pedagogy boxes: retype by title so they nest under their parent
+        # section with a proper display title (user-visible: "Do You Know",
+        # "Thinking Corner", "Progress Check", ...).
+        _BOX_TITLE_TYPES = {
+            "progress check":  "progress_check",
+            "thinking corner": "thinking_corner",
+            "do you know":     "do_you_know",
+            "more to know":    "more_to_know",
+            "try this":        "try_this",
+            "note":            "note",
+        }
+        _BOX_DISPLAY_TITLES = {
+            "progress_check":  "Progress Check",
+            "thinking_corner": "Thinking Corner",
+            "do_you_know":     "Do You Know",
+            "more_to_know":    "More to Know",
+            "try_this":        "Try This",
+            "note":            "Note",
+        }
+        t_norm_box = re.sub(r'[^a-z\s]', '', title.lower()).strip()
+        # 'exercise'/'example' included: LLMs regularly mistype pedagogy boxes
+        # (e.g. "Thinking Corner" as type='exercise') — the printed title wins.
+        if t_norm_box in _BOX_TITLE_TYPES and stype in (
+                "", "section", "prose", "other", "exercise", "example"):
+            stype = _BOX_TITLE_TYPES[t_norm_box]
+            section["type"] = stype
+        if stype in _BOX_DISPLAY_TITLES and not title:
+            title = _BOX_DISPLAY_TITLES[stype]
+            section["title"] = title
+
+        # Strip section number prefixes (e.g. "2.1 Introduction" -> "Introduction")
+        if title:
+            # Before stripping, recover the section number into "id" if the LLM
+            # left it only in the title — the hierarchy builder keys off "id".
+            m_num = re.match(r'^\s*(\d+\.\d+(?:\.\d+)*)\b', title)
+            existing_id = str(section.get("id") or "").strip()
+            if m_num and not re.match(r'^\d+\.\d+(?:\.\d+)*', existing_id):
+                section["id"] = m_num.group(1)
+            title = re.sub(r'^\s*\d+\.\d+(?:\.\d+)*\s*[-–:]?\s*', '', title).strip()
+            section["title"] = title
         raw_content = section.get("content") or ""
         if isinstance(raw_content, list):
             raw_content = " ".join(str(item) for item in raw_content)
@@ -834,20 +1194,28 @@ def _postprocess_sections(sections: List[Dict[str, Any]]) -> List[Dict[str, Any]
                 if title.isupper() or _CHAPTER_HEADER_RE.match(title):
                     continue
 
-        # --- Filter 2: Split interleaved Examples/Theorems from Section content ---
+        # --- Filter 2: Split interleaved Examples/Theorems/boxes from Section content ---
         # Sometimes LLMs dump an example into the 'content' of a 'section' type.
         if stype == "section" and content:
-            # Pattern: matches "Example X", "Theorem X", "Exercise X", "Activity X", "Problem X" at start of line or string
-            split_pat = r'(?:\n\s*|\A)((?:Example|Theorem|Exercise|Activity|Problem)\s+\d+(?:\.\d+)*[:.]?\s*)'
+            # Matches numbered entities ("Example X", "Theorem X", "Exercise X",
+            # "Activity X", "Problem X", "Illustration X") and un-numbered pedagogy
+            # boxes ("Progress Check", "Thinking Corner", "Do You Know") at the
+            # start of a line — with optional markdown #/** wrappers from OCR.
+            split_pat = (
+                r'(?:\n\s*|\A)(?:#{1,6}\s*)?\*{0,2}'
+                r'((?:Example|Theorem|Exercise|Activity|Problem|Illustration)\s+\d+(?:\.\d+)*'
+                r'|Progress\s+Check|Thinking\s+Corner|Do\s+You\s+Know'
+                r')\*{0,2}[:.]?[ \t]*'
+            )
             parts = re.split(split_pat, content, flags=re.IGNORECASE)
-            
+
             if len(parts) > 1:
                 # Part 0: Text before the first interleaved heading
                 first_part = parts[0].strip()
                 if first_part or section.get("sub_items"):
                     section["content"] = first_part
                     cleaned.append(section)
-                
+
                 # Parts 1, 2, 3... are h_text, c_text pairs
                 for i in range(1, len(parts), 2):
                     h_text = parts[i].strip()
@@ -855,8 +1223,12 @@ def _postprocess_sections(sections: List[Dict[str, Any]]) -> List[Dict[str, Any]
                     h_lower = h_text.lower()
                     h_type = "example" if "example" in h_lower or "problem" in h_lower else \
                              "theorem" if "theorem" in h_lower else \
-                             "activity" if "activity" in h_lower else "exercise"
-                    
+                             "activity" if "activity" in h_lower else \
+                             "illustration" if "illustration" in h_lower else \
+                             "progress_check" if "progress" in h_lower else \
+                             "thinking_corner" if "thinking" in h_lower else \
+                             "do_you_know" if "do you know" in h_lower else "exercise"
+
                     new_sec = {
                         "type": h_type,
                         "id": h_text,
@@ -966,6 +1338,34 @@ def _postprocess_sections(sections: List[Dict[str, Any]]) -> List[Dict[str, Any]
             if len(filtered_subs) < len(sub_items):
                 section["sub_items"] = filtered_subs
 
+        # --- Filter 9: Clean Learning Objectives content ---
+        if stype == "learning_objectives" and content:
+            # Strip unrelated text, formulas, or images that precede the actual objectives heading/list.
+            lines = content.split('\n')
+            start_idx = -1
+            for idx, line in enumerate(lines):
+                s = line.strip()
+                # Check for explicit heading
+                if re.search(r'(?i)(?:^|#+\s*)Learning\s+Objectives?', s):
+                    start_idx = idx
+                    break
+                # Check for intro phrase
+                if re.search(r'(?i)After\s+(?:studying|completing|learning)\s+this\s+(?:unit|lesson|chapter|topic|book)', s):
+                    start_idx = idx
+                    break
+            # If not found by heading/intro phrase, look for the first bullet point
+            if start_idx == -1:
+                for idx, line in enumerate(lines):
+                    s = line.strip()
+                    # Must be a list item starting with a bullet/number and space (e.g. '- ', '* ', '1. ')
+                    if re.match(r'^\s*[-*•]\s+', s) or re.match(r'^\s*\d+\.\s+', s):
+                        start_idx = idx
+                        break
+            if start_idx > 0:
+                cleaned_lines = lines[start_idx:]
+                section["content"] = "\n".join(cleaned_lines).strip()
+                content = section["content"]
+
         cleaned.append(section)
 
     # --- Filter 6: Merge orphan sections and build hierarchy ---
@@ -1004,43 +1404,7 @@ def _postprocess_sections(sections: List[Dict[str, Any]]) -> List[Dict[str, Any]
         elif stype in _INLINE_TYPES:
             # Inline content: append but do NOT modify active_parents hierarchy
             merged.append(section)
-        elif stype == "section" and level > 1:
-            # It's a nested subsection (like 1.1.1). Inline merge into its parent (Level 1, e.g., 1.1)
-            parent_level = level - 1
-            parent = active_parents.get(parent_level)
-            
-            if parent:
-                title = (section.get("title") or sid).strip()
-                content = (section.get("content") or "").strip()
-                addition = f"{title}\n{content}".strip() if title else content
-                
-                if addition:
-                    parent_content = str(parent.get("content", "")).strip()
-                    fingerprint = re.sub(r'\s+', ' ', addition).lower()[:150]
-                    parent_normalized = re.sub(r'\s+', ' ', parent_content).lower()
-                    
-                    if fingerprint and fingerprint not in parent_normalized:
-                        if parent_content:
-                            parent["content"] = f"{parent_content}\n\n{addition}"
-                        else:
-                            parent["content"] = addition
-                    else:
-                        # Content already exists in parent — skip this duplicate subsection
-                        active_parents[level] = parent
-                        continue
-                
-                if section.get("sub_items"):
-                    parent_subs = parent.get("sub_items", [])
-                    parent_subs.extend(section.get("sub_items", []))
-                    parent["sub_items"] = parent_subs
 
-                # Deeper sections (1.1.1.1) will also map to this parent
-                active_parents[level] = parent
-                continue
-            else:
-                # No parent found, keep it top-level
-                merged.append(section)
-                active_parents[level] = section
         else:
             # Top-level main section (like 1.1) or non-numbered section
             merged.append(section)
@@ -1112,8 +1476,45 @@ def _postprocess_sections(sections: List[Dict[str, Any]]) -> List[Dict[str, Any]
                 else:
                     # It's disjoint text.
                     stype = section.get("type", "")
-                    if stype in {"activity", "example", "exercise", "problem", "do_you_know", "note", "try_this", "thinking_corner"}:
-                        # Distinct entities with the same generic title (e.g. "Activity"). Keep as separate section!
+                    # A SPECIFIC numbered label ("Exercise 2.9", "Example 2.44",
+                    # "Unit Exercise - 2") names ONE entity — duplicates are the
+                    # same exercise split across chunks (often one section per
+                    # question). Merge them back into the first occurrence.
+                    has_number = bool(re.search(r'\d', title_raw))
+                    if stype in {"activity", "example", "exercise", "problem", "do_you_know",
+                                 "note", "try_this", "thinking_corner", "progress_check",
+                                 "illustration", "theorem"} and has_number:
+                        if stype in ("exercise", "problem"):
+                            # Each duplicate usually carries ONE question — file it
+                            # as a sub_item of the canonical exercise section.
+                            first_subs = first_sec.get("sub_items") or []
+                            first_subs.append({
+                                "number":  str(len(first_subs) + 1),
+                                "content": dup_content,
+                            })
+                            if dup_subs:
+                                first_subs.extend(dup_subs)
+                            first_sec["sub_items"] = first_subs
+                        else:
+                            # Same-numbered example/theorem/illustration: keep the
+                            # richer copy's content, merge metadata + sub_items.
+                            if len(dup_content) > len(first_content):
+                                first_sec["content"] = dup_content
+                            dup_meta = section.get("metadata") or {}
+                            first_meta = first_sec.get("metadata") or {}
+                            for k, v in dup_meta.items():
+                                if v and not first_meta.get(k):
+                                    first_meta[k] = v
+                            first_sec["metadata"] = first_meta
+                            if dup_subs:
+                                first_subs = first_sec.get("sub_items") or []
+                                first_subs.extend(dup_subs)
+                                first_sec["sub_items"] = first_subs
+                    elif stype in {"activity", "example", "exercise", "problem", "do_you_know",
+                                   "note", "try_this", "thinking_corner", "progress_check",
+                                   "illustration", "theorem"}:
+                        # Generic un-numbered box title ("Note", "Progress Check") —
+                        # distinct content, keep as separate section.
                         deduped.append(section)
                     else:
                         # This means the LLM probably mistook a running header for a section.
@@ -1142,64 +1543,82 @@ def _postprocess_sections(sections: List[Dict[str, Any]]) -> List[Dict[str, Any]
     # preceding section. We physically nest them inside the parent section's
     # "sub_sections" array so the UI can map section-by-section and get all
     # related content grouped together.
-    # --- Filter 10: Remove unwanted types and nest inline items ---
-    # Step A: Remove types we don't want in the final output for any subject.
-    #         (do_you_know, thinking_corner, progress_check, note, ict_corner)
-    _DISCARD_TYPES = {
-        "do_you_know", "thinking_corner", "progress_check",
-        "note", "ict_corner", "more_to_know", "try_this",
-    }
-    deduped = [s for s in deduped if s.get("type", "") not in _DISCARD_TYPES]
+    # --- Filter 10: Nest inline items inside their parent numbered section ---
+    # Pedagogy boxes (do_you_know, thinking_corner, progress_check, note, ...)
+    # are KEPT and nested as titled sub_sections of the section they appear in
+    # — they are real textbook content the UI must show.
+    _DISCARD_TYPES: set = set()
 
-    # Step B: Nest inline items inside their parent numbered section.
+    # NOTE: 'exercise' is intentionally excluded — exercises are always top-level
+    # standalone sections and must never be nested as sub_sections of a numbered parent.
     _NESTABLE_TYPES = {
-        "activity", "example", "exercise", "illustration", "definition",
+        "activity", "example", "illustration", "definition",
         "theorem", "proof", "corollary", "construction",
+        "do_you_know", "thinking_corner", "progress_check",
+        "note", "more_to_know", "try_this",
     }
     _BACK_MATTER_RESET = {
         "summary", "glossary", "unit_exercise", "multiple_choice",
         "reference_books", "ict_corner", "map_work", "timeline",
         "points_to_remember",
     }
-    _NUMBERED_SECTION_RE = re.compile(r'^(\d+\.\d+)(?:\s|$)')
+    _NUMBERED_SECTION_RE = re.compile(r'^(\d+\.\d+(?:\.\d+)*)(?:\s|$)')
 
-    current_parent_idx = None
-    current_parent_id = None
+    # Deterministic hierarchy builder — nests numbered sections at ANY depth
+    # (1.3 → 1.3.1 → 1.3.1.2) purely from their "id" numbers, preserving
+    # document order. A stack holds the currently-open section path; a new
+    # numbered section pops the stack until the top is its numeric parent
+    # prefix, then attaches there (or at top level).
+    final: List[Dict[str, Any]] = []
+    stack: List[tuple] = []   # [(number_str, section_dict), ...] open path
 
-    parent_children: Dict[int, List[Dict]] = {}
-    items_to_remove: set = set()
+    def _attach_to_open(child: Dict[str, Any]) -> None:
+        parent = stack[-1][1]
+        parent.setdefault("sub_sections", []).append(child)
 
-    for idx, section in enumerate(deduped):
+    for section in deduped:
         stype = section.get("type", "")
         sid = str(section.get("id", "")).strip()
 
         if stype == "section":
             m = _NUMBERED_SECTION_RE.match(sid)
             if m:
-                current_parent_idx = idx
-                current_parent_id = m.group(1)
+                num = m.group(1)
+                # Pop until the open section is this number's parent prefix
+                while stack and not num.startswith(stack[-1][0] + "."):
+                    stack.pop()
+                if stack:
+                    _attach_to_open(section)
+                else:
+                    final.append(section)
+                stack.append((num, section))
                 continue
 
         if stype in _BACK_MATTER_RESET:
-            current_parent_idx = None
-            current_parent_id = None
+            stack = []
+            final.append(section)
             continue
 
-        if stype in _NESTABLE_TYPES and current_parent_idx is not None:
-            parent_children.setdefault(current_parent_idx, []).append(section)
-            items_to_remove.add(idx)
-
-    final = []
-    for idx, section in enumerate(deduped):
-        if idx in items_to_remove:
+        # Inline entities (activities, examples, theorems...) belong to the
+        # deepest section currently open — keeps textbook reading order.
+        if stype in _NESTABLE_TYPES and stack:
+            _attach_to_open(section)
             continue
-        if idx in parent_children:
-            # Also strip discarded types from sub_sections
-            section["sub_sections"] = [
-                s for s in parent_children[idx]
-                if s.get("type", "") not in _DISCARD_TYPES
-            ]
+
         final.append(section)
+
+    # Strip discarded types that arrived pre-nested from the LLM
+    def _strip_discarded(secs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        kept = []
+        for s in secs:
+            if s.get("type", "") in _DISCARD_TYPES:
+                continue
+            if s.get("sub_sections"):
+                s["sub_sections"] = _strip_discarded(s["sub_sections"])
+            kept.append(s)
+        return kept
+
+    final = _strip_discarded(final)
 
     # --- Filter 11: Recover missing sibling sections from bloated parent sections ---
     # If a section like 1.3 has sub_sections containing examples/illustrations that
@@ -1235,23 +1654,27 @@ def _postprocess_sections(sections: List[Dict[str, Any]]) -> List[Dict[str, Any]
                         print(f"  ⚠️  Filter 11: Detected missing sections: {missing}")
                         print(f"       (gap between {ch}.{sec_nums[i]} and {ch}.{sec_nums[i+1]})")
 
-    # --- Filter 12: Convert `images` array to `image_urls` flat list ---
-    # The LLM may return images as [{url, explanation}] objects. Standardize to
-    # flat URL strings for schema consistency across all subjects.
+    # --- Filter 12: Normalize image references ---
+    # Raw markdown/HTML image tags are converted to inline "[Image: <name>]"
+    # markers so each section/subsection's content records which stored image
+    # belongs to it (binaries live in S3 at the unit level, never embedded).
+    def _purge_images(sec: Dict[str, Any]) -> None:
+        sec.pop('images', None)
+        sec.pop('image_urls', None)
+        content = sec.get('content')
+        if isinstance(content, str) and ('![' in content or '<img' in content.lower()):
+            content = strip_image_tags(content, keep_reference=True)
+            sec['content'] = re.sub(r'\n{3,}', '\n\n', content).strip()
+        for sub in sec.get('sub_sections') or []:
+            if isinstance(sub, dict):
+                _purge_images(sub)
+        for item in sec.get('sub_items') or []:
+            if isinstance(item, dict):
+                item.pop('images', None)
+                item.pop('image_urls', None)
+
     for section in final:
-        if 'images' in section:
-            images_arr = section.pop('images')
-            image_urls = section.get('image_urls', [])
-            for img in images_arr:
-                if isinstance(img, dict):
-                    url = img.get('url', '')
-                    if url and url not in image_urls:
-                        image_urls.append(url)
-                elif isinstance(img, str) and img not in image_urls:
-                    image_urls.append(img)
-            section['image_urls'] = image_urls
-        if 'image_urls' not in section:
-            section['image_urls'] = []
+        _purge_images(section)
 
     # --- Filter 13: Merge non-numbered sub-heading sections into parent ---
     # For Social Science (and similar subjects), sub-headings under a main
@@ -1261,7 +1684,8 @@ def _postprocess_sections(sections: List[Dict[str, Any]]) -> List[Dict[str, Any]
     _BACK_MATTER_MERGE = {
         "summary", "glossary", "unit_exercise", "multiple_choice",
         "reference_books", "ict_corner", "map_work", "timeline",
-        "points_to_remember", "exercise",
+        "points_to_remember",
+        # NOTE: 'exercise' removed — exercises are always standalone top-level sections
     }
     _STANDALONE_MERGE = {"introduction", "learning_objectives"} | _BACK_MATTER_MERGE
 
@@ -1328,7 +1752,603 @@ def _postprocess_sections(sections: List[Dict[str, Any]]) -> List[Dict[str, Any]
         # Everything else: keep as-is
         merged_final.append(section)
 
+    # --- Filter 14: Deduplicate content of standalone sections from parent sections ---
+    has_standalone_lo = any(s.get("type") == "learning_objectives" for s in merged_final)
+    has_standalone_intro = any(s.get("type") == "introduction" for s in merged_final)
+
+    if has_standalone_lo or has_standalone_intro:
+        for section in merged_final:
+            if section.get("type") == "section":
+                content = section.get("content") or ""
+                if isinstance(content, str) and content:
+                    if has_standalone_lo:
+                        content = re.sub(
+                            r'(?i)(?:^|\n)#+\s*Learning\s+Objectives?.*?(?=\n#+|\Z)',
+                            '\n',
+                            content,
+                            flags=re.DOTALL
+                        )
+                    if has_standalone_intro:
+                        content = re.sub(
+                            r'(?i)(?:^|\n)#+\s*Introduction:?.*?(?=\n#+|\Z)',
+                            '\n',
+                            content,
+                            flags=re.DOTALL
+                        )
+                    content = re.sub(r'\n{3,}', '\n\n', content).strip()
+                    section["content"] = content
+
+    # --- Filter 15: Assign textbook-order indices (pre-order walk) ---
+    # Guarantees consumers can always sort sections back into reading order,
+    # at every nesting depth.
+    _order_counter = [0]
+
+    def _assign_order(secs: List[Dict[str, Any]]) -> None:
+        for s in secs:
+            _order_counter[0] += 1
+            s["order"] = _order_counter[0]
+            if s.get("sub_sections"):
+                _assign_order(s["sub_sections"])
+
+    _assign_order(merged_final)
+
     return merged_final
+
+
+# CANONICAL EXERCISE SCHEMA + FINAL SECTION NORMALIZATION
+
+
+_EXERCISE_ID_RE = re.compile(
+    r'^(?:Unit\s+)?Exercise(?:s)?(?:\s*[-–—:]?\s*\d+(?:\.\d+)*)?\s*$', re.IGNORECASE
+)
+_MCQ_TITLE_RE = re.compile(
+    r'^(?:multiple\s+choice(?:\s+questions?)?|choose\s+the\s+(?:correct|best)\s+answer)s?\s*[.:]?\s*$',
+    re.IGNORECASE,
+)
+_QUESTION_START_RE = re.compile(r'(?m)^\s*(\d{1,2})[\.\)]\s+')
+_OPTION_MARK_RE = re.compile(r'(?m)(?:^|\s)\(([A-Da-d1-4])\)\s+')
+_ONLY_IMAGE_MARKERS_RE = re.compile(r'^(?:\s*\[Image:\s*[^\]]+\]\s*)+$')
+
+
+def _split_content_into_questions(text: str) -> Tuple[str, List[Dict[str, Any]]]:
+    """
+    Deterministically split an exercise content blob into numbered questions.
+    Returns (preamble, sub_items). If fewer than 2 sequential question starts
+    are found, returns (text, []) unchanged — better to keep a blob than to
+    mis-split maths decimals or list items.
+    """
+    matches = list(_QUESTION_START_RE.finditer(text))
+    if len(matches) < 2:
+        return text, []
+
+    # Require an ascending 1, 2, 3... sequence to avoid splitting on decimals
+    # or numbered formulas inside prose.
+    numbers = [int(m.group(1)) for m in matches]
+    starts: List[int] = []
+    expected = 1
+    for i, n in enumerate(numbers):
+        if n == expected:
+            starts.append(i)
+            expected += 1
+    if len(starts) < 2:
+        return text, []
+
+    kept = [matches[i] for i in starts]
+    preamble = text[:kept[0].start()].strip()
+    sub_items: List[Dict[str, Any]] = []
+    for j, m in enumerate(kept):
+        seg_end = kept[j + 1].start() if j + 1 < len(kept) else len(text)
+        body = text[m.end():seg_end].strip()
+        sub_items.append({"number": m.group(1), "content": body, "options": []})
+    return preamble, sub_items
+
+
+def _extract_options_from_question(item: Dict[str, Any]) -> None:
+    """If a question's content embeds 3+ MCQ option markers, split them out."""
+    content = item.get("content") or ""
+    if item.get("options"):
+        return
+    marks = list(_OPTION_MARK_RE.finditer(content))
+    if len(marks) < 3:
+        return
+    stem = content[:marks[0].start()].strip()
+    options = []
+    for j, m in enumerate(marks):
+        end = marks[j + 1].start() if j + 1 < len(marks) else len(content)
+        opt_text = content[m.end():end].strip()
+        options.append(f"({m.group(1)}) {opt_text}")
+    if stem and all(o.split(') ', 1)[-1].strip() for o in options):
+        item["content"] = stem
+        item["options"] = options
+
+
+def _normalize_sub_item(item: Any, index: int) -> Dict[str, Any]:
+    """Coerce any sub_item shape into {number, content, options[]}."""
+    if isinstance(item, str):
+        return {"number": str(index + 1), "content": item.strip(), "options": []}
+    if not isinstance(item, dict):
+        return {"number": str(index + 1), "content": str(item), "options": []}
+    number = str(item.get("number") or index + 1).strip().rstrip('.')
+    raw_content = item.get("content") or item.get("question") or item.get("text") or ""
+    if isinstance(raw_content, list):
+        raw_content = " ".join(str(x) for x in raw_content)
+    options = item.get("options") or item.get("choices") or []
+    if not isinstance(options, list):
+        options = [str(options)]
+    options = [str(o).strip() for o in options if str(o).strip()]
+    normalized = {"number": number, "content": str(raw_content).strip(), "options": options}
+    # Preserve answer/solution info if the LLM emitted it
+    for extra_key in ("answer", "solution"):
+        if item.get(extra_key):
+            normalized.setdefault("metadata", {})[extra_key] = item[extra_key]
+    return normalized
+
+
+def normalize_exercise_sections(sections: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Enforce ONE canonical schema for every exercise across all books/subjects:
+
+        {type: "exercise", id, title, content, metadata,
+         sub_items: [{number, content, options: []}]}
+
+    Also:
+      - merges orphan "Multiple choice questions" sections into a preceding
+        empty exercise (TN/CBSE books print MCQs under the exercise heading);
+      - flags sections whose content is only image markers with
+        metadata.content_source = "image_only" so the verifier can catch them.
+    """
+    # ── Pass 1: merge MCQ orphans into the preceding empty exercise ──
+    merged: List[Dict[str, Any]] = []
+    for section in sections:
+        title = (section.get("title") or section.get("id") or "").strip()
+        prev = merged[-1] if merged else None
+        is_mcq_orphan = (
+            _MCQ_TITLE_RE.match(title)
+            and section.get("type") in ("other", "multiple_choice", "exercise", "section", "prose")
+        )
+        if is_mcq_orphan and prev is not None and prev.get("type") == "exercise" \
+                and not prev.get("sub_items"):
+            body = (section.get("content") or "").strip()
+            prev_content = (prev.get("content") or "").strip()
+            note = title  # keep "Multiple choice questions" as instruction line
+            prev["content"] = "\n\n".join(x for x in (prev_content, note, body) if x)
+            if section.get("sub_items"):
+                prev["sub_items"] = (prev.get("sub_items") or []) + section["sub_items"]
+            continue
+        merged.append(section)
+
+    # ── Pass 2: canonicalize every exercise + flag image-only sections ──
+    def _canonicalize(sec: Dict[str, Any]) -> None:
+        stype = sec.get("type", "")
+        content = sec.get("content") or ""
+        if isinstance(content, list):
+            content = " ".join(str(x) for x in content)
+        content = str(content)
+
+        # image-only flag (any section type)
+        stripped = _IMG_MARKER_RE.sub("", content).strip()
+        if not stripped and not sec.get("sub_items") and not sec.get("sub_sections"):
+            if _IMG_MARKER_RE.search(content):
+                sec.setdefault("metadata", {})["content_source"] = "image_only"
+
+        if stype in ("exercise", "unit_exercise", "multiple_choice"):
+            # id/title sync
+            sid = str(sec.get("id") or "").strip()
+            title = (sec.get("title") or "").strip()
+            if not sid and title:
+                sec["id"] = title
+            elif sid and not title:
+                sec["title"] = sid
+
+            # normalize existing sub_items
+            sub_items = [
+                _normalize_sub_item(item, i)
+                for i, item in enumerate(sec.get("sub_items") or [])
+            ]
+
+            # split a content blob into questions when sub_items are missing
+            if not sub_items and stripped:
+                preamble, split_items = _split_content_into_questions(content)
+                if split_items:
+                    content = preamble
+                    sub_items = split_items
+
+            for item in sub_items:
+                _extract_options_from_question(item)
+
+            sec["content"] = content.strip()
+            sec["sub_items"] = sub_items
+            sec.setdefault("metadata", {})
+
+            # rebuild in canonical key order
+            canonical = {
+                "type": stype,
+                "id": sec.get("id"),
+                "title": sec.get("title"),
+                "content": sec.get("content", ""),
+                "metadata": sec.get("metadata", {}),
+                "sub_items": sec.get("sub_items", []),
+            }
+            for k, v in sec.items():
+                if k not in canonical:
+                    canonical[k] = v
+            sec.clear()
+            sec.update(canonical)
+
+        for sub in sec.get("sub_sections") or []:
+            if isinstance(sub, dict):
+                _canonicalize(sub)
+
+    for section in merged:
+        _canonicalize(section)
+
+    # ── Pass 3: drop duplicate exercises (same printed label) ──
+    # Keeps the richer copy (more questions). Duplicates arise when the LLM
+    # and the reconciliation pass both emit the same exercise under different
+    # types (e.g. 'exercise' vs 'unit_exercise').
+    def _exercise_label(sec: Dict[str, Any]) -> Optional[str]:
+        if sec.get("type") not in ("exercise", "unit_exercise", "multiple_choice"):
+            return None
+        label = f"{sec.get('id') or ''} {sec.get('title') or ''}"
+        m_ux = re.search(r'Unit\s+Exercise\s*[-–—]?\s*(\d+)', label, re.IGNORECASE)
+        if m_ux:
+            return f"unit_exercise::{m_ux.group(1)}"
+        m_ex = re.search(r'Exercise\s+(\d+\.\d+)', label, re.IGNORECASE)
+        if m_ex:
+            return f"exercise::{m_ex.group(1)}"
+        return None
+
+    best_by_label: Dict[str, Dict[str, Any]] = {}
+    for sec in merged:
+        label = _exercise_label(sec)
+        if label is None:
+            continue
+        prev_best = best_by_label.get(label)
+        if prev_best is None:
+            best_by_label[label] = sec
+        elif len(sec.get("sub_items") or []) > len(prev_best.get("sub_items") or []):
+            best_by_label[label] = sec
+
+    deduped_out: List[Dict[str, Any]] = []
+    for sec in merged:
+        label = _exercise_label(sec)
+        if label is not None and best_by_label.get(label) is not sec:
+            print(f"  🧹 [Normalize] Dropped duplicate exercise: {sec.get('id') or sec.get('title')}")
+            continue
+        deduped_out.append(sec)
+    merged = deduped_out
+
+    # Re-assign reading order after merges
+    counter = [0]
+
+    def _assign(secs: List[Dict[str, Any]]) -> None:
+        for s in secs:
+            counter[0] += 1
+            s["order"] = counter[0]
+            if s.get("sub_sections"):
+                _assign(s["sub_sections"])
+
+    _assign(merged)
+    return merged
+
+
+# COMPLETENESS RECONCILIATION — recover Exercises/Examples the LLM dropped
+
+
+_INV_EXERCISE_RE = re.compile(
+    r'^#{1,6}\s*\**\s*Exercise\s+(\d+\.\d+)\s*\**\s*$', re.IGNORECASE | re.MULTILINE
+)
+_INV_UNIT_EXERCISE_RE = re.compile(
+    r'^#{1,6}\s*\**\s*Unit\s+Exercise\s*[-–—]?\s*(\d+)\s*\**\s*$', re.IGNORECASE | re.MULTILINE
+)
+_INV_EXAMPLE_RE = re.compile(
+    r'^(?:#{1,6}\s*)?\**Example\s+(\d+\.\d+)\**(?=[\s:.])', re.IGNORECASE | re.MULTILINE
+)
+_INV_SECTION_RE = re.compile(
+    r'^#{1,6}\s*\**\s*(\d+\.\d+(?:\.\d+)*)\b', re.MULTILINE
+)
+_INV_BACKMATTER_RE = re.compile(
+    r'^#{1,6}\s*\**\s*(Points\s+to\s+Remember|Summary|Glossary|ICT\s+Corner|Answers?)\b',
+    re.IGNORECASE | re.MULTILINE,
+)
+_MCQ_HEADING_LINE_RE = re.compile(
+    r'^#{1,6}\s*\**\s*(?:Multiple\s+choice(?:\s+questions?)?|Choose\s+the\s+(?:correct|best)\s+answer)s?\s*\**\s*[.:]?\s*$',
+    re.IGNORECASE,
+)
+
+
+def _inventory_entities(cleaned_md: str) -> List[Dict[str, Any]]:
+    """List every Exercise/Example/section/back-matter anchor with its offset."""
+    anchors: List[Dict[str, Any]] = []
+    for m in _INV_EXERCISE_RE.finditer(cleaned_md):
+        anchors.append({"kind": "exercise", "num": m.group(1), "start": m.start(),
+                        "id": f"Exercise {m.group(1)}"})
+    for m in _INV_UNIT_EXERCISE_RE.finditer(cleaned_md):
+        anchors.append({"kind": "unit_exercise", "num": m.group(1), "start": m.start(),
+                        "id": f"Unit Exercise - {m.group(1)}"})
+    for m in _INV_EXAMPLE_RE.finditer(cleaned_md):
+        anchors.append({"kind": "example", "num": m.group(1), "start": m.start(),
+                        "id": f"Example {m.group(1)}"})
+    for m in _INV_SECTION_RE.finditer(cleaned_md):
+        anchors.append({"kind": "section", "num": m.group(1), "start": m.start(),
+                        "id": m.group(1)})
+    for m in _INV_BACKMATTER_RE.finditer(cleaned_md):
+        anchors.append({"kind": "backmatter", "num": "", "start": m.start(),
+                        "id": m.group(1)})
+    anchors.sort(key=lambda a: a["start"])
+    return anchors
+
+
+def _entity_key(kind: str, num: str) -> str:
+    return f"{kind}::{num}"
+
+
+def _collect_extracted_keys(sections: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """Map entity keys ('exercise::2.1', 'example::2.44') → section dict."""
+    found: Dict[str, Dict[str, Any]] = {}
+
+    def _walk(secs: List[Dict[str, Any]]) -> None:
+        for s in secs:
+            label = f"{s.get('id') or ''} {s.get('title') or ''}"
+            stype = s.get("type", "")
+            m_ex = re.search(r'Exercise\s+(\d+\.\d+)', label, re.IGNORECASE)
+            m_ux = re.search(r'Unit\s+Exercise\s*[-–—]?\s*(\d+)', label, re.IGNORECASE)
+            m_eg = re.search(r'Example\s+(\d+\.\d+)', label, re.IGNORECASE)
+            if stype in ("exercise", "unit_exercise", "multiple_choice") and m_ux:
+                found.setdefault(_entity_key("unit_exercise", m_ux.group(1)), s)
+            elif stype in ("exercise", "unit_exercise", "multiple_choice") and m_ex:
+                found.setdefault(_entity_key("exercise", m_ex.group(1)), s)
+            elif stype == "example" and m_eg:
+                found.setdefault(_entity_key("example", m_eg.group(1)), s)
+            _walk(s.get("sub_sections") or [])
+
+    _walk(sections)
+    return found
+
+
+def _slice_entity_span(cleaned_md: str, anchors: List[Dict[str, Any]],
+                       anchor: Dict[str, Any], max_span: int = 20000) -> str:
+    """Cut the markdown from an entity heading to the next boundary anchor.
+
+    For exercises, MCQ-ish headings inside the span are skipped over — the
+    'Multiple choice questions' block belongs to the exercise above it.
+    """
+    start = anchor["start"]
+    end = len(cleaned_md)
+    for a in anchors:
+        if a["start"] <= start:
+            continue
+        if anchor["kind"] in ("exercise", "unit_exercise"):
+            # Peek at the heading line — skip through MCQ instruction headings
+            line_end = cleaned_md.find("\n", a["start"])
+            line = cleaned_md[a["start"]:line_end if line_end != -1 else len(cleaned_md)]
+            if _MCQ_HEADING_LINE_RE.match(line.strip()):
+                continue
+        end = a["start"]
+        break
+    return cleaned_md[start:min(end, start + max_span)].strip()
+
+
+def _parse_exercise_span(span: str, entity_id: str) -> Optional[Dict[str, Any]]:
+    """Deterministically parse an exercise span into a canonical section."""
+    lines = span.split("\n")
+    body = "\n".join(lines[1:]).strip()   # drop the heading line
+    # Keep MCQ instruction headings as a plain instruction line
+    body = re.sub(r'(?m)^#{1,6}\s*\**\s*(Multiple\s+choice\s+questions?)\s*\**\s*$',
+                  r'\1', body, flags=re.IGNORECASE)
+    preamble, sub_items = _split_content_into_questions(body)
+    if not sub_items:
+        return None
+    for item in sub_items:
+        _extract_options_from_question(item)
+    return {
+        "type": "exercise",
+        "id": entity_id,
+        "title": entity_id,
+        "content": preamble,
+        "metadata": {"recovered": "reconciliation"},
+        "sub_items": sub_items,
+    }
+
+
+def _parse_example_span(span: str, entity_id: str) -> Optional[Dict[str, Any]]:
+    """Deterministically parse an example span into problem + solution."""
+    body = re.sub(r'^(?:#{1,6}\s*)?\**Example\s+\d+\.\d+\**[\s:.]*', '', span,
+                  count=1, flags=re.IGNORECASE).strip()
+    if not body:
+        return None
+    m = re.search(r'(?m)^\**\s*Solution\s*\**\s*[:.]?\s*$|\*\*Solution\*\*|(?<=\n)Solution[:.]',
+                  body)
+    if m:
+        problem = body[:m.start()].strip()
+        solution = body[m.end():].strip()
+    else:
+        problem, solution = body, ""
+    section = {
+        "type": "example",
+        "id": entity_id,
+        "title": entity_id,
+        "content": problem,
+        "metadata": {"recovered": "reconciliation"},
+        "sub_items": [],
+    }
+    if solution:
+        section["metadata"]["solution"] = solution
+    return section
+
+
+def _llm_extract_entity(span: str, entity_id: str, kind: str,
+                        api_key: str, model: str) -> Optional[Dict[str, Any]]:
+    """Focused single-entity LLM extraction (fallback when regex parse fails)."""
+    if kind in ("exercise", "unit_exercise"):
+        schema_hint = ('{"type":"exercise","id":"' + entity_id + '","title":"' + entity_id +
+                       '","content":"<instruction text if any>","metadata":{},'
+                       '"sub_items":[{"number":"1","content":"<question>","options":["(A) ...","(B) ..."]}]}')
+    else:
+        schema_hint = ('{"type":"example","id":"' + entity_id + '","title":"' + entity_id +
+                       '","content":"<problem statement ONLY>",'
+                       '"metadata":{"solution":"<full solution>"},"sub_items":[]}')
+    system_prompt = (
+        "You extract ONE textbook entity into JSON. Extract EVERY question/word — never "
+        "truncate. Preserve inline [Image: ...] markers verbatim. Return ONLY the JSON object:\n"
+        + schema_hint
+    )
+    raw = _call_llm_for_extraction(
+        system_prompt, f"Extract '{entity_id}' from:\n\n{span}", model, api_key
+    )
+    if not raw:
+        return None
+    data = _parse_json_robust(raw)
+    if not data:
+        return None
+    # Some models wrap the entity in {"sections": [...]}
+    if "sections" in data and isinstance(data["sections"], list) and data["sections"]:
+        data = data["sections"][0]
+    if not (data.get("sub_items") or (data.get("content") or "").strip()):
+        return None
+    data.setdefault("metadata", {})["recovered"] = "reconciliation_llm"
+    return data
+
+
+def reconcile_missing_entities(
+    merged: Dict[str, Any],
+    cleaned_md: str,
+    api_key: str,
+    model: str,
+) -> Dict[str, Any]:
+    """
+    Guarantee every Exercise/Example printed in the source appears in the
+    extraction. Inventories entity headings in the cleaned markdown, diffs
+    against the extracted tree, then recovers each missing/empty entity from
+    its exact source span — deterministically when possible, with a focused
+    LLM call as fallback.
+    """
+    sections = merged.get("sections") or []
+    if not sections:
+        return merged
+
+    anchors = _inventory_entities(cleaned_md)
+    entity_anchors = [a for a in anchors if a["kind"] in ("exercise", "unit_exercise", "example")]
+    if not entity_anchors:
+        return merged
+
+    extracted = _collect_extracted_keys(sections)
+
+    def _is_deficient(sec: Dict[str, Any]) -> bool:
+        content = _IMG_MARKER_RE.sub("", str(sec.get("content") or "")).strip()
+        return not sec.get("sub_items") and not content
+
+    missing, deficient = [], []
+    for a in entity_anchors:
+        key = _entity_key(a["kind"], a["num"])
+        sec = extracted.get(key)
+        if sec is None:
+            missing.append(a)
+        elif sec.get("type") == "exercise" and _is_deficient(sec):
+            deficient.append((a, sec))
+
+    if not missing and not deficient:
+        print("  ✅ [Reconcile] All printed Exercises/Examples present in extraction")
+        return merged
+
+    print(f"  🔎 [Reconcile] missing: {[a['id'] for a in missing]} | "
+          f"empty: {[a['id'] for a, _ in deficient]}")
+
+    def _recover(a: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        span = _slice_entity_span(cleaned_md, anchors, a)
+        if not span:
+            return None
+        if a["kind"] in ("exercise", "unit_exercise"):
+            section = _parse_exercise_span(span, a["id"])
+        else:
+            section = _parse_example_span(span, a["id"])
+        if section is None and api_key:
+            section = _llm_extract_entity(span, a["id"], a["kind"], api_key, model)
+        return section
+
+    # ── Refill empty exercises in place ──
+    for a, sec in deficient:
+        recovered = _recover(a)
+        if recovered:
+            sec.update({k: v for k, v in recovered.items() if k != "type"})
+            print(f"  ♻️  [Reconcile] Refilled empty {a['id']} "
+                  f"({len(recovered.get('sub_items') or [])} questions)")
+
+    # ── Insert missing entities at the right position ──
+    def _find_top_level_index(entity_key_str: str) -> Optional[int]:
+        for idx, s in enumerate(sections):
+            label = f"{s.get('id') or ''} {s.get('title') or ''}"
+            m_ex = re.search(r'Exercise\s+(\d+\.\d+)', label, re.IGNORECASE)
+            m_ux = re.search(r'Unit\s+Exercise\s*[-–—]?\s*(\d+)', label, re.IGNORECASE)
+            if s.get("type") == "exercise" and m_ux and \
+                    _entity_key("unit_exercise", m_ux.group(1)) == entity_key_str:
+                return idx
+            if s.get("type") == "exercise" and m_ex and \
+                    _entity_key("exercise", m_ex.group(1)) == entity_key_str:
+                return idx
+            if s.get("type") == "section" and \
+                    _entity_key("section", str(s.get("id") or "").strip()) == entity_key_str:
+                return idx
+        return None
+
+    def _find_section_by_number(secs: List[Dict[str, Any]], num: str) -> Optional[Dict[str, Any]]:
+        for s in secs:
+            if s.get("type") == "section" and str(s.get("id") or "").strip() == num:
+                return s
+            hit = _find_section_by_number(s.get("sub_sections") or [], num)
+            if hit is not None:
+                return hit
+        return None
+
+    for a in missing:
+        recovered = _recover(a)
+        if not recovered:
+            print(f"  ⚠️  [Reconcile] Could not recover {a['id']}")
+            continue
+
+        if a["kind"] == "example":
+            # Attach under the numbered section owning this source position
+            owner_num = None
+            for anc in anchors:
+                if anc["start"] >= a["start"]:
+                    break
+                if anc["kind"] == "section":
+                    owner_num = anc["num"]
+            owner = _find_section_by_number(sections, owner_num) if owner_num else None
+            if owner is not None:
+                owner.setdefault("sub_sections", []).append(recovered)
+                print(f"  ➕ [Reconcile] Recovered {a['id']} under section {owner_num}")
+                continue
+
+        # Top-level insert: before the first later anchor that exists top-level
+        insert_at = None
+        for anc in anchors:
+            if anc["start"] <= a["start"] or anc["kind"] == "example":
+                continue
+            key = _entity_key(anc["kind"], anc["num"])
+            idx = _find_top_level_index(key)
+            if idx is not None:
+                insert_at = idx
+                break
+        if insert_at is None:
+            # After the nearest earlier top-level anchor
+            for anc in reversed(anchors):
+                if anc["start"] >= a["start"] or anc["kind"] == "example":
+                    continue
+                key = _entity_key(anc["kind"], anc["num"])
+                idx = _find_top_level_index(key)
+                if idx is not None:
+                    insert_at = idx + 1
+                    break
+        if insert_at is None:
+            insert_at = len(sections)
+        sections.insert(insert_at, recovered)
+        n_q = len(recovered.get("sub_items") or [])
+        print(f"  ➕ [Reconcile] Recovered {a['id']} at position {insert_at} ({n_q} questions)")
+
+    # Re-canonicalize + re-number reading order after insertions
+    merged["sections"] = normalize_exercise_sections(sections)
+    return merged
 
 
 def _normalize_schema(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -1395,16 +2415,8 @@ def _normalize_schema(data: Dict[str, Any]) -> Dict[str, Any]:
                             "sub_items": []
                         })
                     elif el_type == "image":
-                        # Preserve image filename in content for S3 patching
-                        # Check "filename" first (kegy304 pattern), then "file"/"src"
-                        img_file = (element.get("filename")
-                                    or element.get("file")
-                                    or element.get("src") or "")
-                        img_text = f"![image]({img_file})" if img_file else "[image]"
-                        if new_sections:
-                            new_sections[-1]["content"] += f"\n\n{img_text}"
-                        else:
-                            new_sections.append({"type": "other", "content": img_text})
+                        # Scanned images are ignored — never stored or embedded
+                        continue
                     else:
                         if new_sections:
                             new_sections[-1]["content"] += f"\n\n{el_text}"
@@ -1440,6 +2452,15 @@ def _normalize_schema(data: Dict[str, Any]) -> Dict[str, Any]:
 # MERGE CHUNKS — safe deduplication
 
 
+# Section types a unit can only have ONE of. Chunked extraction runs the LLM
+# independently per chunk, and a later chunk will happily synthesize its own
+# "Introduction"/"Learning Objectives" for the slice it can see. Those are not
+# duplicates by content, so _section_dedup_key cannot catch them — they must be
+# collapsed by type. The first occurrence wins: it comes from the chunk holding
+# the real chapter opening, whereas later ones are the model inventing a summary.
+SINGLETON_SECTION_TYPES = {"introduction", "learning_objectives"}
+
+
 def _section_dedup_key(section: Dict[str, Any]) -> str:
     """
     Generate a dedup key for a section that avoids false-positive merges.
@@ -1455,10 +2476,16 @@ def _section_dedup_key(section: Dict[str, Any]) -> str:
     return f"{stype}::{stitle}::{scontent}"
 
 
-def merge_extracted_chunks(chunks: List[Dict[str, Any]]) -> Dict[str, Any]:
+def merge_extracted_chunks(
+    chunks: List[Dict[str, Any]],
+    source_md: Optional[str] = None,
+) -> Dict[str, Any]:
     """
     Merge multiple chunk extraction results into one complete result.
     Uses safe deduplication that won't drop distinct sections.
+
+    If source_md is provided, section ids are realigned against the actual
+    textbook headings before hierarchy building (fixes LLM-invented numbers).
     """
     if not chunks:
         return {}
@@ -1481,7 +2508,7 @@ def merge_extracted_chunks(chunks: List[Dict[str, Any]]) -> Dict[str, Any]:
                 merged[field] = chunks[0].get(field)
 
         # List fields: concatenate with dedup
-        for field in ["learning_objectives", "points_to_remember"]:
+        for field in ["points_to_remember"]:
             seen = set()
             combined = []
             for chunk in chunks:
@@ -1494,9 +2521,18 @@ def merge_extracted_chunks(chunks: List[Dict[str, Any]]) -> Dict[str, Any]:
 
         # Sections: merge with type-aware dedup
         seen_keys = set()
+        seen_singletons = set()
         all_sections = []
         for chunk in chunks:
             for section in chunk.get("sections") or []:
+                stype = str(section.get("type") or "").strip().lower()
+                if stype in SINGLETON_SECTION_TYPES:
+                    if stype in seen_singletons:
+                        title = (section.get("title") or "(untitled)").strip()
+                        print(f"  [merge] Dropped duplicate '{stype}' section "
+                              f"({title}) - a unit has only one")
+                        continue
+                    seen_singletons.add(stype)
                 key = _section_dedup_key(section)
                 if key not in seen_keys:
                     seen_keys.add(key)
@@ -1517,19 +2553,59 @@ def merge_extracted_chunks(chunks: List[Dict[str, Any]]) -> Dict[str, Any]:
     # ── Normalize Schema (converts page-based to section-based if needed) ──
     merged = _normalize_schema(merged)
 
+    # ── Hoist sections trapped as nested keys inside sibling dicts ──
+    if merged.get("sections"):
+        merged["sections"] = _hoist_nested_sections(merged["sections"])
+
+    # ── Realign section ids against the actual textbook headings ──
+    if source_md and merged.get("sections"):
+        merged["sections"] = realign_section_ids(merged["sections"], source_md)
+
     # ── Post-processing: clean up common LLM issues ──
     if "sections" in merged:
         merged["sections"] = _postprocess_sections(merged["sections"])
 
-        # ── Rename chapter-title/introduction sections to Section/Introduction ──
+        # ── Filter: Remove redundant unit title section and merge its content ──
         unit_title_norm = re.sub(r'\s+', ' ', (merged.get("title") or "")).strip().lower()
-        for idx, section in enumerate(merged.get("sections", [])):
-            sec_title_norm = re.sub(r'\s+', ' ', (section.get("title") or "")).strip().lower()
-            sec_type = section.get("type", "").strip().lower()
-            # If a section's title perfectly matches the main unit title, or its type was marked introduction
-            if (unit_title_norm and sec_title_norm == unit_title_norm) or sec_type == "introduction":
-                if not section.get("title"):
-                    section["title"] = "Introduction"
+        sections = merged.get("sections", [])
+        if len(sections) > 1:
+            first_sec = sections[0]
+            first_title_norm = re.sub(r'\s+', ' ', (first_sec.get("title") or "")).strip().lower()
+            if unit_title_norm and first_title_norm == unit_title_norm:
+                print(f"  ✨ [Filter] Found redundant unit title section: '{first_sec.get('title')}'")
+                next_sec = sections[1]
+                
+                # Prepend content
+                first_content = (first_sec.get("content") or "").strip()
+                next_content = (next_sec.get("content") or "").strip()
+                if first_content:
+                    if next_content:
+                        next_sec["content"] = f"{first_content}\n\n{next_content}"
+                    else:
+                        next_sec["content"] = first_content
+                
+                # Merge image_urls
+                first_urls = first_sec.get("image_urls", [])
+                if first_urls:
+                    next_urls = next_sec.get("image_urls", []) or []
+                    for url in first_urls:
+                        if url not in next_urls:
+                            next_urls.append(url)
+                    next_sec["image_urls"] = next_urls
+                    
+                # Merge sub_items
+                first_subs = first_sec.get("sub_items", [])
+                if first_subs:
+                    next_subs = next_sec.get("sub_items", []) or []
+                    next_subs.extend(first_subs)
+                    next_sec["sub_items"] = next_subs
+                    
+                # Remove the first section
+                merged["sections"] = sections[1:]
+
+    # ── Canonical exercise schema + MCQ-orphan merge + image-only flags ──
+    if merged.get("sections"):
+        merged["sections"] = normalize_exercise_sections(merged["sections"])
 
     # Enforce strict schema ordering before returning
     return merged
@@ -1588,6 +2664,95 @@ def _parse_json_robust(raw: str) -> Optional[Dict[str, Any]]:
                     continue
     return None
 
+
+
+# PER-CHUNK LLM CALL (used by extraction_agent.py)
+
+
+def _call_llm_for_extraction(
+    system_prompt: str,
+    user_prompt: str,
+    model: str,
+    api_key: str,
+    timeout: int = _API_TIMEOUT,
+) -> Optional[str]:
+    """
+    Make a single OpenAI chat-completions call for extraction.
+
+    Returns the raw string content from the model response, or None on failure.
+    Handles retries, truncation recovery, and content_filter fallback.
+    """
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user",   "content": user_prompt},
+        ],
+        "max_completion_tokens": _MAX_COMPLETION_TOKENS,
+        "response_format": {"type": "json_object"},
+    }
+
+    for attempt in range(_MAX_RETRIES):
+        try:
+            if attempt > 0:
+                wait_time = _BASE_DELAY * (3 ** attempt)
+                print(f"  ⏳ Retry {attempt+1}/{_MAX_RETRIES} after {wait_time}s...")
+                time.sleep(wait_time)
+
+            resp = requests.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers=headers, json=payload, timeout=timeout,
+            )
+
+            if not resp.ok:
+                try:
+                    print(f"  ❌ API error: {resp.json()}")
+                except Exception:
+                    print(f"  ❌ API error: {resp.text[:300]}")
+                resp.raise_for_status()
+
+            data         = resp.json()
+            choice       = data["choices"][0]
+            raw_content  = choice["message"].get("content") or ""
+            finish_reason = choice.get("finish_reason", "stop")
+
+            # content_filter / empty — try fallback model once
+            if finish_reason == "content_filter" or not raw_content.strip():
+                if model != _FALLBACK_MODEL:
+                    print(f"  ⚠️  {finish_reason or 'empty'}: trying {_FALLBACK_MODEL} fallback...")
+                    fb_payload = {**payload, "model": _FALLBACK_MODEL}
+                    try:
+                        fb_resp = requests.post(
+                            "https://api.openai.com/v1/chat/completions",
+                            headers=headers, json=fb_payload, timeout=timeout,
+                        )
+                        if fb_resp.ok:
+                            fb_data = fb_resp.json()
+                            if fb_data.get("choices"):
+                                fb_raw    = fb_data["choices"][0]["message"]["content"]
+                                fb_reason = fb_data["choices"][0].get("finish_reason", "stop")
+                                if fb_reason != "content_filter" and fb_raw:
+                                    if fb_reason == "length":
+                                        fb_raw = _recover_truncated_json(fb_raw, fb_payload, headers, timeout)
+                                    return fb_raw
+                    except Exception as fb_err:
+                        print(f"  ⚠️  Fallback failed: {fb_err}")
+                continue
+
+            # Handle truncation
+            if finish_reason == "length":
+                raw_content = _recover_truncated_json(raw_content, payload, headers, timeout)
+
+            return raw_content
+
+        except Exception as e:
+            print(f"  ❌ Attempt {attempt+1} error: {e}")
+
+    return None
 
 
 # MAIN EXTRACTION FUNCTION
@@ -1744,8 +2909,14 @@ def extract_with_auto_schema(
         print(f"  ❌ [Auto-Schema] All chunks failed")
         return None
 
-    # Merge chunks
-    merged = merge_extracted_chunks(chunk_results)
+    # Merge chunks (realigning section ids against the cleaned source headings)
+    merged = merge_extracted_chunks(chunk_results, source_md=cleaned_content)
+
+    # Guarantee every printed Exercise/Example made it into the extraction
+    try:
+        merged = reconcile_missing_entities(merged, cleaned_content, api_key, model)
+    except Exception as rec_err:
+        print(f"  ⚠️  [Reconcile] failed (continuing with unreconciled result): {rec_err}")
 
     section_count = len(merged.get("sections", []))
     section_types = [s.get("type", "?") for s in merged.get("sections", [])]

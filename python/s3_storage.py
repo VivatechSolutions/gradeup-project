@@ -1,11 +1,13 @@
 """
-S3 Image Storage for GradeUp
+S3 Image & Audio Storage for GradeUp
 
-Handles uploading images to AWS S3 with organized path structure:
-  - Structured:  structured-content/{board}/{class}/{subject}/unit-{n}/{filename}
-  - Enriched:    enriched-content/{board}/{class}/{subject}/unit-{n}/{filename}
+Handles uploading images and audio to AWS S3 with organized path structure:
+  - Structured:    structured-content/{board}/{class}/{subject}/unit-{n}/{filename}
+  - Enriched:      enriched-content/{board}/{class}/{subject}/unit-{n}/{filename}
+  - Highlight:     highlight-audio/{board}/{class}/{subject}/{filename}
+  - Avatar Audio:  avatar-audio/{board}/{class}/{subject}/unit-{n}/{segment_id}_{gender}.mp3
 
-Images are uploaded with public-read-write ACL so they can be accessed via URL.
+Files are uploaded with public-read-write ACL so they can be accessed via URL.
 """
 
 import os
@@ -316,6 +318,75 @@ def upload_audio_to_s3(
         board=board,
         class_number=class_number,
         subject=subject,
+        filename=filename,
+    )
+
+    return upload_image_to_s3(audio_bytes, s3_key, content_type="audio/mpeg")
+
+
+# ─── Avatar Audio Upload (Enrichment Pipeline) ───────────────────────────────
+
+def build_s3_avatar_audio_key(
+    board: str,
+    class_number: str,
+    subject: str,
+    unit_number: int,
+    filename: str,
+) -> str:
+    """Build the S3 object key for an avatar audio file.
+
+    Args:
+        board: Board name (e.g. "CBSE", "State Board")
+        class_number: Class number (e.g. "10", "11")
+        subject: Subject name (e.g. "science", "mathematics")
+        unit_number: Unit or chapter number
+        filename: Audio filename (e.g. "seg_001_male.mp3")
+
+    Returns:
+        S3 key like: avatar-audio/cbse/10/science/unit-1/seg_001_male.mp3
+    """
+    board_part = _sanitize_path_component(board)
+    class_part = _sanitize_path_component(class_number or "unknown")
+    subject_part = _sanitize_path_component(subject or "unknown")
+
+    return f"avatar-audio/{board_part}/{class_part}/{subject_part}/unit-{unit_number}/{filename}"
+
+def upload_avatar_audio_to_s3(
+    audio_bytes: bytes,
+    filename: str,
+    board: str,
+    class_number: str,
+    subject: str,
+    unit_number: int,
+) -> Optional[str]:
+    """Upload an avatar TTS audio file to S3 and return its public URL.
+
+    Audio files are stored under:
+        avatar-audio/{board}/{class}/{subject}/unit-{n}/{filename}
+
+    Args:
+        audio_bytes: Raw audio bytes (MP3)
+        filename: Audio filename (e.g. "seg_001_male.mp3")
+        board: Board name
+        class_number: Class number
+        subject: Subject name
+        unit_number: Unit or chapter number
+
+    Returns:
+        Public URL of the uploaded audio, or None on failure
+    """
+    if not S3_AVAILABLE:
+        print("  ⚠️  S3 not configured — skipping avatar audio upload")
+        return None
+
+    if "." not in filename:
+        filename = f"{filename}.mp3"
+
+    s3_key = build_s3_avatar_audio_key(
+        board=board,
+        class_number=class_number,
+        subject=subject,
+        unit_number=unit_number,
         filename=filename,
     )
 

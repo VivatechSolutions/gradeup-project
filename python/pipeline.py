@@ -65,6 +65,12 @@ try:
 except ImportError:
     VERIFICATION_AVAILABLE = False
 
+try:
+    from extraction_verification_graph import run_verification_graph
+    AGENTIC_VERIFICATION_AVAILABLE = True
+except ImportError:
+    AGENTIC_VERIFICATION_AVAILABLE = False
+
 
 def load_env() -> None:
     for env_file in (".env.local", ".env"):
@@ -114,6 +120,7 @@ class DocumentPipeline:
         skip_enrichment: bool = False,
         filter_qr_codes: bool = False,
         enrichment_style: str = "avatar_classroom_teaching",
+        term: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Process a single PDF through the entire pipeline."""
         if not OCR_AVAILABLE:
@@ -141,49 +148,49 @@ class DocumentPipeline:
             board=board,
             class_number=class_number,
             enrichment_style=enrichment_style,
+            term=term,
         )
-        
-        # ── Run Verification Agent ────────────────────────────────────────────
-        # After extraction, verify all TOC units were extracted and fix gaps
-        if (result.get("has_structured") and VERIFICATION_AVAILABLE
+
+        # ── Run Agentic Verification Graph (LangGraph) ──────────────────────────
+        # Multi-pass: OCR quality guard → parallel unit verify → schema scoring
+        # Loops up to 3 times until overall score ≥ 95% or max passes reached.
+        if (result.get("has_structured")
                 and OPENAI_API_KEY_TEXT and not skip_llm_refinement):
             doc_out_dir = OUTPUTS_DIR / result["document_id"]
             structured_path = doc_out_dir / "structured.json"
             content_path = doc_out_dir / "content.md"
             if structured_path.exists() and content_path.exists():
-                # Detect if this is a split unit (e.g. "Unit_01_Geography.pdf")
-                expected_units = None
-                stem = pdf_path.stem
-                unit_match = re.search(r'Unit_(\d+)', stem, re.IGNORECASE)
-                if unit_match:
-                    try:
-                        expected_units = [int(unit_match.group(1))]
-                        print(f"  🎯 Detected split unit: {expected_units[0]} (from filename)")
-                    except (TypeError, ValueError):
-                        pass
-
-                print(f"\n  🔍 Running Verification Agent...")
+                print(f"\n  🤖 Running Agentic Verification Workflow (LangGraph)...")
                 try:
-                    verify_report = run_verification_agent(
-                        structured_json_path=structured_path,
-                        content_md_path=content_path,
-                        api_key=OPENAI_API_KEY_TEXT,
-                        auto_fix=True,
-                        max_fixes=10,  # Allow fixing all incomplete units in a book
-                        expected_units=expected_units,
-                    )
+                    if AGENTIC_VERIFICATION_AVAILABLE:
+                        verify_report = run_verification_graph(
+                            doc_id=result["document_id"],
+                            structured_json_path=structured_path,
+                            content_md_path=content_path,
+                            subject=result.get("subject", "unknown"),
+                            api_key=OPENAI_API_KEY_TEXT,
+                        )
+                    elif VERIFICATION_AVAILABLE:
+                        # Fallback to legacy single-pass agent
+                        print("  ⚠️  LangGraph not available — falling back to legacy verifier")
+                        verify_report = run_verification_agent(
+                            structured_json_path=structured_path,
+                            content_md_path=content_path,
+                            api_key=OPENAI_API_KEY_TEXT,
+                            auto_fix=True,
+                            max_fixes=10,
+                        )
+                    else:
+                        verify_report = {}
                     result["verification"] = {
-                        "is_complete": verify_report.get("is_complete", False),
-                        "fixes_made": verify_report.get("fixes_made", 0),
-                        "missing_after_fix": verify_report.get("missing_after_fix", []),
+                        "is_complete":    verify_report.get("is_complete", False),
+                        "overall_score":  verify_report.get("overall_score", 0),
+                        "fixes_made":     verify_report.get("fixes_made", 0),
+                        "passes_run":     verify_report.get("passes_run", 1),
+                        "s3_uploaded":    verify_report.get("s3_uploaded", False),
                     }
-                    # Save verification report
-                    vreport_path = doc_out_dir / "verification_report.json"
-                    vreport_path.write_bytes(
-                        __import__("orjson").dumps(verify_report, option=__import__("orjson").OPT_INDENT_2)
-                    )
                 except Exception as ve:
-                    print(f"  ⚠️  Verification agent error: {ve}")
+                    print(f"  ⚠️  Verification workflow error: {ve}")
 
         # ── Enrichment & Qdrant Upload (Moved here to run AFTER Verification) ──
         if result.get("has_structured"):
@@ -232,7 +239,9 @@ class DocumentPipeline:
                                 document_name=_doc_name,
                                 board=board,
                                 class_number=class_number,
-                                qdrant_client=_q_client
+                                qdrant_client=_q_client,
+                                term=term,
+                                subject=result.get("subject"),
                             )
                         result["qdrant_uploaded"] = _uploaded
                         if _uploaded:
@@ -274,6 +283,7 @@ class DocumentPipeline:
         skip_enrichment: bool = False,
         filter_qr_codes: bool = False,
         enrichment_style: str = "avatar_classroom_teaching",
+        term: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Process a single PDF through the pipeline with subject-aware extraction.
@@ -326,48 +336,14 @@ class DocumentPipeline:
                 board=board,
                 class_number=class_number,
                 enrichment_style=enrichment_style,
+                term=term,
             )
             
-            # ── Run Verification Agent ────────────────────────────────────────
-            if (result.get("has_structured") and VERIFICATION_AVAILABLE
-                    and OPENAI_API_KEY_TEXT and not skip_llm_refinement):
-                doc_out_dir = OUTPUTS_DIR / result["document_id"]
-                structured_path = doc_out_dir / "structured.json"
-                content_path = doc_out_dir / "content.md"
-                if structured_path.exists() and content_path.exists():
-                    # Detect if this is a split unit (e.g. "Unit_01_Geography.pdf")
-                    expected_units = None
-                    stem = pdf_path.stem
-                    unit_match = re.search(r'Unit_(\d+)', stem, re.IGNORECASE)
-                    if unit_match:
-                        try:
-                            expected_units = [int(unit_match.group(1))]
-                            print(f"  🎯 Detected split unit: {expected_units[0]} (from filename)")
-                        except (TypeError, ValueError):
-                            pass
+            # NOTE: Agentic verification is intentionally NOT run here.
+            # The /upload-agentic endpoint in app.py runs run_verification_graph()
+            # after this method returns, so running it here too would cause a
+            # double execution (two full 3-pass verification runs).
 
-                    print(f"\n  🔍 Running Verification Agent...")
-                    try:
-                        verify_report = run_verification_agent(
-                            structured_json_path=structured_path,
-                            content_md_path=content_path,
-                            api_key=OPENAI_API_KEY_TEXT,
-                            subject=subject,
-                            auto_fix=True,
-                            max_fixes=10,
-                            expected_units=expected_units,
-                        )
-                        result["verification"] = {
-                            "is_complete": verify_report.get("is_complete", False),
-                            "fixes_made": verify_report.get("fixes_made", 0),
-                            "missing_after_fix": verify_report.get("missing_after_fix", []),
-                        }
-                        import orjson as _orjson
-                        (doc_out_dir / "verification_report.json").write_bytes(
-                            _orjson.dumps(verify_report, option=_orjson.OPT_INDENT_2)
-                        )
-                    except Exception as ve:
-                        print(f"  ⚠️  Verification agent error: {ve}")
 
             # ── Enrichment & Qdrant Upload (Moved here to run AFTER Verification) ──
             if result.get("has_structured"):
@@ -416,7 +392,12 @@ class DocumentPipeline:
                                     document_name=_doc_name,
                                     board=board,
                                     class_number=class_number,
-                                    qdrant_client=_q_client
+                                    qdrant_client=_q_client,
+                                    term=term,
+                                    # Fallback for units the extractor did not stamp;
+                                    # prefer the detected subject over the requested one.
+                                    subject=result.get("subject") or subject,
+                                    part=part,
                                 )
                             result["qdrant_uploaded"] = _uploaded
                             if _uploaded:
@@ -527,7 +508,9 @@ class DocumentPipeline:
         
         return {"success": False, "error": "Enrichment failed"}
     
-    def upload_to_qdrant(self, document_id: str, board: str, class_number: Optional[str] = None) -> Dict[str, Any]:
+    def upload_to_qdrant(self, document_id: str, board: str, class_number: Optional[str] = None,
+                         term: Optional[str] = None, subject: Optional[str] = None,
+                         part: Optional[str] = None) -> Dict[str, Any]:
         """Upload document chunks to Qdrant."""
         if not QDRANT_AVAILABLE:
             return {"success": False, "error": "Qdrant module not available"}
@@ -552,7 +535,10 @@ class DocumentPipeline:
                 board=board,
                 class_number=class_number,
                 qdrant_client=self.qdrant_client,
-                book_content="structured"
+                book_content="structured",
+                term=term,
+                subject=subject,
+                part=part,
             )
 
         return {
@@ -570,11 +556,13 @@ class DocumentPipeline:
         content_type_filter: Optional[str] = None,
         class_filter: Optional[str] = None,
         subject_filter: Optional[str] = None,
+        board_filter: Optional[str] = None,
+        term_filter: Optional[Any] = None,
     ) -> List[Dict[str, Any]]:
         """Search the vector database."""
         if not QDRANT_AVAILABLE:
             return []
-        
+
         return search_qdrant(
             query=query,
             limit=limit,
@@ -582,6 +570,8 @@ class DocumentPipeline:
             content_type_filter=content_type_filter,
             class_filter=class_filter,
             subject_filter=subject_filter,
+            board_filter=board_filter,
+            term_filter=term_filter,
             qdrant_client=self.qdrant_client
         )
     

@@ -8,6 +8,7 @@ export type LibraryUnit = {
   standard: string;
   subject: string;
   part?: string | null;
+  term?: string | null;
   unitNumber?: number | null;
   unitTitle: string;
   unitLabel: string;
@@ -37,6 +38,7 @@ export type LibrarySubject = {
   board: string;
   standard: string;
   part?: string | null;
+  term?: string | null;
   unitCount: number;
   visual?: {
     iconKey?: string;
@@ -50,7 +52,8 @@ export type LibrarySubject = {
 };
 
 async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
-  const isFormDataBody = typeof FormData !== "undefined" && init?.body instanceof FormData;
+  const isFormDataBody =
+    typeof FormData !== "undefined" && init?.body instanceof FormData;
   const response = await fetch(buildApiUrl(url), {
     ...init,
     headers: {
@@ -63,7 +66,9 @@ async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const payload = await response.json().catch(() => null);
 
   if (!response.ok || payload?.status === false) {
-    throw new Error(payload?.message || `Request failed with ${response.status}`);
+    throw new Error(
+      payload?.message || `Request failed with ${response.status}`,
+    );
   }
 
   return payload?.data as T;
@@ -78,7 +83,9 @@ async function apiFetchRaw(url: string, init?: RequestInit) {
   const payload = await response.json().catch(() => null);
 
   if (!response.ok || payload?.status === false) {
-    throw new Error(payload?.message || `Request failed with ${response.status}`);
+    throw new Error(
+      payload?.message || `Request failed with ${response.status}`,
+    );
   }
 
   return payload?.data;
@@ -95,32 +102,10 @@ export function getCandidateContext(user: any) {
   };
 }
 
-function getCurrentStudentSubjectFilters() {
-  try {
-    const raw = localStorage.getItem("gradeup_auth_user");
-    if (!raw) return {};
-    const user = JSON.parse(raw);
-    if (user?.role !== "student") return {};
-    return {
-      board: user.board || "",
-      standard: user.class || user.grade || "",
-    };
-  } catch {
-    return {};
-  }
-}
-
-export async function getLibrarySubjects(search = "", filters?: { board?: string; standard?: string; class?: string; grade?: string }) {
+export async function getLibrarySubjects(search = "") {
   const params = new URLSearchParams();
   if (search) {
     params.set("search", search);
-  }
-  const subjectFilters = filters || getCurrentStudentSubjectFilters();
-  if (subjectFilters.board) {
-    params.set("board", subjectFilters.board);
-  }
-  if (subjectFilters.standard || subjectFilters.class || subjectFilters.grade) {
-    params.set("standard", String(subjectFilters.standard || subjectFilters.class || subjectFilters.grade));
   }
 
   return apiFetch<LibrarySubject[]>(
@@ -134,12 +119,17 @@ export async function getLibrarySubjectDetail(subjectGroupKey: string) {
   );
 }
 
-export async function getUnitContent(unitId: string, format: "structured" | "enriched" = "enriched") {
+export async function getUnitContent(
+  unitId: string,
+  format: "structured" | "enriched" = "enriched",
+) {
   return apiFetch<{
     unit: LibraryUnit;
     format: "structured" | "enriched";
     content: any;
-  }>(`/api/v1/library/units/${encodeURIComponent(unitId)}/content?format=${format}`);
+  }>(
+    `/api/v1/library/units/${encodeURIComponent(unitId)}/content?format=${format}`,
+  );
 }
 
 export async function askTutor(payload: {
@@ -196,7 +186,9 @@ export async function getTutorConversation(payload: {
     candidateId: payload.candidateId,
   });
 
-  return apiFetch<any>(`/api/v1/tutor/conversations/${encodeURIComponent(payload.conversationId)}?${params.toString()}`);
+  return apiFetch<any>(
+    `/api/v1/tutor/conversations/${encodeURIComponent(payload.conversationId)}?${params.toString()}`,
+  );
 }
 
 export async function clearTutorHistory(payload: {
@@ -210,7 +202,9 @@ export async function clearTutorHistory(payload: {
 }
 
 export async function getFaqs(unitId: string) {
-  return apiFetch<any>(`/api/v1/library/units/${encodeURIComponent(unitId)}/faq`);
+  return apiFetch<any>(
+    `/api/v1/library/units/${encodeURIComponent(unitId)}/faq`,
+  );
 }
 
 export async function generateQuiz(payload: {
@@ -307,7 +301,9 @@ export async function getPerformance(payload: {
 }
 
 export async function getPerformancePoints(candidateId: string) {
-  return apiFetch<any>(`/api/v1/tutor/performance/points?candidateId=${encodeURIComponent(candidateId)}`);
+  return apiFetch<any>(
+    `/api/v1/tutor/performance/points?candidateId=${encodeURIComponent(candidateId)}`,
+  );
 }
 
 export async function startDebate(payload: {
@@ -327,22 +323,34 @@ export async function startDebate(payload: {
   });
 }
 
-export async function getDebateTopics(subjectGroupKey?: string, unitNumber?: number | string, sectionTitle?: string) {
+export async function getDebateTopics(
+  subjectGroupKey?: string,
+  unitNumber?: number | string,
+  sectionTitle?: string,
+) {
   const params = new URLSearchParams();
   if (subjectGroupKey) {
     params.set("subjectGroupKey", subjectGroupKey);
   }
-  if (unitNumber !== undefined && unitNumber !== null && String(unitNumber).trim()) {
+  if (
+    unitNumber !== undefined &&
+    unitNumber !== null &&
+    String(unitNumber).trim()
+  ) {
     params.set("unitNumber", String(unitNumber));
   }
   if (sectionTitle) {
     params.set("sectionTitle", sectionTitle);
   }
-  return apiFetch<any>(`/api/v1/debate/topics${params.toString() ? `?${params.toString()}` : ""}`);
+  return apiFetch<any>(
+    `/api/v1/debate/topics${params.toString() ? `?${params.toString()}` : ""}`,
+  );
 }
 
 export async function getDebateSession(sessionId: string) {
-  return apiFetch<any>(`/api/v1/debate/session/${encodeURIComponent(sessionId)}`);
+  return apiFetch<any>(
+    `/api/v1/debate/session/${encodeURIComponent(sessionId)}`,
+  );
 }
 
 export async function joinDebateSession(payload: {
@@ -492,6 +500,16 @@ export async function synthesizeDebateSpeech(payload: {
   });
 }
 
+export async function getRealtimeSessionToken() {
+  return apiFetch<{
+    sessionId?: string;
+    clientSecret: string;
+    expiresAt?: string | number;
+  }>("/api/v1/tutor/speech/realtime-token", {
+    method: "POST",
+  });
+}
+
 export async function startSeminar(payload: {
   unitId: string;
   candidateId: string;
@@ -524,7 +542,8 @@ export async function startSeminar(payload: {
     if (payload.mode) form.append("mode", payload.mode);
     if (payload.session_mode) form.append("session_mode", payload.session_mode);
     if (payload.sessionId) form.append("sessionId", payload.sessionId);
-    if (payload.liveSessionId) form.append("liveSessionId", payload.liveSessionId);
+    if (payload.liveSessionId)
+      form.append("liveSessionId", payload.liveSessionId);
     form.append("file", payload.file);
 
     return apiFetch<any>("/api/v1/seminar/start", {
@@ -571,11 +590,15 @@ export async function getSeminarTopics(subjectGroupKey?: string) {
   if (subjectGroupKey) {
     params.set("subjectGroupKey", subjectGroupKey);
   }
-  return apiFetch<any[]>(`/api/v1/seminar/topics${params.toString() ? `?${params.toString()}` : ""}`);
+  return apiFetch<any[]>(
+    `/api/v1/seminar/topics${params.toString() ? `?${params.toString()}` : ""}`,
+  );
 }
 
 export async function getSeminarSession(sessionId: string) {
-  return apiFetch<any>(`/api/v1/seminar/session/${encodeURIComponent(sessionId)}`);
+  return apiFetch<any>(
+    `/api/v1/seminar/session/${encodeURIComponent(sessionId)}`,
+  );
 }
 
 export async function getActiveSeminarSessions() {
@@ -624,9 +647,7 @@ export async function guideSeminar(sessionId: string) {
   });
 }
 
-export async function startSeminarChat(payload: {
-  sessionId: string;
-}) {
+export async function startSeminarChat(payload: { sessionId: string }) {
   return apiFetch<any>("/api/v1/seminar/chat/start", {
     method: "POST",
     body: JSON.stringify(payload),

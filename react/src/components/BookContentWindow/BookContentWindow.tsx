@@ -199,11 +199,13 @@ function serializeEnrichedForGenius(enrichedContent: any, fallbackTitle: string)
   const pushAvatarExplanation = (value: any) => {
     const segments = Array.isArray(value?.segments) ? value.segments : [];
     if (!segments.length) return;
-    lines.push("### Avatar Explanation");
     segments.forEach((segment: any) => {
-      const text = flattenContentToText(segment?.text || segment).trim();
+      const segmentType = String(segment?.type || "segment").trim().toLowerCase();
+      if (segmentType === "flashcard") return;
+
+      const text = flattenContentToText(segment?.text || segment?.content || "").trim();
       if (!text) return;
-      lines.push(`- ${String(segment?.type || "segment").trim()}: ${text}`);
+      lines.push(text);
     });
   };
   const pushKeyValueList = (title: string, value: any) => {
@@ -1221,6 +1223,8 @@ function flattenContentToText(value: any): string {
     value.children,
     value.topics,
     value.sections,
+    value.sub_items,
+    value.options,
     value.enrichedContent,
     value.enrichment,
   ]
@@ -1486,6 +1490,23 @@ function buildStructuredLayout(content: any, chapterId: string | number, topicMa
       });
     }
 
+    // NEW: Handle introduction FIRST (at unit level)
+    if (value.introduction) {
+      blocks.push(
+        ...buildTextLayoutFromString(flattenContentToText(value.introduction)),
+      );
+    }
+    
+    const objectives = value.learning_objectives || value.objectives;
+    if (objectives) {
+      blocks.push({ type: "heading3", content: "Learning Objectives" });
+      if (Array.isArray(objectives)) {
+        pushListField(objectives);
+      } else {
+        pushTextField(objectives);
+      }
+    }
+
     if (value.sections && Array.isArray(value.sections)) {
       value.sections.forEach((section: any) => {
         const title = normalizeReaderLabel(section.section_title || section.sectionTitle || section.title);
@@ -1557,11 +1578,12 @@ function buildStructuredLayout(content: any, chapterId: string | number, topicMa
           section.examples,
           section.bullets,
           section.points,
+          section.options,
         ].forEach(pushListField);
 
         [section.table, section.tables].forEach(pushTableField);
 
-        [section.children, section.items, section.topics].forEach(visit);
+        [section.children, section.items, section.topics, section.sub_items].forEach(visit);
 
         if (blocks.length === beforeCount && title) {
           blocks.push({
@@ -1604,14 +1626,12 @@ function buildStructuredLayout(content: any, chapterId: string | number, topicMa
 
     [
       value.summary,
-      value.introduction,
       value.content,
       value.text,
       value.body,
       value.explanation,
       value.detailed_explanation,
       value.description,
-      value.learning_objectives,
       value.points_to_remember,
       value.glossary,
       value.supplementary_info,
@@ -1630,11 +1650,12 @@ function buildStructuredLayout(content: any, chapterId: string | number, topicMa
       value.examples,
       value.points,
       value.bullets,
+      value.options,
     ].forEach(pushListField);
 
     [value.table, value.tables].forEach(pushTableField);
 
-    [value.children, value.items, value.topics, value.enrichment].forEach(visit);
+    [value.children, value.items, value.topics, value.enrichment, value.sub_items].forEach(visit);
 
     Object.entries(value).forEach(([key, nested]) => {
       if (metadataKeys.has(key)) return;
@@ -2900,24 +2921,18 @@ const BookContentWindow = () => {
 
           {/* ── Stats row ── */}
           <div className="lib-stats-row">
-            {isLibraryLoading ? (
-              Array.from({ length: 4 }).map((_, i) => (
-                <div key={`skeleton-stat-${i}`} className="lib-skeleton-stat-card" />
-              ))
-            ) : (
-              [
-                { label: "Total Books",    value: booksForLibrary.length, icon: "📚", color: "blue"   },
-                { label: "Available Units", value: booksForLibrary.reduce((sum, book) => sum + book.chapters.length, 0), icon: "📖", color: "indigo" },
-                { label: "Subjects",       value: new Set(booksForLibrary.map(b => b.subject.split(" • ")[0])).size, icon: "🎯", color: "purple" },
-                { label: "Ready to Read",  value: booksForLibrary.filter((book) => book.chapters.length > 0).length, icon: "✅", color: "green"  },
-              ].map((s, i) => (
-                <div key={i} className={`lib-stat-card lib-stat-${s.color}`} style={{ animationDelay: `${0.05 + i * 0.07}s` }}>
-                  <div className="lib-stat-icon">{s.icon}</div>
-                  <div className="lib-stat-num">{s.value}</div>
-                  <div className="lib-stat-label">{s.label}</div>
-                </div>
-              ))
-            )}
+            {[
+              { label: "Total Books",    value: booksForLibrary.length, icon: "📚", color: "blue"   },
+              { label: "Available Units", value: booksForLibrary.reduce((sum, book) => sum + book.chapters.length, 0), icon: "📖", color: "indigo" },
+              { label: "Subjects",       value: new Set(booksForLibrary.map(b => b.subject.split(" • ")[0])).size, icon: "🎯", color: "purple" },
+              { label: "Ready to Read",  value: booksForLibrary.filter((book) => book.chapters.length > 0).length, icon: "✅", color: "green"  },
+            ].map((s, i) => (
+              <div key={i} className={`lib-stat-card lib-stat-${s.color}`} style={{ animationDelay: `${0.05 + i * 0.07}s` }}>
+                <div className="lib-stat-icon">{s.icon}</div>
+                <div className="lib-stat-num">{s.value}</div>
+                <div className="lib-stat-label">{s.label}</div>
+              </div>
+            ))}
           </div>
 
           {/* ── Filter chips ── */}
@@ -2935,69 +2950,51 @@ const BookContentWindow = () => {
 
           {/* ── Book grid ── */}
           <div className="lib-grid">
-            {isLibraryLoading ? (
-              Array.from({ length: 8 }).map((_, i) => (
-                <div key={`skeleton-book-${i}`} className="lib-skeleton-book-card">
-                  <div className="lib-skeleton-book-cover" />
-                  <div className="lib-skeleton-text-line subtitle" />
-                  <div className="lib-skeleton-text-line title" style={{ width: '90%' }} />
-                  <div className="lib-skeleton-progress" />
-                  <div className="lib-skeleton-text-line" style={{ height: '10px', width: '70%', marginBottom: '12px' }} />
-                  <div style={{ marginTop: 'auto', display: 'flex', gap: '8px' }}>
-                    <div className="lib-skeleton-text-line" style={{ height: '10px', width: '40%' }} />
-                    <div className="lib-skeleton-text-line" style={{ height: '10px', width: '35%', marginLeft: 'auto' }} />
+            {!isLibraryLoading && filteredBooks.length === 0 && (
+              <div className="lib-empty-card">
+                <div className="lib-empty-icon">📚</div>
+                <div className="lib-empty-title">No data available</div>
+                <div className="lib-empty-copy">No subjects are available for the selected filter yet.</div>
+              </div>
+            )}
+            {filteredBooks.map((book, i) => (
+              <div
+                key={book.id}
+                className="lib-book-card"
+                style={{ animationDelay: `${0.07 + i * 0.07}s` }}
+                onClick={() => { openBookFromLibrary(book); }}
+              >
+                <div className="lib-cover" style={{ background: book.color }}>
+                  {getBookCoverUrl(book) ? (
+                    <img
+                      src={getBookCoverUrl(book) || ""}
+                      alt={book.title}
+                      className="lib-cover-image"
+                      onError={() => setBrokenBookImages((current) => ({ ...current, [book.id]: true }))}
+                    />
+                  ) : null}
+                  <div className="lib-cover-glare" />
+                  <span className="lib-cover-symbol">{getSubjectSymbol(book.subject)}</span>
+                </div>
+                <div className="lib-book-info">
+                  <span className="lib-subject-tag">{book.subject}</span>
+                  <h3 className="lib-book-title">{book.title}</h3>
+                  <div className="lib-progress-bg">
+                    <div className="lib-progress-fill" style={{ width: "45%", background: book.color }} />
+                  </div>
+                  <div className="lib-progress-pct">45% complete</div>
+                  <div className="lib-card-footer">
+                    <span className="lib-chapters">{book.chapters.length} Chapters</span>
+                    <button
+                      className="lib-open-btn"
+                      onClick={e => { e.stopPropagation(); openBookFromLibrary(book); }}
+                    >
+                      Open →
+                    </button>
                   </div>
                 </div>
-              ))
-            ) : (
-              <>
-                {!isLibraryLoading && filteredBooks.length === 0 && (
-                  <div className="lib-empty-card">
-                    <div className="lib-empty-icon">📚</div>
-                    <div className="lib-empty-title">No data available</div>
-                    <div className="lib-empty-copy">No subjects are available for the selected filter yet.</div>
-                  </div>
-                )}
-                {filteredBooks.map((book, i) => (
-                  <div
-                    key={book.id}
-                    className="lib-book-card"
-                    style={{ animationDelay: `${0.07 + i * 0.07}s` }}
-                    onClick={() => { openBookFromLibrary(book); }}
-                  >
-                    <div className="lib-cover" style={{ background: book.color }}>
-                      {getBookCoverUrl(book) ? (
-                        <img
-                          src={getBookCoverUrl(book) || ""}
-                          alt={book.title}
-                          className="lib-cover-image"
-                          onError={() => setBrokenBookImages((current) => ({ ...current, [book.id]: true }))}
-                        />
-                      ) : null}
-                      <div className="lib-cover-glare" />
-                      <span className="lib-cover-symbol">{getSubjectSymbol(book.subject)}</span>
-                    </div>
-                    <div className="lib-book-info">
-                      <span className="lib-subject-tag">{book.subject}</span>
-                      <h3 className="lib-book-title">{book.title}</h3>
-                      <div className="lib-progress-bg">
-                        <div className="lib-progress-fill" style={{ width: "45%", background: book.color }} />
-                      </div>
-                      <div className="lib-progress-pct">45% complete</div>
-                      <div className="lib-card-footer">
-                        <span className="lib-chapters">{book.chapters.length} Chapters</span>
-                        <button
-                          className="lib-open-btn"
-                          onClick={e => { e.stopPropagation(); openBookFromLibrary(book); }}
-                        >
-                          Open →
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </>
-            )}
+              </div>
+            ))}
           </div>
 
         </div>
@@ -3247,7 +3244,7 @@ const BookContentWindow = () => {
                       </span>
                     </div>
                   </div>
-                  <div className="reader-topbar-right">
+                <div className="reader-topbar-right">
                    
                           {/* <button
                             className={`bk-float-btn bk-float-ai ${isAiPanelOpen ? "active" : ""}`}
@@ -3262,42 +3259,97 @@ const BookContentWindow = () => {
                               </span>
                             )}
                           </button> */}
-                       <motion.button
-  className={`bk-float-btn bk-float-thunder ${!hasGeniusContent ? "locked" : ""}`}
-  onClick={e => { e.stopPropagation(); handleEnhanceContent(); }}
-  disabled={!hasGeniusContent || isEnhancing}
-  
-  // High-voltage animations
-  whileHover={hasGeniusContent ? { 
-    scale: 1.05,
-    x: [0, -1, 1, -1, 1, 0], // Subtle "electric vibration"
-    transition: { x: { repeat: Infinity, duration: 0.1 } } 
-  } : {}}
-  whileTap={{ scale: 0.95 }}
->
-  <div className="bolt-container">
-    <div className="bolt bolt-1" />
-    <div className="bolt bolt-2" />
-  </div>
-  
-  <Sparkles className="sparkle-icon" size={14} />
-  <span>{isEnhancing ? "Preparing Genius Mode..." : "Try with Genius Mode"}</span>
-  
-  {!hasGeniusContent && <span className="bk-float-lock">🔒</span>}
-</motion.button>
-                        
+
                     <button className="rtb-icon-btn" onClick={() => setTheme(isDark ? 'light' : 'dark')} title="Toggle theme">
                       {isDark ? <Sun size={15} /> : <Moon size={15} />}
                     </button>
                   </div>
                 </div>
 
-                <div className="genius-top-strip">
-                  <div className="genius-top-copy">
-                    <span className="genius-top-eyebrow">Genius Mode</span>
-                    <strong>Open the original immersive Genius reader for this unit with live content and media</strong>
-                  </div>
+                {/* Floating Genius/Summarize actions (inside book sheet area) */}
+                <div className="float-actions no-select" aria-hidden="true">
+                  {/* Left/right spread nav arrows */}
+                  <button
+                    type="button"
+                    className="float-arrow float-arrow-left"
+                    disabled={!hasPrevSpread || isFlipping}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!hasPrevSpread || isFlipping) return;
+                      goSpread(-1);
+                    }}
+                    title="Previous page"
+                  >
+                    <ChevronLeft size={18} />
+                  </button>
+
+                  <button
+                    type="button"
+                    className="float-arrow float-arrow-right"
+                    disabled={!hasNextSpread || isFlipping}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!hasNextSpread || isFlipping) return;
+                      goSpread(1);
+                    }}
+                    title="Next page"
+                  >
+                    <ChevronRight size={18} />
+                  </button>
+
+                  {/* Genius button */}
+                  <button
+                    type="button"
+                    className={`float-ai-btn float-ai-genius ${!hasGeniusContent ? "locked" : ""}`}
+                    disabled={!hasGeniusContent || isEnhancing}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!hasGeniusContent) {
+                        pushToast({
+                          title: "Genius Mode unavailable",
+                          description: "No live chapter content is available for this unit yet.",
+                          variant: "destructive",
+                        });
+                        return;
+                      }
+                      handleEnhanceContent();
+                    }}
+                    title="Genius Mode"
+                  >
+                    <Sparkles size={14} />
+                    <span>Genius</span>
+                    {isEnhancing ? "…" : null}
+                  </button>
+
+                  {/* Summarize button */}
+                  <button
+                    type="button"
+                    className="float-ai-btn float-ai-summarize"
+                    disabled={isEnhancing}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const selected = persistentSelection.current;
+                      if (!selected || !selected.trim()) {
+                        pushToast({
+                          title: "Select text to summarize",
+                          description: "Highlight a passage first, then click Summarize.",
+                          variant: "destructive",
+                        });
+                        return;
+                      }
+                      handleLiveAskAI(
+                        `Summarize: "${selected}"`,
+                        selected,
+                        "Summarize",
+                      );
+                    }}
+                    title="Summarize selected text"
+                  >
+                    <HighlighterIcon size={14} />
+                    <span>Summarize</span>
+                  </button>
                 </div>
+
 
                 {/* Context menu */}
                 <AnimatePresence>

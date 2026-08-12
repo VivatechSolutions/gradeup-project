@@ -1,0 +1,33 @@
+# Free web-search + scrape stack for the PPT co-pilot (replaces paid search APIs).
+#   SearXNG  : meta-search over Google/Bing/DDG, returns JSON + image results.
+#   Crawl4AI : headless browser that renders JS and returns clean markdown.
+#
+# Bring up:   docker compose up -d
+# Verify:     curl "http://localhost:8081/search?q=test&format=json"
+#             curl -X POST http://localhost:8001/crawl -H "Content-Type: application/json" -d '{"urls":["https://example.com"]}'
+
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: ppt-searxng
+    ports:
+      - "8081:8080"                 # host 8081 -> container 8080
+    volumes:
+      - ./searxng:/etc/searxng:rw   # settings.yml lives here
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8081/
+      - SEARXNG_SECRET=bdaa69552e471b3031b8068ee382a75344f25bb3d50c9df34d65fed7beb34a1e
+    restart: unless-stopped
+
+  crawl4ai:
+    image: unclecode/crawl4ai:latest
+    container_name: ppt-crawl4ai
+    ports:
+      - "8001:11235"                # host 8001 -> container 11235 (Crawl4AI default)
+    shm_size: "1g"                  # headless chromium needs shared memory
+    # v0.9.2 binds loopback-only UNLESS a token is set. Setting the token makes it
+    # bind all interfaces (so the host backend can reach it) AND requires this token
+    # as `Authorization: Bearer <token>` on every request. Must match .env.
+    environment:
+      - CRAWL4AI_API_TOKEN=d4360d61f3a088a0a4bf717cc3d40aac3409256535a17910
+    restart: unless-stopped

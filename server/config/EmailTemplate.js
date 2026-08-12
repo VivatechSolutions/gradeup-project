@@ -110,35 +110,6 @@ function getPasswordResetEmail({ name, resetUrl, appUrl }) {
   };
 }
 
-function getStudentPasswordResetEmail({ name, resetUrl, appUrl }) {
-  const content = `
-    <p style="margin:0 0 18px;font-size:15px;line-height:1.7;">Hello ${name || "there"},</p>
-    <p style="margin:0 0 18px;font-size:15px;line-height:1.7;">
-      We received a request to reset your GradeUp student password. Use the button below to choose a new password.
-    </p>
-    <p style="margin:0 0 18px;font-size:14px;line-height:1.7;color:#5f738c;">
-      If the button does not work, copy and paste this link into your browser:<br />
-      <a href="${resetUrl}" style="color:#2c71f0;">${resetUrl}</a>
-    </p>
-    <p style="margin:0;font-size:15px;line-height:1.7;">
-      If you did not request this, you can ignore this email and your password will remain unchanged.
-    </p>
-  `;
-
-  return {
-    subject: "Reset Your GradeUp Password",
-    text: `Reset your GradeUp password: ${resetUrl}\nIf you did not request this, you can ignore this email.\nGradeUp app: ${appUrl}`,
-    html: layoutTemplate({
-      title: "Reset Your GradeUp Password",
-      intro: "Choose a new password and get back to learning.",
-      content,
-      actionLabel: "Reset Password",
-      actionUrl: resetUrl,
-      footerNote: "This link is intended only for the recipient of this email.",
-    }),
-  };
-}
-
 function getDebateInviteEmail({ senderName, debateTopic, debateType, joinUrl, appName = "GradeUp" }) {
   const content = `
     <p style="margin:0 0 18px;font-size:15px;line-height:1.7;">Hello,</p>
@@ -179,5 +150,4 @@ module.exports = {
   getAdminWelcomeEmail,
   getDebateInviteEmail,
   getPasswordResetEmail,
-  getStudentPasswordResetEmail,
 };

@@ -8,10 +8,11 @@ const axios = require("axios");
 const SubjectUpload = require("../model/SubjectUpload");
 const SubjectUnit = require("../model/SubjectUnit");
 // const { logApiStep, logError } = require("../utils/logger");
+const { callPython } = require("../services/pythonGateway");
 
 function formatTimestamp(date = new Date()) {
   const pad = (value) => String(value).padStart(2, "0");
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(
     date.getHours(),
   )}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
@@ -25,7 +26,7 @@ function logApiStep({ api, status, message, requestId }) {
   emit({ api, status, message, requestId });
 }
 
-  function logError({ api, message, error, requestId }) {
+function logError({ api, message, error, requestId }) {
   emit({
     api,
     status: "ERROR",
@@ -107,7 +108,9 @@ function collectImageUrls(value, bucket = []) {
 }
 
 function dedupeImageUrls(urls = []) {
-  return [...new Set(urls.filter((url) => typeof url === "string" && url.trim()))];
+  return [
+    ...new Set(urls.filter((url) => typeof url === "string" && url.trim())),
+  ];
 }
 
 function appendImageUrlsLast(value) {
@@ -151,14 +154,19 @@ function countImageUrlEntries(value) {
     return 0;
   }
 
-  const ownCount = Array.isArray(value.image_urls) ? value.image_urls.length : 0;
+  const ownCount = Array.isArray(value.image_urls)
+    ? value.image_urls.length
+    : 0;
 
-  return ownCount + Object.entries(value).reduce((total, [key, childValue]) => {
-    if (key === "image_urls") {
-      return total;
-    }
-    return total + countImageUrlEntries(childValue);
-  }, 0);
+  return (
+    ownCount +
+    Object.entries(value).reduce((total, [key, childValue]) => {
+      if (key === "image_urls") {
+        return total;
+      }
+      return total + countImageUrlEntries(childValue);
+    }, 0)
+  );
 }
 
 function parseMultipartForm(req) {
@@ -200,7 +208,54 @@ function parseBoolean(value, fallback = false) {
 }
 
 function normalizeProcessingMode(value) {
-  return value === "whole_subject" ? "whole_subject" : "single_unit";
+  return value === "multiple_units" ? "multiple_units" : "single_unit";
+}
+
+function parseTerm(termString) {
+  if (!termString) return null;
+  const normalized = String(termString).trim().toLowerCase();
+  if (/^term\s*[1-4]$/i.test(normalized)) {
+    return normalized.replace(/\s+/g, " ");
+  }
+  return normalized.length > 0 ? normalized : null;
+}
+
+function parsePart(partString) {
+  if (!partString) return null;
+  const normalized = String(partString).trim().toUpperCase();
+  if (/^part\s*[a-d]$/i.test(normalized)) {
+    return normalized.replace(/\s+/g, " ");
+  }
+  return normalized.length > 0 ? normalized : null;
+}
+
+function getPartSequence(part) {
+  if (!part) return null;
+  const match = part.toUpperCase().match(/PART\s*([A-D])/i);
+  if (match) {
+    return match[1].charCodeAt(0) - 65;
+  }
+  return null;
+}
+
+function getTermSequence(term) {
+  if (!term) return null;
+  const match = term.match(/TERM\s*([1-4])/i);
+  if (match) {
+    return parseInt(match[1], 10) - 1;
+  }
+  return null;
+}
+
+function buildSubjectGroupKeyWithPartTerm(unit) {
+  return [
+    unit.board,
+    unit.standard,
+    unit.subject,
+    unit.part || "general",
+    unit.term || "general",
+    unit.uploadId || "standalone",
+  ].join("::");
 }
 
 function buildUnitLabel(unitNumber, fallbackTitle) {
@@ -226,8 +281,63 @@ function getReaderIndex(structuredData) {
   };
 }
 
+function buildGroupKeyFromUnit(unit) {
+  return [
+    unit.board,
+    unit.standard,
+    unit.subject,
+    unit.part || "general",
+    unit.term || "general",
+    unit.uploadId || "standalone",
+  ].join("::");
+}
+
 function createSubjectGroupKey() {
   return new mongoose.Types.ObjectId().toString();
+}
+
+function createTransactionId() {
+  return `txn_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+}
+
+function buildUploadScopedDocumentId(documentId, uploadId) {
+  return `${documentId}::${uploadId}`;
+}
+
+async function resolveSubjectUnitDocumentId({
+  pythonDocumentId,
+  uploadId,
+  subjectGroupKey,
+  unitNumber,
+}) {
+  const existingUnit = await SubjectUnit.findOne({
+    documentId: pythonDocumentId,
+  }).select("_id uploadId subjectGroupKey unitNumber");
+
+  if (!existingUnit) {
+    return pythonDocumentId;
+  }
+
+  if (String(existingUnit.uploadId) === String(uploadId)) {
+    return pythonDocumentId;
+  }
+
+  const sameGroup =
+    existingUnit.subjectGroupKey &&
+    subjectGroupKey &&
+    String(existingUnit.subjectGroupKey) === String(subjectGroupKey);
+  const sameUnitNumber =
+    existingUnit.unitNumber !== null &&
+    existingUnit.unitNumber !== undefined &&
+    unitNumber !== null &&
+    unitNumber !== undefined &&
+    Number(existingUnit.unitNumber) === Number(unitNumber);
+
+  if (sameGroup && sameUnitNumber) {
+    return pythonDocumentId;
+  }
+
+  return buildUploadScopedDocumentId(pythonDocumentId, uploadId);
 }
 
 async function updateUploadProgress(uploadId, updates = {}) {
@@ -237,7 +347,9 @@ async function updateUploadProgress(uploadId, updates = {}) {
 }
 
 async function persistTempFile(file) {
-  const extension = path.extname(file.originalFilename || file.filepath || ".pdf");
+  const extension = path.extname(
+    file.originalFilename || file.filepath || ".pdf",
+  );
   const targetPath = path.join(
     os.tmpdir(),
     `${BACKGROUND_UPLOAD_PREFIX}-${Date.now()}-${Math.random()
@@ -349,9 +461,18 @@ async function createOrUpdateSubjectUnit({
   const resolvedUnitTitle =
     structuredUnit?.title || enrichedUnit?.title || requestedTitle;
   const resolvedPart = structuredUnit?.part || pythonResponse?.part || null;
+  const pythonDocumentId = pythonResponse.document_id;
+  const documentId = await resolveSubjectUnitDocumentId({
+    pythonDocumentId,
+    uploadId,
+    subjectGroupKey,
+    unitNumber: resolvedUnitNumber,
+  });
 
   const update = {
     uploadId,
+    documentId,
+    sourceDocumentId: pythonDocumentId,
     uploadedBy,
     originalFileName,
     board,
@@ -390,103 +511,224 @@ async function createOrUpdateSubjectUnit({
   });
 
   return SubjectUnit.findOneAndUpdate(
-    { documentId: pythonResponse.document_id },
+    { documentId },
     { $set: update },
     { new: true, upsert: true, setDefaultsOnInsert: true },
   );
 }
 
 async function processSingleUnitUpload(upload) {
-  const pythonBaseUrl = process.env.AI_URL;
   const requestId = upload._id.toString();
 
-  logApiStep({
-    api: API_NAME,
-    status: "STARTED",
-    requestId,
-    message: "File Processing Started",
-  });
+  try {
+    // Handle both single and multiple file uploads
+    const filePaths = upload.multiFileUpload?.isMultiFile
+      ? upload.multiFileUpload.queuedFilePaths
+      : [upload.queuedFilePath];
 
-  await updateUploadProgress(upload._id, {
-    status: "processing",
-    queuePosition: null,
-    progressPercent: 20,
-    progressStage: "uploading_to_python",
-    progressMessage: "Sending unit PDF to Python service",
-  });
+    const fileMetadata = upload.multiFileUpload?.fileMetadata || [];
+    const createdUnitIds = [];
+    const createdUnits = [];
+    const failedFiles = [];
 
-  logApiStep({
-    api: API_NAME,
-    status: "STARTED",
-    requestId,
-    message: "Sending request to Python service",
-  });
+    // Process each file
+    for (let fileIndex = 0; fileIndex < filePaths.length; fileIndex++) {
+      const filePath = filePaths[fileIndex];
+      const metadata = fileMetadata[fileIndex] || {};
 
-  const pythonResponse = await sendPdfToPython({
-    endpoint: `${pythonBaseUrl}/upload-subject`,
-    filePath: upload.queuedFilePath,
-    fileName: upload.originalFileName,
-    payload: {
-      board: upload.board,
-      subject: upload.subject,
-      part: upload.part,
-      class_name: upload.standard,
-      skip_enrichment: upload.skipEnrichment,
-      skip_qdrant: upload.skipQdrant,
-      skip_llm_refinement: upload.skipLlmRefinement,
-    },
-  });
+      try {
+        if (!fs.existsSync(filePath)) {
+          throw new Error(`File not found: ${filePath}`);
+        }
 
-  logApiStep({
-    api: API_NAME,
-    status: "SUCCESS",
-    requestId,
-    message: "Received response from Python service",
-  });
+        // Update progress for this file
+        const fileProgress =
+          Math.round((fileIndex / filePaths.length) * 80) + 10;
+        await updateUploadProgress(upload._id, {
+          progressPercent: fileProgress,
+          progressMessage: `Processing file ${fileIndex + 1}/${filePaths.length}: ${path.basename(filePath)}`,
+          processedFiles: fileIndex,
+          lastProcessAttempt: new Date(),
+        });
 
-  const structuredData = await fetchJsonOrNull(
-    `${pythonBaseUrl}/structured/${pythonResponse.document_id}`,
-  );
-  const enrichedData = pythonResponse.has_enriched
-    ? await fetchJsonOrNull(`${pythonBaseUrl}/enrich/${pythonResponse.document_id}`)
-    : null;
-  const debateTopicsData = await fetchJsonOrNull(
-    `${pythonBaseUrl}/debate-topics/${pythonResponse.document_id}`,
-  );
+        logApiStep({
+          api: API_NAME,
+          status: "PROCESSING",
+          requestId,
+          message: `Processing file ${fileIndex + 1}/${filePaths.length}: ${path.basename(filePath)}`,
+        });
 
-  const unit = await createOrUpdateSubjectUnit({
-    uploadId: upload._id,
-    uploadedBy: upload.uploadedBy,
-    originalFileName: upload.originalFileName,
-    board: upload.board,
-    standard: upload.standard,
-    subject: upload.subject,
-    subjectGroupKey: upload.subjectGroupKey,
-    requestedTitle: upload.unitOrChapterName,
-    pythonResponse,
-    structuredData,
-    enrichedData,
-    debateTopicsData,
-    requestId,
-  });
+        // Call Python API for this file — send as multipart form with actual PDF
+        const pythonBaseUrl = process.env.AI_URL;
+        const pythonResponse = await sendPdfToPython({
+          endpoint: `${pythonBaseUrl}/upload-subject`,
+          filePath,
+          fileName: path.basename(filePath),
+          payload: {
+            board: upload.board,
+            standard: upload.standard,
+            subject: upload.subject,
+            processing_mode: "single_unit",
+            skip_enrichment: upload.skipEnrichment,
+            skip_qdrant: upload.skipQdrant,
+            skip_llm_refinement: upload.skipLlmRefinement,
+            unit_title: metadata.unitTitle || upload.unitOrChapterName,
+            unit_number: metadata.unitNumber || null,
+            part: metadata.part || upload.part || null,
+            term: metadata.term || upload.term || null,
+          },
+        });
 
-  logApiStep({
-    api: API_NAME,
-    status: "SUCCESS",
-    requestId,
-    message: "DB Store Completed",
-  });
+        if (!pythonResponse.success) {
+          throw new Error(pythonResponse.message || "Python processing failed");
+        }
 
-  await updateUploadProgress(upload._id, {
-    status: "processing",
-    progressPercent: 90,
-    progressStage: "saving_results",
-    progressMessage: "Saving processed unit results",
-    totalUnits: 1,
-    processedUnits: 1,
-  });
+        console.log(
+          `[DEBUG] Full pythonResponse:`,
+          JSON.stringify(pythonResponse, null, 2),
+        );
 
-  return { pythonResponse, units: [unit] };
+        // document_id is at top level of pythonResponse
+        const pythonDocId = pythonResponse.document_id;
+        if (!pythonDocId) {
+          throw new Error(
+            "Python processing succeeded but returned no document_id",
+          );
+        }
+
+        // const pythonBaseUrl = process.env.AI_URL;
+
+        // Fetch structured, enriched, debate topics via GET endpoints
+        const structuredData = pythonResponse.has_structured
+          ? await fetchJsonOrNull(`${pythonBaseUrl}/structured/${pythonDocId}`)
+          : null;
+
+        const enrichedData = pythonResponse.has_enriched
+          ? await fetchJsonOrNull(`${pythonBaseUrl}/enrich/${pythonDocId}`)
+          : null;
+
+        const debateTopicsData = pythonResponse.debate_topics_success
+          ? await fetchJsonOrNull(
+              `${pythonBaseUrl}/debate-topics/${pythonDocId}`,
+            )
+          : null;
+
+        const documentId = await resolveSubjectUnitDocumentId({
+          pythonDocumentId: pythonDocId,
+          uploadId: upload._id,
+          subjectGroupKey: upload.subjectGroupKey,
+          unitNumber: null,
+        });
+
+        const parsedPart =
+          metadata.part || upload.part
+            ? parsePart(metadata.part || upload.part)
+            : null;
+        const parsedTerm =
+          metadata.term || upload.term
+            ? parseTerm(metadata.term || upload.term)
+            : null;
+
+        const normalizedStructured = appendImageUrlsLast(structuredData);
+
+        const subjectUnit = new SubjectUnit({
+          uploadId: upload._id,
+          documentId,
+          sourceDocumentId: pythonDocId,
+          board: upload.board,
+          standard: upload.standard,
+          subject: upload.subject,
+          subjectGroupKey: upload.subjectGroupKey,
+          part: parsedPart,
+          term: parsedTerm,
+          partSequence: getPartSequence(parsedPart),
+          termSequence: getTermSequence(parsedTerm),
+          unitNumber: null,
+          unitTitle: metadata.unitTitle || upload.unitOrChapterName || "Unit",
+          unitLabel: buildUnitLabel(
+            null,
+            metadata.unitTitle || upload.unitOrChapterName,
+          ),
+          chapterName: metadata.unitTitle || upload.unitOrChapterName || null,
+          originalFileName: path.basename(filePath),
+          uploadedBy: upload.uploadedBy,
+          processing: {
+            status: "completed",
+            message: pythonResponse.message || null,
+            pythonResponse: pythonResponse,
+            processedAt: new Date(),
+          },
+          structuredData: normalizedStructured,
+          enrichedData: appendImageUrlsLast(enrichedData),
+          debateTopics: debateTopicsData || null,
+          readerIndex: getReaderIndex(normalizedStructured),
+        });
+
+        await subjectUnit.save();
+        createdUnitIds.push(subjectUnit._id);
+        createdUnits.push(subjectUnit);
+
+        logApiStep({
+          api: API_NAME,
+          status: "SUCCESS",
+          requestId,
+          message: `File ${fileIndex + 1} processed successfully`,
+        });
+      } catch (fileError) {
+        logError({
+          api: API_NAME,
+          requestId,
+          message: `Error processing file ${fileIndex + 1}: ${path.basename(filePath)}`,
+          error: fileError,
+        });
+
+        failedFiles.push({
+          filename: path.basename(filePath),
+          error: fileError.message,
+        });
+      }
+    }
+
+    // If multi-file upload and any files failed, rollback all units from this upload
+    if (upload.multiFileUpload?.isMultiFile && failedFiles.length > 0) {
+      logApiStep({
+        api: API_NAME,
+        status: "WARNING",
+        requestId,
+        message: `Multi-file upload has failures. Rolling back ${createdUnits.length} created units.`,
+      });
+
+      // Rollback: Delete all created units for this transaction
+      await SubjectUnit.deleteMany({ _id: { $in: createdUnitIds } });
+
+      throw new Error(
+        `Multi-file upload failed. ${failedFiles.length} file(s) could not be processed: ${failedFiles
+          .map((f) => f.filename)
+          .join(", ")}`,
+      );
+    }
+
+    // Partial success handling for single file uploads
+    if (failedFiles.length > 0 && createdUnitIds.length === 0) {
+      throw new Error(
+        `All files failed to process: ${failedFiles.map((f) => f.filename).join(", ")}`,
+      );
+    }
+
+    return {
+      units: createdUnits,
+      unitsCreated: createdUnits.length,
+      failedFiles,
+    };
+  } catch (error) {
+    logError({
+      api: API_NAME,
+      requestId,
+      message: "Error in single unit upload processing",
+      error,
+    });
+    throw error;
+  }
 }
 
 async function processWholeSubjectUpload(upload) {
@@ -516,7 +758,7 @@ async function processWholeSubjectUpload(upload) {
   });
 
   const pythonResponse = await sendPdfToPython({
-    endpoint: `${pythonBaseUrl}/upload_pdf`,
+    endpoint: `${pythonBaseUrl}/upload-subject`,
     filePath: upload.queuedFilePath,
     fileName: upload.originalFileName,
     payload: {
@@ -590,7 +832,10 @@ async function processWholeSubjectUpload(upload) {
 
     const processedUnits = index + 1;
     const progressPercent = successfulUnits.length
-      ? Math.min(92, 55 + Math.round((processedUnits / successfulUnits.length) * 35))
+      ? Math.min(
+          92,
+          55 + Math.round((processedUnits / successfulUnits.length) * 35),
+        )
       : 92;
 
     await updateUploadProgress(upload._id, {
@@ -611,10 +856,12 @@ async function finalizeUploadSuccess(upload, result) {
   upload.queuePosition = null;
   upload.progressPercent = 100;
   upload.progressStage = "completed";
-  upload.progressMessage = "Processing completed successfully";
+  upload.progressMessage = `Upload completed: ${result.unitsCreated} unit(s) created`;
   upload.processedUnits = result.units.length;
   upload.totalUnits = result.units.length;
   upload.pythonResponse = result.pythonResponse;
+  upload.multiFileUpload.processedFiles =
+    upload.multiFileUpload?.totalFiles || 1;
   upload.processedAt = new Date();
   upload.queuedFilePath = null;
   await upload.save();
@@ -635,20 +882,19 @@ async function finalizeUploadFailure(upload, error) {
 }
 
 async function refreshQueuedPositions() {
-  const queued = await SubjectUpload.find({ status: "queued" })
+  const queuedItems = await SubjectUpload.find({ status: "queued" })
     .sort({ createdAt: 1, _id: 1 })
-    .select("_id");
+    .lean();
 
-  await Promise.all(
-    queued.map((upload, index) =>
-      SubjectUpload.findByIdAndUpdate(upload._id, {
+  return Promise.all(
+    queuedItems.map((item, index) =>
+      SubjectUpload.findByIdAndUpdate(item._id, {
         $set: {
-          queuePosition: index + 1,
-          progressStage: "queued",
+          queuePosition: index,
           progressMessage:
-            index === 0 && !isQueueRunning
-              ? "Queued and waiting to start"
-              : `Queued at position ${index + 1}`,
+            index === 0 ? "Processing now" : `Queued at position ${index + 1}`,
+          lastProcessAttempt:
+            index === 0 ? new Date() : item.lastProcessAttempt,
         },
       }),
     ),
@@ -658,12 +904,27 @@ async function refreshQueuedPositions() {
 async function processUploadRecord(upload) {
   const requestId = upload._id.toString();
   const queuedFilePath = upload.queuedFilePath;
+  const multiFilePaths = upload.multiFileUpload?.queuedFilePaths || [];
 
   try {
-    if (!queuedFilePath || !fs.existsSync(queuedFilePath)) {
-      const missingFileError = new Error("Queued upload file is no longer available");
-      missingFileError.statusCode = 410;
-      throw missingFileError;
+    // Validate files exist
+    if (upload.multiFileUpload?.isMultiFile) {
+      const missingFiles = multiFilePaths.filter((fp) => !fs.existsSync(fp));
+      if (missingFiles.length > 0) {
+        const missingFileError = new Error(
+          `${missingFiles.length} queued upload file(s) no longer available`,
+        );
+        missingFileError.statusCode = 410;
+        throw missingFileError;
+      }
+    } else {
+      if (!queuedFilePath || !fs.existsSync(queuedFilePath)) {
+        const missingFileError = new Error(
+          "Queued upload file is no longer available",
+        );
+        missingFileError.statusCode = 410;
+        throw missingFileError;
+      }
     }
 
     upload.status = "processing";
@@ -671,12 +932,10 @@ async function processUploadRecord(upload) {
     upload.progressStage = "processing";
     upload.progressMessage = "Processing started";
     upload.progressPercent = Math.max(upload.progressPercent || 0, 10);
+    upload.lastProcessAttempt = new Date();
     await upload.save();
 
-    const result =
-      upload.processingMode === "whole_subject"
-        ? await processWholeSubjectUpload(upload)
-        : await processSingleUnitUpload(upload);
+    const result = await processSingleUnitUpload(upload);
 
     await finalizeUploadSuccess(upload, result);
 
@@ -695,9 +954,18 @@ async function processUploadRecord(upload) {
       error,
     });
   } finally {
+    // Cleanup single file
     if (queuedFilePath && fs.existsSync(queuedFilePath)) {
       await unlinkAsync(queuedFilePath).catch(() => null);
     }
+
+    // Cleanup multi-files
+    if (upload.multiFileUpload?.isMultiFile) {
+      await Promise.all(
+        multiFilePaths.map((fp) => unlinkAsync(fp).catch(() => null)),
+      );
+    }
+
     await refreshQueuedPositions();
   }
 }
@@ -710,10 +978,12 @@ async function runSubjectUploadQueue() {
   isQueueRunning = true;
   try {
     while (true) {
-      const nextUpload = await SubjectUpload.findOne({ status: "queued" }).sort({
-        createdAt: 1,
-        _id: 1,
-      });
+      const nextUpload = await SubjectUpload.findOne({ status: "queued" }).sort(
+        {
+          createdAt: 1,
+          _id: 1,
+        },
+      );
 
       if (!nextUpload) {
         break;
@@ -746,7 +1016,8 @@ async function findSubjectGroupSnapshot(subjectGroupKey) {
   });
 
   if (!units.length && String(subjectGroupKey).includes("::")) {
-    const [board, standard, subject, rawPart, uploadId] = String(subjectGroupKey).split("::");
+    const [board, standard, subject, rawPart, uploadId] =
+      String(subjectGroupKey).split("::");
     const fallbackFilter = {
       board,
       standard,
@@ -799,7 +1070,8 @@ async function findSubjectGroupSnapshot(subjectGroupKey) {
 async function handleAdminSubjectUpload(req) {
   const { fields, files } = await parseMultipartForm(req);
   const assignmentMode =
-    pickField(fields, "subjectAssignmentMode", "new_subject") === "existing_subject"
+    pickField(fields, "subjectAssignmentMode", "new_subject") ===
+    "existing_subject"
       ? "existing_subject"
       : "new_subject";
   const existingSubjectKey = pickField(fields, "existingSubjectKey");
@@ -807,23 +1079,31 @@ async function handleAdminSubjectUpload(req) {
   let standard = pickField(fields, "standard");
   let subject = pickField(fields, "subject");
   let part = pickField(fields, "part");
+  let term = pickField(fields, "term");
   const unitOrChapterName = pickField(fields, "unitOrChapterName");
   const processingMode = normalizeProcessingMode(
     pickField(fields, "processingMode"),
   );
-  const skipEnrichment = parseBoolean(pickField(fields, "skip_enrichment"), false);
+  const skipEnrichment = parseBoolean(
+    pickField(fields, "skip_enrichment"),
+    false,
+  );
   const skipQdrant = parseBoolean(pickField(fields, "skip_qdrant"), false);
   const skipLlmRefinement = parseBoolean(
     pickField(fields, "skip_llm_refinement"),
     false,
   );
-  const file = files.file?.[0] || files.file;
-  const requiresUnitTitle = processingMode === "single_unit";
+  const fileArray = files.file;
+  const isMultiFile = Array.isArray(fileArray) && fileArray.length > 1;
+  const requiresUnitTitle = processingMode === "single_unit" && !isMultiFile;
   let subjectGroupKey = null;
+  const transactionId = createTransactionId();
 
   if (assignmentMode === "existing_subject") {
     if (!existingSubjectKey) {
-      const error = new Error("existingSubjectKey is required when adding to an existing subject");
+      const error = new Error(
+        "existingSubjectKey is required when adding to an existing subject",
+      );
       error.statusCode = 400;
       throw error;
     }
@@ -840,6 +1120,7 @@ async function handleAdminSubjectUpload(req) {
     standard = existingGroup.standard;
     subject = existingGroup.subject;
     part = existingGroup.part;
+    term = existingGroup.term || term;
   } else {
     subjectGroupKey = createSubjectGroupKey();
   }
@@ -851,25 +1132,64 @@ async function handleAdminSubjectUpload(req) {
   }
 
   if (requiresUnitTitle && !unitOrChapterName) {
-    const error = new Error("unitOrChapterName is required for unit wise processing");
+    const error = new Error(
+      "unitOrChapterName is required for single unit processing",
+    );
     error.statusCode = 400;
     throw error;
   }
 
-  if (!file) {
+  if (!fileArray) {
     const error = new Error("file is required");
     error.statusCode = 400;
     throw error;
   }
 
-  const fileName = file.originalFilename || path.basename(file.filepath);
-  if (!fileName.toLowerCase().endsWith(".pdf")) {
-    const error = new Error("Only PDF uploads are supported right now");
-    error.statusCode = 400;
-    throw error;
+  // Validate files
+  const filesToProcess = Array.isArray(fileArray) ? fileArray : [fileArray];
+  for (const file of filesToProcess) {
+    const fileName = file.originalFilename || path.basename(file.filepath);
+    if (!fileName.toLowerCase().endsWith(".pdf")) {
+      const error = new Error(
+        "Only PDF uploads are supported. All files must be PDFs.",
+      );
+      error.statusCode = 400;
+      throw error;
+    }
   }
 
-  const queuedFilePath = await persistTempFile(file);
+  // Persist files and collect metadata
+  const queuedFilePaths = [];
+  const fileMetadata = [];
+
+  for (let i = 0; i < filesToProcess.length; i++) {
+    const file = filesToProcess[i];
+    const persistedPath = await persistTempFile(file);
+    queuedFilePaths.push(persistedPath);
+
+    // Extract metadata from field if provided
+    const fileMetadataField = pickField(fields, `fileMetadata[${i}]`);
+    const metadata = fileMetadataField
+      ? JSON.parse(fileMetadataField)
+      : {
+          unitTitle: isMultiFile ? `Unit ${i + 1}` : unitOrChapterName,
+          unitNumber: isMultiFile ? i + 1 : null,
+          part: part || null,
+          term: term || null,
+        };
+
+    fileMetadata.push(metadata);
+  }
+
+  // Cleanup original file paths
+  for (const file of filesToProcess) {
+    if (file?.filepath && fs.existsSync(file.filepath)) {
+      await unlinkAsync(file.filepath).catch(() => null);
+    }
+  }
+
+  const parsedPart = part ? parsePart(part) : null;
+  const parsedTerm = term ? parseTerm(term) : null;
 
   const upload = await SubjectUpload.create({
     board,
@@ -878,25 +1198,36 @@ async function handleAdminSubjectUpload(req) {
     subjectGroupKey,
     uploadTitle: unitOrChapterName || subject,
     unitOrChapterName: unitOrChapterName || null,
-    part: processingMode === "single_unit" ? part || null : part || null,
-    originalFileName: fileName,
+    part: parsedPart,
+    term: parsedTerm,
+    originalFileName: filesToProcess
+      .map((f) => f.originalFilename || path.basename(f.filepath))
+      .join(", "),
     uploadType: "pdf",
     processingMode,
+    multiFileUpload: {
+      isMultiFile,
+      totalFiles: filesToProcess.length,
+      queuedFilePaths,
+      fileMetadata,
+      processedFiles: 0,
+      failedFiles: [],
+    },
     uploadedBy: req.admin._id,
     status: "queued",
     queuePosition: 0,
-    queuedFilePath,
+    queuedFilePath: isMultiFile ? null : queuedFilePaths[0],
     skipEnrichment,
     skipQdrant,
     skipLlmRefinement,
     progressPercent: 5,
     progressStage: "queued",
-    progressMessage: "Queued for processing",
+    progressMessage: isMultiFile
+      ? `Queued: ${filesToProcess.length} files for processing`
+      : "Queued for processing",
+    totalUnits: filesToProcess.length,
+    transactionId,
   });
-
-  if (file?.filepath && fs.existsSync(file.filepath)) {
-    await unlinkAsync(file.filepath).catch(() => null);
-  }
 
   await refreshQueuedPositions();
   ensureSubjectUploadQueueRunning();
@@ -907,13 +1238,16 @@ async function handleAdminSubjectUpload(req) {
     api: API_NAME,
     status: "STARTED",
     requestId: req.requestId,
-    message: "Queued for FIFO processing",
+    message: `Queued for FIFO processing: ${isMultiFile ? `${filesToProcess.length} files` : "1 file"}`,
   });
 
   return {
     upload: refreshedUpload || upload,
     units: [],
     queued: true,
+    isMultiFile,
+    totalFiles: filesToProcess.length,
+    transactionId,
   };
 }
 

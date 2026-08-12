@@ -7,6 +7,7 @@ import {
   useMemo,
 } from "react";
 import { useLocation } from "wouter";
+import jsPDF from "jspdf";
 import Navigation from "../components/navigation";
 import FormattedAIContent from "../components/ai/FormattedAIContent";
 import { useAuth } from "../hooks/use-auth";
@@ -264,6 +265,16 @@ select.finput{cursor:pointer;appearance:none;background-image:url("data:image/sv
 .setup-title{font-size:clamp(17px,2vw,24px);font-weight:900;letter-spacing:-.4px;margin-bottom:3px;color:var(--t1)}
 .setup-sub{font-size:12px;color:var(--t2);margin-bottom:18px;line-height:1.6}
 
+.module-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:14px}
+.module-card{padding:13px;border-radius:13px;border:2px solid var(--bdr);background:var(--surf2);cursor:pointer;transition:all .2s;display:flex;gap:10px;align-items:flex-start}
+.module-card:hover{border-color:rgba(99,102,241,.32);background:rgba(99,102,241,.03);transform:translateY(-2px);box-shadow:0 6px 20px rgba(99,102,241,.1)}
+.module-card.sel{border-color:var(--ind);background:rgba(99,102,241,.06);box-shadow:0 6px 20px rgba(99,102,241,.12)}
+.mod-ic{width:36px;height:36px;border-radius:11px;background:rgba(99,102,241,.13);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;transition:.2s}
+.module-card.sel .mod-ic{background:rgba(99,102,241,.22)}
+.mod-title{font-size:12px;font-weight:800;color:var(--t1);margin-bottom:3px}
+.mod-desc{font-size:10px;color:var(--t2);line-height:1.5}
+.module-card.sel .mod-title{color:var(--ind)}
+
 .submode-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:14px}
 .submode-card{padding:14px 13px;border-radius:14px;border:2px solid var(--bdr);background:var(--surf2);cursor:pointer;transition:all .22s;display:flex;align-items:flex-start;gap:9px}
 .submode-card:hover{border-color:rgba(99,102,241,.32);background:rgba(99,102,241,.03);transform:translateY(-2px)}
@@ -462,7 +473,7 @@ select.finput{cursor:pointer;appearance:none;background-image:url("data:image/sv
 .verdict-win{font-size:21px;font-weight:900;margin-bottom:3px}
 .verdict-lbl{font-size:11.5px;font-weight:700;opacity:.6}
 .analysis-foot{padding:12px 20px;border-top:1px solid rgba(255,255,255,.08);flex-shrink:0;display:flex;justify-content:flex-end;gap:8px}
-.results-page{height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:clamp(20px,4vw,52px);text-align:center;overflow-y:auto;background:radial-gradient(ellipse at 50% 25%,rgba(99,102,241,.07) 0%,transparent 65%)}
+.results-page{height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:max(40px, 10vh) clamp(20px,4vw,52px) clamp(20px,4vw,52px);text-align:center;overflow-y:auto;background:radial-gradient(ellipse at 50% 25%,rgba(99,102,241,.07) 0%,transparent 65%)}
 .res-trophy{font-size:62px;margin-bottom:12px;animation:scaleIn .6s cubic-bezier(.34,1.56,.64,1) .2s both}
 .res-title{font-size:clamp(20px,3.2vw,34px);font-weight:900;letter-spacing:-.6px;margin-bottom:6px;color:var(--t1)}
 .res-sub{font-size:13px;color:var(--t2);max-width:340px;line-height:1.75;margin-bottom:18px}
@@ -2103,6 +2114,7 @@ function ScheduleDebateModal({ config, onSchedule, onClose }: any) {
                 <span className="loader-spin" />
                 Scheduling…
               </>
+
             ) : (
               "📅 Schedule & Save"
             )}
@@ -2526,7 +2538,7 @@ function IntegratedDebateSetup({
   const joinRoomFromLinkRef = useRef<string>("");
   const roomId = useRef(genRoomId());
   const roomLink = genRoomLink(roomId.current);
-  const setupRoomLink = joinRoomFromLinkRef.current
+    const setupRoomLink = joinRoomFromLinkRef.current
     ? genRoomLink(joinRoomFromLinkRef.current)
     : subMode === "multi"
       ? "Room link will be created when you launch the debate room."
@@ -2765,7 +2777,7 @@ function IntegratedDebateSetup({
       : [{ label: "Set debate timer", done: !!debateMinutes }]),
   ];
   const canLaunch = steps.every((step) => step.done);
-  const copyLink = () => {
+    const copyLink = () => {
     if (!joinRoomFromLinkRef.current) {
       toast$("Room link will be available after the room is created.", "info");
       return;
@@ -2774,7 +2786,6 @@ function IntegratedDebateSetup({
     setCopied(true);
     setTimeout(() => setCopied(false), 2200);
   };
-
   const features = [
     {
       ico: "🤖",
@@ -2988,9 +2999,44 @@ function IntegratedDebateSetup({
             )}
             <h2 className="setup-title">⚔️ Debate Setup</h2>
             <p className="setup-sub">
-              Complete the live debate setup using the integrated APIs.
+              Choose your debate type first, then complete the matching setup flow.
             </p>
 
+            <div className="sec-div">Choose Debate Type</div>
+            <div className="module-grid fi">
+              {[
+                {
+                  id: "ai",
+                  ic: "🤖",
+                  t: "1 vs AI",
+                  d: "Practice a live debate with an AI voice opponent and scored turns.",
+                },
+                {
+                  id: "multi",
+                  ic: "👥",
+                  t: "Team Debate",
+                  d: "Create a live team room with host controls and AI moderation.",
+                },
+              ].map((item) => (
+                <div
+                  key={item.id}
+                  className={`module-card${subMode === item.id ? " sel" : ""}`}
+                  onClick={() => {
+                    setSubMode(item.id as any);
+                    setDebateType("");
+                  }}
+                >
+                  <div className="mod-ic">{item.ic}</div>
+                  <div>
+                    <div className="mod-title">{item.t}</div>
+                    <div className="mod-desc">{item.d}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {subMode && (
+              <>
             <div className="sec-div">Identity</div>
             <div className="fi">
               <label className="fl">Your Name</label>
@@ -3118,39 +3164,9 @@ function IntegratedDebateSetup({
                 />
               </div>
             )}
-
-            <div className="sec-div">Debate Mode</div>
-            <div className="submode-grid fi">
-              {[
-                {
-                  id: "ai",
-                  ico: "🤖",
-                  t: "1v1 vs AI",
-                  d: "Start a live AI debate session and get real AI responses.",
-                },
-                {
-                  id: "multi",
-                  ico: "👥",
-                  t: "Team Debate",
-                  d: "Create or join a live debate room with host controls.",
-                },
-              ].map((item) => (
-                <div
-                  key={item.id}
-                  className={`submode-card${subMode === item.id ? " sel" : ""}`}
-                  onClick={() => setSubMode(item.id as any)}
-                >
-                  <div className="submode-ico">{item.ico}</div>
-                  <div>
-                    <div className="submode-title">{item.t}</div>
-                    <div className="submode-desc">{item.d}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
             <div className="sec-div">Timing</div>
             {subMode === "multi" ? (
+              <>
               <div className="dtype-grid fi">
                 {[
                   {
@@ -3179,6 +3195,33 @@ function IntegratedDebateSetup({
                   </div>
                 ))}
               </div>
+              <div className="fi">
+                <label className="fl">Number of Participants</label>
+                <input
+                  className="finput"
+                  type="number"
+                  min={2}
+                  max={12}
+                  step={1}
+                  value={participantCount}
+                  onChange={(event) => {
+                    const next = event.target.value.replace(/[^\d]/g, "");
+                    setParticipantCount(next);
+                  }}
+                  placeholder="2 to 12"
+                />
+                <div
+                  style={{
+                    marginTop: 6,
+                    fontSize: 11,
+                    color: "var(--t2)",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  Team debates support 2 to 12 participants.
+                </div>
+              </div>
+              </>
             ) : (
               <div className="fi">
                 <label className="fl">Debate Duration</label>
@@ -3262,15 +3305,6 @@ function IntegratedDebateSetup({
               </div>
             )}
 
-            <div className="link-box">
-              <div className="link-box-title">🔗 Room Link</div>
-              <div className="link-row">
-                <span className="link-val">{setupRoomLink}</span>
-                <button className="copy-btn" onClick={copyLink}>
-                  {copied ? "✓ Copied!" : "Copy"}
-                </button>
-              </div>
-            </div>
 
             <StepsComp steps={steps} />
             {debateType !== "schedule" && (
@@ -3279,8 +3313,10 @@ function IntegratedDebateSetup({
                 onClick={() => setShowConfirm(true)}
                 disabled={!canLaunch}
               >
-                🚀 Launch Debate Room
+                {subMode === "ai" ? "🤖 Start 1 vs AI Debate" : "👥 Launch Team Debate"}
               </button>
+            )}
+              </>
             )}
             <div style={{ height: 24 }} />
           </div>
@@ -3582,6 +3618,7 @@ function TeamDebateRoom({
     participants.find(
       (participant: any) => String(participant.id) === currentSpeakerId,
     ) || null;
+    
   const activeTeam =
     currentRound.activeTeam === "A" || currentRound.activeTeam === "B"
       ? currentRound.activeTeam
@@ -3615,14 +3652,15 @@ function TeamDebateRoom({
     apiBase: `${process.env.REACT_APP_API_BASE_URL}`,
     startMuted: true, // ← add this line
   });
-  const isCurrentUserSpeaker = activeSpeakerId === String(candidateId);
-  const isCurrentUserTurn =
-    isCurrentUserSpeaker &&
-    (!activeTeam || currentParticipant?.team === activeTeam);
+  // ▼ CRITICAL: Use server's currentSpeakerId only ▼
+  const isCurrentUserSpeaker = String(currentSpeakerId) === String(candidateId);
+  const isCurrentUserTurn = isCurrentUserSpeaker; // Server decides, not team logic
+  const isAiParticipantSpeaking = String(currentSpeakerId) === "__ai_student__";
   const canSpeak =
     liveSession?.status === "active" &&
     currentPhase !== "ai_opening" &&
     !aiIsSpeaking &&
+    !isAiParticipantSpeaking &&
     !greetingPending &&
     !openingCompletionPending &&
     isCurrentUserTurn &&
@@ -3636,6 +3674,19 @@ function TeamDebateRoom({
   const roomReady = meetingReady && (!loadingRoom || roomHasSnapshot);
 
   useEffect(() => {
+    // ▼ CRITICAL: DO NOT ENABLE MIC IF AI IS SPEAKING ▼
+    if (isAiParticipantSpeaking) {
+      if (localAudioTrack?.enabled) {
+        localAudioTrack.enabled = false;
+        livekitMute();
+        debateDebug("[MIC] muted - AI participant speaking", {
+          sessionId: config.sessionId,
+          currentSpeakerId,
+        });
+      }
+      return;
+    }
+
     if (
       !canSpeak ||
       !localAudioTrack ||
@@ -3645,22 +3696,62 @@ function TeamDebateRoom({
     }
     if (!localAudioTrack.enabled) {
       localAudioTrack.enabled = true;
-      debateDebug("[MIC] track re-enabled for turn", {
+      debateDebug("[MIC] track re-enabled for user turn", {
         sessionId: config.sessionId,
-        activeSpeakerId,
-        currentSpeakerId,
+        activeSpeakerId: String(activeSpeakerId),
+        currentSpeakerId: String(currentSpeakerId),
+        currentUserId: String(candidateId),
         trackReadyState: localAudioTrack.readyState,
       });
     }
-  }, [
+ }, [
     activeSpeakerId,
     canSpeak,
     config.sessionId,
     currentSpeakerId,
+    isAiParticipantSpeaking,
     localAudioTrack?.enabled,
     localAudioTrack?.readyState,
+    livekitMute,
   ]);
 
+  // ▼ FIX 3: MUTE AUDIO WHEN AI PARTICIPANT SPEAKS ▼
+  useEffect(() => {
+    if (!localAudioTrack) return;
+
+    if (isAiParticipantSpeaking && localAudioTrack.enabled) {
+      // AI participant is speaking - mute current user
+      localAudioTrack.enabled = false;
+      debateDebug("[AI-PARTICIPANT] Muted local audio for AI speaker", {
+        sessionId: config.sessionId,
+        aiSpeakerId: currentSpeaker?.id,
+        aiSpeakerName: currentSpeaker?.name,
+      });
+      console.log("[AI-PARTICIPANT-MUTE] Audio muted for AI speaker:", {
+        aiSpeakerId: currentSpeaker?.id,
+        isAiParticipantSpeaking,
+      });
+    }
+  }, [isAiParticipantSpeaking, localAudioTrack?.enabled, currentSpeaker?.id, currentSpeaker?.name, config.sessionId]);
+
+// Handle AI participant speaking (mute local audio)
+// Handle AI participant speaking (mute local audio)
+  useEffect(() => {
+    if (!localAudioTrack || isAiParticipantSpeaking === undefined) return;
+
+    if (isAiParticipantSpeaking && localAudioTrack.enabled) {
+      localAudioTrack.enabled = false;
+      debateDebug("[AI-PARTICIPANT] Muting local audio for AI speaker", {
+        sessionId: config.sessionId,
+        speakerId: activeSpeakerId,
+      });
+    } else if (!isAiParticipantSpeaking && !canSpeak && localAudioTrack && !localAudioTrack.enabled) {
+      // Only auto-unmute if it's not someone else's turn
+      if (!currentSpeaker || currentSpeaker?.id === candidateId) {
+        localAudioTrack.enabled = true;
+      }
+    }
+  }, [isAiParticipantSpeaking, localAudioTrack?.enabled, activeSpeakerId, canSpeak, currentSpeaker?.id, candidateId, config.sessionId]);
   useEffect(() => {
     if (!meetingReady || !loadingRoom || !roomHasSnapshot) return;
     console.log("[LOADER] Clearing room loading gate", {
@@ -4395,22 +4486,73 @@ useEffect(() => {
         team: currentParticipant?.team,
         message: message.trim(),
       });
-      console.log("[TURN] submit response received", {
+
+      // ▼ FIX 5: USE SERVER-PROVIDED TURN ID ONLY ▼
+      // Server returns current_turn_candidate_id which is the ACTUAL next speaker
+      // This is the single source of truth - derived from Python's turn logic
+      const serverNextSpeakerId = data?.liveSession?.currentRound?.currentSpeakerId;
+      const serverAiIndicator = data?.ai_speaking_id || null;
+      const isNextTurnAiParticipant = serverAiIndicator === "__ai_student__" || String(serverNextSpeakerId || "").startsWith("__ai_student__");
+
+      console.log("[TURN] submit response received - TURN FROM SERVER ONLY", {
         sessionId: config.sessionId,
-        nextSpeakerId:
-          data?.liveSession?.currentRound?.currentSpeakerId || null,
+        serverNextSpeakerId: serverNextSpeakerId,
+        serverAiIndicator: serverAiIndicator,
+        isNextTurnAiParticipant: isNextTurnAiParticipant,
         activeTeam: data?.liveSession?.currentRound?.activeTeam || null,
+        aiResponse: Boolean(data?.aiResponse),
         moderatorTurns: (data?.liveSession?.turns || []).filter(
           (t: any) => t.role === "moderator",
         ).length,
       });
-      const newSpeakerId = data?.liveSession?.currentRound?.currentSpeakerId;
-      if (newSpeakerId && String(newSpeakerId) !== String(candidateId)) {
-        console.log("[TURN] next speaker assigned via API response", {
-          nextSpeakerId: newSpeakerId,
-          currentSpeaker: candidateId,
+
+      // ▼ CRITICAL: DO NOT ALLOW CLIENT-SIDE TURN OVERRIDE ▼
+      // The server has determined the next speaker via Python logic
+      // Client must respect this without modification
+      if (!serverNextSpeakerId) {
+        console.warn("[TURN-ERROR] Server did not assign next speaker!", {
+          sessionId: config.sessionId,
+          receivedData: { serverNextSpeakerId, serverAiIndicator },
         });
       }
+
+      // ▼ FIX 6: VALIDATE NEXT SPEAKER AGAINST RESPONSE ▼
+      const nextSpeakerInParticipants = data?.liveSession?.participants?.find(
+        (p: any) => String(p.id) === String(serverNextSpeakerId)
+      );
+
+      if (nextSpeakerInParticipants) {
+        const participantIsAi = Boolean(nextSpeakerInParticipants.isAi);
+        const responseIndicatesAi = Boolean(serverNextSpeakerId);
+
+        console.log("[TURN-VALIDATION] Next speaker details:", {
+          nextSpeakerId: serverNextSpeakerId,
+          participantName: nextSpeakerInParticipants.name,
+          participantTeam: nextSpeakerInParticipants.team,
+          participantIsAi: participantIsAi,
+          responseIndicatesAi: responseIndicatesAi,
+          flagMatch: participantIsAi === responseIndicatesAi,
+        });
+
+        if (participantIsAi !== responseIndicatesAi) {
+          console.warn("[TURN-VALIDATION] AI flag MISMATCH!", {
+            participantIsAi,
+            responseIndicatesAi,
+            nextSpeakerId: serverNextSpeakerId,
+            participant: nextSpeakerInParticipants,
+          });
+        }
+      } else {
+        console.warn("[TURN-VALIDATION] Next speaker NOT found in participants", {
+          nextSpeakerId: nextTurnCandidateId,
+          availableParticipants: data?.liveSession?.participants?.map((p: any) => ({
+            id: p.id,
+            name: p.name,
+            isAi: p.isAi,
+          })),
+        });
+      }
+
       setMessageInput("");
 
       // ✓ FIX: Update snapshot with fresh server state
@@ -4426,6 +4568,40 @@ useEffect(() => {
         sessionId: config.sessionId,
         currentSpeakerId: data?.liveSession?.currentRound?.currentSpeakerId,
       });
+
+      // ▼ FIX 7: TRIGGER AI SPEECH IF RESPONSE RECEIVED ▼
+      if (data?.aiResponse && isNextTurnAiParticipant) {
+        console.log("[AI-RESPONSE] AI participant speaking - trigger speech", {
+          hasAiResponse: true,
+          aiResponseLength: data.aiResponse.length,
+          aiResponsePreview: data.aiResponse.substring(0, 100) + "...",
+          speakerId: serverNextSpeakerId,
+        });
+        
+        // Set AI speaking flag to prevent other users from interrupting
+        setAiIsSpeaking(true);
+        
+        // Call TTS API to play AI response
+        // NOTE: You need to implement playAiResponse(data.aiResponse)
+        // which handles TTS synthesis and audio playback
+        try {
+          await playAiResponse({
+            text: data.aiResponse,
+            sessionId: config.sessionId,
+            speakerId: "__ai_student__",
+          }).finally(() => {
+            setAiIsSpeaking(false);
+          });
+        } catch (audioErr) {
+          console.error("[AI-RESPONSE] Speech failed:", audioErr?.message);
+          setAiIsSpeaking(false);
+        }
+      } else if (isNextTurnAiParticipant && !data?.aiResponse) {
+        console.warn("[AI-RESPONSE] AI participant turn but NO response received", {
+          serverNextSpeakerId,
+          aiResponse: data?.aiResponse,
+        });
+      }
     } catch (error: any) {
       console.log("[TURN] submit failed", {
         sessionId: config.sessionId,
@@ -5367,32 +5543,36 @@ useEffect(() => {
                   className="pscroll"
                   style={{ display: "flex", flexDirection: "column", gap: 12 }}
                 >
-                  <div className="room-info-grid">
+<div className="room-info-grid">
                     <div className="room-info-card live">
                       <div className="room-info-label">Current Turn</div>
                       <div className="room-info-title">
                         {aiIsSpeaking
                           ? "AI Moderator"
-                          : currentSpeaker
-                            ? `${currentSpeaker.name} · Team ${currentSpeaker.team || "-"}`
-                            : "Preparing next speaker"}
+                          : isAiParticipantSpeaking
+                            ? `AI Student · Team ${currentSpeaker?.team || "-"}`
+                            : currentSpeaker
+                              ? `${currentSpeaker.name} · Team ${currentSpeaker.team || "-"}`
+                              : "Preparing next speaker"}
                       </div>
                       <div className="room-info-sub">
                         {aiIsSpeaking
                           ? "Moderator response in progress. Everyone is muted."
-                          : canSpeak
-                            ? micBlocked
-                              ? roomMicState === "denied"
-                                ? "Microphone access was denied. Grant access in your browser to speak."
-                                : "It is your turn, but your microphone is off."
-                              : "It is your turn now."
-                            : currentPhase === "ai_opening"
-                              ? "Opening moderation is in progress."
-                              : liveSession?.status === "waiting_for_ai"
-                                ? "Waiting for the AI moderator response."
-                                : activeTeam
-                                  ? `Team ${activeTeam} is active.`
-                                  : "Room is syncing."}
+                          : isAiParticipantSpeaking
+                            ? "AI Student is speaking. Everyone is muted."
+                            : canSpeak
+                              ? micBlocked
+                                ? roomMicState === "denied"
+                                  ? "Microphone access was denied. Grant access in your browser to speak."
+                                  : "It is your turn, but your microphone is off."
+                                : "It is your turn now."
+                              : currentPhase === "ai_opening"
+                                ? "Opening moderation is in progress."
+                                : liveSession?.status === "waiting_for_ai"
+                                  ? "Waiting for the AI moderator response."
+                                  : activeTeam
+                                    ? `Team ${activeTeam} is active.`
+                                    : "Room is syncing."}
                       </div>
                       {roomMicError && micBlocked && (
                         <div
@@ -6426,6 +6606,7 @@ function LiveAIDebateRoom({
         sessionId: config.sessionId,
         message: text.trim(),
       });
+      console.log("Respond API completed",response)
       const replyText =
         response?.ai_response ||
         response?.response ||
@@ -7833,7 +8014,6 @@ function DebateSetup({
             <p className="setup-sub">
               Complete all steps to launch your debate room.
             </p>
-
             <div className="sec-div">Identity</div>
             <div className="fi">
               <label className="fl">Your Name</label>
@@ -10618,7 +10798,491 @@ function DebateRoom({
 }
 
 // ─── RESULTS ─────────────────────────────────────────────────────────────────
+function normalizeDebateReport(result: any) {
+  const root = result?.data || result || {};
+  const liveSession = root.liveSession || result?.liveSession || {};
+  const feedback =
+    root.feedback ||
+    root.results ||
+    root.metadata ||
+    liveSession.feedback ||
+    liveSession.results ||
+    result?.feedback ||
+    {};
+  const scoreMap =
+    feedback.scores ||
+    root.scores ||
+    result?.scores?.scores ||
+    result?.scores ||
+    {};
+  const scoreEntries = Object.entries(scoreMap || {}).filter(
+    ([, value]) => value && typeof value === "object",
+  );
+  const liveParticipants = Array.isArray(liveSession.participants)
+    ? liveSession.participants
+    : [];
+  const participants =
+    scoreEntries.length > 0
+      ? scoreEntries.map(([id, value]: any) => {
+          const live = liveParticipants.find(
+            (participant: any) => String(participant.id) === String(id),
+          );
+          return {
+            id,
+            name:
+              value.candidate_name ||
+              live?.name ||
+              live?.candidateName ||
+              "Participant",
+            team: value.team || live?.team || "",
+            reasoning: value.reasoning ?? 0,
+            textbook_knowledge: value.textbook_knowledge ?? 0,
+            argumentation: value.argumentation ?? 0,
+            communication: value.communication ?? 0,
+            engagement: value.engagement ?? 0,
+            team_collaboration: value.team_collaboration ?? 0,
+            total_score: value.total_score ?? value.total ?? value.score ?? 0,
+            overall_feedback:
+              value.overall_feedback || value.feedback || "No feedback yet.",
+            strengths: Array.isArray(value.strengths) ? value.strengths : [],
+            improvements: Array.isArray(value.improvements)
+              ? value.improvements
+              : [],
+            off_topic_count: value.off_topic_count ?? 0,
+            removed: Boolean(value.removed),
+          };
+        })
+      : liveParticipants.map((participant: any) => ({
+          id: participant.id,
+          name: participant.name || "Participant",
+          team: participant.team || "",
+          reasoning: 0,
+          textbook_knowledge: 0,
+          argumentation: 0,
+          communication: 0,
+          engagement: 0,
+          team_collaboration: 0,
+          total_score: 0,
+          overall_feedback: "No score data available.",
+          strengths: [],
+          improvements: [],
+          off_topic_count: participant.warningCount ?? 0,
+          removed: participant.status === "removed",
+        }));
+  const turns = Array.isArray(liveSession.turns)
+    ? liveSession.turns
+    : Array.isArray(root.turns)
+      ? root.turns
+      : Array.isArray(result?.transcript)
+        ? result.transcript
+        : [];
+  return {
+    topic:
+      feedback.topic ||
+      root.topic ||
+      liveSession.topic ||
+      result?.topic ||
+      "Debate Session",
+    subject: liveSession.subject || root.subject || result?.subject || "",
+    unit:
+      liveSession.unit ||
+      liveSession.unitTitle ||
+      root.unit ||
+      result?.unit ||
+      "",
+    totalParticipants:
+      feedback.total_participants ||
+      root.total_participants ||
+      result?.participants ||
+      participants.length,
+    teamScores:
+      feedback.team_scores ||
+      root.team_scores ||
+      result?.team_scores ||
+      result?.verdict ||
+      {},
+    participants,
+    turns,
+    sessionFeedback:
+      feedback.session_feedback ||
+      root.session_feedback ||
+      result?.session_feedback ||
+      "",
+    roomCode: liveSession.roomCode || root.roomCode || "",
+    debateType: liveSession.debateType || root.debateType || result?.subMode || "",
+  };
+}
+
+function teamLabel(team: string) {
+  const value = String(team || "").toLowerCase();
+  if (value === "blue_team" || value === "a") return "Blue Team";
+  if (value === "red_team" || value === "b") return "Red Team";
+  return team ? `Team ${team}` : "Participant";
+}
+
+function downloadDebateReportPDF(report: any) {
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const PW = 210;
+  const PH = 297;
+  const ML = 16;
+  const MR = 16;
+  const CW = PW - ML - MR;
+  const C: any = {
+    ind: [99, 102, 241],
+    pink: [236, 72, 153],
+    green: [16, 185, 129],
+    amber: [245, 158, 11],
+    red: [239, 68, 68],
+    ink: [8, 14, 26],
+    panel: [14, 22, 38],
+    panel2: [20, 31, 52],
+    white: [255, 255, 255],
+    soft: [232, 236, 242],
+    muted: [148, 163, 184],
+  };
+  const clean = (value: any) =>
+    String(value ?? "")
+      .replace(/[â€¢]/g, "-")
+      .replace(/[â€“â€”]/g, "-")
+      .replace(/[â€œâ€]/g, '"')
+      .replace(/[â€˜â€™]/g, "'")
+      .split("")
+      .filter((ch) => {
+        const code = ch.charCodeAt(0);
+        return code === 9 || code === 10 || code === 13 || (code >= 32 && code <= 126);
+      })
+      .join("")
+      .trim();
+  const now = new Date();
+  const dateStr = now.toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
+  const timeStr = now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  let pageNum = 1;
+  let y = 25;
+  const rect = (x: number, ry: number, w: number, h: number, col: number[], r = 0) => {
+    doc.setFillColor(col[0], col[1], col[2]);
+    if (r) doc.roundedRect(x, ry, w, h, r, r, "F");
+    else doc.rect(x, ry, w, h, "F");
+  };
+  const txt = (value: any, x: number, ry: number, size: number, col: number[], bold = false, align: any = "left") => {
+    doc.setFont("helvetica", bold ? "bold" : "normal");
+    doc.setFontSize(size);
+    doc.setTextColor(col[0], col[1], col[2]);
+    doc.text(clean(value), x, ry, { align });
+  };
+  const wrap = (value: any, x: number, ry: number, w: number, size: number, col: number[], bold = false, lineH = 4.6) => {
+    doc.setFont("helvetica", bold ? "bold" : "normal");
+    doc.setFontSize(size);
+    doc.setTextColor(col[0], col[1], col[2]);
+    const lines = doc.splitTextToSize(clean(value), w);
+    doc.text(lines, x, ry);
+    return lines.length * lineH;
+  };
+  const bg = () => {
+    rect(0, 0, PW, PH, C.ink);
+    rect(0, 0, 5, PH, C.ind);
+    rect(5, 0, 1, PH, C.pink);
+  };
+  const footer = () => {
+    rect(0, PH - 12, PW, 12, C.panel);
+    txt(`Generated ${dateStr}`, ML, PH - 5, 7, C.muted);
+    txt(`Page ${pageNum}`, PW / 2, PH - 5, 7, C.muted, false, "center");
+    txt("Confidential report", PW - MR, PH - 5, 7, C.ind, true, "right");
+  };
+  const header = () => {
+    rect(0, 0, PW, 16, C.panel);
+    txt("DebateArena", ML, 10.5, 10, C.white, true);
+    txt("Session Performance Report", ML + 37, 10.5, 7, C.muted);
+    txt(clean(report.topic).slice(0, 52), PW - MR, 10.5, 7, C.ind, true, "right");
+  };
+  const addPage = () => {
+    doc.addPage();
+    pageNum += 1;
+    bg();
+    header();
+    footer();
+    y = 25;
+  };
+  const ensure = (needed: number) => {
+    if (y + needed > PH - 20) addPage();
+  };
+  const section = (title: string, subtitle = "", col = C.ind) => {
+    ensure(18);
+    rect(ML, y, CW, 12, C.panel2, 2);
+    rect(ML, y, 3, 12, col, 1.5);
+    txt(title, ML + 7, y + 7.8, 9, col, true);
+    if (subtitle) txt(subtitle, PW - MR - 4, y + 7.8, 6.5, C.muted, false, "right");
+    y += 17;
+  };
+  const progress = (x: number, ry: number, w: number, h: number, pct: number, col: number[]) => {
+    rect(x, ry, w, h, C.panel, h / 2);
+    rect(x, ry, Math.max(2, (w * Math.max(0, Math.min(100, pct))) / 100), h, col, h / 2);
+  };
+  const participants = Array.isArray(report.participants) ? report.participants : [];
+  const turns = Array.isArray(report.turns) ? report.turns : [];
+  const average = participants.length
+    ? Math.round(participants.reduce((sum: number, p: any) => sum + Number(p.total_score || 0), 0) / participants.length)
+    : 0;
+  const top = [...participants].sort((a: any, b: any) => Number(b.total_score || 0) - Number(a.total_score || 0))[0];
+  const scoreColor = average >= 70 ? C.green : average >= 40 ? C.amber : C.red;
+  bg();
+  for (let i = 0; i < 54; i += 1) {
+    const mix = i / 54;
+    doc.setFillColor(Math.round(8 + mix * 65), Math.round(14 + mix * 35), Math.round(26 + mix * 115));
+    doc.rect(6, i * 1.25, PW - 6, 1.3, "F");
+  }
+  rect(ML, 19, 16, 16, C.ind, 3);
+  txt("DA", ML + 8, 29.8, 10, C.white, true, "center");
+  txt("DebateArena", ML + 21, 26, 14, C.white, true);
+  txt("AI-powered debate performance report", ML + 21, 32.2, 7.5, C.ind);
+  txt(`${dateStr}  ${timeStr}`, PW - MR, 27.2, 7, C.ind, true, "right");
+  txt("DEBATE", ML, 58, 9, C.ind, true);
+  txt("PERFORMANCE", ML, 70, 25, C.white, true);
+  txt("REPORT", ML, 83, 25, C.soft, true);
+  rect(PW - MR - 53, 43, 46, 46, C.panel2, 23);
+  txt(String(average), PW - MR - 30, 68, 21, scoreColor, true, "center");
+  txt("/100", PW - MR - 30, 76, 7, C.muted, false, "center");
+  y = 98;
+  rect(ML, y, CW, 38, C.panel2, 4);
+  rect(ML, y, 4, 38, C.ind, 2);
+  txt("DEBATE TOPIC", ML + 9, y + 8, 7, C.ind, true);
+  wrap(report.topic, ML + 9, y + 16, CW - 18, 11, C.white, true, 5);
+  [["Subject", report.subject || "General"], ["Unit", report.unit || "Not specified"], ["Participants", String(report.totalParticipants || participants.length)], ["Mode", report.debateType || "Debate"]].forEach(([label, value], i) => {
+    const x = ML + 9 + (i * (CW - 18)) / 4;
+    txt(label, x, y + 28, 6.4, C.muted);
+    txt(String(value).slice(0, 20), x, y + 33.5, 7.2, C.soft, true);
+  });
+  y = 148;
+  rect(ML, y, CW, 50, C.panel, 4);
+  txt("TEAM SNAPSHOT", ML + 9, y + 9, 8, C.ind, true);
+  const blueScore = report.teamScores?.blue_team ?? report.teamScores?.A ?? 0;
+  const redScore = report.teamScores?.red_team ?? report.teamScores?.B ?? 0;
+  [["Blue Team", Number(blueScore || 0), C.ind], ["Red Team", Number(redScore || 0), C.pink], ["Top Speaker", top ? Number(top.total_score || 0) : 0, C.green], ["Average", average, scoreColor]].forEach(([label, score, col]: any, i) => {
+    const by = y + 17 + i * 8.5;
+    txt(label, ML + 9, by + 3.6, 7.2, C.soft);
+    progress(ML + 46, by, CW - 68, 4.5, Number(score), col);
+    txt(`${score}`, ML + CW - 8, by + 3.8, 7.2, col, true, "right");
+  });
+  y = 216;
+  if (report.sessionFeedback) {
+    rect(ML, y, CW, 38, [28, 25, 58], 4);
+    rect(ML, y, 4, 38, C.ind, 2);
+    txt("Session Feedback", ML + 10, y + 9, 10, C.white, true);
+    wrap(report.sessionFeedback, ML + 10, y + 16, CW - 20, 7, C.soft, false, 4);
+  }
+  footer();
+  addPage();
+  section("Participant Performance", `${participants.length} participant(s)`, C.ind);
+  participants.forEach((participant: any) => {
+    ensure(49);
+    const col = String(participant.team).toLowerCase().includes("red") || participant.team === "B" ? C.pink : C.ind;
+    rect(ML, y, CW, 44, C.panel2, 3);
+    rect(ML, y, 3, 44, col, 1.5);
+    txt(clean(participant.name), ML + 8, y + 8, 9, C.white, true);
+    txt(teamLabel(participant.team), ML + 8, y + 14, 6.5, C.muted);
+    txt(`${participant.total_score ?? 0}`, PW - MR - 10, y + 18, 18, col, true, "right");
+    [["Reasoning", participant.reasoning], ["Knowledge", participant.textbook_knowledge], ["Argument", participant.argumentation], ["Comm", participant.communication], ["Engage", participant.engagement], ["Team", participant.team_collaboration]].forEach(([label, value]: any, i) => {
+      const x = ML + 8 + (i % 3) * 39;
+      const by = y + 23 + Math.floor(i / 3) * 9;
+      txt(label, x, by, 6.1, C.muted);
+      progress(x, by + 2, 28, 3.2, Number(value || 0) * 10, col);
+      txt(String(value ?? 0), x + 31, by + 4.5, 6.5, col, true);
+    });
+    y += 49;
+  });
+  addPage();
+  section("AI Feedback", "strengths and improvements", C.pink);
+  participants.forEach((participant: any) => {
+    const body = [
+      participant.overall_feedback,
+      ...(participant.strengths || []).map((entry: string) => `Strength: ${entry}`),
+      ...(participant.improvements || []).map((entry: string) => `Improve: ${entry}`),
+    ].filter(Boolean).join("\n");
+    const h = Math.max(22, doc.splitTextToSize(clean(body), CW - 16).length * 4.6 + 14);
+    ensure(h + 4);
+    rect(ML, y, CW, h, C.panel, 3);
+    rect(ML, y, 3, h, C.ind, 1.5);
+    txt(clean(participant.name), ML + 8, y + 8, 8, C.ind, true);
+    wrap(body || "No feedback available.", ML + 8, y + 15, CW - 16, 7.2, C.soft, false, 4.4);
+    y += h + 4;
+  });
+  if (turns.length) {
+    addPage();
+    section("Debate Transcript", `${turns.length} captured turn(s)`, C.amber);
+    turns.forEach((turn: any, i: number) => {
+      const body = `${String(i + 1).padStart(2, "0")}. ${clean(turn.speakerName || turn.sender || "Speaker")}: ${clean(turn.message || turn.transcript || turn.text || "")}`;
+      const lines = doc.splitTextToSize(body, CW - 14);
+      const h = lines.length * 4.4 + 6;
+      ensure(h);
+      rect(ML, y, CW, h, i % 2 ? C.panel : C.panel2, 2);
+      wrap(body, ML + 7, y + 5, CW - 14, 7.2, C.soft, false, 4.4);
+      y += h + 2;
+    });
+  }
+  const safeName = clean(report.topic).replace(/[^a-z0-9]/gi, "-").replace(/-+/g, "-").toLowerCase() || "debate";
+  doc.save(`debatearena-report-${safeName}-${Date.now()}.pdf`);
+}
+
+function DebateAnalysisModal({ report, onClose, onDownload }: any) {
+  const participants = Array.isArray(report.participants) ? report.participants : [];
+  const turns = Array.isArray(report.turns) ? report.turns : [];
+  const average = participants.length
+    ? Math.round(participants.reduce((sum: number, item: any) => sum + Number(item.total_score || 0), 0) / participants.length)
+    : 0;
+  const blueScore = report.teamScores?.blue_team ?? report.teamScores?.A ?? 0;
+  const redScore = report.teamScores?.red_team ?? report.teamScores?.B ?? 0;
+  return (
+    <div className="analysis-bg" onClick={onClose}>
+      <div className="analysis-box" onClick={(event) => event.stopPropagation()} style={{ maxWidth: 760, maxHeight: "90vh" }}>
+        <div className="analysis-head">
+          <div className="analysis-title">Debate Performance Report</div>
+          <button style={{ width: 24, height: 24, borderRadius: 6, border: "1px solid rgba(255,255,255,.1)", background: "rgba(255,255,255,.05)", cursor: "pointer", color: "rgba(255,255,255,.5)", fontSize: 11 }} onClick={onClose}>x</button>
+        </div>
+        <div className="analysis-body" style={{ gap: 16, paddingBottom: 20 }}>
+          <div className="a-sec">
+            <div className="a-sec-title">Session Overview</div>
+            <div style={{ padding: "8px 11px", borderRadius: 9, background: "rgba(99,102,241,.08)", border: "1px solid rgba(99,102,241,.18)", fontSize: 12.5, fontWeight: 700, color: "#e8ecf2", marginBottom: 7 }}>"{report.topic}"</div>
+            <div style={{ display: "flex", gap: 5, flexWrap: "wrap" as const }}>
+              {[`Subject: ${report.subject || "-"}`, `Unit: ${report.unit || "-"}`, `Participants: ${report.totalParticipants || participants.length}`, `Turns: ${turns.length}`, report.roomCode ? `Room: ${report.roomCode}` : ""].filter(Boolean).map((text) => (
+                <span key={text} style={{ padding: "2px 9px", borderRadius: 20, background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.1)", fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,.55)" }}>{text}</span>
+              ))}
+            </div>
+          </div>
+          <div className="a-sec" style={{ animationDelay: ".08s" }}>
+            <div className="a-sec-title">Team Scores</div>
+            <div className="score-grid-3">
+              {[["Blue Team", blueScore, "#a5b4fc"], ["Red Team", redScore, "#f9a8d4"], ["Average", average, "#6ee7b7"]].map(([label, value, color]: any) => (
+                <div key={label} className="score-box"><div className="score-box-val" style={{ color }}>{value ?? 0}</div><div className="score-box-lbl">{label}</div></div>
+              ))}
+            </div>
+          </div>
+          <div className="a-sec" style={{ animationDelay: ".16s" }}>
+            <div className="a-sec-title">Participant Performance</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {participants.map((participant: any) => (
+                <div key={participant.id} style={{ background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.07)", borderRadius: 12, padding: "12px 14px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 12 }}>
+                    <div style={{ width: 40, height: 40, borderRadius: "50%", background: `${avColor(participant.name || "U")}22`, color: avColor(participant.name || "U"), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800 }}>{avInit(participant.name || "?")}</div>
+                    <div style={{ flex: 1 }}><div style={{ fontSize: 13, fontWeight: 700, color: "#e8ecf2" }}>{participant.name}</div><div style={{ fontSize: 10.5, color: "rgba(255,255,255,.35)" }}>{teamLabel(participant.team)}{participant.removed ? " - Removed" : ""}</div></div>
+                    <div style={{ fontSize: 26, fontWeight: 900, color: "#a5b4fc", textAlign: "right" }}><div>{participant.total_score ?? 0}</div><div style={{ fontSize: 10, fontWeight: 700, color: "var(--t2)", marginTop: 2 }}>TOTAL SCORE</div></div>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))", gap: 10 }}>
+                    {[["Reasoning", participant.reasoning, "#a5b4fc"], ["Knowledge", participant.textbook_knowledge, "#38bdf8"], ["Argument", participant.argumentation, "#f59e0b"], ["Communication", participant.communication, "#ec4899"], ["Engagement", participant.engagement, "#10b981"], ["Teamwork", participant.team_collaboration, "#8b5cf6"]].map(([label, value, color]: any) => (
+                      <div key={label} style={{ padding: "10px 12px", borderRadius: 10, background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.08)", textAlign: "center" as const }}><div style={{ fontSize: 18, fontWeight: 900, color }}>{value ?? 0}</div><div style={{ fontSize: 10, fontWeight: 700, color: "var(--t2)", marginTop: 4 }}>{label}</div></div>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: 12, fontSize: 12, color: "var(--t2)", lineHeight: 1.6 }}>{participant.overall_feedback}</div>
+                  {(participant.strengths.length > 0 || participant.improvements.length > 0) && (
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 12 }}>
+                      {participant.strengths.length > 0 && <div style={{ padding: "10px 12px", borderRadius: 10, background: "rgba(16,185,129,.06)", border: "1px solid rgba(16,185,129,.18)" }}><div style={{ fontSize: 12, fontWeight: 800, color: "var(--em)", marginBottom: 8 }}>Strengths</div>{participant.strengths.map((entry: string, index: number) => <div key={index} style={{ fontSize: 12, color: "var(--t2)", marginBottom: 6, lineHeight: 1.4 }}>{entry}</div>)}</div>}
+                      {participant.improvements.length > 0 && <div style={{ padding: "10px 12px", borderRadius: 10, background: "rgba(239,68,68,.06)", border: "1px solid rgba(239,68,68,.18)" }}><div style={{ fontSize: 12, fontWeight: 800, color: "var(--red)", marginBottom: 8 }}>Areas to Improve</div>{participant.improvements.map((entry: string, index: number) => <div key={index} style={{ fontSize: 12, color: "var(--t2)", marginBottom: 6, lineHeight: 1.4 }}>{entry}</div>)}</div>}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+          {report.sessionFeedback && <div className="a-sec" style={{ animationDelay: ".22s" }}><div className="a-sec-title">Session Feedback</div><div style={{ padding: "14px 16px", borderRadius: 12, background: "var(--surf)", border: "1px solid var(--bdr)", fontSize: 13, color: "var(--t2)", lineHeight: 1.65 }}>{report.sessionFeedback}</div></div>}
+          <div className="a-sec" style={{ animationDelay: ".28s" }}>
+            <div className="a-sec-title">Debate Transcript</div>
+            {turns.length ? <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{turns.map((turn: any, index: number) => {
+              const speaker = turn.speakerName || turn.sender || "Speaker";
+              const message = turn.message || turn.transcript || turn.text || "";
+              const isModerator = String(turn.role || turn.speakerId || "").includes("moderator");
+              return <div key={turn.id || index} style={{ padding: "10px 12px", borderRadius: 11, background: isModerator ? "rgba(139,92,246,.08)" : "rgba(255,255,255,.04)", border: isModerator ? "1px solid rgba(139,92,246,.2)" : "1px solid rgba(255,255,255,.08)", textAlign: "left" as const }}><div style={{ fontSize: 11, fontWeight: 800, color: isModerator ? "#c4b5fd" : "#a5b4fc", marginBottom: 5 }}>{speaker}</div><div style={{ fontSize: 12.5, color: "var(--t2)", lineHeight: 1.6 }}>{message}</div></div>;
+            })}</div> : <div style={{ padding: "12px 14px", borderRadius: 11, background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.08)", color: "rgba(255,255,255,.45)", fontSize: 12 }}>No transcript turns were captured for this debate.</div>}
+          </div>
+        </div>
+        <div className="analysis-foot">
+          <button className="btn-s" style={{ background: "rgba(255,255,255,.04)", borderColor: "rgba(255,255,255,.1)", color: "rgba(255,255,255,.5)" }} onClick={onClose}>Close</button>
+          <button className="btn-p" style={{ width: "auto", padding: "7px 15px", fontSize: 12 }} onClick={onDownload}>Download Report</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DebateResults({ result, onNew }: { result: any; onNew: () => void }) {
+  const [showReport, setShowReport] = useState(false);
+  const report = useMemo(() => normalizeDebateReport(result), [result]);
+  const handleDownloadReport = useCallback(
+    () => downloadDebateReportPDF(report),
+    [report],
+  );
+  return (
+    <div className="results-page">
+      <div className="res-trophy">🏆</div>
+      <h2 className="res-title">
+        {result?.meetingEnded ? "Session Ended" : "Debate Complete!"}
+      </h2>
+      <p className="res-sub">
+        Debate on{" "}
+        <strong style={{ color: "var(--ind)" }}>{report.topic}</strong>{" "}
+        completed with{" "}
+        <strong>{report.totalParticipants || report.participants.length}</strong>{" "}
+        participant(s). Open the report for scores, feedback, teams, and
+        transcript.
+      </p>
+      <div className="res-stats">
+        {[
+          {
+            l: "Participants",
+            v: report.totalParticipants || report.participants.length,
+            i: "👥",
+          },
+          { l: "Teams", v: "2", i: "⚔️" },
+          { l: "Turns", v: report.turns.length, i: "💬" },
+        ].map((stat, index) => (
+          <div
+            key={stat.l}
+            className="res-stat"
+            style={{ animationDelay: `${index * 0.1}s` }}
+          >
+            <div className="res-stat-ico">{stat.i}</div>
+            <div className="res-stat-val">{stat.v}</div>
+            <div className="res-stat-lbl">{stat.l}</div>
+          </div>
+        ))}
+      </div>
+      <div className="res-actions">
+        <button
+          className="btn-s"
+          style={{ borderColor: "rgba(99,102,241,.28)", color: "var(--ind)" }}
+          onClick={() => setShowReport(true)}
+        >
+          View Report
+        </button>
+        <button
+          className="btn-s"
+          style={{ borderColor: "rgba(16,185,129,.28)", color: "var(--em)" }}
+          onClick={handleDownloadReport}
+        >
+          Download Report
+        </button>
+        {result?.hasRecording && (
+          <button
+            className="btn-s"
+            onClick={() => result.recorder?.download("debate.webm")}
+          >
+            Download Recording
+          </button>
+        )}
+        <button
+          className="btn-p"
+          style={{ fontSize: 13, width: "auto", padding: "11px 24px" }}
+          onClick={onNew}
+        >
+          Back
+        </button>
+      </div>
+      {showReport && (
+        <DebateAnalysisModal
+          report={report}
+          onClose={() => setShowReport(false)}
+          onDownload={handleDownloadReport}
+        />
+      )}
+    </div>
+  );
   const verdict = result.verdict;
   const winner = verdict?.winner;
   const runnerUp = verdict?.runnerUp;

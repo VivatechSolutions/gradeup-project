@@ -9,11 +9,15 @@ const subjectUnitSchema = new mongoose.Schema(
       index: true,
     },
     documentId: { type: String, required: true, unique: true, index: true },
+    sourceDocumentId: { type: String, default: null, trim: true, index: true },
     board: { type: String, required: true, trim: true },
     standard: { type: String, required: true, trim: true },
     subject: { type: String, required: true, trim: true },
     subjectGroupKey: { type: String, default: null, trim: true, index: true },
-    part: { type: String, default: null, trim: true },
+    part: { type: String, default: null, trim: true, index: true },
+    term: { type: String, default: null, trim: true, index: true },
+    partSequence: { type: Number, default: null },
+    termSequence: { type: Number, default: null },
     unitNumber: { type: Number, default: null },
     unitTitle: { type: String, required: true, trim: true },
     unitLabel: { type: String, required: true, trim: true },
@@ -45,5 +49,9 @@ const subjectUnitSchema = new mongoose.Schema(
   },
   { timestamps: true },
 );
+
+// Index for part-wise & term-wise grouping
+subjectUnitSchema.index({ subjectGroupKey: 1, part: 1, term: 1, unitNumber: 1 });
+subjectUnitSchema.index({ board: 1, standard: 1, subject: 1, part: 1, term: 1 });
 
 module.exports = mongoose.model("SubjectUnit", subjectUnitSchema);

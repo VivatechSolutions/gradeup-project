@@ -115,6 +115,22 @@ def _parse_json_response(raw: str) -> Optional[List[Dict]]:
     return None
 
 
+def _iter_descendants(section: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    ALL nested children of a section (sub-sections, sub-sub-sections, examples,
+    activities, theorems...) in depth-first textbook order. Debate topics are
+    generated per MAIN (top-level) section only, but the section's context text
+    must include everything nested inside it.
+    """
+    out: List[Dict[str, Any]] = []
+    for sub in section.get("sub_sections") or []:
+        if not isinstance(sub, dict):
+            continue
+        out.append(sub)
+        out.extend(_iter_descendants(sub))
+    return out
+
+
 def _is_main_section(section: Dict[str, Any]) -> bool:
     """Check if a section is a main content section (not intro/exercise/etc)."""
     sec_type = (section.get("type") or "section").lower().strip()
@@ -146,6 +162,13 @@ def _is_main_section(section: Dict[str, Any]) -> bool:
         content_parts.append(sub_content)
 
     for sub in section.get("subsections", []) or []:
+        sub_content = sub.get("content") or ""
+        if isinstance(sub_content, list):
+            sub_content = "\n".join(str(c) for c in sub_content)
+        content_parts.append(sub_content)
+
+    # All nested descendants (sub-sections, sub-sub-sections, examples, ...)
+    for sub in _iter_descendants(section):
         sub_content = sub.get("content") or ""
         if isinstance(sub_content, list):
             sub_content = "\n".join(str(c) for c in sub_content)
@@ -184,6 +207,25 @@ def _build_section_text(section: Dict[str, Any]) -> str:
             parts.append(f"\n{sub_title}")
         if sub_content.strip():
             parts.append(sub_content.strip())
+
+    # All nested descendants in reading order (sub-sections, sub-sub-sections,
+    # examples, activities...) — the main section's debate context must cover
+    # everything printed inside it.
+    for sub in _iter_descendants(section):
+        sub_title = sub.get("title") or sub.get("section_title") or ""
+        sub_content = sub.get("content") or ""
+        if isinstance(sub_content, list):
+            sub_content = "\n".join(str(c) for c in sub_content)
+        if sub_title:
+            parts.append(f"\n{sub_title}")
+        if sub_content.strip():
+            parts.append(sub_content.strip())
+        for item in sub.get("sub_items", []) or []:
+            item_content = item.get("content") or ""
+            if isinstance(item_content, list):
+                item_content = "\n".join(str(c) for c in item_content)
+            if item_content.strip():
+                parts.append(item_content.strip())
 
     return "\n".join(parts)
 
@@ -307,6 +349,8 @@ def generate_debate_topics(
 
         print(f"\n  📚 Unit {unit_number}: {unit_title}")
 
+        # Topics are generated per MAIN (top-level) section only; nested
+        # sub-section content is folded into each main section's context text.
         sections = unit.get("sections", [])
         main_sections = [s for s in sections if _is_main_section(s)]
 
@@ -339,6 +383,7 @@ def generate_debate_topics(
 
             if topics:
                 unit_topics["sections"].append({
+                    "section_id": sec.get("id") or None,
                     "section_title": sec_title,
                     "debate_topics": topics,
                     "topics_count": len(topics),
@@ -443,3 +488,79 @@ def generate_and_save_debate_topics(
                 print(f"  🗑️  Deleted temp file: {temp_path.name}")
             except OSError as e:
                 print(f"  ⚠️  Failed to delete temp file: {e}")
+
+
+def generate_debate_topics_for_unit(
+    unit: Dict[str, Any],
+    subject: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Generate debate topics for a single unit dict in-memory (no file I/O).
+
+    Used by the LangGraph fan-out debate node so each unit can run concurrently.
+
+    Args:
+        unit:    A single unit/chapter dict (from structured.json or enriched.json)
+        subject: Subject name
+
+    Returns:
+        Dict with unit_number, unit_title, sections[{section_title, debate_topics[]}]
+    """
+    unit_number = unit.get("unit_number") or unit.get("chapter_number", 1)
+    unit_title  = unit.get("title", f"Unit {unit_number}")
+    resolved_subject = subject or unit.get("subject", "unknown")
+
+    print(f"\n  📚 Unit {unit_number}: {unit_title}")
+
+    # Topics are generated per MAIN (top-level) section only; nested
+    # sub-section content is folded into each main section's context text.
+    sections      = unit.get("sections", [])
+    main_sections = [s for s in sections if _is_main_section(s)]
+
+    if not main_sections:
+        print(f"    ⚠️  No main content sections — skipping")
+        return {
+            "unit_number": unit_number,
+            "unit_title":  unit_title,
+            "sections":    [],
+        }
+
+    print(f"    Found {len(main_sections)} main section(s) "
+          f"(filtered from {len(sections)} total)")
+
+    unit_result: Dict[str, Any] = {
+        "unit_number": unit_number,
+        "unit_title":  unit_title,
+        "sections":    [],
+    }
+
+    for sec in main_sections:
+        sec_title = sec.get("title") or sec.get("section_title") or "Untitled"
+        sec_text  = _build_section_text(sec)
+
+        if not sec_text.strip():
+            continue
+
+        print(f"    → Generating debate topics for: {sec_title}...")
+        topics = _generate_topics_for_section(
+            section_text=sec_text,
+            section_title=sec_title,
+            unit_title=unit_title,
+            subject=resolved_subject,
+        )
+
+        if topics:
+            unit_result["sections"].append({
+                "section_id":    sec.get("id") or None,
+                "section_title": sec_title,
+                "debate_topics": topics,
+                "topics_count":  len(topics),
+            })
+            print(f"      ✅ {len(topics)} topic(s) generated")
+        else:
+            print(f"      ⚠️  No topics generated")
+
+        time.sleep(RATE_LIMIT_DELAY)
+
+    return unit_result
+

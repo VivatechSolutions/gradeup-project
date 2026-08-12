@@ -2,7 +2,11 @@ const SubjectUnit = require("../model/SubjectUnit");
 const SubjectUpload = require("../model/SubjectUpload");
 const { handleAdminSubjectUpload } = require("../services/adminSubjectService");
 // const { logApiStep, logError } = require("../utils/logger");
-
+const multer = require("multer");
+const axios = require("axios");
+const QuestionBank = require("../model/QuestionBank");
+const SubjectMetadata = require("../model/SubjectMetadata");
+const { callPython } = require("../services/pythonGateway");
 function formatTimestamp(date = new Date()) {
   const pad = (value) => String(value).padStart(2, "0");
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(
@@ -53,6 +57,9 @@ function formatUnit(unit) {
     subject: unit.subject,
     subjectGroupKey: unit.subjectGroupKey || null,
     part: unit.part,
+    term: unit.term,
+    partSequence: unit.partSequence,
+    termSequence: unit.termSequence,
     unitNumber: unit.unitNumber,
     unitLabel: unit.unitLabel,
     unitTitle: unit.unitTitle,
@@ -72,6 +79,13 @@ function formatGroupFromUnits(units = []) {
 
   const firstUnit = units[0];
   const sortedUnits = [...units].sort((left, right) => {
+    // Sort by part sequence first, then term sequence, then unit number
+    if (left.partSequence !== right.partSequence) {
+      return (left.partSequence ?? Number.MAX_SAFE_INTEGER) - (right.partSequence ?? Number.MAX_SAFE_INTEGER);
+    }
+    if (left.termSequence !== right.termSequence) {
+      return (left.termSequence ?? Number.MAX_SAFE_INTEGER) - (right.termSequence ?? Number.MAX_SAFE_INTEGER);
+    }
     const leftOrder = left.unitNumber ?? Number.MAX_SAFE_INTEGER;
     const rightOrder = right.unitNumber ?? Number.MAX_SAFE_INTEGER;
     if (leftOrder !== rightOrder) {
@@ -86,6 +100,15 @@ function formatGroupFromUnits(units = []) {
       ? "processing"
       : "completed";
 
+  // Build subject title with part and term
+  let subjectTitle = firstUnit.subject;
+  if (firstUnit.part) {
+    subjectTitle += ` - ${firstUnit.part}`;
+  }
+  if (firstUnit.term) {
+    subjectTitle += ` (${firstUnit.term})`;
+  }
+
   return {
     id: getGroupKeyFromUnit(firstUnit),
     subjectGroupKey: firstUnit.subjectGroupKey || null,
@@ -93,7 +116,8 @@ function formatGroupFromUnits(units = []) {
     standard: firstUnit.standard,
     subject: firstUnit.subject,
     part: firstUnit.part || null,
-    subjectTitle: firstUnit.part ? `${firstUnit.subject} - ${firstUnit.part}` : firstUnit.subject,
+    term: firstUnit.term || null,
+    subjectTitle,
     status,
     unitCount: sortedUnits.length,
     displayMode: sortedUnits.length === 1 ? "single_subject" : "subject_with_units",
@@ -121,6 +145,8 @@ function buildSubjectGroups(items = []) {
 
 async function findGroupUnits(groupKey) {
   let units = await SubjectUnit.find({ subjectGroupKey: groupKey }).sort({
+    partSequence: 1,
+    termSequence: 1,
     unitNumber: 1,
     createdAt: 1,
   });
@@ -129,8 +155,10 @@ async function findGroupUnits(groupKey) {
     return units;
   }
 
-  const [board, standard, subject, rawPart, uploadId] = String(groupKey).split("::");
-  if (!board || !standard || !subject || !uploadId) {
+  const parts = String(groupKey).split("::");
+  const [board, standard, subject, rawPart, rawTerm, uploadId] = parts.length >= 6 ? parts : [parts[0], parts[1], parts[2], parts[3], null, parts[4]];
+  
+  if (!board || !standard || !subject) {
     return [];
   }
 
@@ -138,14 +166,17 @@ async function findGroupUnits(groupKey) {
     board,
     standard,
     subject,
-    part: rawPart === "general" ? null : rawPart,
+    part: rawPart === "general" || !rawPart ? null : rawPart,
+    term: rawTerm === "general" || !rawTerm ? null : rawTerm,
   };
 
-  if (uploadId !== "standalone") {
+  if (uploadId && uploadId !== "standalone") {
     fallbackFilter.uploadId = uploadId;
   }
 
   units = await SubjectUnit.find(fallbackFilter).sort({
+    partSequence: 1,
+    termSequence: 1,
     unitNumber: 1,
     createdAt: 1,
   });
@@ -167,6 +198,43 @@ async function getGroupUploads(groupKey, units = []) {
 
   return SubjectUpload.find({ _id: { $in: uploadIds } }).sort({ createdAt: -1 });
 }
+async function getOrCreateSubjectMetadata(board, classNumber, subject, userId) {
+  try {
+    // Try to find existing metadata
+    let metadata = await SubjectMetadata.findOne({
+      board: board.trim(),
+      classNumber: String(classNumber).trim(),
+      subject: subject.trim(),
+    });
+
+    // If not found, create new metadata
+    if (!metadata) {
+      metadata = new SubjectMetadata({
+        board: board.trim(),
+        classNumber: String(classNumber).trim(),
+        subject: subject.trim(),
+        createdBy: "admin",
+      });
+      await metadata.save();
+      
+      logApiStep({
+        api: "SUBJECT_METADATA",
+        status: "CREATED",
+        message: `New subject metadata created for ${board} - Class ${classNumber} - ${subject}`,
+      });
+    }
+
+    return metadata;
+  } catch (error) {
+    logError({
+      api: "SUBJECT_METADATA",
+      message: "Error getting/creating subject metadata",
+      error,
+    });
+    throw error;
+  }
+}
+
 
 const controller = {
   async uploadSubject(req, res) {
@@ -565,6 +633,12 @@ const controller = {
 
       const groupUnits = await findGroupUnits(getGroupKeyFromUnit(subjectUnit));
       const sortedGroupUnits = groupUnits.sort((left, right) => {
+        if (left.partSequence !== right.partSequence) {
+          return (left.partSequence ?? Number.MAX_SAFE_INTEGER) - (right.partSequence ?? Number.MAX_SAFE_INTEGER);
+        }
+        if (left.termSequence !== right.termSequence) {
+          return (left.termSequence ?? Number.MAX_SAFE_INTEGER) - (right.termSequence ?? Number.MAX_SAFE_INTEGER);
+        }
         const leftOrder = left.unitNumber ?? Number.MAX_SAFE_INTEGER;
         const rightOrder = right.unitNumber ?? Number.MAX_SAFE_INTEGER;
         if (leftOrder !== rightOrder) {
@@ -572,6 +646,15 @@ const controller = {
         }
         return new Date(left.createdAt) - new Date(right.createdAt);
       });
+
+      // Build subject title with part and term
+      let subjectTitle = subjectUnit.subject;
+      if (subjectUnit.part) {
+        subjectTitle += ` - ${subjectUnit.part}`;
+      }
+      if (subjectUnit.term) {
+        subjectTitle += ` (${subjectUnit.term})`;
+      }
 
       return res.status(200).json({
         status: true,
@@ -584,6 +667,9 @@ const controller = {
           subject: subjectUnit.subject,
           subjectGroupKey: subjectUnit.subjectGroupKey || null,
           part: subjectUnit.part,
+          term: subjectUnit.term,
+          partSequence: subjectUnit.partSequence,
+          termSequence: subjectUnit.termSequence,
           unitNumber: subjectUnit.unitNumber,
           unitLabel: subjectUnit.unitLabel,
           unitTitle: subjectUnit.unitTitle,
@@ -597,15 +683,15 @@ const controller = {
           updatedAt: subjectUnit.updatedAt,
           subjectGroup: {
             id: getGroupKeyFromUnit(subjectUnit),
-            subjectTitle: subjectUnit.part
-              ? `${subjectUnit.subject} - ${subjectUnit.part}`
-              : subjectUnit.subject,
+            subjectTitle,
             unitCount: sortedGroupUnits.length,
             units: sortedGroupUnits.map((unit) => ({
               id: unit._id,
               unitTitle: unit.unitTitle,
               unitLabel: unit.unitLabel,
               unitNumber: unit.unitNumber,
+              part: unit.part,
+              term: unit.term,
             })),
           },
         },
@@ -619,6 +705,183 @@ const controller = {
       });
     }
   },
+async uploadQuestionBank(req, res) {
+  try {
+    logApiStep({
+      api: "UPLOAD_QUESTION_BANK",
+      status: "STARTED",
+      requestId: req.requestId,
+      message: "Question bank upload initiated",
+    });
+ 
+    // Check if file exists
+    if (!req.file) {
+      return res.status(400).json({
+        status: false,
+        message: "No file provided",
+      });
+    }
+ 
+    const { 
+      examName, 
+      year, 
+      classNumber, 
+      board, 
+      subject, 
+      unitName, 
+      unitNumber,
+      subjectGroupKey  // NEW: Capture the subject group key
+    } = req.body;
+ 
+    // Validate required fields
+    if (!examName || !year || !classNumber || !board || !subject) {
+      return res.status(400).json({
+        status: false,
+        message: "Missing required fields: examName, year, classNumber, board, subject",
+      });
+    }
+ 
+    // Validate subjectGroupKey
+    if (!subjectGroupKey) {
+      return res.status(400).json({
+        status: false,
+        message: "Subject group key is required",
+      });
+    }
+ 
+    const filePath = req.file.path;
+ 
+    // Step 1: Get or create subject metadata
+    const metadata = await getOrCreateSubjectMetadata(
+      board,
+      classNumber,
+      subject,
+    new Date(),
+    );
+ 
+    logApiStep({
+      api: "UPLOAD_QUESTION_BANK",
+      status: "PROCESSING",
+      requestId: req.requestId,
+      message: "Calling Python API to extract questions",
+    });
+ 
+    // Step 2: Call Python API to extract questions
+    const FormData = require("form-data");
+    const fs = require("fs");
+    const form = new FormData();
+    
+    form.append("file", fs.createReadStream(filePath));
+    form.append("exam_name", examName);
+    form.append("year", year);
+    form.append("class_number", classNumber);
+    form.append("board", board);
+    form.append("subject", subject);
+    
+    if (unitName) form.append("unit_name", unitName);
+    if (unitNumber) form.append("unit_number", unitNumber);
+ 
+    const pythonResponse = await callPython({
+      method: "post",
+      path: "/tutor/question-bank/upload-pdf",
+      data: form,
+      headers: form.getHeaders(),
+    });
+ 
+    if (!pythonResponse.success) {
+      throw new Error(pythonResponse.message || "Python API processing failed");
+    }
+ 
+    // Generate document ID
+    const documentId = `qb_${board.toLowerCase()}_${subject.toLowerCase()}_${year}_${Date.now()}`;
+ 
+    // Step 3: Save question bank to database with subjectGroupKey
+    const questionBank = new QuestionBank({
+      documentId,
+      examName,
+      year,
+      board,
+      classNumber,
+      subject,
+      subjectGroupKey,  // NEW: Store the subject group key
+      unitName: unitName || null,
+      unitNumber: unitNumber ? Number(unitNumber) : null,
+      totalQuestions: pythonResponse.extracted_count || 0,
+      difficultyDistribution: pythonResponse.difficulty_distribution || { 
+        easy: 0, 
+        medium: 0, 
+        hard: 0 
+      },
+      questions: pythonResponse.questions || null,
+      originalFileName: req.file.originalname,
+      uploadedBy: "AdminUser",
+      metadataId: metadata._id,
+      processingStatus: "completed",
+      processedAt: new Date(),
+    });
+  
+    await questionBank.save();
+ 
+    logApiStep({
+      api: "UPLOAD_QUESTION_BANK",
+      status: "SUCCESS",
+      requestId: req.requestId,
+      message: `Question bank saved with ${pythonResponse.extracted_count} questions`,
+    });
+ 
+    // Clean up uploaded file
+    try {
+      fs.unlinkSync(filePath);
+    } catch (err) {
+      console.log("Warning: Could not delete temp file", err.message);
+    }
+ 
+    return res.status(201).json({
+      status: true,
+      message: "Question bank uploaded successfully",
+      data: {
+        documentId: questionBank.documentId,
+        examName: questionBank.examName,
+        year: questionBank.year,
+        board: questionBank.board,
+        classNumber: questionBank.classNumber,
+        subject: questionBank.subject,
+        subjectGroupKey: questionBank.subjectGroupKey,  // NEW: Return in response
+        totalQuestions: questionBank.totalQuestions,
+        difficultyDistribution: questionBank.difficultyDistribution,
+        metadataId: questionBank.metadataId,
+        processedAt: questionBank.processedAt,
+      },
+    });
+ 
+  } catch (error) {
+    logError({
+      api: "UPLOAD_QUESTION_BANK",
+      requestId: req.requestId,
+      message: "Question bank upload failed",
+      error,
+    });
+ 
+    // Clean up file on error
+    if (req.file && req.file.path) {
+      try {
+        require("fs").unlinkSync(req.file.path);
+      } catch (err) {
+        console.log("Could not cleanup file:", err.message);
+      }
+    }
+ 
+    return res.status(error.statusCode || 500).json({
+      status: false,
+      message: error.message || "Question bank upload failed",
+      error: {
+        source: error.source || "node",
+        details: error.details || null,
+      },
+    });
+  }
+}
 };
 
 module.exports = controller;
+

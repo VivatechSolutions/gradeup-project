@@ -13,25 +13,22 @@ import re
 import time
 import json
 import hashlib
+import concurrent.futures
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime, timezone
 
 import requests
 from dotenv import load_dotenv
-
 # ── Configuration ─────────────────────────────────────────────────────────────
-
 TUTOR_MODEL = "gpt-4o-mini"
 TUTOR_FALLBACK_MODEL = "gpt-4o"
 TUTOR_MAX_HISTORY = 20          # Max messages kept per conversation
 TUTOR_RAG_TOP_K = 5             # Number of RAG chunks to retrieve
-TUTOR_TIMEOUT = 60              # API call timeout in seconds
+TUTOR_TIMEOUT = 30              # API call timeout in seconds (reduced for faster UX)
 HISTORY_DIR = Path("chat_history")  # Where JSON history files are stored
 
-
 # ── Chat History Manager (JSON file–based) ────────────────────────────────────
-
 
 class ChatHistoryManager:
     """
@@ -175,10 +172,14 @@ def retrieve_context(
     subject: Optional[str] = None,
     unit_number: Optional[int] = None,
     limit: int = TUTOR_RAG_TOP_K,
+    term: Optional[Any] = None,
 ) -> List[Dict[str, Any]]:
     """
     Retrieve top-K relevant chunks from Qdrant for the student's query.
     Searches BOTH structured and enriched collections.
+
+    `term` scopes retrieval to a term-split state book. Without it, a query for
+    unit 1 matches unit 1 of EVERY term book for that subject.
     """
     try:
         from qdrant_integration import search_qdrant, initialize_qdrant_client
@@ -201,6 +202,7 @@ def retrieve_context(
                 subject_filter=subject,
                 class_filter=class_number,
                 board_filter=board,
+                term_filter=term,
             )
             all_results.extend(results)
         except Exception as e:
@@ -219,6 +221,9 @@ def retrieve_context(
                     subject_filter=subject,
                     class_filter=class_number,
                     board_filter=board,
+                    # Relax the unit, never the term: dropping it here would pull
+                    # in other term books' units — the exact bleed we filter for.
+                    term_filter=term,
                 )
                 all_results.extend(results)
             except Exception as e:
@@ -253,8 +258,8 @@ def _format_context(chunks: List[Dict[str, Any]]) -> str:
     return "\n\n---\n\n".join(parts)
 
 
-def _extract_suggested_questions(answer: str) -> List[str]:
-    """Parse follow-up question suggestions from the LLM response text."""
+def _extract_suggested_questions(answer: str) -> Tuple[List[str], str]:
+    """Parse follow-up question suggestions from the LLM response text and remove them from the answer."""
     suggestions = []
 
     # Look for the suggestions section (💡 **You could ask next:** or similar)
@@ -264,8 +269,12 @@ def _extract_suggested_questions(answer: str) -> List[str]:
         re.IGNORECASE,
     )
     marker_match = marker_pattern.search(answer)
+    
+    cleaned_answer = answer
 
     if marker_match:
+        # The marker marks the start of the suggestions block
+        cleaned_answer = answer[:marker_match.start()].strip()
         after_marker = answer[marker_match.end():]
         # Extract numbered items: 1. Question text
         numbered = re.findall(r"^\s*\d+\.\s*(.+)$", after_marker, re.MULTILINE)
@@ -274,7 +283,7 @@ def _extract_suggested_questions(answer: str) -> List[str]:
             if len(cleaned) > 5:  # skip tiny/empty entries
                 suggestions.append(cleaned)
 
-    return suggestions[:3]  # Return at most 3 suggestions
+    return suggestions[:3], cleaned_answer
 
 
 def _build_fallback_suggestions(
@@ -317,8 +326,7 @@ def _build_fallback_suggestions(
                     break
 
     return suggestions[:3]
-
-
+    
 # ── System Prompt ─────────────────────────────────────────────────────────────
 
 _SYSTEM_PROMPT = """You are GradeUp AI Tutor — a friendly, knowledgeable study assistant for school students.
@@ -444,15 +452,18 @@ def generate_tutor_response(
         user_message = (
             f"Here is relevant content from the textbook:\n\n"
             f"---BEGIN TEXTBOOK CONTEXT---\n{context}\n---END TEXTBOOK CONTEXT---\n\n"
-            f"IMPORTANT REMINDER: Answer ONLY using the textbook context above. Do NOT invent or fabricate any information that is not present in the context.\n\n"
-            f"Student's question: {query}"
-        )
+            f"IMPORTANT REMINDER: Answer ONLY using: Textbook context, Student image content (if provided). Do not use outside knowledge.\n\n"
+            f"Student's question: {query} If IMAGE CONTENT is present in the context, use the image information together with the textbook content."
+            )
+        
+
+        
     else:
         user_message = (
             f"(No relevant textbook content was found for this question. "
             f"You MUST NOT make up an answer. Tell the student you don't have the specific content "
             f"and ask them to try a more specific question about a particular concept.)\n\n"
-            f"Student's question: {query}"
+            f"Student's question: {query} If IMAGE CONTENT is present in the context, use the image information together with the textbook content."
         )
 
     messages.append({"role": "user", "content": user_message})
@@ -501,6 +512,167 @@ def generate_tutor_response(
         print(f"  ❌ [AI Tutor] Error: {e}")
         return "Something went wrong. Please try again!"
 
+# Image Analyais Space  ###########
+
+def analyze_student_image(
+    image_base64: str,
+    query: str,
+    subject: str,
+    unit_name: str,
+    ):
+        """
+        Uses GPT-4o Vision to:
+        - Check image safety
+        - Check educational relevance
+        - Describe image
+        """
+        api_key = os.environ.get("OPENAI_API_KEY")
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": "gpt-4o",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": f"""
+    You are an educational image validator.
+
+    Return ONLY JSON:
+
+    {{
+        "is_safe": true,
+        "is_educational": true,
+        "description": "...",
+        "reason": "..."
+    }}
+
+    Rules:
+    - Reject nudity
+    - Reject violence
+    - Reject abusive content
+    - Reject celebrity images
+    - Reject memes
+    - Reject gaming screenshots
+    - Reject selfies
+    - Reject random photographs
+    - Reject social media images
+    - Reject entertainment content
+
+    Accept:
+    - textbook pages
+    - diagrams
+    - charts
+    - science figures
+    - educational illustrations
+
+    Subject = {subject}
+    Unit = {unit_name}
+    """
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": query
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{image_base64}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            "response_format": {
+                "type": "json_object"
+            }
+        }
+        resp = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=60,
+        )
+        if not resp.ok:
+            raise Exception(resp.text)
+
+        return json.loads(
+            resp.json()["choices"][0]["message"]["content"]
+        )
+def score_image_relevance(
+        image_description: str,
+        textbook_context: str,
+        subject: str,
+        unit_name: str,
+    ):
+        api_key = os.environ.get("OPENAI_API_KEY")
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": "gpt-4o-mini",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": """
+    You are an educational relevance checker.
+    Return ONLY JSON:
+    {
+        "relevance_score": 0,
+        "reason": ""
+    }
+    Scoring:
+    90-100 = Directly related
+    70-89 = Strongly related
+    40-69 = Possibly related and When unsure, prefer educational images over rejecting them.
+    0-39 = Unrelated
+    Examples:
+    Force and Motion:
+    - distance displacement diagram = 95
+    - moving car = 85
+    - human heart = 5
+    Maths:
+    - fraction chart = 95
+    - plant cell = 0
+    """
+                },
+                {
+                    "role": "user",
+                    "content": f"""
+    Subject:
+    {subject}
+
+    Unit:
+    {unit_name}
+
+    Image:
+    {image_description}
+
+    Lesson Context:
+    {textbook_context}
+    """
+                }
+            ],
+            "response_format": {
+                "type": "json_object"
+            }
+        }
+
+        resp = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=60,
+        )
+
+        return json.loads(
+            resp.json()["choices"][0]["message"]["content"]
+        )
 
 # ── Main Orchestrator ─────────────────────────────────────────────────────────
 
@@ -515,6 +687,9 @@ def ask_tutor(
     candidate_id: str,
     unit_name: str = "",
     limit: int = TUTOR_RAG_TOP_K,
+    uploaded_context: str = "",
+    image_base64: Optional[str] = None,
+    term: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """
     Main entry point for the AI Tutor.
@@ -527,17 +702,126 @@ def ask_tutor(
     """
     start_time = time.time()
     hm = get_history_manager()
+    image_context = ""
+    if image_base64:
+        try:
 
-    # 1. Retrieve RAG context
-    chunks = retrieve_context(
-        query=query,
-        board=board,
-        class_number=class_number,
-        subject=subject,
-        unit_number=unit_number,
-        limit=limit,
-    )
-    context_text = _format_context(chunks)
+            image_result = analyze_student_image(
+                image_base64=image_base64,
+                query=query,
+                subject=subject,
+                unit_name=unit_name,
+            )
+
+            if not image_result["is_safe"]:
+                return {
+                    "answer": "⚠️ This image violates educational platform guidelines. Please upload textbook-related images only.",
+                    "suggested_questions": [],
+                    "sources": [],
+                    "context_chunks_used": 0,
+                    "is_relevant": False,
+                }
+            if not image_result["is_educational"]:
+                return {
+                    "answer": (
+                        f"I can only answer questions about textbook-related images.\n\n"
+                        f"Detected: {image_result['description']}\n\n"
+                        f"Reason: {image_result['reason']}"
+                    ),
+                    "suggested_questions": [],
+                    "sources": [],
+                    "context_chunks_used": 0,
+                    "is_relevant": False,
+                }
+            image_context = f"""
+        IMAGE CONTENT FROM STUDENT IMAGE:
+        {image_result['description']}
+        Use this image information together with textbook context.
+        """
+        except Exception as e:
+            return {
+                    "answer": "I couldn't analyze the uploaded image. Please try uploading it again.",
+                    "suggested_questions": [],
+                    "sources": [],
+                    "context_chunks_used": 0,
+                    "is_relevant": False,
+                }
+            print(f"Vision Error: {e}")
+    retrieval_query = query
+
+    # ── Parallel: Guardrail check + RAG retrieval ─────────────────────────────
+    # Both tasks are independent — run them concurrently to reduce latency.
+    # If the guardrail intercepts the query, the RAG result is discarded.
+    img_desc = image_result.get("description") if (image_base64 and 'image_result' in locals()) else None
+
+    def _run_guardrail():
+        try:
+            from guardrails import run_query_guardrail
+            return run_query_guardrail(
+                query=query,
+                subject=subject,
+                unit_number=unit_number,
+                candidate_id=candidate_id,
+                image_description=img_desc,
+            )
+        except Exception as g_err:
+            print(f"  [AI Tutor Middleware] Guardrail error, bypass check: {g_err}")
+            return None  # fail-open
+
+    if image_base64 and image_context:
+        retrieval_query += f"\n\nImage Description:\n{image_result['description']}"
+
+    def _run_rag():
+        return retrieve_context(
+            query=retrieval_query,
+            board=board,
+            class_number=class_number,
+            subject=subject,
+            unit_number=unit_number,
+            limit=limit,
+            term=term,
+        )
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        future_guardrail = executor.submit(_run_guardrail)
+        future_rag = executor.submit(_run_rag)
+        guardrail_result = future_guardrail.result()  # wait for guardrail first
+        if guardrail_result:
+            print(f"  [AI Tutor Middleware] Intercepted homework query for candidate {candidate_id}")
+            executor.shutdown(wait=False, cancel_futures=True)  # discard pending RAG
+            return guardrail_result
+        chunks = future_rag.result()  # guardrail passed — get RAG results
+    # ─────────────────────────────────────────────────────────────────────────
+    # context_text = _format_context(chunks)
+    context_text = image_context + "\n\n" + _format_context(chunks)
+
+    # Check relevance score instead of strict lesson validation
+    if image_base64 and image_context:
+        try:
+            relevance = score_image_relevance(
+                image_description=image_result["description"],
+                textbook_context=context_text,
+                subject=subject,
+                unit_name=unit_name,
+            )
+            score = relevance.get("relevance_score", 0)
+            print(f"📸 Image relevance score: {score}")
+            if score < 20:
+                return {
+                    "answer": (
+                        f"This image appears educational, but it does not seem related "
+                        f"to the current lesson.\n\n"
+                        f"Detected:\n{image_result['description']}\n\n"
+                        f"Reason:\n{relevance.get('reason', '')}\n\n"
+                        f"Please upload an image related to the current lesson."
+                    ),
+                    "suggested_questions": [],
+                    "sources": [],
+                    "context_chunks_used": 0,
+                    "is_relevant": False,
+                }
+        except Exception as e:
+            print(f"Image relevance scoring error: {e}")
 
     # 1.5 Extract topic and get conversation count BEFORE LLM call
     top_section = ""
@@ -610,7 +894,7 @@ def ask_tutor(
     history = hm.get_history(candidate_id, subject, unit_number)
 
     # 3. Generate response
-    answer = generate_tutor_response(
+    raw_answer = generate_tutor_response(
         query=query,
         context=context_text,
         chat_history=history,
@@ -620,6 +904,13 @@ def ask_tutor(
         candidate_name=candidate_name,
         topic_count=topic_count,
     )
+
+    # 6. Extract suggested follow-up questions from the answer and clean it
+    suggested_questions, answer = _extract_suggested_questions(raw_answer)
+
+    # 7. Fallback: generate suggestions from context/unit metadata if LLM didn't include them
+    if not suggested_questions:
+        suggested_questions = _build_fallback_suggestions(chunks, subject, unit_name, unit_number)
 
     # 4. Save conversation turn
     hm.add_message(candidate_id, subject, unit_number, "user", query, candidate_name)
@@ -639,13 +930,6 @@ def ask_tutor(
 
     elapsed = time.time() - start_time
 
-    # 6. Extract suggested follow-up questions from the answer
-    suggested_questions = _extract_suggested_questions(answer)
-
-    # 7. Fallback: generate suggestions from context/unit metadata if LLM didn't include them
-    if not suggested_questions:
-        suggested_questions = _build_fallback_suggestions(chunks, subject, unit_name, unit_number)
-
     return {
         "answer": answer,
         "suggested_questions": suggested_questions,
@@ -660,4 +944,3 @@ def ask_tutor(
         "unit_name": unit_name,
         "history_length": len(history) + 2,  # +2 for the new user+assistant messages
     }
-

@@ -32,7 +32,7 @@ HIGHLIGHT_FALLBACK_MODEL = "gpt-4o"
 HIGHLIGHT_TIMEOUT = 60
 HIGHLIGHT_RAG_TOP_K = 5
 
-TTS_MODEL = "tts-1"
+TTS_MODEL = "gpt-4o-mini-tts"
 TTS_VOICE = "alloy"
 TTS_SPEED = 1.0
 
@@ -51,6 +51,7 @@ def _retrieve_rag_context(
     subject: Optional[str] = None,
     unit_number: Optional[int] = None,
     limit: int = HIGHLIGHT_RAG_TOP_K,
+    term: Optional[Any] = None,
 ) -> List[Dict[str, Any]]:
     """Retrieve relevant chunks from Qdrant for the highlighted text."""
     try:
@@ -62,6 +63,7 @@ def _retrieve_rag_context(
             subject=subject,
             unit_number=unit_number,
             limit=limit,
+            term=term,
         )
     except ImportError:
         logger.warning("ai_tutor module not available for RAG retrieval")
@@ -327,6 +329,7 @@ def _store_highlight_in_qdrant(
     class_number: str,
     subject: str,
     unit_number: Optional[int] = None,
+    term: Optional[Any] = None,
 ) -> bool:
     """Store highlight metadata as a point in Qdrant.
 
@@ -358,8 +361,12 @@ def _store_highlight_in_qdrant(
         vector = embeddings_model.embed_query(highlighted_text)
 
         # Build a deterministic ID based on the context to avoid duplicates
-        # hashing: board, class, subject, text, action
-        id_seed = f"{board}:{class_number}:{subject}:{highlighted_text}:{action}"
+        # hashing: board, class, subject, term, text, action
+        # Term is part of the key: the same sentence can appear in two term books
+        # and must not collapse onto a single cached answer.
+        from term_utils import normalize_term
+        _term = normalize_term(term) or ""
+        id_seed = f"{board}:{class_number}:{subject}:{_term}:{highlighted_text}:{action}"
         point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, id_seed))
 
         # Build the payload
@@ -373,6 +380,7 @@ def _store_highlight_in_qdrant(
                 "board": board,
                 "class_number": class_number,
                 "subject": subject,
+                "term": _term or None,
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }
         }
@@ -406,8 +414,15 @@ def _search_existing_highlight(
     class_number: str,
     subject: str,
     threshold: float = 0.80,
+    term: Optional[Any] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Search for an existing highlight match to reuse the response."""
+    """Search for an existing highlight match to reuse the response.
+
+    When a term is requested the match must carry the SAME term — reusing a
+    Term 1 answer for a Term 2 highlight would serve the wrong chapter's
+    explanation. When no term is requested the filter is omitted entirely, so
+    non-term boards behave exactly as before.
+    """
     try:
         from qdrant_integration import (
             initialize_qdrant_client,
@@ -424,17 +439,24 @@ def _search_existing_highlight(
 
         vector = embeddings_model.embed_query(text)
 
+        from term_utils import normalize_term
+        _term = normalize_term(term)
+
+        conditions = [
+            FieldCondition(key="metadata.board", match=MatchValue(value=board)),
+            FieldCondition(key="metadata.class_number", match=MatchValue(value=class_number)),
+            FieldCondition(key="metadata.subject", match=MatchValue(value=subject)),
+            FieldCondition(key="action", match=MatchValue(value=action)),
+        ]
+        if _term:
+            conditions.append(
+                FieldCondition(key="metadata.term", match=MatchValue(value=_term))
+            )
+
         results = client.query_points(
             collection_name=collection,
             query=vector,
-            query_filter=Filter(
-                must=[
-                    FieldCondition(key="metadata.board", match=MatchValue(value=board)),
-                    FieldCondition(key="metadata.class_number", match=MatchValue(value=class_number)),
-                    FieldCondition(key="metadata.subject", match=MatchValue(value=subject)),
-                    FieldCondition(key="action", match=MatchValue(value=action)),
-                ]
-            ),
+            query_filter=Filter(must=conditions),
             limit=1,
             score_threshold=threshold,
         ).points
@@ -459,6 +481,7 @@ def highlight_explain(
     class_number: str = "",
     subject: str = "",
     unit_number: Optional[int] = None,
+    term: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """
     Explain highlighted text using RAG + LLM + TTS.
@@ -478,6 +501,7 @@ def highlight_explain(
         board=board,
         class_number=class_number,
         subject=subject,
+        term=term,
     )
     if existing:
         return {
@@ -496,6 +520,7 @@ def highlight_explain(
         class_number=class_number,
         subject=subject,
         unit_number=unit_number,
+        term=term,
     )
     context_text = _format_context(chunks)
 
@@ -536,6 +561,7 @@ def highlight_explain(
         class_number=class_number,
         subject=subject,
         unit_number=unit_number,
+        term=term,
     )
 
     elapsed = time.time() - start_time
@@ -570,6 +596,7 @@ def highlight_summarize(
     class_number: str = "",
     subject: str = "",
     unit_number: Optional[int] = None,
+    term: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """
     Summarize highlighted text using RAG + LLM + TTS.
@@ -585,6 +612,7 @@ def highlight_summarize(
         board=board,
         class_number=class_number,
         subject=subject,
+        term=term,
     )
     if existing:
         return {
@@ -603,6 +631,7 @@ def highlight_summarize(
         class_number=class_number,
         subject=subject,
         unit_number=unit_number,
+        term=term,
     )
     context_text = _format_context(chunks)
 
@@ -643,6 +672,7 @@ def highlight_summarize(
         class_number=class_number,
         subject=subject,
         unit_number=unit_number,
+        term=term,
     )
 
     elapsed = time.time() - start_time
@@ -678,6 +708,7 @@ def highlight_ask_ai(
     class_number: str = "",
     subject: str = "",
     unit_number: Optional[int] = None,
+    term: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """
     Chat with AI about highlighted text using RAG.
@@ -703,6 +734,7 @@ def highlight_ask_ai(
         class_number=class_number,
         subject=subject,
         unit_number=unit_number,
+        term=term,
     )
     context_text = _format_context(chunks)
 
@@ -768,6 +800,7 @@ def highlight_read(
     subject: str = "",
     unit_number: Optional[int] = None,
     response_text: Optional[str] = None, # Optional for backward compatibility/manual overrides
+    term: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """
     Generate TTS audio for a highlight.
@@ -789,6 +822,7 @@ def highlight_read(
         class_number=class_number,
         subject=subject,
         threshold=0.80,
+        term=term,
     )
 
     final_response_text = response_text
@@ -854,6 +888,7 @@ def highlight_read(
         class_number=class_number,
         subject=subject,
         unit_number=unit_number,
+        term=term,
     )
 
     return {

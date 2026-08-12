@@ -1,0 +1,19 @@
+# Minimal SearXNG config — merges with SearXNG's built-in defaults.
+# Only the overrides needed by the PPT co-pilot are set here.
+use_default_settings: true
+
+server:
+  # Must match SEARXNG_SECRET in docker-compose.yml.
+  secret_key: "bdaa69552e471b3031b8068ee382a75344f25bb3d50c9df34d65fed7beb34a1e"
+  # Disable the bot limiter so the backend can query the JSON API freely (local use).
+  limiter: false
+  image_proxy: false
+
+search:
+  # JSON is required for programmatic access; it is OFF in the defaults.
+  formats:
+    - html
+    - json
+  # Keep results snappy for an interactive co-pilot.
+  autocomplete: ""
+  default_lang: "en"

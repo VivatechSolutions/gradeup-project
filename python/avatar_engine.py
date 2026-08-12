@@ -165,6 +165,47 @@ Return EXACTLY this JSON structure:
 }
 """
 
+_MCQ_FLASHCARD_SYSTEM_PROMPT = """You are GradeUp AI Avatar generating an interactive multiple-choice flashcard.
+Based on the textbook context, generate ONE multiple-choice question to test the student's understanding.
+
+IMPORTANT — For each option, provide a simple, educational explanation:
+- For the CORRECT option: Start with a congratulatory message like "Yeah, you got the right answer!" followed by why it's correct.
+- For WRONG options: Provide a valid explanation of why it's incorrect and what the correct concept is.
+
+Return EXACTLY this JSON structure:
+{
+  "question": "The question text",
+  "options": {
+    "A": "Option A text",
+    "B": "Option B text",
+    "C": "Option C text",
+    "D": "Option D text"
+  },
+  "answer": "B",
+  "option_explanations": {
+    "A": "This is incorrect because... The correct concept is...",
+    "B": "Yeah, you got the right answer! This is correct because...",
+    "C": "This is incorrect because... The actual fact is...",
+    "D": "This is incorrect because... Remember that..."
+  }
+}
+"""
+
+
+
+_INFORMATIVE_FLASHCARD_SYSTEM_PROMPT = """You are GradeUp AI Avatar generating an informative flashcard popup.
+Based on the textbook context, generate a real-world example and an easy-to-understand explanation of the concept.
+
+Return EXACTLY this JSON structure:
+{
+  "flashcard_id": "fc_info_XXX",
+  "card_title": "Short title for the flashcard",
+  "front": "The real-world example or easy-to-understand explanation of the concept. Keep it concise, engaging, and relatable.",
+  "avatar_line": "What the avatar says while showing this flashcard.",
+  "avatar_emotion": "one of: enthusiastic, curious, encouraging, surprised, thoughtful, playful, empathetic, confident, warm, inspiring"
+}
+"""
+
 
 def _call_llm(system_prompt: str, user_prompt: str,
               model: str = AVATAR_MODEL, max_tokens: int = 3000,
@@ -241,7 +282,8 @@ def _parse_json(raw: str) -> Optional[Dict]:
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _load_section_enrichment(board: str, class_number: str, subject: str,
-                              unit_number: int, section_title: str) -> Optional[Dict]:
+                              unit_number: int, section_title: str,
+                              term: Optional[Any] = None) -> Optional[Dict]:
     """Load enrichment data for a specific section from enriched.json files."""
     from config import OUTPUTS_DIR
 
@@ -272,6 +314,14 @@ def _load_section_enrichment(board: str, class_number: str, subject: str,
                 if class_number:
                     meta_class = str(meta.get("class_number", "")).lower().lstrip("0")
                     if meta_class != str(class_number).lower().lstrip("0"):
+                        continue
+                # Term books restart unit numbering, so without this a Term 2
+                # unit 1 section can be served from the Term 1 book.
+                if term:
+                    from term_utils import normalize_term
+                    want = normalize_term(term)
+                    have = normalize_term(meta.get("term"))
+                    if want and have and want != have:
                         continue
             except Exception:
                 pass
@@ -365,28 +415,47 @@ class AvatarEngine:
     def start_session(self, candidate_id: str, candidate_name: str,
                       board: str, class_number: str, subject: str,
                       unit_number: int, unit_name: str = "",
-                      section_title: str = "") -> Dict:
-        """Start a new avatar teaching session."""
+                      section_title: str = "",
+                      segments: Optional[List[Dict]] = None,
+                      term: Optional[Any] = None) -> Dict:
+        """Start a new avatar teaching session.
 
-        # 1. Load enrichment data
-        enrichment_data = _load_section_enrichment(
-            board=board, class_number=class_number,
-            subject=subject, unit_number=unit_number,
-            section_title=section_title,
-        )
+        If ``segments`` is provided (from the request body), the local enrichment
+        file is NOT fetched. The session is built directly from the supplied segments.
+        Otherwise, enrichment data is loaded from the local file system as before.
+        """
 
-        if not enrichment_data:
-            return {"error": f"Enrichment data not found for section '{section_title}' in unit {unit_number}"}
+        if segments is not None:
+            # ── Segments supplied directly from the request body ──────────────
+            avatar_explanation = {"segments": segments}
+            enrichment = {"avatar_explanation": avatar_explanation}
+            enrichment_data = {
+                "unit_title": unit_name,
+                "section_title": section_title,
+                "enrichment": enrichment,
+                "document_id": "",
+            }
+            dc = {}
+        else:
+            # ── Load enrichment data from local file system (legacy path) ─────
+            enrichment_data = _load_section_enrichment(
+                board=board, class_number=class_number,
+                subject=subject, unit_number=unit_number,
+                section_title=section_title, term=term,
+            )
 
-        enrichment = enrichment_data["enrichment"]
-        avatar_explanation = enrichment.get("avatar_explanation", {})
-        segments = avatar_explanation.get("segments", [])
+            if not enrichment_data:
+                return {"error": f"Enrichment data not found for section '{section_title}' in unit {unit_number}"}
 
-        if not segments:
-            return {"error": f"No avatar segments found for section '{section_title}'. Enrichment may not have avatar data."}
+            enrichment = enrichment_data["enrichment"]
+            avatar_explanation = enrichment.get("avatar_explanation", {})
+            segments = avatar_explanation.get("segments", [])
 
-        # Strip legacy RAG metadata from doubt_context
-        dc = enrichment.get("doubt_context", {})
+            if not segments:
+                return {"error": f"No avatar segments found for section '{section_title}'. Enrichment may not have avatar data."}
+
+            # Strip legacy RAG metadata from doubt_context
+            dc = enrichment.get("doubt_context", {})
 
         # 2. Create session
         session_id = f"avatar_{uuid.uuid4().hex[:12]}"
@@ -635,6 +704,84 @@ class AvatarEngine:
         
         # ── NO_FLASHCARD: Decline, then auto-resume ──
         return self.resume_session(session_id)
+
+    # ── MCQ Flashcards ────────────────────────────────────────────────────────
+
+    def generate_flashcard_mcq(self, session_id: str, flashcard_id: str,
+                                flashcard_type: str, segment_id: str) -> Dict:
+        """Generate an MCQ flashcard with per-option explanations."""
+        session = self.store.load(session_id)
+        if not session:
+            return {"error": f"Avatar session not found: {session_id}"}
+            
+        topic = session.get("topic", {})
+        section_title = topic.get("section_title", "")
+        
+        segment_context = self._build_knowledge_context(session, segment_id)
+        
+        user_prompt = (
+            f"SECTION: {section_title}\n"
+            f"TEXTBOOK CONTEXT:\n{segment_context}\n\n"
+        )
+        
+        raw = _call_llm(_MCQ_FLASHCARD_SYSTEM_PROMPT, user_prompt)
+        parsed = _parse_json(raw)
+        
+        if not parsed:
+            return {"error": "Failed to generate flashcard"}
+        
+        # Use the provided flashcard_id and segment_id
+        parsed["flashcard_id"] = flashcard_id
+        parsed["segment_id"] = segment_id
+        parsed["flashcard_type"] = flashcard_type
+        
+        # Save to session history
+        history = session["avatar_session_history"]
+        if "generated_mcqs" not in history:
+            history["generated_mcqs"] = []
+        history["generated_mcqs"].append(parsed)
+        
+        self.store.save(session)
+        
+        return {
+            "flashcard_id": flashcard_id,
+            "segment_id": segment_id,
+            "flashcard_type": flashcard_type,
+            "question": parsed.get("question", ""),
+            "options": parsed.get("options", {}),
+            "answer": parsed.get("answer", ""),
+            "option_explanations": parsed.get("option_explanations", {})
+        }
+
+    def generate_flashcard_informative(self, session_id: str, flashcard_id: str,
+                                        flashcard_type: str, segment_id: str) -> Dict:
+        """Generate an informative flashcard popup with a real-world example."""
+        session = self.store.load(session_id)
+        if not session:
+            return {"error": f"Avatar session not found: {session_id}"}
+            
+        topic = session.get("topic", {})
+        section_title = topic.get("section_title", "")
+        
+        segment_context = self._build_knowledge_context(session, segment_id)
+        
+        user_prompt = (
+            f"SECTION: {section_title}\n"
+            f"TEXTBOOK CONTEXT:\n{segment_context}\n\n"
+        )
+        
+        raw = _call_llm(_INFORMATIVE_FLASHCARD_SYSTEM_PROMPT, user_prompt)
+        parsed = _parse_json(raw)
+        
+        if not parsed:
+            return {"error": "Failed to generate informative flashcard"}
+        
+        # Use the provided flashcard_id and segment_id
+        parsed["flashcard_id"] = flashcard_id
+        parsed["segment_id"] = segment_id
+        parsed["flashcard_type"] = flashcard_type
+        
+        return parsed
 
     # ── Resume Session ────────────────────────────────────────────────────────
 

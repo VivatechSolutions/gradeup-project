@@ -241,6 +241,8 @@ class QuizEngine:
         unit_number: int,
         document_id: str,
         exclude_ids: Set[str],
+        term: Optional[Any] = None,
+        board: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         Generate quiz questions using LLM + RAG.
@@ -253,7 +255,7 @@ class QuizEngine:
             )
 
         # Get RAG context from textbook
-        rag_context = self._get_rag_context(subject, unit_number, sections)
+        rag_context = self._get_rag_context(subject, unit_number, sections, term=term, board=board)
 
         # Build sections + weights for the prompt
         section_info = ""
@@ -360,7 +362,8 @@ Return ONLY the JSON array."""
         )
 
     def _get_rag_context(
-        self, subject: str, unit_number: int, sections: List[Dict[str, Any]]
+        self, subject: str, unit_number: int, sections: List[Dict[str, Any]],
+        term: Optional[Any] = None, board: Optional[str] = None,
     ) -> str:
         """Retrieve textbook context from Qdrant for quiz generation."""
         try:
@@ -375,6 +378,8 @@ Return ONLY the JSON array."""
                 limit=5,
                 unit_filter=unit_number,
                 subject_filter=subject,
+                board_filter=board,
+                term_filter=term,
             )
             if results:
                 return "\n---\n".join(r.get("text", "")[:600] for r in results)
@@ -459,6 +464,8 @@ Return ONLY the JSON array."""
         num_questions: int = 5,
         unit_title: str = "",
         candidate_name: str = "",
+        term: Optional[Any] = None,
+        board: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Generate a quiz for a student.
@@ -499,6 +506,8 @@ Return ONLY the JSON array."""
                 unit_number=unit_number,
                 document_id=document_id,
                 exclude_ids=exclude_ids,
+                term=term,
+                board=board,
             )
 
             # Create quiz ID and cache

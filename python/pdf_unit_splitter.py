@@ -671,13 +671,25 @@ def _is_noise_page(text: str) -> bool:
     return any(p.search(text) for p in _NOISE_RE)
 
 
+# Pattern that identifies a genuine unit/chapter splash page
+_UNIT_SPLASH_RE = re.compile(
+    r'^\s*(?:unit|chapter|chap)\s+\d+\b',
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
 def _find_front_matter_end(page_texts: List[str]) -> int:
     """
-    Smartly detect where front matter ends by finding the last page
-    that looks like a TOC or introduction (within first 20% of book).
-    Returns a 0-based page index (first "real" content page).
+    Detect where front matter ends (TOC, preface, foreword).
+    Returns a 0-based page index — GPT/regex will start scanning from here.
+
+    Cap: never skip more than 10 pages, so early units are never missed.
+    If a page clearly looks like a unit/chapter splash it is NOT counted
+    as front matter, even if it also contains a TOC-ish keyword.
     """
-    limit = max(_DEFAULT_SKIP, len(page_texts) // 5)
+    # Hard cap: front matter is almost never longer than 10 pages
+    MAX_FRONT_MATTER = 10
+    limit = min(MAX_FRONT_MATTER, max(_DEFAULT_SKIP, len(page_texts) // 5))
     last_fm = _DEFAULT_SKIP
     toc_re = re.compile(
         r'(Table\s+of\s+Contents|Contents|Preface|Foreword|Introduction'
@@ -686,6 +698,9 @@ def _find_front_matter_end(page_texts: List[str]) -> int:
     )
     for i in range(min(limit, len(page_texts))):
         text = page_texts[i]
+        # If this page is clearly a unit splash, stop — it's real content
+        if _UNIT_SPLASH_RE.search(text[:400]):
+            break
         if toc_re.search(text):
             last_fm = i + 1  # skip past this page
     return last_fm
@@ -859,7 +874,7 @@ def gpt_detect_boundaries(
 
     seen: set = set()
     boundaries: List[Dict] = []
-    print(f"  [GPT] Subject={subject}, skipping {front_matter_pages} front-matter pages…")
+    print(f"  [GPT] Subject={subject}, skipping {front_matter_pages} front-matter page(s)…")
 
     for i in range(front_matter_pages, len(page_texts)):
         text = page_texts[i]
@@ -903,6 +918,56 @@ def gpt_detect_boundaries(
             pass  # silent for non-boundary pages
 
         time.sleep(0.05)  # gentle rate limit
+
+    # ── Rescue pass: recover units missed due to front-matter skip ─────────────
+    # If the first detected unit number > 1, there are earlier units that were
+    # inside the front-matter window (e.g. Unit 1 starts on page 1, but
+    # front_matter_pages=19 caused us to skip it).
+    if boundaries:
+        first_found_unit = min(b["unit_number"] for b in boundaries)
+        if first_found_unit > 1:
+            rescue_end = boundaries[0]["page_idx"]  # stop just before first found
+            print(f"  [GPT] Rescue scan: checking pages 0–{rescue_end} for "
+                  f"{label}(s) 1–{first_found_unit - 1}…")
+            for i in range(rescue_end):
+                text = page_texts[i]
+                if not text or not _keyword_re.search(text):
+                    continue
+                if _is_noise_page(text):
+                    continue
+
+                prev_ctx = page_texts[i - 1][:300] if i > 0 else ""
+                snippet  = text[:800]
+                prompt   = _build_gpt_prompt(subject, i + 1, prev_ctx, snippet)
+
+                result = {"is_unit_start": False, "unit_number": None, "title": None}
+                for attempt in range(3):
+                    try:
+                        raw = _call_openai(prompt, api_key)
+                        raw = re.sub(r"```[a-z]*\n?", "", raw).strip().rstrip("`")
+                        result = json.loads(raw)
+                        break
+                    except Exception as e:
+                        if attempt == 2:
+                            print(f"    [GPT rescue error page {i+1}]: {e}")
+                        time.sleep(1)
+
+                if result.get("is_unit_start"):
+                    u_num = result.get("unit_number")
+                    if u_num and int(u_num) not in seen:
+                        u_num = int(u_num)
+                        seen.add(u_num)
+                        title = result.get("title") or f"{label.capitalize()} {u_num}"
+                        print(f"    Page {i+1}: ✓ {label.upper()} {u_num} — \"{title}\" (GPT rescue)")
+                        boundaries.append({
+                            "page_idx":    i,
+                            "page_number": i + 1,
+                            "unit_number": u_num,
+                            "title":       title,
+                            "source":      "gpt_rescue",
+                        })
+
+                time.sleep(0.05)
 
     return sorted(boundaries, key=lambda x: x["page_idx"])
 

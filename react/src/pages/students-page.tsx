@@ -713,13 +713,6 @@ export default function StudentsPage() {
       <style>{css}</style>
       <div className="sd-root">
 
-        {/* Back */}
-        <Link href="/">
-          <button className="sd-back">
-            <Svg d={ICONS.back} size={14}/> Back to Dashboard
-          </button>
-        </Link>
-
         {/* ── HERO ── */}
         <div className="sd-hero">
           <span className="sd-float" style={{width:40,height:40,top:"20%",left:"60%",animationDelay:"0s"}}/>

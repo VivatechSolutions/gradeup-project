@@ -30,6 +30,7 @@ try:
 except Exception:
     pass
 import time
+import uuid
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -79,7 +80,7 @@ except ImportError:
 
 # ── Model configuration ────────────────────────────────────────────────────────
 ENRICHMENT_MODEL_DEFAULT = "gpt-4o-mini"
-ENRICHMENT_MODEL_MATH    = "gpt-4o"        # Mathematics uses gpt-4o for better logic processing
+ENRICHMENT_MODEL_MATH    = "gpt-4o-mini"   # Mathematics uses gpt-4o-mini for enrichment
 OPENAI_API_URL           = "https://api.openai.com/v1/chat/completions"
 
 MAX_RETRIES      = 3
@@ -123,7 +124,7 @@ Given a math section/subsection, produce an avatar teaching script.
 
 STYLE: Lead with intuition. State the core point plainly. Give a memorable analogy.
 List important properties. Flag common misconceptions.
-For the avatar script: Speak naturally, build concepts step by step, insert inline flashcards (UML or real-world example).
+For the avatar script: Speak naturally, build concepts step by step. Mark key segments with flashcard_type='mcq' or 'informative'.
 
 Return STRICT JSON containing ONLY the avatar explanation:
 {
@@ -138,13 +139,16 @@ Return STRICT JSON containing ONLY the avatar explanation:
         "emotion": "enthusiastic"
       },
       {
-        "segment_id": "fc_001",
+        "segment_id": "seg_002",
+        "type": "teaching",
+        "text": "Key concept to test...",
+        "emotion": "confident"
+      },
+      {
+        "segment_id": "seg_003",
+        "flashcard_id": "fc_001",
         "type": "flashcard",
-        "card_title": "Flashcard title",
-        "front": "Diagram or real-world example",
-        "front_style": "uml_diagram or real_world_example",
-        "avatar_line": "What avatar says",
-        "avatar_emotion": "encouraging"
+        "flashcard_type": "mcq"
       }
     ]
   }
@@ -170,13 +174,16 @@ Return STRICT JSON containing ONLY the avatar explanation:
         "emotion": "enthusiastic"
       },
       {
-        "segment_id": "fc_001",
+        "segment_id": "seg_002",
+        "type": "teaching",
+        "text": "Key concept to test...",
+        "emotion": "confident"
+      },
+      {
+        "segment_id": "seg_003",
+        "flashcard_id": "fc_001",
         "type": "flashcard",
-        "card_title": "Working step",
-        "front": "Mathematical working or formula",
-        "front_style": "math_formula",
-        "avatar_line": "Explaining the step",
-        "avatar_emotion": "encouraging"
+        "flashcard_type": "mcq"
       }
     ]
   }
@@ -202,13 +209,16 @@ Return STRICT JSON containing ONLY the avatar explanation:
         "emotion": "enthusiastic"
       },
       {
-        "segment_id": "fc_001",
+        "segment_id": "seg_002",
+        "type": "teaching",
+        "text": "Key concept to test...",
+        "emotion": "confident"
+      },
+      {
+        "segment_id": "seg_003",
+        "flashcard_id": "fc_001",
         "type": "flashcard",
-        "card_title": "Visual or step",
-        "front": "The visual concept",
-        "front_style": "real_world_example",
-        "avatar_line": "Connecting concept to the problem",
-        "avatar_emotion": "encouraging"
+        "flashcard_type": "mcq"
       }
     ]
   }
@@ -237,13 +247,16 @@ Return STRICT JSON containing ONLY the avatar explanation:
         "emotion": "enthusiastic"
       },
       {
-        "segment_id": "fc_001",
+        "segment_id": "seg_002",
+        "type": "teaching",
+        "text": "Key concept to test...",
+        "emotion": "confident"
+      },
+      {
+        "segment_id": "seg_003",
+        "flashcard_id": "fc_001",
         "type": "flashcard",
-        "card_title": "Concept Example",
-        "front": "Example satisfying the definition",
-        "front_style": "real_world_example",
-        "avatar_line": "This is why it matters...",
-        "avatar_emotion": "thoughtful"
+        "flashcard_type": "mcq"
       }
     ]
   }
@@ -287,14 +300,12 @@ Your job: Convert the textbook content into an engaging, elaborated teaching scr
 STYLE:
 - Speak naturally as if you're in a live classroom. Use "we", "let's", "notice how".
 - Build concepts step by step. Use cause-effect reasoning.
-- Insert flashcards IN BETWEEN your teaching to reinforce key points.
-- Each flashcard is FRONT-ONLY (no back side) — it's a visual summary, not a quiz.
+- Mark key teaching segments with "flashcard_type": "mcq" to create MCQ checkpoint moments.
+- These checkpoints will quiz the student before they proceed to the next segment.
 
-FLASHCARD FRONT CONTENT — You must DECIDE for each flashcard:
-- If the concept involves a PROCESS, FLOW, CLASSIFICATION, LIFECYCLE, or RELATIONSHIP → include a UML/Mermaid diagram in the front with a clear explanation below the diagram.
-- If the concept is a FACT, DEFINITION, FORMULA, or REAL-WORLD APPLICATION → include a real-world example with a relatable scenario and connection to the student's life.
-- NEVER include both. Pick the ONE that helps the student understand best.
-- Set "front_style" to "uml_diagram" or "real_world_example" to indicate your choice.
+FLASHCARD CHECKPOINTS:
+- Use {"flashcard_id": "fc_XXX", "type": "flashcard", "flashcard_type": "mcq"} when testing is needed, or "informative" when a real-world example clarifies the topic.
+- Typically every 2-3 teaching segments should have a flashcard checkpoint.
 
 EMOTIONS (use ONLY these 10 values — no sad, angry, or negative emotions):
   enthusiastic, curious, encouraging, surprised, thoughtful, playful, empathetic, confident, warm, inspiring
@@ -310,17 +321,19 @@ STRUCTURE — Return STRICT JSON:
         "segment_id": "seg_001",
         "type": "teaching",
         "text": "What the avatar says",
-        "emotion": "enthusiastic",
-        "visual_aid": null
+        "emotion": "enthusiastic"
       },
       {
-        "segment_id": "fc_001",
+        "segment_id": "seg_002",
+        "type": "teaching",
+        "text": "Key concept to test...",
+        "emotion": "confident"
+      },
+      {
+        "segment_id": "seg_003",
+        "flashcard_id": "fc_001",
         "type": "flashcard",
-        "card_title": "Flashcard title",
-        "front": "Single-side content — if UML: include Mermaid diagram code block (```mermaid ... ```) followed by explanation. If real-world: include a relatable scenario with title and connection to student's life.",
-        "front_style": "uml_diagram or real_world_example",
-        "avatar_line": "What avatar says while showing the card",
-        "avatar_emotion": "encouraging"
+        "flashcard_type": "mcq"
       }
     ]
   },
@@ -332,13 +345,12 @@ STRUCTURE — Return STRICT JSON:
 }
 
 RULES:
-1. Generate 6-10 teaching segments and 2-4 inline flashcards.
-2. Flashcards must appear BETWEEN teaching segments, not at the end.
+1. Generate 6-10 teaching segments. Insert 2-4 dedicated flashcard segments among them.
+2. Flashcard triggers should be spaced every 2-3 segments. Do NOT place them on the first or last segment.
 3. Start with an engaging introduction (enthusiastic), end with a confident summary.
 4. Each segment should be 2-4 sentences max.
 5. Use varied emotions — don't repeat the same emotion consecutively.
-6. Each flashcard MUST include either a UML/Mermaid diagram (for processes, flows, classifications) OR a real-world example (for facts, definitions). Set front_style accordingly.
-7. FAQs: 3-4 Q&A pairs. Practice questions: 3-4 questions. These are UNCHANGED from standard enrichment.
+6. FAQs: 3-4 Q&A pairs. Practice questions: 3-4 questions. These are UNCHANGED from standard enrichment.
 """
 
 
@@ -406,9 +418,10 @@ def _build_section_text(section: Dict) -> str:
         for mk, mv in meta.items():
             if isinstance(mv, str) and mv.strip() and mk not in ("section_context", "order_in_chapter"):
                 parts.append(f"{mk}: {mv}")
-    # Legacy: subsections
-    for sub in section.get("subsections", []):
-        sub_title = sub.get("subsection_title") or sub.get("title", "")
+    # Legacy/Universal subsections
+    sub_list = section.get("subsections") or section.get("sub_sections") or []
+    for sub in sub_list:
+        sub_title = sub.get("subsection_title") or sub.get("title") or sub.get("id", "")
         if sub_title:
             parts.append(f"\n## {sub_title}")
         if sub_content := sub.get("content"):
@@ -444,6 +457,285 @@ def _detect_subject(document_id: str, structured_data: Dict) -> Optional[str]:
     if any(k in doc for k in ("social", "history", "geography", "civics", "economics")):
         return "social_science"
     return None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  AVATAR TTS AUDIO GENERATION
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Voice mapping: OpenAI TTS voices for male/female avatars
+AVATAR_TTS_MODEL = "gpt-4o-mini-tts"
+AVATAR_VOICE_MALE = "echo"        # Deep, warm male voice
+AVATAR_VOICE_FEMALE = "shimmer"   # Clear, expressive female voice
+AVATAR_TTS_SPEED = 1.0
+
+
+def _generate_avatar_tts(text: str, voice: str) -> Optional[bytes]:
+    """Generate TTS audio bytes using OpenAI TTS API.
+
+    Args:
+        text: The text to convert to speech
+        voice: OpenAI TTS voice name (e.g. "echo", "shimmer")
+
+    Returns:
+        Audio bytes (MP3) or None on failure
+    """
+    api_key = os.environ.get("OPENAI_API_KEY_TTS") or os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        print("  ⚠️  No TTS API key configured — skipping audio generation")
+        return None
+
+    # OpenAI TTS has a 4096 char limit
+    tts_text = text[:4000] if len(text) > 4000 else text
+    if not tts_text.strip():
+        return None
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    payload = {
+        "model": AVATAR_TTS_MODEL,
+        "input": tts_text,
+        "voice": voice,
+        "speed": AVATAR_TTS_SPEED,
+        "response_format": "mp3",
+    }
+
+    for attempt in range(MAX_RETRIES):
+        try:
+            resp = requests.post(
+                "https://api.openai.com/v1/audio/speech",
+                headers=headers,
+                json=payload,
+                timeout=120,
+            )
+            if resp.ok:
+                return resp.content
+            else:
+                print(f"  ⚠️  TTS API error ({voice}): {resp.status_code} {resp.text[:200]}")
+                # Retry on rate limits and server errors
+                if resp.status_code in (429, 500, 502, 503, 504):
+                    if attempt < MAX_RETRIES - 1:
+                        time.sleep(RETRY_DELAY * (attempt + 1))
+                        continue
+                return None
+        except Exception as e:
+            if attempt < MAX_RETRIES - 1:
+                print(f"  ⚠️  TTS generation error ({voice}) [Attempt {attempt+1}/{MAX_RETRIES}]: {e}. Retrying...")
+                time.sleep(RETRY_DELAY * (attempt + 1))
+            else:
+                print(f"  ⚠️  TTS generation error ({voice}) [Final attempt]: {e}")
+                return None
+    return None
+
+
+def _generate_segment_audio(
+    segment: Dict,
+    board: str,
+    class_number: str,
+    subject: str,
+    unit_number: int,
+) -> Dict:
+    """Generate male & female TTS audio for a single segment and upload to S3.
+
+    For teaching segments: reads the "text" field.
+    For flashcard segments: reads the "avatar_line" field.
+
+    Returns:
+        {"male": "<s3_url>", "female": "<s3_url>"} or {} on failure
+    """
+    seg_type = segment.get("type", "")
+    segment_id = segment.get("segment_id", "unknown")
+
+    # Determine the spoken text based on segment type
+    if seg_type == "teaching":
+        spoken_text = segment.get("text", "")
+    elif seg_type == "flashcard":
+        spoken_text = segment.get("avatar_line", "")
+    else:
+        return {}
+
+    if not spoken_text or not spoken_text.strip():
+        return {}
+
+    try:
+        from s3_storage import upload_avatar_audio_to_s3
+    except ImportError:
+        print("  ⚠️  s3_storage not available — skipping audio upload")
+        return {}
+
+    audio_urls = {}
+
+    # Generate unique ID to prevent overwriting if segment_id repeats across sections
+    unique_id = uuid.uuid4().hex[:8]
+    
+    # Generate & upload male voice
+    male_audio = _generate_avatar_tts(spoken_text, AVATAR_VOICE_MALE)
+    if male_audio:
+        male_filename = f"{segment_id}_{unique_id}_male.mp3"
+        male_url = upload_avatar_audio_to_s3(
+            audio_bytes=male_audio,
+            filename=male_filename,
+            board=board,
+            class_number=class_number,
+            subject=subject,
+            unit_number=unit_number,
+        )
+        if male_url:
+            audio_urls["male"] = male_url
+
+    time.sleep(0.3)  # Rate limit between TTS calls
+
+    # Generate & upload female voice
+    female_audio = _generate_avatar_tts(spoken_text, AVATAR_VOICE_FEMALE)
+    if female_audio:
+        female_filename = f"{segment_id}_{unique_id}_female.mp3"
+        female_url = upload_avatar_audio_to_s3(
+            audio_bytes=female_audio,
+            filename=female_filename,
+            board=board,
+            class_number=class_number,
+            subject=subject,
+            unit_number=unit_number,
+        )
+        if female_url:
+            audio_urls["female"] = female_url
+
+    return audio_urls
+
+
+def _process_segments_audio(
+    segments: List[Dict],
+    board: str,
+    class_number: str,
+    subject: str,
+    unit_number: int,
+) -> int:
+    """Generate audio for all segments in a list. Modifies segments in-place.
+
+    Adds an "audio" dict with "male" and "female" S3 URLs to each segment.
+
+    Returns:
+        Number of segments that got audio successfully
+    """
+    audio_count = 0
+    for seg in segments:
+        audio_urls = _generate_segment_audio(
+            segment=seg,
+            board=board,
+            class_number=class_number,
+            subject=subject,
+            unit_number=unit_number,
+        )
+        if audio_urls:
+            seg["audio"] = audio_urls
+            audio_count += 1
+        time.sleep(RATE_LIMIT_DELAY)  # Rate limit between segments
+    return audio_count
+
+
+def _generate_unit_audio(
+    enriched_unit: Dict,
+    board: str,
+    class_number: str,
+    subject: str,
+    is_math: bool,
+) -> int:
+    """Generate TTS audio for all segments in an enriched unit.
+
+    Handles both math and non-math enrichment structures:
+    - Non-math: sections[].enrichment.avatar_explanation.segments[]
+    - Math: sections[].section_enrichment.avatar_explanation.segments[]
+            sections[].sub_sections[].enrichment.avatar_explanation.segments[]
+
+    Modifies the enriched_unit dict in-place.
+
+    Returns:
+        Total number of segments that got audio
+    """
+    unit_number = enriched_unit.get("unit_number", 0)
+    total_audio = 0
+
+    for section in enriched_unit.get("sections", []):
+        sec_title = section.get("section_title") or section.get("title", "Unknown Section")
+        
+        if is_math:
+            # Math: section-level enrichment
+            sec_enrich = section.get("section_enrichment", {})
+            avatar_exp = sec_enrich.get("avatar_explanation", {})
+            segments = avatar_exp.get("segments", [])
+            if segments:
+                print(f"      -> Audio for section: {sec_title}")
+                total_audio += _process_segments_audio(
+                    segments, board, class_number, subject, unit_number
+                )
+
+            # Math: sub_section-level enrichments
+            for sub_sec in section.get("sub_sections", []):
+                sub_title = sub_sec.get("title") or sub_sec.get("id", "Unknown Subsection")
+                sub_enrich = sub_sec.get("enrichment", {})
+                sub_avatar = sub_enrich.get("avatar_explanation", {})
+                sub_segments = sub_avatar.get("segments", [])
+                if sub_segments:
+                    print(f"      -> Audio for sub-section: {sub_title}")
+                    total_audio += _process_segments_audio(
+                        sub_segments, board, class_number, subject, unit_number
+                    )
+
+        else:
+            # Non-math: enrichment.avatar_explanation.segments
+            enrichment = section.get("enrichment", {})
+            avatar_exp = enrichment.get("avatar_explanation", {})
+            segments = avatar_exp.get("segments", [])
+            if segments:
+                print(f"      -> Audio for section: {sec_title}")
+                total_audio += _process_segments_audio(
+                    segments, board, class_number, subject, unit_number
+                )
+
+    return total_audio
+
+
+def generate_audio_for_enriched_data(
+    enriched_data: Dict, 
+    board: str, 
+    class_number: str, 
+    subject: str, 
+    is_math: bool
+) -> Dict:
+    """Iterates over an already-enriched JSON dictionary and adds TTS audio URLs to segments.
+    
+    Modifies enriched_data in-place and returns it.
+    """
+    content_key = "chapters" if "chapters" in enriched_data else "units"
+    total_audio_segments = 0
+
+    print(f"\n🔊 Generating avatar audio for existing enriched data (male + female voices)...")
+    
+    for enriched_unit in enriched_data.get(content_key, []):
+        unit_num = enriched_unit.get("unit_number") or enriched_unit.get("chapter_number", "?")
+        unit_ttl = enriched_unit.get("title", "")
+        print(f"   🎙️  Unit {unit_num}: {unit_ttl}")
+        
+        try:
+            count = _generate_unit_audio(
+                enriched_unit=enriched_unit,
+                board=board,
+                class_number=class_number,
+                subject=subject,
+                is_math=is_math,
+            )
+            total_audio_segments += count
+            print(f"      ✅ {count} segments got audio")
+        except Exception as e:
+            print(f"      ⚠️  Audio generation error for unit {unit_num}: {e}")
+            
+    print(f"\n🔊 Audio generation complete: {total_audio_segments} segments processed")
+    
+    return enriched_data
+
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -649,6 +941,12 @@ class ContentEnricher:
                     print(f"      -> Skipping duplicate: {title}")
                 continue
             seen.add(title)
+            # Skip auxiliary sections that do not need enrichment
+            lower_title = title.lower()
+            if any(skip_word in lower_title for skip_word in ["summary", "glossary", "reference", "student activity", "life skill"]):
+                print(f"      -> Skipping (auxiliary section): {title}")
+                continue
+
             # Use pre-built content from section dict if available (set by enrich_unit),
             # otherwise fall back to _build_section_text for backward compatibility.
             content = section.get("content") or _build_section_text(section)
@@ -687,19 +985,18 @@ class ContentEnricher:
         if not parsed:
             return None
 
-        # Validate and fix segment IDs
+        # Validate and fix segment IDs — continuous numbering for all segments
         segments = parsed.get("avatar_explanation", {}).get("segments", [])
         seg_counter, fc_counter = 0, 0
         for seg in segments:
+            seg_counter += 1
+            seg["segment_id"] = f"seg_{seg_counter:03d}"
             if seg.get("type") == "flashcard":
                 fc_counter += 1
-                if not seg.get("segment_id"):
-                    seg["segment_id"] = f"fc_{fc_counter:03d}"
+                if not seg.get("flashcard_id"):
+                    seg["flashcard_id"] = f"fc_{fc_counter:03d}"
             else:
-                seg_counter += 1
                 seg["type"] = "teaching"
-                if not seg.get("segment_id"):
-                    seg["segment_id"] = f"seg_{seg_counter:03d}"
 
         # Build enrichment dict with avatar + standard fields
         enrichment = {
@@ -726,6 +1023,12 @@ class ContentEnricher:
                     print(f"      -> Skipping duplicate: {title}")
                 continue
             seen.add(title)
+            # Skip auxiliary sections that do not need enrichment
+            lower_title = title.lower()
+            if any(skip_word in lower_title for skip_word in ["summary", "glossary", "reference", "student activity", "life skill", "learning objective"]):
+                print(f"      -> Skipping (auxiliary section): {title}")
+                continue
+
             content = section.get("content") or _build_section_text(section)
             if len(content.strip()) < 50:
                 print(f"      -> Skipping (too short): {title}")
@@ -896,7 +1199,7 @@ class EnrichmentOrchestrator:
     @safe_observe(name="enrich-unit")
     def enrich_unit(self, unit: Dict, include_web: bool = True) -> Dict:
         unit_number = unit.get("unit_number") or unit.get("chapter_number", 0)
-        unit_title  = unit.get("title", "")
+        unit_title  = unit.get("chapter_name") or unit.get("chapter_title") or unit.get("title", "")
         is_math     = _is_math(self.subject)
 
         enrichment: Dict[str, Any] = {
@@ -905,6 +1208,11 @@ class EnrichmentOrchestrator:
             "subject":     self.subject or "unknown",
             "sections":    [],
         }
+        
+        if "unit_number" in unit:
+            enrichment["unit_number"] = unit["unit_number"]
+        if "chapter_number" in unit:
+            enrichment["chapter_number"] = unit["chapter_number"]
 
         # BUG FIX: Social Science units have a "part" field (History/Geography/Civics/Economics)
         # that was being silently dropped from the enrichment output.
@@ -925,6 +1233,10 @@ class EnrichmentOrchestrator:
                 "note", "ict_corner", "more_to_know", "try_this",
                 "multiple_choice", "unit_exercise", "points_to_remember",
             }
+            
+            _math_discard_titles = {
+                "summary", "references", "student activity", "glossary"
+            }
 
             # 1. Process each section — enrich it AND its sub_sections inline
             enriched_sections = []
@@ -938,6 +1250,10 @@ class EnrichmentOrchestrator:
 
                 sec_title = (section.get("section_title") or section.get("title")
                              or section.get("id", ""))
+                
+                if sec_title.lower().strip() in _math_discard_titles:
+                    continue
+
                 sec_content = section.get("content", "") or ""
 
                 # ── Build composite content for LLM context ──
@@ -981,7 +1297,7 @@ class EnrichmentOrchestrator:
                     sub_title = sub.get("subsection_title") or sub.get("title") or sub.get("id", "")
 
                     # Skip discarded types
-                    if sub_type in _math_discard_types:
+                    if sub_type in _math_discard_types or sub_title.lower().strip() in _math_discard_titles:
                         continue
 
                     if sub_type == "example":
@@ -1103,37 +1419,47 @@ class EnrichmentOrchestrator:
         # ── GENERAL (Science / Social Science)
         else:
             raw_secs = unit.get("sections", [])
-            # Normalize both universal schema (type/title/content/sub_items) and
-            # legacy schema (section_number/section_title/content/subsections)
-            _skip_enrich = {"exercise", "multiple_choice", "unit_exercise"}
-            sections = []
+            _skip_enrich = {"exercise", "multiple_choice", "unit_exercise", "illustration"}
+            enriched_sections = []
+
+            # 1. Process main sections list in-place to preserve original schema structure (illustrations, exercises, S3 image URLs)
             for sec in raw_secs:
                 stype = sec.get("type", "section")
-                if stype in _skip_enrich:
-                    continue
-                title = (sec.get("section_title") or sec.get("title")
-                         or sec.get("id") or stype.replace("_", " ").title())
+                enriched_sec = dict(sec)
 
-                # BUG FIX 1: Use _build_section_text() which correctly handles BOTH:
-                #   - Universal schema: content + sub_items[]
-                #   - Legacy schema (Social Science): content may be empty but
-                #     subsections[] hold the real content.
-                # Previously, we only checked sec.get("content") and sub_items,
-                # completely missing subsections[] → all social science sections
-                # with content only in subsections were silently dropped.
-                full_content = _build_section_text(sec)
+                if stype not in _skip_enrich:
+                    title = (sec.get("section_title") or sec.get("title")
+                             or sec.get("id") or stype.replace("_", " ").title())
 
-                if full_content.strip():
-                    sections.append({
-                        "section_title": title,
-                        "content": full_content,
-                        "subsections": sec.get("subsections", []),
-                    })
+                    # Skip auxiliary sections
+                    lower_title = title.lower()
+                    if not any(skip_word in lower_title for skip_word in ["summary", "glossary", "reference", "student activity", "life skill", "learning objective"]):
+                        full_content = _build_section_text(sec)
 
-            # BUG FIX 2: Also build virtual sections from Social Science specific
-            # top-level fields that are completely ignored by the old GENERAL branch:
-            # do_you_know, activities, map_work, summary, glossary, timeline.
-            # These are rich content that should be enriched but were being silently dropped.
+                        if len(full_content.strip()) >= 50:
+                            print(f"      -> Avatar enriching: {title}")
+                            avatar_enrich = self.enricher.enrich_section_avatar_style(full_content, title, unit_title)
+                            if avatar_enrich:
+                                # Inject doubt_context metadata
+                                dc = avatar_enrich.get("doubt_context", {})
+                                dc["board"] = self.board
+                                dc["class_number"] = self.class_number
+                                dc["subject"] = self.subject or "unknown"
+                                dc["unit_number"] = unit_number
+                                dc["section_title"] = title
+                                dc["max_rag_chunks"] = 5
+                                dc["fallback_to_broader_context"] = True
+                                avatar_enrich["doubt_context"] = dc
+
+                                enriched_sec["enrichment"] = avatar_enrich
+                                time.sleep(RATE_LIMIT_DELAY)
+                            else:
+                                print(f"      -> ⚠️  Failed: {title}")
+
+                enriched_sections.append(enriched_sec)
+
+            # 2. Build virtual sections from legacy Social Science specific top-level fields (if present)
+            legacy_sections = []
             ss_field_map = [
                 ("do_you_know",  "Do You Know"),
                 ("more_to_know", "More to Know"),
@@ -1147,38 +1473,50 @@ class EnrichmentOrchestrator:
                     if isinstance(item_content, list):
                         item_content = "\n".join(str(x) for x in item_content)
                     if item_content and item_content.strip():
-                        sections.append({
+                        legacy_sections.append({
                             "section_title": item_title,
                             "content": item_content.strip(),
                             "subsections": [],
                         })
 
-            # summary[] → one combined section (it's a bullet list; join for enrichment)
             summary_points = unit.get("summary", []) or []
             if summary_points:
                 summary_text = "\n".join(f"• {p}" for p in summary_points if isinstance(p, str) and p.strip())
                 if summary_text.strip():
-                    sections.append({
+                    legacy_sections.append({
                         "section_title": "Summary",
                         "content": summary_text,
                         "subsections": [],
                     })
 
-            if sections:
-                if self.enrichment_style == "avatar_classroom_teaching":
-                    enrichment["sections"] = self.enricher.batch_enrich_avatar_sections(
-                        sections=sections,
-                        unit_title=unit_title,
-                        board=self.board,
-                        class_number=self.class_number,
-                        subject=self.subject,
-                        unit_number=unit_number
-                    )
-                else:
-                    enrichment["sections"] = self.enricher.batch_enrich_unit_sections(sections, unit_title)
+            for sec in legacy_sections:
+                title = sec.get("section_title")
+                content = sec.get("content")
+                print(f"      -> Avatar enriching legacy field: {title}")
+                avatar_enrich = self.enricher.enrich_section_avatar_style(content, title, unit_title)
+                if avatar_enrich:
+                    dc = avatar_enrich.get("doubt_context", {})
+                    dc["board"] = self.board
+                    dc["class_number"] = self.class_number
+                    dc["subject"] = self.subject or "unknown"
+                    dc["unit_number"] = unit_number
+                    dc["section_title"] = title
+                    dc["max_rag_chunks"] = 5
+                    dc["fallback_to_broader_context"] = True
+                    avatar_enrich["doubt_context"] = dc
 
-            # BUG FIX 3: Pass through Social Science specific fields to output so they
-            # are not silently dropped. These are preserved as-is (not enriched further).
+                    enriched_sections.append({
+                        "type": "section",
+                        "title": title,
+                        "content": content,
+                        "enrichment": avatar_enrich,
+                    })
+                    time.sleep(RATE_LIMIT_DELAY)
+
+            if enriched_sections:
+                enrichment["sections"] = enriched_sections
+
+            # Preservation of legacy Social Science top-level fields
             for key in ("exercises", "do_you_know", "more_to_know", "activities",
                         "map_work", "timeline", "glossary", "summary",
                         "learning_objectives", "points_to_remember",
@@ -1187,8 +1525,8 @@ class EnrichmentOrchestrator:
                     enrichment[key] = val
 
         # ── Wikipedia (non-math only) 
-        # FIX: math chapter titles return irrelevant Wikipedia articles so we skip for math
-        if include_web and self.web_tools and not is_math:
+        # Disabled as per user request to not fetch wikipedia info
+        if False and include_web and self.web_tools and not is_math:
             print("      -> Fetching Wikipedia info...")
             try:
                 qualifier = {
@@ -1300,6 +1638,28 @@ class EnrichmentOrchestrator:
                 self.enrich_unit(unit, include_web=effective_web)
             )
 
+        # ── Generate TTS audio for all segments (male + female voices) ────────
+        total_audio_segments = 0
+        if self.enrichment_style == "avatar_classroom_teaching":
+            print(f"\n🔊 Generating avatar audio (male + female voices)...")
+            for enriched_unit in enriched_data[content_key]:
+                unit_num = enriched_unit.get("unit_number", "?")
+                unit_ttl = enriched_unit.get("title", "")
+                print(f"   🎙️  Unit {unit_num}: {unit_ttl}")
+                try:
+                    count = _generate_unit_audio(
+                        enriched_unit=enriched_unit,
+                        board=self.board,
+                        class_number=self.class_number,
+                        subject=self.subject or "unknown",
+                        is_math=is_math,
+                    )
+                    total_audio_segments += count
+                    print(f"      ✅ {count} segments got audio")
+                except Exception as e:
+                    print(f"      ⚠️  Audio generation error for unit {unit_num}: {e}")
+            print(f"\n🔊 Audio generation complete: {total_audio_segments} segments processed")
+
         if output_path is None:
             output_path = structured_path.parent / "enriched.json"
         save_json(enriched_data, output_path)
@@ -1311,7 +1671,8 @@ class EnrichmentOrchestrator:
         n_def  = sum(len(u.get("definitions", []))   for u in enriched_data[content_key])
         n_sec  = sum(len(u.get("sections", []))      for u in enriched_data[content_key])
         print(f"\n📊 Summary: {len(enriched_data[content_key])} {label}s | "
-              f"{n_sec} sections | {n_ex} examples | {n_il} illustrations | {n_def} definitions")
+              f"{n_sec} sections | {n_ex} examples | {n_il} illustrations | {n_def} definitions"
+              f" | {total_audio_segments} audio segments")
 
         if self.langfuse:
             score_trace_safely(self.langfuse, name="enrichment-success", value=1.0,
@@ -1342,6 +1703,52 @@ def enrich_document(structured_json_path: Path, output_path: Optional[Path] = No
         import traceback
         traceback.print_exc()
         return False
+
+
+def enrich_single_unit(
+    unit: Dict,
+    subject: Optional[str] = None,
+    api_key: Optional[str] = None,
+    enrichment_style: str = "avatar_classroom_teaching",
+    fast_mode: bool = True,
+) -> Dict:
+    """
+    Enrich a single unit dict in-memory (no file I/O).
+
+    Used by the LangGraph fan-out enrichment node so each unit can be
+    enriched concurrently without re-reading structured.json from disk.
+
+    Args:
+        unit:             A single unit/chapter dict from structured.json
+        subject:          Subject name (auto-detected from unit data if None)
+        api_key:          OpenAI API key (falls back to env OPENAI_API_KEY_TEXT)
+        enrichment_style: "avatar_classroom_teaching" | "classroom_teaching"
+        fast_mode:        Use fast mode (gpt-4o-mini) when True
+
+    Returns:
+        Enriched unit dict with enrichment fields added to each section.
+    """
+    import os as _os
+    resolved_key = api_key or _os.environ.get("OPENAI_API_KEY_TEXT") or _os.environ.get("OPENAI_API_KEY", "")
+    resolved_subject = subject or unit.get("subject")
+
+    try:
+        orch = EnrichmentOrchestrator(
+            fast_mode=fast_mode,
+            subject=resolved_subject,
+            enrichment_style=enrichment_style,
+        )
+        # Inject API key into the underlying ContentEnricher
+        if resolved_key and hasattr(orch, "enricher") and hasattr(orch.enricher, "api_key"):
+            orch.enricher.api_key = resolved_key
+
+        enriched = orch.enrich_unit(unit, include_web=False)
+        return enriched or unit
+    except Exception as e:
+        print(f"⚠️  enrich_single_unit failed: {e}")
+        return unit
+
+
 
 def main():
     import argparse

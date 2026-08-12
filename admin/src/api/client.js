@@ -1,5 +1,8 @@
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api/v1";
+// const API_BASE_URL =
+  // import.meta.env.VITE_API_BASE_URL || "https://gradeup-backend-2-0.onrender.com/api/v1";
+// const API_BASE_URL = "https://gradeup-backend-2-0.onrender.com/api/v1";
+const API_BASE_URL = "http://localhost:8000/api/v1";
+
 
 async function parseResponse(response) {
   const data = await response.json().catch(() => ({}));
@@ -12,25 +15,30 @@ async function parseResponse(response) {
 }
 
 export async function apiRequest(path, options = {}) {
-  const token = localStorage.getItem("gradeup_admin_token");
-  const headers = {
-    ...(options.headers || {}),
-  };
+  try {
+    const token = localStorage.getItem("gradeup_admin_token");
+    const headers = {
+      ...(options.headers || {}),
+    };
 
-  if (!(options.body instanceof FormData)) {
-    headers["Content-Type"] = "application/json";
+    if (!(options.body instanceof FormData)) {
+      headers["Content-Type"] = "application/json";
+    }
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      headers,
+    });
+
+    return parseResponse(response);
+  } catch (error) {
+    console.error("API request error:", error);
+    throw error;
   }
-
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers,
-  });
-
-  return parseResponse(response);
 }
 
 export async function loginAdmin(payload) {
@@ -52,7 +60,9 @@ export async function requestAdminPasswordReset(payload) {
 }
 
 export async function verifyAdminResetToken(token) {
-  return apiRequest(`/admin/auth/reset-password/verify?token=${encodeURIComponent(token)}`);
+  return apiRequest(
+    `/admin/auth/reset-password/verify?token=${encodeURIComponent(token)}`,
+  );
 }
 
 export async function resetAdminPassword(payload) {
@@ -139,4 +149,30 @@ export async function fetchUploadProcesses(searchParams = "") {
   return apiRequest(
     `/admin/subjects/uploads${searchParams ? `?${searchParams}` : ""}`,
   );
+}
+
+export async function uploadQuestionBank(formData) {
+  // try {
+  //   const response = await fetch(`${API_BASE_URL}/api/v1/admin/subjectsadmin/question-bank/upload`, {
+  //     method: "POST",
+  //     body: formData,
+  //     // Don't set Content-Type header - FormData will set it automatically
+  //   });
+
+  //   if (!response.ok) {
+  //     const errorData = await response.json().catch(() => ({}));
+  //     throw new Error(
+  //       errorData.message || `Upload failed with status ${response.status}`,
+  //     );
+  //   }
+
+  //   return await response.json();
+  // } catch (error) {
+  //   console.error("Question bank upload error:", error);
+  //   throw error;
+  // }
+  return apiRequest("/api/v1/admin/subjectsadmin/question-bank/upload", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }

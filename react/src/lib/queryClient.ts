@@ -30,12 +30,7 @@ export async function apiRequest(
 
   const res = await fetch(buildApiUrl(url), {
     method,
-    headers: {
-      ...(data ? { "Content-Type": "application/json" } : {}),
-      ...(localStorage.getItem("gradeup_auth_token")
-        ? { Authorization: `Bearer ${localStorage.getItem("gradeup_auth_token")}` }
-        : {}),
-    },
+    headers: data ? { "Content-Type": "application/json" } : {},
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include",
   });
@@ -68,9 +63,6 @@ export const getQueryFn: <T>(options: {
 
     const res = await fetch(buildApiUrl(queryKey[0] as string), {
       credentials: "include",
-      headers: localStorage.getItem("gradeup_auth_token")
-        ? { Authorization: `Bearer ${localStorage.getItem("gradeup_auth_token")}` }
-        : {},
     });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {

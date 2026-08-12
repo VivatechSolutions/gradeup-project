@@ -280,6 +280,16 @@ You are NOT an examiner — you are a helpful guide. Your job is to help the stu
 - After the student explains something, validate what was good AND suggest improvements
 """
 
+    # ── Practice Step Definitions ──────────────────────────────────────────
+
+    PRACTICE_STEPS = {
+        1: {"name": "Topic Understanding", "description": "Understand the core concepts of the topic"},
+        2: {"name": "Slide Planning", "description": "Plan the slide structure and content"},
+        3: {"name": "Tech Guidance", "description": "Learn how to create the PDF/PPT using your chosen tool"},
+        4: {"name": "Presentation Practice", "description": "Practice presenting each slide verbally"},
+        5: {"name": "Follow-up Q&A", "description": "Answer follow-up questions to test readiness"},
+    }
+
     def _practice_system_prompt(
         self,
         subject: str,
@@ -287,52 +297,193 @@ You are NOT an examiner — you are a helpful guide. Your job is to help the stu
         current_topic: str,
         candidate_name: str,
         rag_context: str,
+        practice_step: int = 1,
+        chosen_tool: str = "",
     ) -> str:
-        """System prompt for PRACTICE sessions — AI teaches how to prepare and deliver a seminar, including PDF/PPT preparation."""
-        return f"""You are GradeUp AI Seminar Preparation Coach — an interactive, supportive mentor helping school students learn HOW to prepare and deliver a great seminar presentation, including how to create their presentation material (PDF or PPT).
+        """System prompt for PRACTICE sessions — step-aware, interactive, English-only, with tool-specific guidance."""
+
+        step_info = self.PRACTICE_STEPS.get(practice_step, self.PRACTICE_STEPS[1])
+        step_name = step_info["name"]
+        step_desc = step_info["description"]
+
+        # Tool-specific guidance block
+        tool_guidance = ""
+        if practice_step == 3:
+            if chosen_tool:
+                tool_lower = chosen_tool.lower()
+                if "google" in tool_lower or "slides" in tool_lower:
+                    tool_guidance = """
+## TOOL-SPECIFIC GUIDANCE: GOOGLE SLIDES
+1. Go to slides.google.com and sign in with your Google account.
+2. Click "+ Blank presentation" or choose a template.
+3. First slide: Click the title text box → type your topic name. Add subtitle with your name, subject, unit, date.
+4. Add new slides: Click "+ New Slide" in the toolbar (or Ctrl+M).
+5. For each content slide: Use the "Title and Body" layout. Type the heading, then add bullet points.
+6. To add images: Insert → Image → Search the web or Upload from computer.
+7. Design tips: Use Theme (Slide → Change theme) for consistent colors. Keep text large (18pt+ body, 24pt+ headings).
+8. To export as PDF: File → Download → PDF Document (.pdf).
+9. To share: File → Share → copy the link.
+"""
+                elif "canva" in tool_lower:
+                    tool_guidance = """
+## TOOL-SPECIFIC GUIDANCE: CANVA
+1. Go to canva.com and sign up or log in (free account works).
+2. Click "Create a design" → search "Presentation" → pick a template.
+3. First slide: Click on text to edit. Add your topic name, your name, subject, unit, and date.
+4. Add new slides: Click "+ Add page" at the bottom.
+5. For content slides: Click text boxes to edit. Use the left panel to drag in elements, icons, or images.
+6. To add images: Click "Uploads" in left panel → upload your images, or use "Elements" → search for graphics.
+7. Design tips: Stick to 2-3 colors. Use Canva's built-in font combinations. Keep each slide clean.
+8. To export as PDF: Click "Share" (top right) → "Download" → choose "PDF Standard" → Download.
+9. To present directly: Click "Present" button in top right.
+"""
+                elif "powerpoint" in tool_lower or "ppt" in tool_lower or "microsoft" in tool_lower:
+                    tool_guidance = """
+## TOOL-SPECIFIC GUIDANCE: MICROSOFT POWERPOINT
+1. Open PowerPoint on your computer (or use PowerPoint Online at office.com).
+2. Choose a template or start with a blank presentation.
+3. First slide: Click "Click to add title" → type your topic name. Add subtitle with your name, subject, unit, date.
+4. Add new slides: Home tab → New Slide → choose a layout (use "Title and Content" for most slides).
+5. For each content slide: Type the heading in the title area, then add bullet points in the content area.
+6. To add images: Insert tab → Pictures → choose from your computer or online.
+7. Design tips: Use the Design tab to pick a consistent theme. Keep text at 18pt+ for body, 28pt+ for titles.
+8. To export as PDF: File → Save As → choose "PDF" from the file type dropdown. Or File → Export → Create PDF.
+9. Keyboard shortcuts: Ctrl+M (new slide), Ctrl+S (save), F5 (start slideshow).
+"""
+                elif "libre" in tool_lower or "impress" in tool_lower:
+                    tool_guidance = """
+## TOOL-SPECIFIC GUIDANCE: LIBREOFFICE IMPRESS
+1. Open LibreOffice Impress (free download from libreoffice.org).
+2. Choose a template from the startup wizard or start blank.
+3. First slide: Click on the title placeholder → type your topic name. Add your name, subject, unit, and date.
+4. Add new slides: Right-click in the slide panel (left side) → Insert New Slide.
+5. For content slides: Use "Blank" or "Title, Content" layouts. Add text boxes via Insert → Text Box.
+6. To add images: Insert → Image → choose your file.
+7. Design tips: Use Slide → Slide Properties to set consistent backgrounds. Keep fonts readable (18pt+ body).
+8. To export as PDF: File → Export as PDF → click "Export" → save.
+"""
+                else:
+                    tool_guidance = f"""
+## TOOL-SPECIFIC GUIDANCE: {chosen_tool.upper()}
+Provide step-by-step guidance for using {chosen_tool} to create a presentation. Cover: creating slides, adding text and images, choosing templates, and exporting as PDF. If you are not sure about the exact steps for this tool, provide general guidance that applies to most presentation tools.
+"""
+            else:
+                tool_guidance = """
+## TOOL SELECTION NEEDED
+You MUST ask the student which tool they want to use to create their presentation. Ask:
+"Which tool would you like to use to create your slides? Here are some popular options:
+1. 📊 Google Slides (free, works in browser)
+2. 🎨 Canva (free, great templates)
+3. 💼 Microsoft PowerPoint (if you have it installed)
+4. 🆓 LibreOffice Impress (free, open source)
+5. Or tell me any other tool you prefer!"
+
+Wait for their answer before giving specific instructions.
+"""
+
+        return f"""You are GradeUp AI Seminar Preparation Coach — an interactive, step-by-step mentor helping school students learn HOW to prepare and deliver a great seminar presentation.
 
 ## YOUR ROLE
-You are working with {candidate_name} to help them prepare a seminar on "{current_topic}" from {subject}, Unit {unit_number}.
-You are NOT an examiner. You are a preparation coach. Your job is to teach the student the SKILLS of seminar preparation, presentation material creation (PDF/PPT), and delivery.
+You are coaching {candidate_name} on preparing a seminar on "{current_topic}" from {subject}, Unit {unit_number}.
+You are NOT an examiner. You are a coach. Be interactive — every response MUST end with a question or action item.
 
-**IMPORTANT**: In the demo and main seminar sessions, uploading a PDF or PPT is MANDATORY. Your job in this practice session is to help the student prepare that material so they are ready for the real session.
+## LANGUAGE
+Always respond in **English only**, regardless of what language the student types in.
 
-## PREPARATION COACHING RULES
-1. **Teach seminar structure**: Help the student understand how to organize a seminar — Introduction (define the topic, state what you'll cover), Body (explain key concepts one by one with examples), and Conclusion (summarize key takeaways).
-2. **Guide content preparation**: Using the textbook context below, help the student identify the most important points they need to cover. Tell them WHAT to include and WHY.
-3. **Guide PDF/PPT preparation**: Teach the student how to create effective presentation slides:
-   - **Slide structure**: Title Slide → Introduction/Overview → Key Concept slides (one per concept) → Examples/Applications → Summary/Conclusion
-   - **Slide count**: Aim for 5-8 slides for a 5-10 minute seminar
-   - **Content per slide**: Use bullet points (3-5 per slide), NOT paragraphs. Each bullet should be a key phrase, not a full sentence.
-   - **Title slide**: Include topic name, student name, subject, unit number, and date
-   - **Visual design tips**: Use readable fonts (18pt+ for body text), minimal text per slide, include diagrams/images where relevant, use consistent colors
-   - **Common mistakes to avoid**: Wall of text on slides, too many animations/effects, reading directly from slides, cramming too much content on one slide
-   - **Key rule**: Slides are your OUTLINE, not your script. You should EXPLAIN more than what's written on the slide.
-4. **Practice interactively**: Ask the student to try explaining parts of the topic. After they try, give specific feedback — what was good, what could be better, and how to improve.
-5. **Teach presentation skills**: Coach on delivery techniques:
-   - "Start with a clear definition before diving into details"
-   - "Use everyday examples to make concepts relatable"
-   - "Connect your points — use transitions like 'This leads us to...' or 'Building on this...'"
-   - "Summarize after each major point before moving to the next"
-   - "End with a strong conclusion that ties everything together"
-6. **Build confidence**: Be very encouraging. This is practice — mistakes are learning opportunities. Use phrases like "Great attempt!", "You're getting better!", "That's the right idea, let me help you refine it."
-7. **Be highly interactive**: After every student message, respond with guidance, ask them to try something, or suggest what to practice next. Never leave them without a next step.
-8. **Correct with full explanations**: If the student gets something wrong, explain the correct concept fully using the textbook context.
-9. **Keep responses focused**: 3-6 sentences per response. Be directive and practical — give them actionable advice, not lectures.
+## CURRENT STEP: Step {practice_step} — {step_name}
+**Goal**: {step_desc}
+
+The practice session has 5 steps:
+1. Topic Understanding — Check what the student knows, fill gaps
+2. Slide Planning — Plan slide structure and content together
+3. Tech Guidance — Teach how to create PDF/PPT using their chosen tool
+4. Presentation Practice — Student practices presenting verbally
+5. Follow-up Q&A — Ask 3-5 questions to test readiness
+
+## STEP-SPECIFIC INSTRUCTIONS
+
+### If Step 1 (Topic Understanding):
+- Ask the student to explain what they know about "{current_topic}" in their own words.
+- Listen to their response, correct any mistakes using the textbook context.
+- Fill in important concepts they missed.
+- When they demonstrate basic understanding of the key concepts, tell them: "Great! You have a good grasp of the topic. Let's move to planning your slides!" and transition to Step 2.
+- If the student explicitly asks to skip ahead or move to slides/tech/practice, respect their request.
+
+### If Step 2 (Slide Planning):
+- Guide them to plan a 5-8 slide presentation:
+  - Slide 1: Title (topic, name, subject, unit, date)
+  - Slide 2: Introduction/Overview
+  - Slides 3-5: Key concepts (one per slide, bullet points)
+  - Slide 6: Examples/Real-world applications
+  - Slide 7: Summary/Conclusion
+- Ask them to describe what they'd put on each slide. Give feedback.
+- Key rule: "Slides are your OUTLINE — you explain MORE than what's on the slide."
+- When they have a solid slide plan, transition to Step 3.
+- If the student asks to skip to tech guidance or practice, respect their request.
+
+### If Step 3 (Tech Guidance):
+{tool_guidance}
+- Walk them through the tool step-by-step.
+- Offer design tips: font sizes (18pt+ body, 24pt+ headings), 3-5 bullet points per slide, consistent colors, minimal text.
+- Common mistakes: wall of text, too many animations, reading from slides, cramming content.
+- When they feel confident about creating slides, transition to Step 4.
+- If the student asks to skip to practice or Q&A, respect their request.
+
+### If Step 4 (Presentation Practice):
+- Ask the student to practice presenting one slide at a time.
+- After each attempt, give structured feedback:
+  - ✅ What you did well
+  - 🔧 What to improve
+  - 💡 Try this next
+- Coach delivery: "Start with a definition", "Use an example", "Add a transition phrase like 'This leads us to...'"
+- When they've practiced the key slides, transition to Step 5.
+- If the student asks to skip to Q&A, respect their request.
+
+### If Step 5 (Follow-up Q&A):
+- Ask 3-5 questions about "{current_topic}" to test the student's readiness.
+- Ask ONE question at a time. Wait for their answer.
+- After each answer: validate what's correct, gently correct mistakes, explain the right answer.
+- After all questions, give a final summary: "You're ready for your seminar! Here's a quick recap of what to remember..."
+- Tell them they can now go to the Demo or Main session to present.
+
+## INTERACTION RULES
+1. **ALWAYS end with a question or action item** — never leave the student without a next step.
+2. Keep responses to 3-6 sentences (except for initial intro or detailed tech guidance).
+3. Be warm, encouraging, and specific.
+4. Correct mistakes fully using the textbook context.
+5. Use phrases like: "Now try...", "What would you say about...", "Can you explain...?"
+6. Track progress — when the student is ready, explicitly say you're moving to the next step.
+
+## STEP TRANSITION
+When you determine the student is ready to move to the next step, include this EXACT marker in your response:
+[STEP_COMPLETE:{practice_step}]
+This signals the system to advance the step counter. Only include this when the student has genuinely completed the current step's goals OR when they explicitly ask to move ahead.
 
 ## CONTENT SAFETY
 - NEVER produce inappropriate, 18+, or harmful content.
-- If student sends inappropriate content, redirect: "Let's focus on preparing your seminar! Try explaining..."
+- If student sends inappropriate content, redirect: "Let's focus on preparing your seminar!"
 
-## TEXTBOOK CONTEXT (use this to help the student prepare their content)
+## TEXTBOOK CONTEXT
 {rag_context if rag_context else "(No context available)"}
 
 ## RESPONSE STYLE
-- Warm, encouraging, and highly interactive
+- Warm, encouraging, and interactive
 - Address {candidate_name} by name sometimes
-- Always end with a question or an action item: "Now try explaining...", "What would you say about...", "How would you introduce this concept?"
-- After the student practices, give structured feedback: "What you did well: ... What to improve: ... Try this next: ..."
-- When discussing PDF/PPT preparation, be specific: suggest exact slide titles, bullet point content, and layout tips for the topic
+- Always end with a follow-up question or action item
+- After practice attempts, use structured feedback format
+
+## SUGGESTED FOLLOW-UP QUESTIONS
+At the END of EVERY response, you MUST include exactly 2-3 short suggested questions/responses that the student can use as quick replies. Format them EXACTLY like this (on a new line at the very end):
+[SUGGESTIONS: "suggested reply 1" | "suggested reply 2" | "suggested reply 3"]
+
+Examples based on step:
+- Step 1: [SUGGESTIONS: "Distance is the total path length" | "I'm not sure, can you explain?" | "Let me try explaining"]
+- Step 2: [SUGGESTIONS: "I'll start with the title slide" | "What should go on slide 3?" | "How many slides do I need?"]
+- Step 3: [SUGGESTIONS: "I'll use Google Slides" | "I'll use Canva" | "I'll use PowerPoint"]
+- Step 4: [SUGGESTIONS: "Let me try presenting slide 1" | "Can you show me an example?" | "What should I say first?"]
+- Step 5: [SUGGESTIONS: "I think the answer is..." | "Can you give me a hint?" | "I'm not sure about this one"]
+
+The suggestions should be contextually relevant to what you just asked. NEVER skip this.
 """
 
     def _compare_rag_vs_uploaded(
@@ -442,117 +593,24 @@ Return ONLY valid JSON in this format:
                 continue
         return best_match
 
-    # ── Predefined Seminar Introduction / Guidance ──────────────────────────
+    # ── Helper: Extract suggested questions from AI response ─────────────────
 
-    def get_seminar_intro(self, candidate_name: str = "Student") -> Dict[str, Any]:
+    @staticmethod
+    def _extract_suggested_questions(ai_response: str) -> tuple:
         """
-        Return predefined seminar introduction content.
-
-        This is NOT an AI call — it returns static, curated guidance that
-        every student sees before starting their seminar session. Covers:
-          - Warm greeting
-          - How to take / deliver a seminar
-          - Camera and presentation posture tips
-          - Important tips for a successful seminar
+        Extract [SUGGESTIONS: ...] marker from AI response.
+        Returns (cleaned_response, list_of_suggestions).
         """
-        intro = {
-            "greeting": (
-                f"Welcome, {candidate_name}! 🎓\n\n"
-                "We're excited to have you here for your AI-powered seminar session. "
-                "This is your opportunity to present and demonstrate your understanding "
-                "of a topic you've chosen. Whether this is your first time or you're "
-                "coming back for more practice, we're here to support you every step of the way!"
-            ),
+        import re as _re
+        match = _re.search(r'\[SUGGESTIONS:\s*(.+?)\]', ai_response, _re.DOTALL)
+        if match:
+            raw = match.group(1)
+            suggestions = [s.strip().strip('"').strip("'") for s in raw.split("|")]
+            suggestions = [s for s in suggestions if s]  # filter empty
+            cleaned = _re.sub(r'\[SUGGESTIONS:\s*.+?\]', '', ai_response, flags=_re.DOTALL).strip()
+            return cleaned, suggestions
+        return ai_response, []
 
-            "how_to_take_seminar": {
-                "title": "How to Deliver Your Seminar",
-                "steps": [
-                    {
-                        "step": 1,
-                        "title": "Introduction (1-2 minutes)",
-                        "description": (
-                            "Start by clearly stating your topic. Give a brief overview of "
-                            "what you will cover. You can say something like: 'Today I will "
-                            "be presenting about [topic]. I will cover the definition, key "
-                            "concepts, real-world examples, and a summary.'"
-                        ),
-                    },
-                    {
-                        "step": 2,
-                        "title": "Body / Main Explanation (3-5 minutes)",
-                        "description": (
-                            "This is the core of your seminar. Explain the main concepts one "
-                            "by one. Use definitions, examples, and analogies to make your "
-                            "points clear. Try to connect ideas logically — each point should "
-                            "flow naturally into the next."
-                        ),
-                    },
-                    {
-                        "step": 3,
-                        "title": "Examples & Real-World Connections (1-2 minutes)",
-                        "description": (
-                            "Give at least one real-world example or application of the topic. "
-                            "This shows depth of understanding. For example: 'This concept is "
-                            "used in…' or 'We can see this in everyday life when…'"
-                        ),
-                    },
-                    {
-                        "step": 4,
-                        "title": "Summary & Conclusion (1 minute)",
-                        "description": (
-                            "Wrap up by summarizing the key points you covered. End with a "
-                            "strong closing statement. You can say: 'In conclusion, the main "
-                            "takeaways are…' This leaves a lasting impression."
-                        ),
-                    },
-                    {
-                        "step": 5,
-                        "title": "Q&A / AI Interaction",
-                        "description": (
-                            "After your presentation, the AI will ask you follow-up questions "
-                            "to test your understanding. Listen carefully, think before you "
-                            "answer, and don't hesitate to ask for clarification if needed."
-                        ),
-                    },
-                ],
-            },
-
-            "camera_and_posture_tips": {
-                "title": "How to Face the Camera While Presenting",
-                "tips": [
-                    "📷 **Look at the camera** — Treat the camera as your audience. Make eye contact with it, not the screen.",
-                    "🪑 **Sit up straight or stand confidently** — Good posture shows confidence and keeps your voice clear.",
-                    "💡 **Ensure good lighting** — Face a light source (window or lamp) so your face is clearly visible. Avoid backlighting.",
-                    "🎤 **Speak clearly and at a steady pace** — Don't rush. Pause between points to let ideas sink in.",
-                    "📱 **Minimize distractions** — Close unnecessary tabs, silence your phone, and choose a quiet space.",
-                    "👐 **Use hand gestures naturally** — Moderate hand movements can emphasize key points and keep the presentation engaging.",
-                    "😊 **Smile and stay relaxed** — A calm, friendly demeanor makes your presentation more enjoyable for everyone.",
-                ],
-            },
-
-            "important_tips": {
-                "title": "Important Tips for a Successful Seminar",
-                "tips": [
-                    "📝 **Know your topic well** — Review the textbook content before starting. Understanding beats memorizing.",
-                    "🔗 **Connect concepts** — Don't just list facts. Explain HOW and WHY things are related.",
-                    "📖 **Use definitions first** — Always define a term before explaining it in detail.",
-                    "🌍 **Give real-world examples** — This demonstrates deeper understanding and makes your explanation relatable.",
-                    "🔄 **Practice makes perfect** — Use the 'demo' mode to practice before taking the real seminar.",
-                    "🤔 **It's okay to pause and think** — Taking a moment to organize your thoughts is better than rushing through.",
-                    "❓ **Ask for help if stuck** — If you don't understand a question, say 'Can you rephrase that?' or 'I need a moment to think.'",
-                    "📊 **Structure your answer** — Use phrases like 'First…', 'Second…', 'Finally…' to organize your points.",
-                    "💪 **Stay confident** — Even if you're unsure, present what you know clearly. Partial knowledge explained well scores better than silence.",
-                    "🎯 **Focus on key concepts** — Cover the most important points thoroughly rather than trying to mention everything superficially.",
-                ],
-            },
-        }
-
-        return {
-            "success": True,
-            "type": "seminar_intro",
-            "candidate_name": candidate_name,
-            **intro,
-        }
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -568,6 +626,7 @@ Return ONLY valid JSON in this format:
         topic: Optional[str] = None,
         session_mode: str = "main",
         uploaded_content: Optional[str] = None,
+        term: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """
         Start a new seminar session.
@@ -603,7 +662,7 @@ Return ONLY valid JSON in this format:
         # Get RAG context and validate topic
         chunks = retrieve_context(
             query=current_topic, subject=subject, unit_number=unit_number,
-            board=board, class_number=class_number, limit=5
+            board=board, class_number=class_number, limit=5, term=term
         )
         rag_context = _format_context(chunks)
 
@@ -629,35 +688,23 @@ Return ONLY valid JSON in this format:
         # ── Generate mode-appropriate greeting ─────────────────────────────
         if session_mode == "practice":
             system_prompt = self._practice_system_prompt(
-                subject, unit_number, current_topic, candidate_name, rag_context
+                subject, unit_number, current_topic, candidate_name, rag_context,
+                practice_step=1,
             )
-            greeting_prompt = f"""Welcome {candidate_name} to their SEMINAR PREPARATION SESSION on "{current_topic}" from {subject}, Unit {unit_number}.
+            greeting_prompt = f"""Welcome {candidate_name} to their SEMINAR PRACTICE SESSION on "{current_topic}" from {subject}, Unit {unit_number}.
 
-This is a preparation/training session. Your job is to teach them HOW to prepare and deliver a seminar, INCLUDING how to prepare their PDF or PPT presentation material.
+This is Step 1 — Topic Understanding. Keep your introduction SHORT and interactive (under 6 sentences total):
 
-**IMPORTANT CONTEXT**: In the actual demo and main seminar sessions, uploading a PDF or PPT is MANDATORY. This practice session is where the student learns how to prepare that material.
+1. Greet {candidate_name} warmly (1 sentence). Tell them this is a safe, no-pressure practice space.
+2. Briefly mention: "We'll go through 5 steps together — understanding the topic, planning your slides, creating your PDF/PPT, practicing your presentation, and some Q&A." (1 sentence)
+3. Mention the 2-3 most important concepts from "{current_topic}" that they should know about (based on textbook context). Keep it brief — just name them. (1-2 sentences)
+4. Ask your first interactive question to start Step 1: "Let's start! Can you tell me in your own words what {current_topic} is about?" (1 sentence)
 
-Your introduction MUST cover:
-1. Greet {candidate_name} warmly (1 sentence). Tell them this is a safe space to learn seminar skills.
-2. Explain what a seminar is and why it matters (2 sentences).
-3. **Tell them that PDF/PPT is mandatory for demo and main sessions**: Explain that they will need to prepare and upload a presentation file (PDF or PPT) before they can start a demo or main seminar session. This practice session will help them prepare that material.
-4. **Guide them on how to prepare their PDF/PPT**:
-   - **Recommended slide structure for "{current_topic}"**:
-     - Slide 1: Title slide (topic name, student name, subject, unit, date)
-     - Slide 2: Introduction/Overview (what the topic is about, what you'll cover)
-     - Slides 3-5: Key concepts (one concept per slide, use bullet points not paragraphs)
-     - Slide 6: Examples/Real-world applications
-     - Slide 7: Summary/Conclusion (key takeaways)
-   - **Design tips**: Use readable fonts (18pt+), 3-5 bullet points per slide, include diagrams if possible, keep text minimal
-   - **Key rule**: Slides are your OUTLINE — you explain MORE than what's written
-5. Teach the seminar delivery structure:
-   - **Introduction**: Define the topic clearly. State what you'll cover.
-   - **Body**: Explain key concepts one by one with examples.
-   - **Conclusion**: Summarize key points with a strong closing.
-6. Briefly mention the 3-4 key concepts from "{current_topic}" they should include in their slides (based on textbook context).
-7. Ask them: "Would you like to start by working on your slide content, or would you prefer to practice presenting first?"
+Do NOT give a long lecture. Do NOT explain how to make slides yet. Just greet, set context, and ask the first question.
 
-Be comprehensive but organized. Use bullet points. This is the student's complete preparation guide."""
+At the END of your response, include 2-3 suggested quick replies in this EXACT format:
+[SUGGESTIONS: "suggested reply 1" | "suggested reply 2" | "suggested reply 3"]
+Make them relevant to the first question you ask."""
         elif session_mode == "demo":
             system_prompt = self._demo_system_prompt(
                 subject, unit_number, current_topic, candidate_name, rag_context
@@ -721,15 +768,34 @@ Keep the greeting warm and encouraging. Limit to 6-8 sentences.{uploaded_note}""
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
 
+        # ── Practice session: add step tracking ───────────────────────────
+        if session_mode == "practice":
+            session["practice_step"] = 1
+            session["practice_step_name"] = "Topic Understanding"
+            session["chosen_tool"] = ""
+            session["qa_questions_asked"] = 0
+
         self._save_session(session)
 
-        return {
+        result = {
             "session_id": session_id,
             "session_mode": session_mode,
             "current_topic": current_topic,
             "ai_greeting": ai_greeting,
             "content_source": content_source,
         }
+
+        # Include practice step info
+        if session_mode == "practice":
+            # Extract suggested questions from greeting
+            cleaned_greeting, suggestions = self._extract_suggested_questions(ai_greeting)
+            result["ai_greeting"] = cleaned_greeting
+            result["practice_step"] = 1
+            result["practice_step_name"] = "Topic Understanding"
+            result["practice_progress"] = 0
+            result["suggested_questions"] = suggestions
+
+        return result
 
     def seminar_respond(
         self,
@@ -778,12 +844,38 @@ Keep the greeting warm and encouraging. Limit to 6-8 sentences.{uploaded_note}""
             }
 
         elif session_mode == "practice":
-            # Practice: full interactive AI coaching response
+            # Practice: full interactive AI coaching with step tracking
             rag_context = session.get("rag_context", "")
+            practice_step = session.get("practice_step", 1)
+            chosen_tool = session.get("chosen_tool", "")
+
+            # ── Detect tool choice from student message ───────────────────
+            if practice_step == 3 and not chosen_tool:
+                msg_lower = student_message.lower()
+                tool_keywords = {
+                    "google slides": ["google", "slides", "google slides"],
+                    "canva": ["canva"],
+                    "microsoft powerpoint": ["powerpoint", "ppt", "microsoft", "ms powerpoint"],
+                    "libreoffice impress": ["libreoffice", "libre", "impress"],
+                }
+                for tool_name, keywords in tool_keywords.items():
+                    if any(kw in msg_lower for kw in keywords):
+                        chosen_tool = tool_name
+                        session["chosen_tool"] = chosen_tool
+                        print(f"  🔧 [SeminarEngine] Practice: Student chose tool: {chosen_tool}")
+                        break
+                # If no match but step 3, treat the whole message as tool name
+                if not chosen_tool and len(student_message.strip()) < 50:
+                    chosen_tool = student_message.strip()
+                    session["chosen_tool"] = chosen_tool
+                    print(f"  🔧 [SeminarEngine] Practice: Student chose tool (raw): {chosen_tool}")
+
             system_prompt = self._practice_system_prompt(
                 session["subject"], session["unit_number"],
                 session["current_topic"], session["candidate_name"],
                 rag_context,
+                practice_step=practice_step,
+                chosen_tool=chosen_tool,
             )
 
             # Build conversation history for LLM
@@ -794,6 +886,27 @@ Keep the greeting warm and encouraging. Limit to 6-8 sentences.{uploaded_note}""
 
             ai_response = self._call_llm(llm_messages)
 
+            # ── Detect step completion marker ─────────────────────────────
+            import re as _re
+            step_complete_match = _re.search(r'\[STEP_COMPLETE:(\d+)\]', ai_response)
+            if step_complete_match:
+                completed_step = int(step_complete_match.group(1))
+                if completed_step == practice_step and practice_step < 5:
+                    practice_step += 1
+                    session["practice_step"] = practice_step
+                    step_info = self.PRACTICE_STEPS.get(practice_step, {})
+                    session["practice_step_name"] = step_info.get("name", "")
+                    print(f"  📈 [SeminarEngine] Practice: Advanced to Step {practice_step} — {step_info.get('name', '')}")
+                # Remove the marker from the response shown to student
+                ai_response = _re.sub(r'\[STEP_COMPLETE:\d+\]', '', ai_response).strip()
+
+            # ── Track Q&A questions in Step 5 ─────────────────────────────
+            if practice_step == 5:
+                session["qa_questions_asked"] = session.get("qa_questions_asked", 0) + 1
+
+            # ── Extract suggested questions from AI response ───────────
+            ai_response, suggested_questions = self._extract_suggested_questions(ai_response)
+
             session["messages"].append({
                 "role": "ai",
                 "content": ai_response,
@@ -802,6 +915,11 @@ Keep the greeting warm and encouraging. Limit to 6-8 sentences.{uploaded_note}""
             })
             self._save_session(session)
 
+            # Calculate progress percentage (step 1=0%, step 5=80%, completing step 5=100%)
+            practice_progress = min(100, (practice_step - 1) * 20)
+            if practice_step == 5 and session.get("qa_questions_asked", 0) >= 3:
+                practice_progress = 100
+
             return {
                 "success": True,
                 "current_topic": session["current_topic"],
@@ -809,6 +927,10 @@ Keep the greeting warm and encouraging. Limit to 6-8 sentences.{uploaded_note}""
                 "hints_used": session.get("hints_given", 0),
                 "session_id": session_id,
                 "ai_response": ai_response,
+                "practice_step": practice_step,
+                "practice_step_name": self.PRACTICE_STEPS.get(practice_step, {}).get("name", ""),
+                "practice_progress": practice_progress,
+                "suggested_questions": suggested_questions,
             }
 
         else:

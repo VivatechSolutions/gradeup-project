@@ -5,15 +5,66 @@ import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import { useAuth } from "../../hooks/use-auth";
 import Navigation from "../../components/navigation";
-import { PAPER_DATA, PARTS } from "../../lib/mock-paper-data";
+import { PARTS } from "../../lib/mock-paper-data";
 import {
-  ArrowLeft, Download, Eye, Search, X, Printer,
-  Timer, Bookmark, ArrowUp, Sparkles,
-  PieChart, Zap, Activity, AlertTriangle, ChevronDown,
-  GraduationCap, BookOpen, List,
+  ArrowLeft,
+  Download,
+  Eye,
+  Search,
+  X,
+  Printer,
+  Timer,
+  Bookmark,
+  ArrowUp,
+  Sparkles,
+  PieChart,
+  Zap,
+  Activity,
+  AlertTriangle,
+  ChevronDown,
+  GraduationCap,
+  BookOpen,
+  List,
 } from "lucide-react";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+
+// API Response Types
+interface Question {
+  question_id: string;
+  question: string;
+  marks: number;
+  type: string;
+  options: string[];
+  correct_answer: string;
+  difficulty: string;
+  bloom_level: string;
+  topic: string;
+  unit_number: number;
+  question_type_refined: string;
+  estimated_time_minutes: number;
+}
+
+interface QuestionBankResponse {
+  status: boolean;
+  data: {
+    documentId: string;
+    examName: string;
+    year: string;
+    board: string;
+    classNumber: string;
+    subject: string;
+    subjectGroupKey: string;
+    unitName: string;
+    totalQuestions: number;
+    difficultyDistribution: {
+      easy: number;
+      medium: number;
+      hard: number;
+    };
+    questions: Question[];
+  };
+}
 
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
@@ -328,8 +379,22 @@ const CSS = `
 .ep-paper-qn {
   display:grid; grid-template-columns:32px minmax(0,1fr) auto; gap:12px; align-items:flex-start;
   padding:0 0 10px; border-bottom:1px dashed #d1d5db; background:#fff;
+  margin-bottom: 8px;
 }
 .ep-paper-qn:last-child { border-bottom:none; padding-bottom:0; }
+.ep-paper-qn-section-header {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  font-weight: 700;
+  color: #6366f1;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #e0e7ff;
+  margin-top: 16px;
+}
+.ep-paper-qn-section-header:first-child { margin-top: 0; }
 .ep-paper-qn-num {
   width:28px; height:28px; border-radius:50%; border:1px solid #cbd5e1;
   display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:800; color:#111827;
@@ -419,89 +484,150 @@ const CSS = `
   .ep-part-title { font-size:15px; }
   .ep-paper-qn-text { font-size:14px; line-height:1.6; }
 }
+
+/* ── CARD GRID VIEW ── */
+.qb-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:20px; margin-top:28px; }
+.qb-qbank-card {
+  background:#fff; border-radius:16px; border:1px solid rgba(0,0,0,.06);
+  box-shadow:0 2px 12px rgba(0,0,0,.05); overflow:hidden;
+  transition:all .3s cubic-bezier(.34,1.56,.64,1); cursor:pointer;
+  display:flex; flex-direction:column;
+}
+.qb-qbank-card:hover {
+  transform:translateY(-4px); box-shadow:0 12px 32px rgba(99,102,241,.15);
+  border-color:rgba(99,102,241,.2);
+}
+.qb-card-header {
+  background:linear-gradient(135deg,#6366f1 0%,#8b5cf6 50%,#ec4899 100%);
+  color:#fff; padding:20px; position:relative; overflow:hidden;
+}
+.qb-card-header::before { content:''; position:absolute; top:-30px; right:-30px; width:120px; height:120px; border-radius:50%; background:rgba(255,255,255,.1); }
+.qb-card-header-inner { position:relative; z-index:1; }
+.qb-card-badge { display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; background:rgba(255,255,255,.18); padding:4px 10px; border-radius:20px; margin-bottom:10px; border:1px solid rgba(255,255,255,.25); }
+.qb-card-title { font-size:20px; font-weight:800; margin-bottom:4px; }
+.qb-card-subject { font-size:13px; opacity:.85; }
+
+.qb-card-meta {
+  display:grid; grid-template-columns:repeat(2,1fr); gap:12px; padding:16px 20px;
+  border-bottom:1px solid #f1f5f9; font-size:13px;
+}
+.qb-card-meta-item { }
+.qb-card-meta-lbl { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:#94a3b8; margin-bottom:3px; }
+.qb-card-meta-val { font-size:14px; font-weight:800; color:#0f172a; }
+
+.qb-card-stats {
+  display:flex; gap:12px; padding:16px 20px; border-bottom:1px solid #f1f5f9;
+  background:#f8fafc;
+}
+.qb-card-stat {
+  flex:1; text-align:center; padding:8px;
+  border-radius:10px; background:#fff; border:1px solid #e2e8f0;
+}
+.qb-card-stat-val { font-size:16px; font-weight:800; color:#6366f1; }
+.qb-card-stat-lbl { font-size:9px; color:#94a3b8; margin-top:2px; }
+
+.qb-card-actions {
+  display:flex; gap:10px; padding:16px 20px; margin-top:auto;
+}
+.qb-card-btn {
+  flex:1; padding:10px 14px; border-radius:10px; border:none;
+  font-family:'Plus Jakarta Sans',system-ui,sans-serif; font-size:12px;
+  font-weight:700; cursor:pointer; transition:all .2s;
+  display:flex; align-items:center; justify-content:center; gap:6px;
+}
+.qb-card-btn-view {
+  background:linear-gradient(135deg,#6366f1,#8b5cf6); color:#fff;
+  box-shadow:0 4px 12px rgba(99,102,241,.25);
+}
+.qb-card-btn-view:hover {
+  transform:translateY(-2px); box-shadow:0 6px 16px rgba(99,102,241,.35);
+}
+.qb-card-btn-download {
+  background:#fff; color:#6366f1; border:1.5px solid #e2e8f0;
+  box-shadow:0 2px 8px rgba(0,0,0,.04);
+}
+.qb-card-btn-download:hover {
+  border-color:#6366f1; box-shadow:0 4px 12px rgba(99,102,241,.1);
+}
+
+.qb-landing-header {
+  padding:28px 0; margin-bottom:20px;
+  display:flex; align-items:center; justify-content:space-between;
+  flex-wrap:wrap; gap:16px;
+}
+.qb-landing-title { font-size:28px; font-weight:800; color:#0f172a; }
+.qb-landing-back {
+  padding:10px 16px; border-radius:12px; border:1.5px solid #e2e8f0;
+  background:#fff; color:#64748b; font-family:'Plus Jakarta Sans',system-ui;
+  font-size:13px; font-weight:600; cursor:pointer; transition:all .2s;
+  display:flex; align-items:center; gap:6px;
+}
+.qb-landing-back:hover {
+  border-color:#6366f1; color:#6366f1;
+}
+
+@media (max-width:768px) {
+  .qb-grid { grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:16px; }
+  .qb-landing-header { flex-direction:column; align-items:flex-start; }
+  .qb-card-header { padding:16px; }
+  .qb-card-title { font-size:18px; }
+}
 `;
 
-const QUESTION_BANK_DATA = [
-  {
-    id:1, subjectId:1, year:2025, type:"Board Exam",
-    title:"Class 12 Mathematics (8312)",
-    fileUrl:"/pdfs/tn-board-class-12-mathematics-8312-set-a-2025.pdf",
-    difficulty:"Hard", duration:"3.00 Hours", topics:["Calculus","Vectors","Probability"],
-    sections:[{label:"Part I (MCQs)",page:1,diff:40},{label:"Part II (2-Marks)",page:6,diff:60},{label:"Part III (3-Marks)",page:8,diff:75},{label:"Part IV (5-Marks)",page:10,diff:95}],
-    aiHint:"Part IV heavily tests Cramer's rule, DeMorgan's theorems, and vector equations of planes.",
-    crackStrategy:"Prioritize the parabolic arch bridge problem and the growth of population differential equation for 5-mark sections.",
-    topicWeightage:"Analytical Geometry: 35%, Calculus: 40%, Discrete Math: 25%",
-    mistakeRadar:"Commonly missed: Forgetting to verify if the matrix is non-singular before inversion.",
-  },
-  {
-    id:2, subjectId:2, year:2025, type:"Board Exam",
-    title:"Class 7 Science (8317 - Set B)",
-    fileUrl:"/pdfs/class-7-science-8317-set-b-2025.pdf",
-    difficulty:"Hard", duration:"3.00 Hours", topics:["Nutrition","Heat","Motion"],
-    sections:[{label:"Part I (MCQs)",page:1,diff:45},{label:"Part II (2-Marks)",page:7,diff:55},{label:"Part III (3-Marks)",page:8,diff:70},{label:"Part IV (5-Marks)",page:9,diff:90}],
-    aiHint:"Focus on nutrition in plants, heat transfer, and interpreting distance-time graphs.",
-    crackStrategy:"Revise diagrams for plant nutrition and practice short numerical questions from motion and time.",
-    topicWeightage:"Nutrition: 30%, Heat: 35%, Motion and Time: 35%",
-    mistakeRadar:"Commonly missed: Confusing conduction, convection, and radiation examples.",
-  },
-  {
-    id:3, subjectId:2, year:2024, type:"Board Exam",
-    title:"Class 7 Science (7417 - Set A)",
-    fileUrl:"/pdfs/class-7-science-7417-set-a-2024.pdf",
-    difficulty:"Hard", duration:"3.00 Hours", topics:["Acids and Bases","Weather","Respiration"],
-    sections:[{label:"Part I (MCQs)",page:1,diff:35},{label:"Part II (2-Marks)",page:7,diff:50},{label:"Part III (3-Marks)",page:8,diff:65},{label:"Part IV (5-Marks)",page:10,diff:95}],
-    aiHint:"Recurring areas include neutralisation, weather instruments, and aerobic respiration.",
-    crackStrategy:"Practice indicator color changes, simple weather-data interpretation, and labelled respiration diagrams.",
-    topicWeightage:"Acids and Bases: 35%, Weather and Climate: 30%, Respiration: 35%",
-    mistakeRadar:"Commonly missed: Distinguishing breathing from cellular respiration.",
-  },
-  {
-    id:4, subjectId:3, year:2025, type:"Board Exam",
-    title:"Class 12 Computer Science (8372)",
-    fileUrl:"/pdfs/tn-board-class-12-computer-science-8372-2025.pdf",
-    difficulty:"Medium", duration:"3.00 Hours", topics:["Python","SQL","Data Models"],
-    sections:[{label:"Part I (MCQs)",page:1,diff:30},{label:"Part II (2-Marks)",page:6,diff:45},{label:"Part III (3-Marks)",page:7,diff:60},{label:"Part IV (5-Marks)",page:9,diff:80}],
-    aiHint:"Part IV requires detailed Python file modes and SQL aggregate functions like AVG() and SUM().",
-    crackStrategy:"Practice the pure vs impure function examples and relational operators for Part IV.",
-    topicWeightage:"Python: 45%, SQL: 35%, Data Structures: 20%",
-    mistakeRadar:"Students often confuse the output of Python range slicing, especially negative indexing.",
-  },
-];
+// Helper function to get difficulty color
+const diffColor = (d: string) =>
+  d === "hard" || d === "Hard" ? "#ef4444" : d === "medium" || d === "Medium" ? "#f59e0b" : "#10b981";
 
-const diffColor   = (d:string) => d==="Hard"?"#ef4444":d==="Medium"?"#f59e0b":"#10b981";
-const diffTagCls  = (d:string) => d==="Hard"?"qb-tag-hard":d==="Medium"?"qb-tag-medium":"qb-tag-easy";
-const barColor    = (diff:number) => diff>80?"#ef4444":diff>60?"#f59e0b":"#10b981";
-const PAPER_SUBJECT_BY_ID: Record<number, string> = {
-  1: "Mathematics",
-  2: "Science",
-  3: "Computer Science",
-};
-const EMPTY_PAPER_DATA = {
-  part1: [],
-  part2: [],
-  part3: [],
-  part4: [],
-};
+const diffTagCls = (d: string) =>
+  d === "hard" || d === "Hard"
+    ? "qb-tag-hard"
+    : d === "medium" || d === "Medium"
+      ? "qb-tag-medium"
+      : "qb-tag-easy";
 
-const getPaperSubject = (paper: (typeof QUESTION_BANK_DATA)[number]) => {
-  const subjectFromTitle = Object.keys(PAPER_DATA).find(subject =>
-    paper.title.toLowerCase().includes(subject.toLowerCase())
+const barColor = (diff: number) =>
+  diff > 80 ? "#ef4444" : diff > 60 ? "#f59e0b" : "#10b981";
+
+// Group questions by marks/type
+const groupQuestionsByMarks = (questions: Question[]): Record<number, Question[]> => {
+  return questions.reduce(
+    (acc, q) => {
+      if (!acc[q.marks]) acc[q.marks] = [];
+      acc[q.marks].push(q);
+      return acc;
+    },
+    {} as Record<number, Question[]>
   );
-  const mappedSubject = PAPER_SUBJECT_BY_ID[paper.subjectId];
-
-  return subjectFromTitle || mappedSubject || "Mathematics";
 };
 
-// Derive all unique years from data, sorted descending
-const ALL_YEARS = [...new Set(QUESTION_BANK_DATA.map(p => p.year))].sort((a,b)=>b-a);
+// Get unique topics from questions
+const getTopicsFromQuestions = (questions: Question[]): string[] => {
+  const topics = new Set(questions.map((q) => q.topic).filter(Boolean));
+  return Array.from(topics).slice(0, 5); // Top 5 topics
+};
+
+// Calculate difficulty distribution
+const getDifficultyStats = (questions: Question[]) => {
+  let easy = 0,
+    medium = 0,
+    hard = 0;
+  questions.forEach((q) => {
+    if (q.difficulty === "easy") easy++;
+    else if (q.difficulty === "medium") medium++;
+    else if (q.difficulty === "hard") hard++;
+  });
+  return { easy, medium, hard };
+};
 
 /* ── Year Dropdown Component ── */
 const YearDropdown = ({
-  value, onChange, data,
+  value,
+  onChange,
+  data,
 }: {
   value: string;
   onChange: (v: string) => void;
-  data: typeof QUESTION_BANK_DATA;
+  data: any[];
 }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -509,14 +635,17 @@ const YearDropdown = ({
   // Close on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node))
+        setOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
   const countForYear = (y: string) =>
-    y === "all" ? data.length : data.filter(p => p.year.toString() === y).length;
+    y === "all"
+      ? data.length
+      : data.filter((p) => p.year.toString() === y).length;
 
   const label = value === "all" ? "All Years" : value;
 
@@ -524,13 +653,23 @@ const YearDropdown = ({
     <div className="qb-year-wrap" ref={ref}>
       <button
         className={`qb-year-btn${open ? " open" : ""}${value !== "all" ? " has-filter" : ""}`}
-        onClick={() => setOpen(o => !o)}
+        onClick={() => setOpen((o) => !o)}
       >
-        <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}>
-          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-          <line x1="16" y1="2" x2="16" y2="6"/>
-          <line x1="8" y1="2" x2="8" y2="6"/>
-          <line x1="3" y1="10" x2="21" y2="10"/>
+        <svg
+          width={14}
+          height={14}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2.2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{ flexShrink: 0 }}
+        >
+          <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+          <line x1="16" y1="2" x2="16" y2="6" />
+          <line x1="8" y1="2" x2="8" y2="6" />
+          <line x1="3" y1="10" x2="21" y2="10" />
         </svg>
         {label}
         <ChevronDown size={13} className="qb-chev" />
@@ -541,28 +680,36 @@ const YearDropdown = ({
           {/* All Years option */}
           <div
             className={`qb-year-option${value === "all" ? " sel" : ""}`}
-            onClick={() => { onChange("all"); setOpen(false); }}
+            onClick={() => {
+              onChange("all");
+              setOpen(false);
+            }}
           >
             <span>All Years</span>
-            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <span className="qb-year-count">{countForYear("all")}</span>
-              {value === "all" && <div className="qb-year-check"/>}
+              {value === "all" && <div className="qb-year-check" />}
             </div>
           </div>
 
-          <div className="qb-year-sep"/>
+          <div className="qb-year-sep" />
 
           {/* Individual year options */}
-          {ALL_YEARS.map(y => (
+          {ALL_YEARS.map((y) => (
             <div
               key={y}
               className={`qb-year-option${value === y.toString() ? " sel" : ""}`}
-              onClick={() => { onChange(y.toString()); setOpen(false); }}
+              onClick={() => {
+                onChange(y.toString());
+                setOpen(false);
+              }}
             >
               <span>{y}</span>
-              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                <span className="qb-year-count">{countForYear(y.toString())}</span>
-                {value === y.toString() && <div className="qb-year-check"/>}
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span className="qb-year-count">
+                  {countForYear(y.toString())}
+                </span>
+                {value === y.toString() && <div className="qb-year-check" />}
               </div>
             </div>
           ))}
@@ -573,195 +720,428 @@ const YearDropdown = ({
 };
 
 export default function QuestionBank() {
-  const [, setLocation]     = useLocation();
-  const [search,   setSearch]   = useState("");
+  const [, setLocation] = useLocation();
+  const [search, setSearch] = useState("");
   const [yearFilt, setYearFilt] = useState("all");
-  const [preview,  setPreview]  = useState<(typeof QUESTION_BANK_DATA)[0]|null>(null);
-  const [showTop,  setShowTop]  = useState(false);
+  const [apiDataList, setApiDataList] = useState<QuestionBankResponse["data"][]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<QuestionBankResponse["data"] | false>(false);
+  const [showTop, setShowTop] = useState(false);
   const [showPred, setShowPred] = useState(false);
-  const [showMobSb,setShowMobSb]= useState(false);
-  const { userHeader }          = useAuth();
-  const [role, setRole]         = useState("student");
-  const pdfRef                  = useRef<HTMLDivElement>(null);
+  const [showMobSb, setShowMobSb] = useState(false);
+  const { userHeader } = useAuth();
+  const [role, setRole] = useState("student");
+  const pdfRef = useRef<HTMLDivElement>(null);
 
-  useEffect(()=>{ if(userHeader?.role) setRole(userHeader.role); },[userHeader]);
+  useEffect(() => {
+    if (userHeader?.role) setRole(userHeader.role);
+  }, [userHeader]);
 
-  const params      = new URLSearchParams(window.location.search);
-  const activeSubId = params.get("subjectId") ? parseInt(params.get("subjectId")!) : null;
-  const activeSubjectLabel = activeSubId
-    ? PAPER_SUBJECT_BY_ID[activeSubId] || `Subject ${activeSubId}`
-    : null;
+  // Fetch API data based on query parameters
+  useEffect(() => {
+    const fetchQuestionBank = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const board = params.get("board") || "";
+      const classNumber = params.get("classNumber") || "";
+      const subject = params.get("subject") || "";
+      const subjectGroupKey = params.get("subjectGroupKey") || "";
 
-  const filteredPapers = QUESTION_BANK_DATA.filter(p => {
-    const ms = activeSubId ? p.subjectId === activeSubId : true;
-    const my = yearFilt === "all" || p.year.toString() === yearFilt;
-    const mq = p.title.toLowerCase().includes(search.toLowerCase());
-    return ms && my && mq;
-  });
+      if (!board || !classNumber || !subject || !subjectGroupKey) {
+        setError("Missing required parameters");
+        setLoading(false);
+        return;
+      }
 
-  const dl    = (url:string,name:string) => { const a=document.createElement("a");a.href=url;a.download=name;a.click(); };
-  const print = (url:string) => { const w=window.open(url,"_blank");if(w) w.onload=()=>w.print(); };
-  const scrollToPart = (partKey:string) => {
-    const el = document.getElementById(`qbank-part-${partKey}`);
-    if (el) el.scrollIntoView({ behavior:"smooth", block:"start" });
+      try {
+        const queryString = `board=${encodeURIComponent(board)}&classNumber=${encodeURIComponent(classNumber)}&subject=${encodeURIComponent(subject)}&subjectGroupKey=${encodeURIComponent(subjectGroupKey)}`;
+        const response = await fetch(
+          `${process.env.REACT_APP_API_BASE_URL}/api/v1/tutor/tutor/question-bank?${queryString}`
+        );
+
+        if (!response.ok) {
+          throw new Error(`API Error: ${response.statusText}`);
+        }
+
+        const data: QuestionBankResponse = await response.json();
+
+        if (data.status && data.data) {
+        const bankData = Array.isArray(data.data) ? data.data : [data.data];
+          setApiDataList(bankData);
+        } else {
+          setError("Invalid response format");
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to fetch data");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchQuestionBank();
+  }, []);
+
+  // Extract data from API response for use throughout component
+  // const examName = apiData?.examName || "";
+  // const subject = apiData?.subject || "";
+  // const classNumber = apiData?.classNumber || "";
+  // const board = apiData?.board || "";
+  // const year = apiData?.year || "";
+  // const totalQuestions = apiData?.totalQuestions || 0;
+  
+  // // Calculate total marks from questions
+  // const totalMarks = apiData?.questions?.reduce((sum, q) => sum + q.marks, 0) || 0;
+  
+  // // Group questions by marks
+  // const questionsByMarks = apiData ? groupQuestionsByMarks(apiData.questions) : {};
+  
+  // // Get difficulty stats
+  // const diffStats = apiData ? getDifficultyStats(apiData.questions) : { easy: 0, medium: 0, hard: 0 };
+  
+  // // Get top topics
+  // const topicsList = apiData ? getTopicsFromQuestions(apiData.questions) : [];
+
+  const dl = (url: string, name: string) => {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
   };
-  const scrollTop = () => { pdfRef.current?.scrollTo({top:0,behavior:"smooth"}); };
+  const print = (url: string) => {
+    const w = window.open(url, "_blank");
+    if (w) w.onload = () => w.print();
+  };
+  const scrollToPart = (partKey: string) => {
+    const el = document.getElementById(`qbank-part-${partKey}`);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  const scrollTop = () => {
+    pdfRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
-  const hasActiveFilters = yearFilt !== "all" || !!search;
+// Helper function to generate PDF content as HTML string
+  const generatePDFContentForBank = (bank: QuestionBankResponse["data"]): string => {
+    const bankQuestionsByMarks = groupQuestionsByMarks(bank.questions);
+    const bankTotalMarks = bank.questions.reduce((sum, q) => sum + q.marks, 0);
+    
+    let html = `
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>${bank.subject}</title>
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: Georgia, serif; color: #111827; line-height: 1.6; }
+            .header { text-align: center; padding-bottom: 20px; border-bottom: 2px solid #111827; margin-bottom: 30px; }
+            .school { font-family: Georgia, serif; font-size: 11px; font-weight: bold; letter-spacing: 0.08em; text-transform: uppercase; color: #475569; }
+            .exam-title { font-family: Georgia, serif; font-size: 24px; font-weight: bold; color: #111827; line-height: 1.2; margin: 8px 0; }
+            .meta-row { margin: 18px 0; display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid #cbd5e1; border-radius: 2px; overflow: hidden; }
+            .meta-item { padding: 10px 12px; border-right: 1px solid #cbd5e1; background: #f8fafc; }
+            .meta-item:last-child { border-right: none; }
+            .meta-val { font-size: 16px; font-weight: bold; color: #111827; }
+            .meta-lbl { margin-top: 4px; font-size: 9px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; }
+            .section { page-break-inside: avoid; margin-bottom: 30px; }
+            .section-header { display: flex; align-items: flex-start; justify-content: space-between; padding-bottom: 12px; margin-bottom: 16px; border-bottom: 1px solid #111827; }
+            .section-badge { width: 34px; height: 34px; border-radius: 2px; border: 1px solid #111827; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: bold; color: #111827; background: #fff; }
+            .section-title { font-family: Georgia, serif; font-size: 16px; font-weight: bold; color: #111827; line-height: 1.25; }
+            .section-subtitle { margin-top: 3px; font-size: 11px; font-weight: 600; color: #64748b; }
+            .question { display: grid; grid-template-columns: 30px 1fr auto; gap: 12px; padding-bottom: 10px; border-bottom: 1px dashed #d1d5db; align-items: flex-start; }
+            .question:last-child { border-bottom: none; padding-bottom: 0; }
+            .q-num { width: 28px; height: 28px; border-radius: 50%; border: 1px solid #cbd5e1; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; color: #111827; flex-shrink: 0; }
+            .q-text { font-size: 13px; line-height: 1.5; color: #111827; }
+            .q-options { margin-top: 8px; margin-left: 42px; display: flex; flex-direction: column; gap: 6px; }
+            .q-option { font-size: 12px; color: #374151; }
+            .q-marks { font-size: 11px; font-weight: 600; color: #64748b; white-space: nowrap; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="school">Model Question Paper</div>
+            <div class="exam-title">${bank.subject}</div>
+            <div style="margin-top: 4px; font-size: 13px; font-weight: 600; color: #64748b;">Class ${bank.classNumber} | ${bank.board} | ${bank.year}</div>
+            <div class="meta-row">
+              <div class="meta-item"><div class="meta-val">${bank.totalQuestions}</div><div class="meta-lbl">Questions</div></div>
+              <div class="meta-item"><div class="meta-val">${bankTotalMarks}</div><div class="meta-lbl">Total Marks</div></div>
+              <div class="meta-item"><div class="meta-val">3 hrs</div><div class="meta-lbl">Duration</div></div>
+            </div>
+          </div>
+    `;
+
+    // Group and display questions by marks
+    Object.keys(bankQuestionsByMarks)
+      .sort((a, b) => parseInt(a) - parseInt(b))
+      .forEach((marks) => {
+        const marksQuestions = bankQuestionsByMarks[parseInt(marks)];
+        const sectionNum = Object.keys(bankQuestionsByMarks).indexOf(marks) + 1;
+        
+        html += `
+          <div class="section">
+            <div class="section-header">
+              <div style="display: flex; align-items: flex-start; gap: 12px;">
+                <div class="section-badge">${sectionNum}</div>
+                <div>
+                  <div class="section-title">${marks}-Mark Questions</div>
+                  <div class="section-subtitle">Each question carries ${marks} mark${marks > 1 ? "s" : ""}</div>
+                </div>
+              </div>
+            </div>
+            <div>
+        `;
+
+        let lastSectionTitle = "";
+        
+        marksQuestions.forEach((q, idx) => {
+          const isNewSection = q.section_title && q.section_title !== lastSectionTitle;
+          if (isNewSection) {
+            lastSectionTitle = q.section_title;
+          }
+          
+          html += `
+            ${isNewSection ? `
+              <div style="
+                font-size: 11px;
+                font-weight: bold;
+                color: #6366f1;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+                margin: 16px 0 12px 0;
+                padding-bottom: 10px;
+                border-bottom: 2px solid #e0e7ff;
+              ">
+                ${q.section_title}
+              </div>
+            ` : ""}
+            <div class="question">
+              <div class="q-num">${idx + 1}</div>
+              <div class="q-text">
+                ${q.question}
+                ${q.options && q.options.length > 0 ? `
+                  <div class="q-options">
+                    ${q.options.map((opt) => `<div class="q-option">○ ${opt}</div>`).join("")}
+                  </div>
+                ` : ""}
+              </div>
+              <div class="q-marks">${marks}M</div>
+            </div>
+          `;
+        });
+
+        html += `
+            </div>
+          </div>
+        `;
+      });
+
+    html += `
+        </body>
+      </html>
+    `;
+
+    return html;
+  };
+
+  // Wrapper function for single API data (for backward compatibility)
+  const generatePDFContent = (): string => {
+    if (!apiDataList || apiDataList.length === 0) return "";
+    return generatePDFContentForBank(apiDataList[0]);
+  };
+
+  // Helper function to download PDF
+  const downloadPDF = (htmlContent: string, filename: string) => {
+    const iframe = document.createElement("iframe");
+    iframe.style.display = "none";
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!doc) return;
+
+    doc.open();
+    doc.write(htmlContent);
+    doc.close();
+
+    iframe.onload = () => {
+      iframe.contentWindow?.print();
+      setTimeout(() => {
+        document.body.removeChild(iframe);
+      }, 100);
+    };
+  };
 
   // ── Landing view ──────────────────────────────────────────────────────────
   if (!preview) {
+    // Show loading state
+    if (loading) {
+      return (
+        <div className="qb">
+          <style>{CSS}</style>
+          <Navigation currentRole={role} onRoleChange={setRole} />
+          <div style={{ padding: "28px 32px", maxWidth: 1280, margin: "0 auto" }}>
+            <div style={{
+              textAlign: "center",
+              padding: "60px 20px",
+              color: "#94a3b8"
+            }}>
+              <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>Loading Questions...</div>
+              <div style={{ fontSize: 14 }}>Please wait while we fetch your question bank.</div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Show error state
+    if (error || !apiDataList || apiDataList.length === 0) {
+      return (
+        <div className="qb">
+          <style>{CSS}</style>
+          <Navigation currentRole={role} onRoleChange={setRole} />
+          <div style={{ padding: "28px 32px", maxWidth: 1280, margin: "0 auto" }}>
+            <div style={{
+              textAlign: "center",
+              padding: "60px 20px",
+              background: "rgba(239,68,68,.1)",
+              borderRadius: 16,
+              color: "#dc2626"
+            }}>
+              <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Error Loading Questions</div>
+              <div style={{ fontSize: 14, marginBottom: 16 }}>{error || "Failed to load question bank"}</div>
+              <button
+                onClick={() => setLocation("/ai-tutor")}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: "#dc2626",
+                  color: "#fff",
+                  cursor: "pointer",
+                  fontWeight: 600
+                }}
+              >
+                Go Back
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="qb">
         <style>{CSS}</style>
-        <Navigation currentRole={role} onRoleChange={setRole}/>
-        <div style={{padding:"28px 32px",maxWidth:1280,margin:"0 auto"}}>
-
-          {/* Hero */}
-          <div className="qb-hero">
-            <div className="qb-hero-inner">
-              <div>
-                <div className="qb-hero-badge"><GraduationCap size={13}/>GradeUp Vault</div>
-                <div className="qb-hero-title">Premium Question Bank 📚</div>
-                <div className="qb-hero-sub">
-                  {activeSubjectLabel
-                    ? `Showing papers for ${activeSubjectLabel}`
-                    : "Official board papers with AI-powered insights, section analysis & topic weightage."}
-                </div>
-              </div>
-              <div className="qb-hero-right">
-                <div className="qb-hero-stat"><div className="qb-hero-sv">{QUESTION_BANK_DATA.length}</div><div className="qb-hero-sl">Papers</div></div>
-                <div className="qb-hero-div"/>
-                <div className="qb-hero-stat"><div className="qb-hero-sv">4</div><div className="qb-hero-sl">Subjects</div></div>
-                <div className="qb-hero-div"/>
-                <div className="qb-hero-stat"><div className="qb-hero-sv">{ALL_YEARS.length}</div><div className="qb-hero-sl">Years</div></div>
-              </div>
+        <Navigation currentRole={role} onRoleChange={setRole} />
+        <div style={{ padding: "28px 32px", maxWidth: 1280, margin: "0 auto" }}>
+          {/* Landing Header */}
+          <div className="qb-landing-header">
+            <div>
+              <div className="qb-landing-title">Question Banks</div>
             </div>
-          </div>
-
-          {/* Filters bar */}
-          <div className="qb-filters">
-            {/* Back button */}
             <button
-              onClick={()=>setLocation("/ai-tutor")}
-              style={{height:42,padding:"0 16px",borderRadius:14,border:"1.5px solid #f1f5f9",background:"#fff",display:"flex",alignItems:"center",gap:7,fontFamily:"'Plus Jakarta Sans',system-ui",fontSize:13,fontWeight:600,color:"#64748b",cursor:"pointer",transition:"all .2s",boxShadow:"0 2px 8px rgba(0,0,0,.04)",whiteSpace:"nowrap",flexShrink:0}}
-              onMouseEnter={e=>{e.currentTarget.style.borderColor="#6366f1";e.currentTarget.style.color="#6366f1";}}
-              onMouseLeave={e=>{e.currentTarget.style.borderColor="#f1f5f9";e.currentTarget.style.color="#64748b";}}>
-              <ArrowLeft size={15}/> Back
+              onClick={() => setLocation("/ai-tutor")}
+              className="qb-landing-back"
+            >
+              <ArrowLeft size={15} /> Back
             </button>
-
-            {/* Search */}
-            <div className="qb-search-wrap">
-              <Search size={15} className="qb-search-ico"/>
-              <input
-                className="qb-search-inp"
-                value={search}
-                onChange={e=>setSearch(e.target.value)}
-                placeholder="Search papers…"
-              />
-              {search && (
-                <button
-                  onClick={()=>setSearch("")}
-                  style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:"#94a3b8",display:"flex",padding:2}}>
-                  <X size={13}/>
-                </button>
-              )}
-            </div>
-
-            {/* Year dropdown */}
-            <YearDropdown
-              value={yearFilt}
-              onChange={setYearFilt}
-              data={QUESTION_BANK_DATA}
-            />
           </div>
 
-          {/* Active filter pills */}
-          {hasActiveFilters && (
-            <div className="qb-active-filters">
-              {yearFilt !== "all" && (
-                <span className="qb-filter-pill">
-                  📅 {yearFilt}
-                  <button onClick={()=>setYearFilt("all")} title="Remove year filter"><X size={9}/></button>
-                </span>
-              )}
-              {search && (
-                <span className="qb-filter-pill">
-                  🔍 "{search}"
-                  <button onClick={()=>setSearch("")} title="Clear search"><X size={9}/></button>
-                </span>
-              )}
-              <button
-                onClick={()=>{setYearFilt("all");setSearch("");}}
-                style={{fontSize:11.5,fontWeight:700,color:"#94a3b8",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",padding:"4px 8px",borderRadius:20,transition:"color .15s"}}
-                onMouseEnter={e=>(e.currentTarget.style.color="#ef4444")}
-                onMouseLeave={e=>(e.currentTarget.style.color="#94a3b8")}>
-                Clear all
-              </button>
-            </div>
-          )}
+          {/* Question Bank Cards Grid */}
+          <div className="qb-grid">
+            {apiDataList.map((bank) => {
+              const bankDiffStats = getDifficultyStats(bank.questions);
+              const bankTopics = getTopicsFromQuestions(bank.questions);
+              const bankQuestionsByMarks = groupQuestionsByMarks(bank.questions);
+              const bankTotalMarks = bank.questions.reduce((sum, q) => sum + q.marks, 0);
 
-          {/* Results count */}
-          <div style={{fontSize:12.5,fontWeight:600,color:"#94a3b8",marginBottom:16,display:"flex",alignItems:"center",gap:8}}>
-            <span style={{color:"#0f172a",fontWeight:800}}>{filteredPapers.length}</span> paper{filteredPapers.length!==1?"s":""} found
-            {yearFilt !== "all" && <span style={{color:"#6366f1"}}>in {yearFilt}</span>}
-          </div>
-
-          {/* Grid */}
-          {filteredPapers.length === 0 ? (
-            <div className="qb-empty">
-              <div className="qb-empty-icon"><BookOpen size={30} style={{color:"#6366f1"}}/></div>
-              <div className="qb-empty-title">No papers found</div>
-              <div className="qb-empty-sub">
-                Try adjusting your search or{" "}
-                <button onClick={()=>{setYearFilt("all");setSearch("");}} style={{background:"none",border:"none",color:"#6366f1",fontWeight:700,cursor:"pointer",fontFamily:"inherit",fontSize:"inherit"}}>
-                  clear all filters
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="qb-grid">
-              {filteredPapers.map((paper,i)=>(
-                <div key={paper.id} className="qb-paper-card" style={{animationDelay:`${i*.07}s`}}>
-                  <div className="qb-diff-strip" style={{background:diffColor(paper.difficulty)}}/>
-                  <div className="qb-paper-head">
-                    <div className="qb-paper-tags">
-                      <span className="qb-tag qb-tag-year">{paper.year}</span>
-                      <span className="qb-tag qb-tag-type">{paper.type}</span>
-                      <span className={`qb-tag ${diffTagCls(paper.difficulty)}`}>{paper.difficulty}</span>
-                    </div>
-                    <div className="qb-paper-title">{paper.title}</div>
-                    <div className="qb-paper-meta">
-                      <span className="qb-paper-meta-item"><Timer size={11}/>{paper.duration}</span>
-                      <span className="qb-paper-meta-item"><Activity size={11}/>Conceptual</span>
-                    </div>
-                  </div>
-                  <div className="qb-paper-body">
-                    <div>
-                      <div className="qb-topics-label"><Zap size={11} style={{color:"#f59e0b"}}/>High-Yield Topics</div>
-                      <div className="qb-topics-row">
-                        {paper.topics.map(t=><span key={t} className="qb-topic-tag">{t}</span>)}
+              return (
+                <div key={bank.documentId} className="qb-qbank-card">
+                  {/* Card Header */}
+                  <div className="qb-card-header">
+                    <div className="qb-card-header-inner">
+                      <div className="qb-card-badge">
+                        <GraduationCap size={11} />
+                        {bank.examName}
                       </div>
-                    </div>
-                    <div>
-                      <div className="qb-bars-label">Sectional Intensity</div>
-                      <div className="qb-bars-row">
-                        {paper.sections.map((s,idx)=>(
-                          <div key={idx} className="qb-bar-col" style={{height:`${s.diff}%`,background:barColor(s.diff)}}/>
-                        ))}
+                      <div className="qb-card-title">{bank.subject}</div>
+                      <div className="qb-card-subject">
+                        Class {bank.classNumber} • {bank.board}
                       </div>
                     </div>
                   </div>
-                  <div className="qb-paper-foot">
-                    <button className="qb-btn-preview" onClick={()=>{setPreview(paper);}}>
-                      <Eye size={15}/>Preview
+
+                  {/* Meta Information */}
+                  <div className="qb-card-meta">
+                    <div className="qb-card-meta-item">
+                      <div className="qb-card-meta-lbl">Year</div>
+                      <div className="qb-card-meta-val">{bank.year}</div>
+                    </div>
+                    <div className="qb-card-meta-item">
+                      <div className="qb-card-meta-lbl">Questions</div>
+                      <div className="qb-card-meta-val">{bank.totalQuestions}</div>
+                    </div>
+                    <div className="qb-card-meta-item">
+                      <div className="qb-card-meta-lbl">Total Marks</div>
+                      <div className="qb-card-meta-val">{bankTotalMarks}</div>
+                    </div>
+                    <div className="qb-card-meta-item">
+                      <div className="qb-card-meta-lbl">Board</div>
+                      <div className="qb-card-meta-val">{bank.board}</div>
+                    </div>
+                  </div>
+
+                  {/* Difficulty Stats */}
+                  <div className="qb-card-stats">
+                    <div className="qb-card-stat">
+                      <div className="qb-card-stat-val" style={{ color: "#10b981" }}>
+                        {bankDiffStats.easy}
+                      </div>
+                      <div className="qb-card-stat-lbl">Easy</div>
+                    </div>
+                    <div className="qb-card-stat">
+                      <div className="qb-card-stat-val" style={{ color: "#f59e0b" }}>
+                        {bankDiffStats.medium}
+                      </div>
+                      <div className="qb-card-stat-lbl">Medium</div>
+                    </div>
+                    <div className="qb-card-stat">
+                      <div className="qb-card-stat-val" style={{ color: "#ef4444" }}>
+                        {bankDiffStats.hard}
+                      </div>
+                      <div className="qb-card-stat-lbl">Hard</div>
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="qb-card-actions">
+                    <button
+                      className="qb-card-btn qb-card-btn-view"
+                      onClick={() => setPreview(bank)}
+                    >
+                      <Eye size={13} /> View PDF
                     </button>
-                    <button className="qb-btn-download" onClick={()=>dl(paper.fileUrl,`${paper.title}.pdf`)}>
-                      <Download size={15}/>Download
+                    <button
+                      className="qb-card-btn qb-card-btn-download"
+                      onClick={() => {
+                        const htmlContent = generatePDFContentForBank(bank);
+                        downloadPDF(htmlContent, `${bank.subject}_${bank.year}.pdf`);
+                      }}
+                    >
+                      <Download size={13} /> Download
                     </button>
                   </div>
                 </div>
-              ))}
+              );
+            })}
+          </div>
+
+          {/* Empty State */}
+          {apiDataList.length === 0 && (
+            <div className="qb-empty">
+              <div className="qb-empty-icon">
+                <BookOpen size={36} />
+              </div>
+              <div className="qb-empty-title">No Question Banks Found</div>
+              <div className="qb-empty-sub">
+                Try adjusting your filters or check back later
+              </div>
             </div>
           )}
         </div>
@@ -770,33 +1150,80 @@ export default function QuestionBank() {
   }
 
   // ── PDF Viewer view ───────────────────────────────────────────────────────
-  const subject = getPaperSubject(preview);
-  const paperData = PAPER_DATA[subject] || EMPTY_PAPER_DATA;
-  const totalQuestions = PARTS.reduce((acc, p) => acc + ((paperData as any)[p.key]?.length || 0), 0);
-  const totalMarks = PARTS.reduce((acc, p) => acc + ((paperData as any)[p.key]?.length || 0) * p.marks, 0);
+  
+  // Extract variables from preview object
+  if (!preview || typeof preview === 'boolean') {
+    return null;
+  }
+
+  const subject = preview.subject;
+  const classNumber = preview.classNumber;
+  const board = preview.board;
+  const year = preview.year;
+  const totalQuestions = preview.totalQuestions;
+  const totalMarks = preview.questions.reduce((sum: number, q: Question) => sum + q.marks, 0);
+  const diffStats = getDifficultyStats(preview.questions);
+  const topicsList = getTopicsFromQuestions(preview.questions);
+  const questionsByMarks = groupQuestionsByMarks(preview.questions);
 
   return (
     <div className="qb">
       <style>{CSS}</style>
       <div className="qb-viewer">
-
         <div className="qb-viewer-head">
           <div className="qb-viewer-head-left">
-            <button className="qb-vhclose" onClick={()=>{setPreview(null);setShowTop(false);setShowPred(false);}}>
-              <X size={18}/>
+            <button
+              className="qb-vhclose"
+              onClick={() => {
+                setPreview(false);
+                setShowTop(false);
+                setShowPred(false);
+              }}
+            >
+              <ArrowLeft size={16} />
             </button>
-            <div style={{width:1,height:28,background:"#f1f5f9"}}/>
+            <div style={{ width: 1, height: 28, background: "#f1f5f9" }} />
             <div>
-              <div className="qb-viewer-head-title">{preview.title}</div>
-              <div className="qb-viewer-head-sub">{preview.year} Official Board Paper</div>
+              <div className="qb-viewer-head-title">Question Paper</div>
+              <div className="qb-viewer-head-sub">
+                {preview.subject} | Class {preview.classNumber} | {preview.year}
+              </div>
             </div>
           </div>
           <div className="qb-viewer-head-right">
-            <button className="qb-vhbtn qb-vhbtn-print" onClick={()=>print(preview.fileUrl)}>
-              <Printer size={14}/>Print
+            <button
+              className="qb-vhbtn qb-vhbtn-print"
+              onClick={() => {
+                const htmlContent = generatePDFContentForBank(preview);
+                const iframe = document.createElement("iframe");
+                iframe.style.display = "none";
+                document.body.appendChild(iframe);
+                const doc = iframe.contentDocument || iframe.contentWindow?.document;
+                if (doc) {
+                  doc.open();
+                  doc.write(htmlContent);
+                  doc.close();
+                  iframe.onload = () => {
+                    iframe.contentWindow?.print();
+                    setTimeout(() => {
+                      document.body.removeChild(iframe);
+                    }, 100);
+                  };
+                }
+              }}
+            >
+              <Printer size={14} />
+              Print
             </button>
-            <button className="qb-vhbtn-dl" onClick={()=>dl(preview.fileUrl,`${preview.title}.pdf`)}>
-              <Download size={14}/>Download
+            <button
+              className="qb-vhbtn-dl"
+              onClick={() => {
+                const htmlContent = generatePDFContentForBank(preview);
+                downloadPDF(htmlContent, `${preview.subject}_${preview.year}.pdf`);
+              }}
+            >
+              <Download size={14} />
+              Download PDF
             </button>
           </div>
         </div>
@@ -804,56 +1231,127 @@ export default function QuestionBank() {
         <div className="qb-viewer-body">
           <div className="qb-viewer-sb">
             <div>
-              <div className="qb-sb-section-title"><Bookmark size={12}/>Quick Links</div>
-              {PARTS.map((part)=>(
-                <div key={part.key} className="qb-sec-item" onClick={()=>scrollToPart(part.key)}>
-                  <div className="qb-sec-item-top">
-                    <span className="qb-sec-lbl">{part.label}</span>
-                    <span className="qb-sec-diff-badge" style={{background:"rgba(15,23,42,.06)",color:"#334155"}}>{part.marks} mark{part.marks > 1 ? "s" : ""}</span>
-                  </div>
-                  <div className="qb-sec-page" style={{marginBottom:6}}>{part.desc}</div>
-                  <div className="qb-sec-bar-bg"><div className="qb-sec-bar-fill" style={{width:"100%",background:"#111827"}}/></div>
-                </div>
-              ))}
+              <div className="qb-sb-section-title">
+                <Bookmark size={12} />
+                Quick Links
+              </div>
+              {Object.keys(questionsByMarks)
+                .sort((a, b) => parseInt(a) - parseInt(b))
+                .map((marks, idx) => {
+                  const questionsInMark = questionsByMarks[parseInt(marks)];
+                  return (
+                    <div
+                      key={marks}
+                      className="qb-sec-item"
+                      onClick={() => scrollToPart(`part${idx + 1}`)}
+                    >
+                      <div className="qb-sec-item-top">
+                        <span className="qb-sec-lbl">{marks}M Questions</span>
+                        <span
+                          className="qb-sec-diff-badge"
+                          style={{
+                            background: "rgba(15,23,42,.06)",
+                            color: "#334155",
+                          }}
+                        >
+                          {questionsInMark.length} Q{questionsInMark.length > 1 ? "s" : ""}
+                        </span>
+                      </div>
+                      <div className="qb-sec-page" style={{ marginBottom: 6 }}>
+                        {parseInt(marks)} mark{parseInt(marks) > 1 ? "s" : ""} each
+                      </div>
+                      <div className="qb-sec-bar-bg">
+                        <div
+                          className="qb-sec-bar-fill"
+                          style={{ width: "100%", background: "#111827" }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
             </div>
-            <div className="qb-ai-card" style={{background:"rgba(139,92,246,.06)",borderColor:"rgba(139,92,246,.2)"}}>
-              <div className="qb-ai-card-title" style={{color:"#7c3aed"}}><Sparkles size={11}/>AI Cracker</div>
-              <div className="qb-ai-card-text" style={{color:"rgba(109,40,217,.8)"}}>{preview.crackStrategy}</div>
+            <div
+              className="qb-ai-card"
+              style={{
+                background: "rgba(99,102,241,.08)",
+                borderColor: "rgba(99,102,241,.12)",
+              }}
+            >
+              <div className="qb-ai-card-title" style={{ color: "#6366f1" }}>
+                <Sparkles size={11} />
+                Study Guide
+              </div>
+              <div
+                className="qb-ai-card-text"
+                style={{ color: "rgba(99,102,241,.8)" }}
+              >
+                {topicsList.length > 0
+                  ? `Focus on: ${topicsList.join(", ")}`
+                  : "Review all topics systematically"}
+              </div>
             </div>
-            <div className="qb-ai-card" style={{background:"rgba(239,68,68,.05)",borderColor:"rgba(239,68,68,.15)"}}>
-              <div className="qb-ai-card-title" style={{color:"#dc2626"}}><AlertTriangle size={11}/>Mistake Radar</div>
-              <div className="qb-ai-card-text" style={{color:"rgba(185,28,28,.8)"}}>{preview.mistakeRadar}</div>
+            <div
+              className="qb-ai-card"
+              style={{
+                background: "rgba(239,68,68,.05)",
+                borderColor: "rgba(239,68,68,.15)",
+              }}
+            >
+              <div className="qb-ai-card-title" style={{ color: "#dc2626" }}>
+                <AlertTriangle size={11} />
+                Mistake Radar
+              </div>
+              <div
+                className="qb-ai-card-text"
+                style={{ color: "rgba(185,28,28,.8)" }}
+              >
+                {preview.questions && preview.questions.length > 0
+                  ? "Review carefully - common mistakes detected in this topic"
+                  : "No mistake data available"}
+              </div>
             </div>
-            <button className="qb-predict-btn" onClick={()=>setShowPred(true)}>
-              <PieChart size={13}/>Topic Predictor
+            <button
+              className="qb-predict-btn"
+              onClick={() => setShowPred(true)}
+            >
+              <PieChart size={13} />
+              Topic Predictor
             </button>
           </div>
 
-          <div className="qb-pdf-area" ref={pdfRef} onScroll={e=>{setShowTop((e.target as HTMLElement).scrollTop>600);}}>
-            <div className="qb-mobile-parts">
-              {PARTS.map(part => (
-                <button key={part.key} className="qb-mobile-part-btn" onClick={()=>scrollToPart(part.key)}>
-                  {part.label}
-                </button>
-              ))}
+          <div
+            className="qb-pdf-area"
+            ref={pdfRef}
+            onScroll={(e) => {
+              setShowTop((e.target as HTMLElement).scrollTop > 600);
+            }}
+          >
+ <div className="qb-mobile-parts">
+              {Object.keys(questionsByMarks)
+                .sort((a, b) => parseInt(a) - parseInt(b))
+                .map((marks, idx) => (
+                  <button
+                    key={marks}
+                    className="qb-mobile-part-btn"
+                    onClick={() => scrollToPart(`part${idx + 1}`)}
+                  >
+                    {marks}M Questions
+                  </button>
+                ))}
             </div>
 
             <div className="ep-paper-wrapper">
               <div className="ep-paper-header">
                 <div className="ep-paper-school">Model Question Paper</div>
                 <div className="ep-paper-exam-title">{subject}</div>
-                <div className="ep-paper-subject">All Units</div>
+                <div className="ep-paper-subject">Class {classNumber} | {board} | {year}</div>
                 <div className="ep-paper-meta-row">
                   <div className="ep-paper-meta-item">
-                    <div className="ep-paper-meta-val">
-                      {totalQuestions}
-                    </div>
+                    <div className="ep-paper-meta-val">{totalQuestions}</div>
                     <div className="ep-paper-meta-lbl">Questions</div>
                   </div>
                   <div className="ep-paper-meta-item">
-                    <div className="ep-paper-meta-val">
-                      {totalMarks}
-                    </div>
+                    <div className="ep-paper-meta-val">{totalMarks}</div>
                     <div className="ep-paper-meta-lbl">Total Marks</div>
                   </div>
                   <div className="ep-paper-meta-item">
@@ -870,41 +1368,79 @@ export default function QuestionBank() {
                 </div>
               )}
 
-              {PARTS.map((part) => {
-                const qs = (paperData as any)[part.key] as { q: string; unit: string }[];
-                if (!qs || qs.length === 0) return null;
-                return (
-                  <div
-                    id={`qbank-part-${part.key}`}
-                    key={part.key}
-                    className={`ep-part-section ${part.cls}`}
-                  >
-                    <div className="ep-part-header">
-                      <div className="ep-part-left">
-                        <div className="ep-part-badge">{part.icon}</div>
-                        <div>
-                          <div className="ep-part-title">
-                            {part.label} — {part.desc}
-                          </div>
-                          <div className="ep-part-subtitle">
-                            Each question carries {part.marks} mark{part.marks > 1 ? "s" : ""}
+              {Object.keys(questionsByMarks)
+                .sort((a, b) => parseInt(a) - parseInt(b))
+                .map((marks, partIdx) => {
+                  const qs = questionsByMarks[parseInt(marks)];
+                  if (!qs || qs.length === 0) return null;
+                  return (
+                    <div
+                      id={`qbank-part-part${partIdx + 1}`}
+                      key={marks}
+                      className="ep-part-section"
+                    >
+                      <div className="ep-part-header">
+                        <div className="ep-part-left">
+                          <div className="ep-part-badge">{partIdx + 1}</div>
+                          <div>
+                            <div className="ep-part-title">
+                              {marks}-Mark Questions
+                            </div>
+                            <div className="ep-part-subtitle">
+                              Each question carries {marks} mark
+                              {parseInt(marks) > 1 ? "s" : ""}
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
 
-                    <div className="ep-paper-questions">
-                      {qs.map((q, qi) => (
-                        <div key={qi} className="ep-paper-qn">
-                          <div className="ep-paper-qn-num">{qi + 1}</div>
-                          <div className="ep-paper-qn-text">{q.q}</div>
-                          <span className="ep-paper-qn-unit">{q.unit}</span>
-                        </div>
-                      ))}
+                      <div className="ep-paper-questions">
+                        {qs.map((q, qi) => {
+                          // Check if this is first question or section changed
+                          const prevQuestion = qi > 0 ? qs[qi - 1] : null;
+                          const showSection = !prevQuestion || prevQuestion.section_title !== q.section_title;
+                          
+                          return (
+                            <div key={q.question_id}>
+                              {showSection && q.section_title && (
+                                <div style={{
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  color: "#6366f1",
+                                  textTransform: "uppercase",
+                                  letterSpacing: "0.05em",
+                                  marginBottom: 12,
+                                  paddingBottom: 10,
+                                  borderBottom: "2px solid #e0e7ff",
+                                  marginTop: qi > 0 ? 16 : 0
+                                }}>
+                                  {q.section_title}
+                                </div>
+                              )}
+                              <div className="ep-paper-qn" style={{ marginBottom: 12 }}>
+                                <div className="ep-paper-qn-num">{qi + 1}</div>
+                                <div className="ep-paper-qn-text">
+                                  {q.question}
+                                  {q.options && q.options.length > 0 && (
+                                    <div style={{ marginTop: 8, marginLeft: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+                                      {q.options.map((opt, optIdx) => (
+                                        <div key={optIdx} style={{ fontSize: 12, color: "#374151" }}>
+                                          {String.fromCharCode(97 + optIdx)}) {opt}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                              <span className="ep-paper-qn-unit">{q.difficulty}</span>
+                           
+                          </div>
+                        );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
             </div>
           </div>
 
@@ -912,19 +1448,58 @@ export default function QuestionBank() {
             <div className="qb-predictor-overlay">
               <div className="qb-predictor-card">
                 <div className="qb-predictor-head">
-                  <div className="qb-predictor-title"><PieChart size={15} style={{color:"#8b5cf6"}}/>Topic Weightage</div>
-                  <button onClick={()=>setShowPred(false)} style={{width:28,height:28,borderRadius:8,border:"1.5px solid #f1f5f9",background:"#fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#94a3b8"}}><X size={14}/></button>
+                  <div className="qb-predictor-title">
+                    <PieChart size={15} style={{ color: "#8b5cf6" }} />
+                    Topic Weightage
+                  </div>
+                  <button
+                    onClick={() => setShowPred(false)}
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 8,
+                      border: "1.5px solid #f1f5f9",
+                      background: "#fff",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "#94a3b8",
+                    }}
+                  >
+                    <X size={14} />
+                  </button>
                 </div>
                 <div className="qb-predictor-body">
-                  {preview.topicWeightage.split(",").map((item,i)=>{
-                    const [lbl,val]=item.split(":");
-                    return (
-                      <div key={i} className="qb-predictor-row">
-                        <span className="qb-predictor-lbl">{lbl?.trim()}</span>
-                        <span className="qb-predictor-val">{val?.trim()}</span>
-                      </div>
-                    );
-                  })}
+                  {topicsList && topicsList.length > 0 ? (
+                    (() => {
+                      const difficulty = getDifficultyStats(preview.questions);
+                      const percentEasy = Math.round((difficulty.easy / preview.totalQuestions) * 100);
+                      const percentMedium = Math.round((difficulty.medium / preview.totalQuestions) * 100);
+                      const percentHard = Math.round((difficulty.hard / preview.totalQuestions) * 100);
+                      
+                      return (
+                        <>
+                          <div className="qb-predictor-row">
+                            <span className="qb-predictor-lbl">Easy Questions</span>
+                            <span className="qb-predictor-val">{percentEasy}%</span>
+                          </div>
+                          <div className="qb-predictor-row">
+                            <span className="qb-predictor-lbl">Medium Questions</span>
+                            <span className="qb-predictor-val">{percentMedium}%</span>
+                          </div>
+                          <div className="qb-predictor-row">
+                            <span className="qb-predictor-lbl">Hard Questions</span>
+                            <span className="qb-predictor-val">{percentHard}%</span>
+                          </div>
+                        </>
+                      );
+                    })()
+                  ) : (
+                    <div className="qb-predictor-row">
+                      <span className="qb-predictor-lbl">No data</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -932,11 +1507,17 @@ export default function QuestionBank() {
         </div>
 
         {showTop && (
-          <button className="qb-scroll-top" onClick={scrollTop}><ArrowUp size={18}/></button>
+          <button className="qb-scroll-top" onClick={scrollTop}>
+            <ArrowUp size={18} />
+          </button>
         )}
 
-        <button className="qb-mob-fab" style={{display:"none"}} onClick={()=>setShowMobSb(o=>!o)}>
-          {showMobSb?<X size={20}/>:<List size={20}/>}
+        <button
+          className="qb-mob-fab"
+          style={{ display: "none" }}
+          onClick={() => setShowMobSb((o) => !o)}
+        >
+          {showMobSb ? <X size={20} /> : <List size={20} />}
         </button>
       </div>
     </div>

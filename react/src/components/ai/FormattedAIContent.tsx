@@ -1,6 +1,7 @@
 import React, { Fragment, useEffect } from "react";
 import { InlineMath, BlockMath } from "react-katex";
 import "katex/dist/katex.min.css";
+
 type FormattedAIContentProps = {
   value: unknown;
   className?: string;
@@ -49,6 +50,7 @@ const inlineCodeStyle: React.CSSProperties = {
   background: "rgba(15,23,42,0.08)",
   fontSize: "0.92em",
 };
+
 const highlightStyle: React.CSSProperties = {
   background: "linear-gradient(135deg,#fef3c7,#fde68a)",
   borderRadius: 3,
@@ -56,6 +58,42 @@ const highlightStyle: React.CSSProperties = {
   color: "#1a1a1a",
   fontWeight: 600,
 };
+
+/**
+ * Clean up LaTeX content for KaTeX rendering
+ * Handles newlines, spacing, and array environments
+ */
+function cleanLaTeXContent(latex: string): string {
+  let cleaned = latex.trim();
+
+  // Decode HTML entities
+  cleaned = cleaned
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+
+  // Handle malformed array/matrix/aligned content from API
+  if (
+    /\\begin\{(array|aligned|align\*?|matrix|pmatrix|bmatrix|cases)\}/.test(
+      cleaned,
+    )
+  ) {
+    // Convert literal \n from API into LaTeX row breaks
+    cleaned = cleaned.replace(/\\n/g, " \\\\ ");
+
+    // Convert accidental single slash row endings (but don't touch rows
+    // that already have a proper double-backslash "\\" line break)
+    cleaned = cleaned.replace(/,\s*\\(?!\\)\s*/g, ", \\\\ ");
+
+    // Remove excessive whitespace
+    cleaned = cleaned.replace(/\s+/g, " ");
+
+    return cleaned;
+  }
+
+  return cleaned.replace(/\s+/g, " ");
+}
+
 function normalizeLabel(key: string) {
   return key
     .replace(/[_-]+/g, " ")
@@ -119,6 +157,7 @@ function tokenizeInline(
 
   return tokens;
 }
+
 function renderWordHighlightedText(
   text: string,
   highlightEnabled: boolean,
@@ -148,6 +187,7 @@ function renderWordHighlightedText(
     );
   });
 }
+
 function renderMathAwareText(
   text: string,
   highlightEnabled: boolean,
@@ -156,6 +196,7 @@ function renderMathAwareText(
 ) {
   const segments = [];
 
+  // Match block math delimiters ($$...$$ or \[...\])
   const regex =
     /(\$\$[\s\S]*?\$\$|\$[^$]+\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\))/g;
 
@@ -188,28 +229,42 @@ function renderMathAwareText(
   return segments.map((segment, index) => {
     if (segment.type === "math") {
       let expression = segment.content;
+      let isBlock = false;
 
+      // Detect and handle block math delimiters
       if (expression.startsWith("\\[") && expression.endsWith("\\]")) {
-        expression = expression.replace(/^\\\[/, "").replace(/\\\]$/, "");
-
-        return <BlockMath key={index} math={expression} />;
-      }
-
-      if (expression.startsWith("$$") && expression.endsWith("$$")) {
         expression = expression.slice(2, -2);
-
-        return <BlockMath key={index} math={expression} />;
+        isBlock = true;
+      } else if (expression.startsWith("$$") && expression.endsWith("$$")) {
+        expression = expression.slice(2, -2);
+        isBlock = true;
+      } else if (expression.startsWith("\\(") && expression.endsWith("\\)")) {
+        expression = expression.slice(2, -2);
+        isBlock = false;
+      } else if (expression.startsWith("$") && expression.endsWith("$")) {
+        expression = expression.slice(1, -1);
+        isBlock = false;
       }
 
-      if (expression.startsWith("\\(") && expression.endsWith("\\)")) {
-        expression = expression.replace(/^\\\(/, "").replace(/\\\)$/, "");
-
+      // Clean the LaTeX content
+      expression = cleanLaTeXContent(expression);
+      // API sometimes sends malformed array rows
+      expression = expression.replace(
+        /\\begin\{array\}\{l\}(.*?)\\end\{array\}/s,
+        (_, content) => {
+          return `\\begin{array}{l}${content
+            .replace(/\\n/g, " \\\\ ")
+            .replace(/&lt;/g, "<")
+            .replace(/&gt;/g, ">")
+            .replace(/\s+/g, " ")}\\end{array}`;
+        },
+      );
+      // Render based on whether it's block or inline
+      if (isBlock) {
+        return <BlockMath key={index} math={expression} />;
+      } else {
         return <InlineMath key={index} math={expression} />;
       }
-
-      expression = expression.slice(1, -1);
-
-      return <InlineMath key={index} math={expression} />;
     }
 
     return (
@@ -224,6 +279,7 @@ function renderMathAwareText(
     );
   });
 }
+
 function renderInline(
   text: string,
   highlightEnabled = false,
@@ -232,13 +288,22 @@ function renderInline(
 ) {
   const blockMaths: string[] = [];
 
+  // Extract block math first to prevent interference with paragraph parsing.
+  // This must catch \[...\], $$...$$, AND bare \begin{array}/aligned/matrix/
+  // etc. environments that arrive with no $ delimiters at all. Without this,
+  // a $$ that opens on one line and closes several lines later never finds
+  // its matching pair once the text below is split into individual lines,
+  // so the literal "$$" markers (and unrendered LaTeX source) leak into the
+  // output instead of being rendered as math.
+  const blockMathPattern =
+    /\\\[\s*([\s\S]*?)\s*\\\]|\$\$\s*([\s\S]*?)\s*\$\$|(\\begin\{(?:array|aligned|align\*?|matrix|pmatrix|bmatrix|cases)\}[\s\S]*?\\end\{(?:array|aligned|align\*?|matrix|pmatrix|bmatrix|cases)\})/g;
+
   const normalizedText = text.replace(
-    /\\\[\s*([\s\S]*?)\s*\\\]/g,
-    (_, formula) => {
+    blockMathPattern,
+    (_match, bracketFormula, dollarFormula, bareEnvFormula) => {
+      const formula = bracketFormula ?? dollarFormula ?? bareEnvFormula;
       const index = blockMaths.length;
-
       blockMaths.push(formula);
-
       return `@@BLOCK_MATH_${index}@@`;
     },
   );
@@ -250,13 +315,13 @@ function renderInline(
 
     if (blockMatch) {
       const formula = blockMaths[Number(blockMatch[1])];
-
-      return <BlockMath key={`math-${lineIndex}`} math={formula} />;
+      const cleaned = cleanLaTeXContent(formula);
+      return <BlockMath key={`math-${lineIndex}`} math={cleaned} />;
     }
+
     return (
       <Fragment key={`${part}-${lineIndex}`}>
         {tokenizeInline(part).map((token, tokenIndex) => {
-          console.log("PART:", part);
           if (token.type === "strong") {
             return (
               <strong key={tokenIndex}>
@@ -408,8 +473,17 @@ function renderStructuredValue(value: unknown, depth = 0): React.ReactNode {
     return null;
   }
 
+  // Prevent infinite recursion on deeply nested objects
+  if (depth > 5) {
+    return <span>{String(value)}</span>;
+  }
+
   if (typeof value === "string") {
-    return <FormattedAIContent value={value} compact={depth > 0} />;
+    // Only parse as markdown at top level, not in nested structures
+    if (depth === 0) {
+      return <FormattedAIContent value={value} compact={depth > 0} />;
+    }
+    return <span>{value}</span>;
   }
 
   if (typeof value === "number" || typeof value === "boolean") {
@@ -479,7 +553,7 @@ export default function FormattedAIContent({
   if (value === null || value === undefined || value === "") {
     return null;
   }
-  const wordCounter = { current: 0 };
+
   if (typeof value !== "string") {
     return (
       <div className={className} style={containerStyle}>
@@ -487,9 +561,10 @@ export default function FormattedAIContent({
       </div>
     );
   }
+
   const wordCounterRef = { current: 0 };
   const blocks = parseMarkdown(value);
-  console.log(value);
+
   return (
     <div className={className} style={containerStyle}>
       {blocks.map((block, index) => {

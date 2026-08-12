@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef,useMemo } from "react";
 import { Link, useLocation } from "wouter";
 import { Button } from "../ui/button";
 import { motion, AnimatePresence } from "framer-motion";
@@ -45,7 +45,7 @@ import {
   type LibrarySubject,
 } from "../../lib/gradeupApi";
 import { buildApiUrl } from "../../lib/apiBase";
-
+import PartTermFilterBar from "../PartTermFilterBar";
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Chapter {
   id: number | string;
@@ -53,6 +53,8 @@ interface Chapter {
   content: string;
   unit: number;
   unitTitle?: string;
+    part?: string;   // ADD
+  term?: string;   // ADD
   enhancedContent?: string;
   layout?: any;
   sectionTopics?: Array<{
@@ -82,7 +84,65 @@ interface Book {
   coverImageUrl?: string | null;
   imageCandidates?: string[];
 }
+interface TeachingSegment {
+  segment_id: string;
+  type: "teaching";
+  text: string;
+  emotion?: string;
+  image_url?: string; // optional – shown if present
+  image?: string; // alternate key
+}
+interface FlashcardSegment {
+  segment_id: string;
+  type: "flashcard";
+  card_title?: string;
+  front: string;
+  front_style?: string;
+  avatar_line?: string;
+  avatar_emotion?: string;
+  image_url?: string;
+  image?: string;
+}
 
+type Segment = TeachingSegment | FlashcardSegment;
+
+interface AvatarExplanation {
+  teaching_style?: string;
+  total_duration_estimate?: string;
+  segments: Segment[];
+}
+
+interface SectionEnrichment {
+  avatar_explanation?: AvatarExplanation;
+}
+
+interface SubSection {
+  type?: string;
+  id?: string;
+  title?: string | null;
+  enrichment?: {
+    avatar_explanation?: AvatarExplanation;
+  };
+}
+
+interface Section {
+  section_number?: string;
+  section_title?: string;
+  type?: string;
+  section_enrichment?: SectionEnrichment;
+  sub_sections?: SubSection[];
+}
+
+interface Unit {
+  unit_number?: number;
+  title?: string;
+  subject?: string;
+  sections?: Section[];
+}
+
+interface EnrichedData {
+  units?: Unit[];
+}
 // ─── Ask AI chat message type ─────────────────────────────────────────────────
 interface AskAIMessage {
   id: string;
@@ -156,31 +216,43 @@ function normalizeArrayField(value: any): string[] {
 
   return [];
 }
-// NEW: Handle avatar explanations with special flashcard support
-// NEW: Handle avatar explanations with special flashcard support
-const pushAvatarExplanation = (lines: string[],value: any) => {
-  const segments = Array.isArray(value?.segments) ? value.segments : [];
-  if (!segments.length) return;
-  lines.push("### Avatar Explanation");
+// DEPRECATED: Avatar explanation segments now handled via pushAvatarExplanationSegments()
+// within the main serialization flow. Kept as empty stub to prevent reference errors.
+const pushAvatarExplanation = () => {
+  // Avatar explanations are now handled as primary content source via segments.
+  // This stub exists for backward compatibility only.
+};
+// ─── Extract Avatar Explanation Content ────────────────────────────────────
+function extractAvatarExplanationContent(avatarExplanation: any): string {
+  if (!avatarExplanation || typeof avatarExplanation !== "object") {
+    return "";
+  }
+
+  const segments = Array.isArray(avatarExplanation?.segments)
+    ? avatarExplanation.segments
+    : [];
+  if (!segments.length) return "";
+
+  const content: string[] = [];
+
   segments.forEach((segment: any) => {
-    const segmentType = String(segment?.type || "segment").trim().toLowerCase();
-    
-    // NEW: Special handling for flashcard segments
-    if (segmentType === "flashcard") {
-      const cardTitle = segment?.card_title || segment?.cardTitle || "Flashcard";
-      const front = flattenContentToText(segment?.front).trim();
-      const back = flattenContentToText(segment?.back || segment?.answer).trim();
-      if (front) lines.push(`**${cardTitle}** - Front: ${front}`);
-      if (back) lines.push(`  Back: ${back}`);
-    } else {
-      // Teaching and other segment types
-      const text = flattenContentToText(segment?.text || segment).trim();
-      if (!text) return;
-      const emotion = segment?.emotion ? ` (${segment.emotion})` : "";
-      lines.push(`- ${segmentType}${emotion}: ${text}`);
+    // Handle flashcard segments
+    if (segment?.type === "flashcard") {
+      return;
+    }
+    // Handle teaching segments
+    else if (segment?.type === "teaching") {
+      const text = String(segment?.text || "").trim();
+      const emotion = String(segment?.emotion || "").trim();
+      if (text) {
+        content.push(`${text}`);
+        if (emotion) content.push(`(${emotion})`);
+      }
     }
   });
-};
+
+  return content.filter(Boolean).join("\n");
+}
 function serializeEnrichedForGenius(
   enrichedContent: any,
   fallbackTitle: string,
@@ -190,6 +262,21 @@ function serializeEnrichedForGenius(
   }
 
   const lines: string[] = [];
+  const pushFlashcardMarker = (segment: any) => {
+    const q = String(segment?.front || segment?.question || "").trim();
+    const a = String(
+      segment?.back ||
+        segment?.answer ||
+        segment?.avatar_line ||
+        segment?.explanation ||
+        "",
+    ).trim();
+    const title = String(segment?.card_title || segment?.title || "").trim();
+    if (!q && !a) return;
+    lines.push(
+      `[[FLASHCARD]]${encodeURIComponent(JSON.stringify({ q, a, title }))}`,
+    );
+  };
   const pushText = (value: any) => {
     const text = flattenContentToText(value).trim();
     if (text) lines.push(text);
@@ -230,6 +317,38 @@ function serializeEnrichedForGenius(
     );
   };
 
+  // NEW: Handle avatar explanation segments as primary content source
+  const pushAvatarExplanationSegments = (avatarExplanation: any) => {
+    if (!avatarExplanation || typeof avatarExplanation !== "object") return;
+
+    const segments = Array.isArray(avatarExplanation?.segments)
+      ? avatarExplanation.segments
+      : [];
+    if (!segments.length) return;
+
+    segments.forEach((segment: any, segmentIndex: number) => {
+      const segmentType = String(segment?.type || "segment")
+        .trim()
+        .toLowerCase();
+      if (segmentType === "flashcard") {
+        pushFlashcardMarker(segment);
+        return;
+      } else if (segmentType === "teaching") {
+        // Teaching segment: render text only (emotion is for avatar, not reader)
+        const text = String(segment?.text || "").trim();
+
+        if (text) {
+          lines.push(text);
+          // Emotion is NOT rendered in serialized content - it's only used by avatar avatar in Genius Mode HTML
+        }
+      } else {
+        // Generic segment: render text or description
+        const text = String(segment?.text || segment?.content || "").trim();
+        if (text) lines.push(text);
+      }
+    });
+  };
+
   const units = Array.isArray(enrichedContent?.units)
     ? enrichedContent.units
     : Array.isArray(enrichedContent)
@@ -246,7 +365,42 @@ function serializeEnrichedForGenius(
     if (unitTitle) lines.push(`# ${unitTitle}`);
 
     const sections = Array.isArray(unit?.sections) ? unit.sections : [];
-    sections.forEach((section: any) => {
+
+    // NEW: Separate introduction and other sections
+    const introductionSection = sections.find(
+      (s: any) => (s.type || "").toLowerCase() === "introduction",
+    );
+    const regularSections = sections.filter(
+      (s: any) => (s.type || "").toLowerCase() !== "introduction",
+    );
+
+    // NEW: Push introduction first if exists
+    if (introductionSection) {
+      const introTitle =
+        introductionSection?.section_title ||
+        introductionSection?.sectionTitle ||
+        introductionSection?.title ||
+        "Introduction";
+      if (introTitle) lines.push(`## ${introTitle}`);
+
+      const enrichment =
+        introductionSection?.section_enrichment ||
+        introductionSection?.enrichment ||
+        introductionSection;
+      pushText(
+        introductionSection?.content || introductionSection?.content_context,
+      );
+      pushText(enrichment?.concept_overview);
+      pushText(enrichment?.detailed_explanation);
+      pushList("Key Points", enrichment?.key_points || enrichment?.keyPoints);
+      // NEW: Check for avatar explanation segments first
+      if (enrichment?.avatar_explanation) {
+        pushAvatarExplanationSegments(enrichment.avatar_explanation);
+      }
+    }
+
+    // Push regular sections - UPDATED: avatar explanation segments become primary
+    regularSections.forEach((section: any) => {
       const sectionTitle =
         section?.section_title ||
         section?.sectionTitle ||
@@ -254,18 +408,26 @@ function serializeEnrichedForGenius(
         section?.heading;
       if (sectionTitle) lines.push(`## ${sectionTitle}`);
 
-      // NEW: Check section_enrichment first (new schema), then enrichment
-     // NEW: Check section_enrichment first (new schema), then enrichment
-      const enrichment = section?.section_enrichment || section?.enrichment || section;
-      pushText(section?.content || section?.content_context); // NEW: Add main content first
-      pushText(enrichment?.concept_overview);
-      pushText(enrichment?.detailed_explanation);
-      pushList("Real World Connections", enrichment?.real_world_connections);
-      pushList(
-        "Key Points",
-        enrichment?.key_points || enrichment?.keyPoints || enrichment?.points,
-      );
-      pushAvatarExplanation(enrichment?.avatar_explanation); // NEW: Handle avatar explanations
+      // Check section_enrichment first (new schema), then enrichment
+      const enrichment =
+        section?.section_enrichment || section?.enrichment || section;
+
+      // NEW: Check for avatar explanation segments FIRST
+      // If segments exist, they become the primary content source
+      if (enrichment?.avatar_explanation?.segments?.length > 0) {
+        pushAvatarExplanationSegments(enrichment.avatar_explanation);
+      } else {
+        // FALLBACK: Use traditional content if no segments
+        pushText(section?.content || section?.content_context);
+        pushText(enrichment?.concept_overview);
+        pushText(enrichment?.detailed_explanation);
+        pushList("Real World Connections", enrichment?.real_world_connections);
+        pushList(
+          "Key Points",
+          enrichment?.key_points || enrichment?.keyPoints || enrichment?.points,
+        );
+      }
+
       pushFaqs(enrichment?.faqs || enrichment?.faq);
       pushPracticeQuestions(
         enrichment?.practice_questions || enrichment?.practiceQuestions,
@@ -273,14 +435,24 @@ function serializeEnrichedForGenius(
     });
 
     if (!sections.length) {
-      const enrichment = unit?.enrichment || unit;
-      pushText(enrichment?.concept_overview);
-      pushText(enrichment?.detailed_explanation);
-      pushList("Real World Connections", enrichment?.real_world_connections);
+      const enrichment = unit?.section_enrichment || unit?.enrichment || unit;
+      // NEW: Check for avatar explanation segments first
+      if (enrichment?.avatar_explanation?.segments?.length > 0) {
+        pushAvatarExplanationSegments(enrichment.avatar_explanation);
+      } else {
+        pushText(enrichment?.concept_overview);
+        pushText(enrichment?.detailed_explanation);
+        pushList("Real World Connections", enrichment?.real_world_connections);
+      }
       pushFaqs(enrichment?.faqs || enrichment?.faq);
       pushPracticeQuestions(
         enrichment?.practice_questions || enrichment?.practiceQuestions,
       );
+      pushKeyValueList(
+        "Points to Remember",
+        unit?.points_to_remember || unit?.pointsToRemember,
+      );
+      pushKeyValueList("Glossary", unit?.glossary?.sub_items || unit?.glossary);
     }
   });
 
@@ -337,8 +509,342 @@ function clearReaderState() {
   } catch {}
 }
 
+// ─── Library data ─────────────────────────────────────────────────────────────
+const LIBRARY_DATA: Book[] = [
+  {
+    id: "bio-10",
+    title: "Biology: Cellular Life",
+    subject: "Science",
+    color: "linear-gradient(135deg, #6366f1 0%, #a855f7 100%)",
+    chapters: [
+      {
+        id: 1,
+        unit: 1,
+        title: "Cell Discovery & The Microscopic Frontier",
+        content:
+          "In 1665, Robert Hooke observed a thin slice of cork under a microscope. He saw thousands of tiny, empty chambers which he called 'cells'. This was the beginning of our understanding of the fundamental unit of life.",
+        enhancedContent: `### The Genesis of Cytology\nIn the mid-17th century, the scientific world was limited by the naked eye until the invention of the compound microscope. In 1665, the British polymath Robert Hooke utilized a primitive but effective microscope to examine a thin shaving of cork. What he discovered was not a solid mass, but a complex lattice of tiny, box-like structures.\n\nHooke noted that these structures resembled the cella — the small, austere rooms inhabited by monks. Thus, the term "Cell" was born. While Hooke was actually looking at the dead cell walls of plant tissue, his observations paved the way for Antonie van Leeuwenhoek to later discover living, moving cells in pond water, which he called "animalcules."\n\n### The Three Pillars of Cell Theory\nBy the 1830s, German scientists Matthias Schleiden and Theodor Schwann, along with Rudolf Virchow, synthesized these observations into the Unified Cell Theory:\n\nUniversality: All living organisms, from single-celled bacteria to complex multicellular humans, are composed of one or more cells. Structure: The cell is the basic unit of structure, function, and organization in all biological systems. Biogenesis: All cells arise from pre-existing, living cells through the process of cellular division, debunking the theory of spontaneous generation.\n\n### Modern Implications\nToday, we understand that cells are not just "chambers" but complex chemical factories. Every cell contains hereditary information (DNA) which is passed from parent to daughter cell during division. The discovery of DNA's double helix structure by Watson and Crick in 1953 gave us the molecular key to understanding how this information is copied and transmitted across generations.`,
+      },
+      {
+        id: 2,
+        unit: 1,
+        title: "Organelles: The Architecture of Life",
+        content:
+          "Mitochondria are known as the powerhouses of the cell. They convert energy from food into ATP. The nucleus acts as the control center, containing DNA.",
+        enhancedContent: `### The Intracellular Economy\nA eukaryotic cell is analogous to a modern city, where specialized structures called organelles function as departments ensuring survival and growth. Without this compartmentalization, the chemical reactions necessary for life would interfere with one another.\n\n### The Nucleus: Command and Control\nThe nucleus is the most prominent organelle. It serves as the repository of the cell's genetic blueprint. The Nuclear Envelope is a double membrane that protects the DNA. The Nucleolus is a dense region where ribosome synthesis begins. Chromatin is the complex of DNA and proteins that condenses to form chromosomes.\n\n### Mitochondria: The Energy Generators\nOften called the "powerhouse," mitochondria perform cellular respiration. They take in nutrients from the cell, break them down, and turn them into energy-rich ATP molecules for the cell. The Matrix is where the citric acid cycle occurs. Cristae are the inner folds that increase surface area for higher ATP production efficiency.\n\n### Ribosomes and the ER: The Manufacturing Plant\nProtein synthesis is the cell's primary industry. Ribosomes can be found floating freely in the cytoplasm or attached to the Rough Endoplasmic Reticulum (RER). The RER modifies proteins, while the Smooth ER is responsible for lipid synthesis and detoxification.`,
+      },
+      {
+        id: 3,
+        unit: 2,
+        title: "Cell Division: Continuity of Life",
+        content:
+          "Cells divide through mitosis for growth and repair, and meiosis for reproduction. Mitosis results in two identical daughter cells.",
+        enhancedContent: `### The Cell Cycle and Replication\nLife depends on the ability of cells to reproduce. This is achieved through a highly regulated sequence of events known as the Cell Cycle. This cycle is divided into Interphase (growth) and the M-phase (division).\n\n### Mitosis: Somatic Reproduction\nMitosis is the process used for growth, tissue repair, and asexual reproduction. It ensures that each new cell receives an exact copy of the parent cell's DNA. It consists of four main stages. Prophase: Chromosomes condense and the nuclear envelope breaks down. Metaphase: Chromosomes align in the center of the cell. Anaphase: Sister chromatids are pulled apart toward opposite poles. Telophase: Two new nuclear envelopes form around the separated DNA.\n\n### Meiosis: Genetic Diversity\nUnlike mitosis, Meiosis is a specialized form of division that occurs in germ cells to produce gametes (sperm and eggs). It involves two rounds of division (Meiosis I and II). It results in four non-identical daughter cells, each with half the original number of chromosomes (haploid). During Prophase I, homologous chromosomes exchange genetic material, ensuring that every offspring is genetically unique.\n\n### Checkpoints and Cancer\nThe cell cycle is governed by "checkpoints." If a cell's DNA is damaged, the cycle stops for repairs. If these regulatory proteins (like p53) fail, cells divide uncontrollably, which is the biological basis of cancer.`,
+      },
+      {
+        id: 4,
+        unit: 2,
+        title: "Organelles: Advanced Study",
+        layout: [
+          {
+            type: "text",
+            content:
+              "Within the cell's cytoplasm lies a complex world of specialized structures called organelles, each with a specific job...",
+          },
+          {
+            type: "image",
+            src: "mitochondria_diagram_url",
+            caption: "Fig 2.1: Mitochondrial Grid",
+          },
+          {
+            type: "text",
+            content:
+              "Often called the 'powerhouse,' mitochondria perform cellular respiration...",
+          },
+          {
+            type: "text",
+            content:
+              "The nucleus, a large, often centrally located organelle, acts as the cell's control center...",
+          },
+          {
+            type: "image",
+            src: "nucleus_diagram_url",
+            caption: "Fig 2.2: Nuclear Envelope",
+          },
+        ],
+        content: "",
+      },
+    ],
+  },
+  {
+    id: "phys-12",
+    title: "Quantum Mechanics",
+    subject: "Physics",
+    color: "linear-gradient(135deg, #0ea5e9 0%, #22d3ee 100%)",
+    chapters: [
+      {
+        id: 1,
+        unit: 1,
+        title: "Newtonian Laws & Classical Limits",
+        content:
+          "Newton's laws describe the motion of macroscopic objects. They form the foundation of classical mechanics and explain how forces affect motion.",
+        enhancedContent:
+          "### The Deterministic Universe\nBefore the 20th century, physics was governed by the laws of Sir Isaac Newton.\n\n### Newton's Three Axioms\nInertia: An object remains at rest or in uniform motion unless acted upon by an external force. Acceleration: F = ma. Reaction: For every action, there is an equal and opposite reaction.\n\n### The Breakdown\nAt the subatomic level, the deterministic nature of Newtonian physics gives way to the probabilistic nature of Quantum Mechanics.",
+      },
+      {
+        id: 2,
+        unit: 2,
+        title: "Wave-Particle Duality",
+        content:
+          "Quantum mechanics reveals that particles like electrons exhibit both wave and particle properties.",
+        enhancedContent:
+          "### The Nature of Quanta\nLight and matter do not behave exclusively as particles or waves, but as both.\n\n### The Double-Slit Experiment\nWhen electrons are fired at a barrier with two slits, they create an interference pattern — a behavior typical of waves. However, when observed, the pattern disappears and electrons behave like particles.\n\n### De Broglie's Hypothesis\nAll matter has an associated wavelength, inversely proportional to its momentum.",
+      },
+    ],
+  },
+  {
+    id: "chem-11",
+    title: "Organic Chemistry Basics",
+    subject: "Chemistry",
+    color: "linear-gradient(135deg, #10b981 0%, #34d399 100%)",
+    chapters: [
+      {
+        id: 1,
+        unit: 1,
+        title: "Carbon Compounds",
+        content:
+          "Organic chemistry focuses on carbon-based compounds. Carbon's ability to form four covalent bonds allows it to create complex molecules essential for life.",
+      },
+      {
+        id: 2,
+        unit: 1,
+        title: "Hydrocarbons",
+        content:
+          "Hydrocarbons are compounds consisting only of carbon and hydrogen. They are classified as alkanes, alkenes, and alkynes based on bonding.",
+      },
+    ],
+  },
+  {
+    id: "cs-10",
+    title: "Intro to Computer Science",
+    subject: "Computer Science",
+    color: "linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%)",
+    chapters: [
+      {
+        id: 1,
+        unit: 1,
+        title: "The Von Neumann Architecture",
+        content:
+          "A computer is an electronic device that processes data based on instructions. It consists of hardware and software.",
+        enhancedContent:
+          "### The Logical Machine\nModern computing is based on the Von Neumann Architecture.\n\n### Core Components\nCPU: The brain of the computer. ALU: Handles mathematical and logical operations. Memory (RAM): Volatile storage. I/O Devices: Allow interaction with the machine.\n\n### Binary and Logic\nAt the lowest level, computers process information using Binary (Base-2).",
+      },
+      {
+        id: 2,
+        unit: 2,
+        title: "Algorithms & Computational Thinking",
+        content:
+          "An algorithm is a step-by-step procedure to solve a problem. Efficient algorithms improve performance.",
+        enhancedContent:
+          "### The Art of Problem Solving\nAn algorithm is a finite sequence of well-defined instructions.\n\n### Big O Notation\nO(1): Constant time. O(log n): Logarithmic time. O(n): Linear time. O(n²): Quadratic time.\n\n### Data Structures\nArrays, Stacks, Queues, and Trees — choosing the right structure determines solution elegance.",
+      },
+    ],
+  },
+  {
+    id: "hist-11",
+    title: "The Industrial Revolution",
+    subject: "History",
+    color: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)",
+    chapters: [
+      {
+        id: 1,
+        unit: 1,
+        title: "Steam Power & The Mechanical Age",
+        content:
+          "The invention of steam engines revolutionized manufacturing and transportation, leading to rapid industrial growth.",
+        enhancedContent:
+          "### The Great Divergence\nThe Industrial Revolution began in Great Britain in the late 18th century.\n\n### The Engine of Change\nJames Watt's improvements to the steam engine in 1776 allowed for the mechanization of the textile industry.\n\n### Transportation\nRailways, Steamships, and Telegraphy transformed commerce and warfare.",
+      },
+      {
+        id: 2,
+        unit: 2,
+        title: "Social Impact & Urbanization",
+        content:
+          "Industrialization transformed societies by increasing urbanization, altering labor systems, and shaping modern economies.",
+        enhancedContent:
+          "### The Urban Shift\nPopulation migrated from rural farms to crowded cities.\n\n### Labor and Class Structure\nThe Bourgeoisie (factory owners) and the Proletariat (workers) emerged as new social classes.\n\n### Working Conditions and Reform\nInitial growth was unregulated. Labor Unions and Factory Acts improved conditions.",
+      },
+    ],
+  },
+  {
+    id: "geo-9",
+    title: "Physical Geography",
+    subject: "Geography",
+    color: "linear-gradient(135deg, #22c55e 0%, #16a34a 100%)",
+    chapters: [
+      {
+        id: 1,
+        unit: 1,
+        title: "Earth's Structure",
+        content:
+          "The Earth consists of the crust, mantle, and core. These layers influence tectonic activity and geological processes.",
+      },
+      {
+        id: 2,
+        unit: 1,
+        title: "Climate Systems",
+        content:
+          "Climate is influenced by latitude, altitude, wind patterns, and ocean currents, shaping ecosystems worldwide.",
+      },
+    ],
+  },
+  {
+    id: "eng-10",
+    title: "English Literature Classics",
+    subject: "English",
+    color: "linear-gradient(135deg, #ec4899 0%, #be185d 100%)",
+    chapters: [
+      {
+        id: 1,
+        unit: 1,
+        title: "Poetry",
+        content:
+          "Poetry uses rhythm, imagery, and metaphor to express emotions and ideas in a condensed form.",
+      },
+      {
+        id: 2,
+        unit: 2,
+        title: "Drama",
+        content:
+          "Drama is written for performance and explores human conflicts through dialogue and action.",
+      },
+    ],
+  },
+  {
+    id: "eco-12",
+    title: "Principles of Economics",
+    subject: "Economics",
+    color: "linear-gradient(135deg, #f97316 0%, #ea580c 100%)",
+    chapters: [
+      {
+        id: 1,
+        unit: 1,
+        title: "Demand and Supply",
+        content:
+          "Demand and supply determine prices in a market economy. Their interaction explains price fluctuations.",
+      },
+      {
+        id: 2,
+        unit: 2,
+        title: "Economic Systems",
+        content:
+          "Economic systems define how resources are allocated. Common systems include capitalism, socialism, and mixed economies.",
+      },
+    ],
+  },
+  {
+    id: "env-10",
+    title: "Environmental Science",
+    subject: "Environmental Studies",
+    color: "linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)",
+    chapters: [
+      {
+        id: 1,
+        unit: 1,
+        title: "Ecosystems",
+        content:
+          "An ecosystem includes living organisms and their physical environment interacting as a system.",
+      },
+      {
+        id: 2,
+        unit: 1,
+        title: "Climate Change",
+        content:
+          "Climate change refers to long-term shifts in temperature and weather patterns, largely driven by human activities.",
+      },
+    ],
+  },
+  {
+    id: "math-10",
+    title: "Advanced Trigonometry",
+    subject: "Mathematics",
+    color: "linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)",
+    chapters: [
+      {
+        id: 1,
+        unit: 1,
+        title: "Sine & Cosine",
+        content:
+          "Trigonometric functions describe relationships between angles and sides of triangles and model periodic phenomena.",
+      },
+      {
+        id: 2,
+        unit: 2,
+        title: "Trigonometric Identities",
+        content:
+          "Identities simplify expressions and equations involving trigonometric functions.",
+      },
+    ],
+  },
+];
 
+// ─── Highlight color palette (Word-doc style) ────────────────────────────────
+const HL_COLORS = [
+  {
+    id: "yellow",
+    label: "Yellow",
+    mark: "#fde047",
+    text: "#713f12",
+    bg: "rgba(253,224,71,.35)",
+    border: "rgba(253,224,71,.7)",
+  },
+  {
+    id: "green",
+    label: "Green",
+    mark: "#86efac",
+    text: "#14532d",
+    bg: "rgba(134,239,172,.35)",
+    border: "rgba(134,239,172,.7)",
+  },
+  {
+    id: "blue",
+    label: "Blue",
+    mark: "#93c5fd",
+    text: "#1e3a5f",
+    bg: "rgba(147,197,253,.35)",
+    border: "rgba(147,197,253,.7)",
+  },
+  {
+    id: "pink",
+    label: "Pink",
+    mark: "#f9a8d4",
+    text: "#831843",
+    bg: "rgba(249,168,212,.35)",
+    border: "rgba(249,168,212,.7)",
+  },
+  {
+    id: "purple",
+    label: "Purple",
+    mark: "#c4b5fd",
+    text: "#3b0764",
+    bg: "rgba(196,181,253,.35)",
+    border: "rgba(196,181,253,.7)",
+  },
+  {
+    id: "orange",
+    label: "Orange",
+    mark: "#fdba74",
+    text: "#7c2d12",
+    bg: "rgba(253,186,116,.35)",
+    border: "rgba(253,186,116,.7)",
+  },
+] as const;
 
+type HlColorId = (typeof HL_COLORS)[number]["id"];
+
+function getHlColor(colorId: string) {
+  return HL_COLORS.find((c) => c.id === colorId) ?? HL_COLORS[0];
+}
 export function openEnhancedView(
   content: string,
   title: string,
@@ -1121,7 +1627,7 @@ body.show-voicebar #voice-bar{display:flex;}
         <div class="status-dot"></div>
         <span id="av-status-txt">Ready</span>
       </div>
-      <button id="raise-btn" onclick="App.openDoubt()">✋ Raise a Doubt</button>
+     
     </div>
 
     <!-- Topics list -->
@@ -1267,6 +1773,13 @@ function parseSegments(raw){
   var lines = raw.split(/\\n+/).map(function(l){return l.trim();}).filter(Boolean);
   var out = [];
   lines.forEach(function(line){
+    if(line.indexOf('[[FLASHCARD]]')===0){
+      try{
+        var card=JSON.parse(decodeURIComponent(line.slice(13)));
+        out.push({type:'flashcard', flash:{q:card.q||card.title||'Checkpoint question', a:card.a||card.q||''}});
+      }catch(e){}
+      return;
+    }
     var forcedEmotion=null;
     var em=line.match(/^\\[emotion\\s*:\\s*([a-z_\\s-]+)\\]\\s*(.*)$/i)
       || line.match(/^emotion\\s*:\\s*([a-z_\\s-]+)\\s*\\|\\s*(.*)$/i);
@@ -1286,6 +1799,9 @@ function buildTopics(segs){
     if(s.type==='h1'||s.type==='h2'){
       if(cur) topics.push(cur);
       cur={title:s.text, segs:[], flash:null};
+    } else if(s.type==='flashcard'){
+      if(!cur) cur={title:TITLE, segs:[], flash:null};
+      cur.segs.push(s);
     } else {
       if(!cur) cur={title:TITLE, segs:[], flash:null};
       cur.segs.push(s);
@@ -1295,7 +1811,13 @@ function buildTopics(segs){
   if(!topics.length) topics=[{title:TITLE,segs:[{type:'p',text:RAW.slice(0,600)}],flash:null}];
   // build flashcards: every 3 paragraphs insert one
   topics.forEach(function(t){
+    if(t.segs.some(function(s){return s.type==='flashcard';})){
+      return;
+    }
     var paras=t.segs.filter(function(s){return s.type==='p';});
+    if(t.flash){
+      return;
+    }
     if(paras.length>=2){
       var mid=paras[Math.floor(paras.length/2)];
       var words=mid.text.split(' '), half=Math.ceil(words.length*.45);
@@ -1512,9 +2034,24 @@ function silenceAvatar(){
   AV.setTalking(false);
   AV.mouthShape('closed');
 }
+function cleanSpeechText(text){
+  return String(text||'')
+    .replace(/^#{1,6}\\s+/gm,'')
+    .replace(/^\\s*>\\s?/gm,'')
+    .replace(/(^|\\n)\\s*[-*+]\\s+/g,'$1')
+    .replace(/\\*\\*(.*?)\\*\\*/g,'$1')
+    .replace(/__(.*?)__/g,'$1')
+    .replace(/\`([^\`]+)\`/g,'$1')
+    .replace(/!\\[([^\\]]*)\\]\\([^)]*\\)/g,'$1')
+    .replace(/\\[([^\\]]+)\\]\\([^)]*\\)/g,'$1')
+    .replace(/(^|\\s)#{1,6}(?=\\s|$)/g,' ')
+    .replace(/\\s+/g,' ')
+    .trim();
+}
 function speak(text, onEnd, opts){
   opts=opts||{};
   var utterToken=opts.token;
+  text=cleanSpeechText(text);
   if(!synth||G.isMuted){ if(onEnd) setTimeout(onEnd,0); return; }
   silenceAvatar();
   synth.cancel();
@@ -1756,25 +2293,25 @@ function buildContentItem(seg, topicIdx, segIdx){
   return null;
 }
 
-function buildFlashItem(topic){
-  if(!topic.flash) return null;
+function buildFlashItem(flash, topicIdx, segIdx){
+  if(!flash) return null;
   var area=document.getElementById('content-area');
   var wrap=document.createElement('div');
   wrap.className='flash-marker';
-  var uid='fc-'+Date.now();
+  var uid='fc-'+Date.now()+'-'+Math.floor(Math.random()*100000);
   wrap.innerHTML=
     '<div class="ic-header"><span class="ic-tag">🃏 Checkpoint</span>'
     +'<span class="ic-flip-hint">👆 Tap to reveal</span></div>'
     +'<div class="ic-scene" onclick="flipCard(\\'' + uid + '\\')"><div class="ic-inner" id="'+uid+'">'
-    +'<div class="ic-face ic-front"><div class="ic-q">'+esc(topic.flash.q)+'</div></div>'
-    +'<div class="ic-face ic-back"><div class="ic-a">'+esc(topic.flash.a.slice(0,300))+'</div></div>'
+    +'<div class="ic-face ic-front"><div class="ic-q">'+esc(flash.q)+'</div></div>'
+    +'<div class="ic-face ic-back"><div class="ic-a">'+esc(String(flash.a||'').slice(0,300))+'</div></div>'
     +'</div></div>'
     +'<div class="ic-footer">'
     +'<button class="ic-fb-btn ic-fb-got" onclick="App.cardDone(\\'' + uid + '\\',true)">✅ Got it!</button>'
     +'<button class="ic-fb-btn ic-fb-rev" onclick="App.cardDone(\\'' + uid + '\\',false)">🔄 Review</button>'
     +'</div>';
   area.appendChild(wrap);
-  return {domEl:wrap, speak:'Let me check if you got that. Here is a quick flashcard.', type:'card', topicIdx:0, segIdx:0, flash:topic.flash};
+  return {domEl:wrap, speak:'Let me check if you got that. Here is a quick flashcard.', type:'card', topicIdx:topicIdx, segIdx:segIdx, flash:flash};
 }
 
 function flipCard(id){
@@ -1821,19 +2358,24 @@ function prebuilAll(){
     // Segments
     var paraCount=0;
     topic.segs.forEach(function(s,si){
+      if(s.type==='flashcard'){
+        var explicitFi=buildFlashItem(s.flash, ti, si);
+        if(explicitFi) builtItems.push(explicitFi);
+        return;
+      }
       var item=buildContentItem(s,ti,si);
       if(!item) return;
       builtItems.push(item);
       if(s.type==='p'||s.type==='list') paraCount++;
       // Insert flashcard automatically after every 3rd paragraph
       if(paraCount>0 && paraCount%3===0 && topic.flash){
-        var fi=buildFlashItem(topic);
+        var fi=buildFlashItem(topic.flash, ti, si);
         if(fi){ builtItems.push(fi); topic.flash=null; }
       }
     });
     // Insert any remaining flashcard at end of topic
     if(topic.flash){
-      var fi2=buildFlashItem(topic);
+      var fi2=buildFlashItem(topic.flash, ti, topic.segs.length);
       if(fi2) builtItems.push(fi2);
     }
     doneSegs+=topic.segs.length;
@@ -2373,344 +2915,7 @@ document.addEventListener('DOMContentLoaded', function(){ App.init(); });
   const url = URL.createObjectURL(blob);
   window.open(url, "_blank");
 }
-
-// ─── Library data ─────────────────────────────────────────────────────────────
-const LIBRARY_DATA: Book[] = [
-  {
-    id: "bio-10",
-    title: "Biology: Cellular Life",
-    subject: "Science",
-    color: "linear-gradient(135deg, #6366f1 0%, #a855f7 100%)",
-    chapters: [
-      {
-        id: 1,
-        unit: 1,
-        title: "Cell Discovery & The Microscopic Frontier",
-        content:
-          "In 1665, Robert Hooke observed a thin slice of cork under a microscope. He saw thousands of tiny, empty chambers which he called 'cells'. This was the beginning of our understanding of the fundamental unit of life.",
-        enhancedContent: `### The Genesis of Cytology\nIn the mid-17th century, the scientific world was limited by the naked eye until the invention of the compound microscope. In 1665, the British polymath Robert Hooke utilized a primitive but effective microscope to examine a thin shaving of cork. What he discovered was not a solid mass, but a complex lattice of tiny, box-like structures.\n\nHooke noted that these structures resembled the cella — the small, austere rooms inhabited by monks. Thus, the term "Cell" was born. While Hooke was actually looking at the dead cell walls of plant tissue, his observations paved the way for Antonie van Leeuwenhoek to later discover living, moving cells in pond water, which he called "animalcules."\n\n### The Three Pillars of Cell Theory\nBy the 1830s, German scientists Matthias Schleiden and Theodor Schwann, along with Rudolf Virchow, synthesized these observations into the Unified Cell Theory:\n\nUniversality: All living organisms, from single-celled bacteria to complex multicellular humans, are composed of one or more cells. Structure: The cell is the basic unit of structure, function, and organization in all biological systems. Biogenesis: All cells arise from pre-existing, living cells through the process of cellular division, debunking the theory of spontaneous generation.\n\n### Modern Implications\nToday, we understand that cells are not just "chambers" but complex chemical factories. Every cell contains hereditary information (DNA) which is passed from parent to daughter cell during division. The discovery of DNA's double helix structure by Watson and Crick in 1953 gave us the molecular key to understanding how this information is copied and transmitted across generations.`,
-      },
-      {
-        id: 2,
-        unit: 1,
-        title: "Organelles: The Architecture of Life",
-        content:
-          "Mitochondria are known as the powerhouses of the cell. They convert energy from food into ATP. The nucleus acts as the control center, containing DNA.",
-        enhancedContent: `### The Intracellular Economy\nA eukaryotic cell is analogous to a modern city, where specialized structures called organelles function as departments ensuring survival and growth. Without this compartmentalization, the chemical reactions necessary for life would interfere with one another.\n\n### The Nucleus: Command and Control\nThe nucleus is the most prominent organelle. It serves as the repository of the cell's genetic blueprint. The Nuclear Envelope is a double membrane that protects the DNA. The Nucleolus is a dense region where ribosome synthesis begins. Chromatin is the complex of DNA and proteins that condenses to form chromosomes.\n\n### Mitochondria: The Energy Generators\nOften called the "powerhouse," mitochondria perform cellular respiration. They take in nutrients from the cell, break them down, and turn them into energy-rich ATP molecules for the cell. The Matrix is where the citric acid cycle occurs. Cristae are the inner folds that increase surface area for higher ATP production efficiency.\n\n### Ribosomes and the ER: The Manufacturing Plant\nProtein synthesis is the cell's primary industry. Ribosomes can be found floating freely in the cytoplasm or attached to the Rough Endoplasmic Reticulum (RER). The RER modifies proteins, while the Smooth ER is responsible for lipid synthesis and detoxification.`,
-      },
-      {
-        id: 3,
-        unit: 2,
-        title: "Cell Division: Continuity of Life",
-        content:
-          "Cells divide through mitosis for growth and repair, and meiosis for reproduction. Mitosis results in two identical daughter cells.",
-        enhancedContent: `### The Cell Cycle and Replication\nLife depends on the ability of cells to reproduce. This is achieved through a highly regulated sequence of events known as the Cell Cycle. This cycle is divided into Interphase (growth) and the M-phase (division).\n\n### Mitosis: Somatic Reproduction\nMitosis is the process used for growth, tissue repair, and asexual reproduction. It ensures that each new cell receives an exact copy of the parent cell's DNA. It consists of four main stages. Prophase: Chromosomes condense and the nuclear envelope breaks down. Metaphase: Chromosomes align in the center of the cell. Anaphase: Sister chromatids are pulled apart toward opposite poles. Telophase: Two new nuclear envelopes form around the separated DNA.\n\n### Meiosis: Genetic Diversity\nUnlike mitosis, Meiosis is a specialized form of division that occurs in germ cells to produce gametes (sperm and eggs). It involves two rounds of division (Meiosis I and II). It results in four non-identical daughter cells, each with half the original number of chromosomes (haploid). During Prophase I, homologous chromosomes exchange genetic material, ensuring that every offspring is genetically unique.\n\n### Checkpoints and Cancer\nThe cell cycle is governed by "checkpoints." If a cell's DNA is damaged, the cycle stops for repairs. If these regulatory proteins (like p53) fail, cells divide uncontrollably, which is the biological basis of cancer.`,
-      },
-      {
-        id: 4,
-        unit: 2,
-        title: "Organelles: Advanced Study",
-        layout: [
-          {
-            type: "text",
-            content:
-              "Within the cell's cytoplasm lies a complex world of specialized structures called organelles, each with a specific job...",
-          },
-          {
-            type: "image",
-            src: "mitochondria_diagram_url",
-            caption: "Fig 2.1: Mitochondrial Grid",
-          },
-          {
-            type: "text",
-            content:
-              "Often called the 'powerhouse,' mitochondria perform cellular respiration...",
-          },
-          {
-            type: "text",
-            content:
-              "The nucleus, a large, often centrally located organelle, acts as the cell's control center...",
-          },
-          {
-            type: "image",
-            src: "nucleus_diagram_url",
-            caption: "Fig 2.2: Nuclear Envelope",
-          },
-        ],
-        content: "",
-      },
-    ],
-  },
-  {
-    id: "phys-12",
-    title: "Quantum Mechanics",
-    subject: "Physics",
-    color: "linear-gradient(135deg, #0ea5e9 0%, #22d3ee 100%)",
-    chapters: [
-      {
-        id: 1,
-        unit: 1,
-        title: "Newtonian Laws & Classical Limits",
-        content:
-          "Newton's laws describe the motion of macroscopic objects. They form the foundation of classical mechanics and explain how forces affect motion.",
-        enhancedContent:
-          "### The Deterministic Universe\nBefore the 20th century, physics was governed by the laws of Sir Isaac Newton.\n\n### Newton's Three Axioms\nInertia: An object remains at rest or in uniform motion unless acted upon by an external force. Acceleration: F = ma. Reaction: For every action, there is an equal and opposite reaction.\n\n### The Breakdown\nAt the subatomic level, the deterministic nature of Newtonian physics gives way to the probabilistic nature of Quantum Mechanics.",
-      },
-      {
-        id: 2,
-        unit: 2,
-        title: "Wave-Particle Duality",
-        content:
-          "Quantum mechanics reveals that particles like electrons exhibit both wave and particle properties.",
-        enhancedContent:
-          "### The Nature of Quanta\nLight and matter do not behave exclusively as particles or waves, but as both.\n\n### The Double-Slit Experiment\nWhen electrons are fired at a barrier with two slits, they create an interference pattern — a behavior typical of waves. However, when observed, the pattern disappears and electrons behave like particles.\n\n### De Broglie's Hypothesis\nAll matter has an associated wavelength, inversely proportional to its momentum.",
-      },
-    ],
-  },
-  {
-    id: "chem-11",
-    title: "Organic Chemistry Basics",
-    subject: "Chemistry",
-    color: "linear-gradient(135deg, #10b981 0%, #34d399 100%)",
-    chapters: [
-      {
-        id: 1,
-        unit: 1,
-        title: "Carbon Compounds",
-        content:
-          "Organic chemistry focuses on carbon-based compounds. Carbon's ability to form four covalent bonds allows it to create complex molecules essential for life.",
-      },
-      {
-        id: 2,
-        unit: 1,
-        title: "Hydrocarbons",
-        content:
-          "Hydrocarbons are compounds consisting only of carbon and hydrogen. They are classified as alkanes, alkenes, and alkynes based on bonding.",
-      },
-    ],
-  },
-  {
-    id: "cs-10",
-    title: "Intro to Computer Science",
-    subject: "Computer Science",
-    color: "linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%)",
-    chapters: [
-      {
-        id: 1,
-        unit: 1,
-        title: "The Von Neumann Architecture",
-        content:
-          "A computer is an electronic device that processes data based on instructions. It consists of hardware and software.",
-        enhancedContent:
-          "### The Logical Machine\nModern computing is based on the Von Neumann Architecture.\n\n### Core Components\nCPU: The brain of the computer. ALU: Handles mathematical and logical operations. Memory (RAM): Volatile storage. I/O Devices: Allow interaction with the machine.\n\n### Binary and Logic\nAt the lowest level, computers process information using Binary (Base-2).",
-      },
-      {
-        id: 2,
-        unit: 2,
-        title: "Algorithms & Computational Thinking",
-        content:
-          "An algorithm is a step-by-step procedure to solve a problem. Efficient algorithms improve performance.",
-        enhancedContent:
-          "### The Art of Problem Solving\nAn algorithm is a finite sequence of well-defined instructions.\n\n### Big O Notation\nO(1): Constant time. O(log n): Logarithmic time. O(n): Linear time. O(n²): Quadratic time.\n\n### Data Structures\nArrays, Stacks, Queues, and Trees — choosing the right structure determines solution elegance.",
-      },
-    ],
-  },
-  {
-    id: "hist-11",
-    title: "The Industrial Revolution",
-    subject: "History",
-    color: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)",
-    chapters: [
-      {
-        id: 1,
-        unit: 1,
-        title: "Steam Power & The Mechanical Age",
-        content:
-          "The invention of steam engines revolutionized manufacturing and transportation, leading to rapid industrial growth.",
-        enhancedContent:
-          "### The Great Divergence\nThe Industrial Revolution began in Great Britain in the late 18th century.\n\n### The Engine of Change\nJames Watt's improvements to the steam engine in 1776 allowed for the mechanization of the textile industry.\n\n### Transportation\nRailways, Steamships, and Telegraphy transformed commerce and warfare.",
-      },
-      {
-        id: 2,
-        unit: 2,
-        title: "Social Impact & Urbanization",
-        content:
-          "Industrialization transformed societies by increasing urbanization, altering labor systems, and shaping modern economies.",
-        enhancedContent:
-          "### The Urban Shift\nPopulation migrated from rural farms to crowded cities.\n\n### Labor and Class Structure\nThe Bourgeoisie (factory owners) and the Proletariat (workers) emerged as new social classes.\n\n### Working Conditions and Reform\nInitial growth was unregulated. Labor Unions and Factory Acts improved conditions.",
-      },
-    ],
-  },
-  {
-    id: "geo-9",
-    title: "Physical Geography",
-    subject: "Geography",
-    color: "linear-gradient(135deg, #22c55e 0%, #16a34a 100%)",
-    chapters: [
-      {
-        id: 1,
-        unit: 1,
-        title: "Earth's Structure",
-        content:
-          "The Earth consists of the crust, mantle, and core. These layers influence tectonic activity and geological processes.",
-      },
-      {
-        id: 2,
-        unit: 1,
-        title: "Climate Systems",
-        content:
-          "Climate is influenced by latitude, altitude, wind patterns, and ocean currents, shaping ecosystems worldwide.",
-      },
-    ],
-  },
-  {
-    id: "eng-10",
-    title: "English Literature Classics",
-    subject: "English",
-    color: "linear-gradient(135deg, #ec4899 0%, #be185d 100%)",
-    chapters: [
-      {
-        id: 1,
-        unit: 1,
-        title: "Poetry",
-        content:
-          "Poetry uses rhythm, imagery, and metaphor to express emotions and ideas in a condensed form.",
-      },
-      {
-        id: 2,
-        unit: 2,
-        title: "Drama",
-        content:
-          "Drama is written for performance and explores human conflicts through dialogue and action.",
-      },
-    ],
-  },
-  {
-    id: "eco-12",
-    title: "Principles of Economics",
-    subject: "Economics",
-    color: "linear-gradient(135deg, #f97316 0%, #ea580c 100%)",
-    chapters: [
-      {
-        id: 1,
-        unit: 1,
-        title: "Demand and Supply",
-        content:
-          "Demand and supply determine prices in a market economy. Their interaction explains price fluctuations.",
-      },
-      {
-        id: 2,
-        unit: 2,
-        title: "Economic Systems",
-        content:
-          "Economic systems define how resources are allocated. Common systems include capitalism, socialism, and mixed economies.",
-      },
-    ],
-  },
-  {
-    id: "env-10",
-    title: "Environmental Science",
-    subject: "Environmental Studies",
-    color: "linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)",
-    chapters: [
-      {
-        id: 1,
-        unit: 1,
-        title: "Ecosystems",
-        content:
-          "An ecosystem includes living organisms and their physical environment interacting as a system.",
-      },
-      {
-        id: 2,
-        unit: 1,
-        title: "Climate Change",
-        content:
-          "Climate change refers to long-term shifts in temperature and weather patterns, largely driven by human activities.",
-      },
-    ],
-  },
-  {
-    id: "math-10",
-    title: "Advanced Trigonometry",
-    subject: "Mathematics",
-    color: "linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)",
-    chapters: [
-      {
-        id: 1,
-        unit: 1,
-        title: "Sine & Cosine",
-        content:
-          "Trigonometric functions describe relationships between angles and sides of triangles and model periodic phenomena.",
-      },
-      {
-        id: 2,
-        unit: 2,
-        title: "Trigonometric Identities",
-        content:
-          "Identities simplify expressions and equations involving trigonometric functions.",
-      },
-    ],
-  },
-];
-
-// ─── Highlight color palette (Word-doc style) ────────────────────────────────
-const HL_COLORS = [
-  {
-    id: "yellow",
-    label: "Yellow",
-    mark: "#fde047",
-    text: "#713f12",
-    bg: "rgba(253,224,71,.35)",
-    border: "rgba(253,224,71,.7)",
-  },
-  {
-    id: "green",
-    label: "Green",
-    mark: "#86efac",
-    text: "#14532d",
-    bg: "rgba(134,239,172,.35)",
-    border: "rgba(134,239,172,.7)",
-  },
-  {
-    id: "blue",
-    label: "Blue",
-    mark: "#93c5fd",
-    text: "#1e3a5f",
-    bg: "rgba(147,197,253,.35)",
-    border: "rgba(147,197,253,.7)",
-  },
-  {
-    id: "pink",
-    label: "Pink",
-    mark: "#f9a8d4",
-    text: "#831843",
-    bg: "rgba(249,168,212,.35)",
-    border: "rgba(249,168,212,.7)",
-  },
-  {
-    id: "purple",
-    label: "Purple",
-    mark: "#c4b5fd",
-    text: "#3b0764",
-    bg: "rgba(196,181,253,.35)",
-    border: "rgba(196,181,253,.7)",
-  },
-  {
-    id: "orange",
-    label: "Orange",
-    mark: "#fdba74",
-    text: "#7c2d12",
-    bg: "rgba(253,186,116,.35)",
-    border: "rgba(253,186,116,.7)",
-  },
-] as const;
-
-type HlColorId = (typeof HL_COLORS)[number]["id"];
-
-function getHlColor(colorId: string) {
-  return HL_COLORS.find((c) => c.id === colorId) ?? HL_COLORS[0];
-}
-
+//  <button id="raise-btn" onclick="App.openDoubt()">✋ Raise a Doubt</button>
 const QUIZ_DATA: Record<string, { q: string; opts: string[]; a: number }> = {
   "1": {
     q: "Who coined the term 'cell' while observing cork?",
@@ -3063,6 +3268,8 @@ function flattenContentToText(value: any): string {
     value.children,
     value.topics,
     value.sections,
+    value.sub_items,
+    value.options,
     value.enrichedContent,
     value.enrichment,
   ]
@@ -3375,6 +3582,23 @@ function buildStructuredLayout(
       });
     }
 
+    // NEW: Handle introduction FIRST (at unit level)
+    if (value.introduction) {
+      blocks.push(
+        ...buildTextLayoutFromString(flattenContentToText(value.introduction)),
+      );
+    }
+    
+    const objectives = value.learning_objectives || value.objectives;
+    if (objectives) {
+      blocks.push({ type: "heading3", content: "Learning Objectives" });
+      if (Array.isArray(objectives)) {
+        pushListField(objectives);
+      } else {
+        pushTextField(objectives);
+      }
+    }
+
     if (value.sections && Array.isArray(value.sections)) {
       value.sections.forEach((section: any) => {
         const title = normalizeReaderLabel(
@@ -3383,7 +3607,10 @@ function buildStructuredLayout(
         const number = normalizeReaderLabel(
           section.section_number || section.sectionNumber || section.number,
         );
-        if (title && isReaderTopic(title)) {
+        const sectionType = (section.type || "section").toLowerCase();
+
+        // Only push heading if it's not introduction type (introduction comes separately)
+        if (title && isReaderTopic(title) && sectionType !== "introduction") {
           const label = number ? `${number} ${title}`.trim() : title;
           const anchor =
             topicMap.get(label) || makeAnchorId(chapterId, number || title);
@@ -3396,59 +3623,10 @@ function buildStructuredLayout(
 
         const beforeCount = blocks.length;
 
-        const imageCandidate =
-          section.src ||
-          section.url ||
-          section.assetUrl ||
-          section.asset ||
-          section.image ||
-          section.imageUrl ||
-          section.thumbnail ||
-          section.thumbnailUrl ||
-          section.coverImage ||
-          section.coverImageUrl ||
-          section.images ||
-          section.media;
-        if (imageCandidate) {
-          blocks.push({
-            type: "image",
-            imageUrl: imageCandidate,
-            caption: section.caption || title || null,
-          });
-        }
-
-        normalizeArrayField(section.image_urls).forEach((url: string) => {
-          blocks.push({
-            type: "image",
-            imageUrl: url,
-            caption: section.caption || title || null,
-          });
-        });
-
-        // NEW: Also extract images from images_in_section array (new schema)
-        if (Array.isArray(section.images_in_section)) {
-          section.images_in_section.forEach((imgObj: any) => {
-            const imgUrl = imgObj?.url || imgObj?.imageUrl || imgObj;
-            if (imgUrl) {
-              blocks.push({
-                type: "image",
-                imageUrl: imgUrl,
-                caption: imgObj?.caption || section.caption || title || null,
-              });
-            }
-          });
-        }
-
-        // NEW: Prioritize enrichment content, then section content
+        // Push main section content FIRST
         [
-          section.enrichment?.concept_overview,
-          section.enrichment?.detailed_explanation,
-          section.section_enrichment?.concept_overview,
-          section.section_enrichment?.detailed_explanation,
-          section.summary,
-          section.introduction,
           section.content,
-          section.content_context, // NEW: From new schema
+          section.content_context,
           section.text,
           section.body,
           section.explanation,
@@ -3456,7 +3634,181 @@ function buildStructuredLayout(
           section.description,
           section.markdown,
           section.html,
-          section.enrichedContent,
+        ].forEach(pushTextField);
+
+        // NEW: Handle sub_sections with logical block grouping
+        if (Array.isArray(section.sub_sections)) {
+          section.sub_sections.forEach((subsection: any) => {
+            const subType = (subsection.type || "unknown").toLowerCase();
+            const subTitle = normalizeReaderLabel(
+              subsection.title || subsection.id || "",
+            );
+
+            // Create a logical block for this subsection (keeps all parts together during pagination)
+            const subsectionBlock = {
+              type: "subsection_block",
+              subType: subType,
+              title: subTitle,
+              anchor: makeAnchorId(
+                chapterId,
+                subType,
+                subTitle || subsection.id,
+              ),
+              children: [],
+            };
+
+            // Build children for this subsection block
+            if (subType === "illustration") {
+              if (subsection.content) {
+                subsectionBlock.children.push({
+                  type: "text",
+                  content: subsection.content,
+                });
+              }
+              normalizeArrayField(subsection.image_urls).forEach(
+                (url: string) => {
+                  subsectionBlock.children.push({
+                    type: "image",
+                    imageUrl: url,
+                    caption: `Illustration${subTitle ? ": " + subTitle : ""}`,
+                  });
+                },
+              );
+            } else if (subType === "definition") {
+              subsectionBlock.children.push({
+                type: "heading3",
+                content: subTitle || "Definition",
+              });
+              if (subsection.content) {
+                subsectionBlock.children.push({
+                  type: "text",
+                  content: subsection.content,
+                });
+              }
+            } else if (subType === "example") {
+              subsectionBlock.children.push({
+                type: "heading3",
+                content: subTitle || subsection.id || "Example",
+              });
+              if (subsection.content) {
+                subsectionBlock.children.push({
+                  type: "text",
+                  content: subsection.content,
+                });
+              }
+              if (subsection.metadata?.solution) {
+                subsectionBlock.children.push({
+                  type: "text",
+                  content: "Solution: " + subsection.metadata.solution,
+                });
+              }
+              normalizeArrayField(subsection.image_urls).forEach(
+                (url: string) => {
+                  subsectionBlock.children.push({
+                    type: "image",
+                    imageUrl: url,
+                    caption: `Example${subTitle ? ": " + subTitle : ""}`,
+                  });
+                },
+              );
+            } else if (subType === "exercise") {
+              subsectionBlock.children.push({
+                type: "heading3",
+                content: subTitle || subsection.id || "Exercise",
+              });
+              if (subsection.content) {
+                subsectionBlock.children.push({
+                  type: "text",
+                  content: subsection.content,
+                });
+              }
+              if (
+                Array.isArray(subsection.sub_items) &&
+                subsection.sub_items.length > 0
+              ) {
+                const exerciseItems = subsection.sub_items
+                  .map((item: any) => {
+                    let itemContent = "";
+                    if (item.number) itemContent += `${item.number}. `;
+                    if (item.content) itemContent += item.content;
+                    if (
+                      Array.isArray(item.options) &&
+                      item.options.length > 0
+                    ) {
+                      itemContent += "\n" + item.options.join("\n");
+                    }
+                    return itemContent;
+                  })
+                  .filter(Boolean);
+                if (exerciseItems.length > 0) {
+                  subsectionBlock.children.push({
+                    type: "list",
+                    items: exerciseItems,
+                  });
+                }
+              }
+            } else {
+              if (subTitle) {
+                subsectionBlock.children.push({
+                  type: "heading3",
+                  content: subTitle,
+                });
+              }
+              if (subsection.content) {
+                subsectionBlock.children.push({
+                  type: "text",
+                  content: subsection.content,
+                });
+              }
+              if (
+                Array.isArray(subsection.sub_items) &&
+                subsection.sub_items.length > 0
+              ) {
+                const subItemsList = subsection.sub_items
+                  .map((item: any) => {
+                    let itemContent = "";
+                    if (item.number) itemContent += `**${item.number}:** `;
+                    if (item.content) itemContent += item.content;
+                    if (
+                      Array.isArray(item.options) &&
+                      item.options.length > 0
+                    ) {
+                      itemContent += "\n" + item.options.join("\n");
+                    }
+                    return itemContent;
+                  })
+                  .filter(Boolean);
+                if (subItemsList.length > 0) {
+                  subsectionBlock.children.push({
+                    type: "list",
+                    items: subItemsList,
+                  });
+                }
+              }
+              normalizeArrayField(subsection.image_urls).forEach(
+                (url: string) => {
+                  subsectionBlock.children.push({
+                    type: "image",
+                    imageUrl: url,
+                    caption: subTitle || null,
+                  });
+                },
+              );
+            }
+
+            // Push the entire subsection as a single logical block
+            blocks.push(subsectionBlock);
+          });
+        }
+
+        // Push enrichment and additional content
+        [
+          section.enrichment?.concept_overview,
+          section.enrichment?.detailed_explanation,
+          section.section_enrichment?.concept_overview,
+          section.section_enrichment?.detailed_explanation,
+          section.summary,
+          section.introduction,
           section.enrichment?.summary,
           section.enrichment?.description,
         ].forEach(pushTextField);
@@ -3469,11 +3821,21 @@ function buildStructuredLayout(
           section.examples,
           section.bullets,
           section.points,
+          section.options,
         ].forEach(pushListField);
 
         [section.table, section.tables].forEach(pushTableField);
 
-        [section.children, section.items, section.topics].forEach(visit);
+        // Section-level image_urls
+        normalizeArrayField(section.image_urls).forEach((url: string) => {
+          blocks.push({
+            type: "image",
+            imageUrl: url,
+            caption: section.caption || title || null,
+          });
+        });
+
+        [section.children, section.items, section.topics, section.sub_items].forEach(visit);
 
         if (blocks.length === beforeCount && title) {
           blocks.push({
@@ -3516,7 +3878,6 @@ function buildStructuredLayout(
 
     [
       value.summary,
-      value.introduction,
       value.content,
       value.text,
       value.body,
@@ -3536,11 +3897,12 @@ function buildStructuredLayout(
       value.examples,
       value.points,
       value.bullets,
+      value.options,
     ].forEach(pushListField);
 
     [value.table, value.tables].forEach(pushTableField);
 
-    [value.children, value.items, value.topics, value.enrichment].forEach(
+    [value.children, value.items, value.topics, value.enrichment, value.sub_items].forEach(
       visit,
     );
 
@@ -3595,10 +3957,17 @@ function buildStructuredLayout(
 
 function buildChapterFromUnit(unit: any, contentPayload: any, index: number) {
   const fallbackTitle = unit.unitTitle || unit.unitLabel || `Unit ${index + 1}`;
-  const enrichedContent = contentPayload?.enriched || null;
+
+  // Use STRUCTURED for reader layout, ENRICHED for genius mode
+  const structuredContent = contentPayload?.structured || null; // ← For reader
+  const enrichedContent = contentPayload?.enriched || null; // ← For genius
+
   const sectionTopics = (
     contentPayload?.sectionTopics ||
-    extractSectionTopicsFromContent(enrichedContent || contentPayload, unit.id)
+    extractSectionTopicsFromContent(
+      structuredContent || contentPayload,
+      unit.id,
+    )
   ).map((topic: any) => ({
     id: String(topic.id || `${unit.id}:${topic.label}`),
     label: topic.label,
@@ -3611,10 +3980,13 @@ function buildChapterFromUnit(unit: any, contentPayload: any, index: number) {
         topic.sectionNumber || topic.sectionTitle || topic.label,
       ),
   }));
+
   const topicAnchorMap = new Map(
     sectionTopics.map((topic: any) => [topic.label, topic.anchor]),
   );
-  const layoutSource = enrichedContent;
+
+  // Use STRUCTURED for layout (clean definitions, examples, exercises)
+  const layoutSource = structuredContent;
   const layout = buildStructuredLayout(layoutSource, unit.id, topicAnchorMap);
   const text = flattenContentToText(layoutSource).trim();
 
@@ -3622,20 +3994,32 @@ function buildChapterFromUnit(unit: any, contentPayload: any, index: number) {
     id: unit.id,
     title: fallbackTitle,
     unitTitle: fallbackTitle,
+      part: unit.part,   // ADD
+  term: unit.term, 
     content: text || `${fallbackTitle} content is available for reading.`,
-    enhancedContent:
-      text || `${fallbackTitle} content is available for reading.`,
+    enhancedContent: "",
     layout: layout.length ? layout : undefined,
     sectionTopics,
-    sourceContent: layoutSource,
+    sourceContent: enrichedContent, // ← CORRECT: enriched for genius mode
     hasEnrichedContent: Boolean(enrichedContent),
-    enrichedDataFull: contentPayload?.enrichedDataFull, // NEW: Store full enriched data
+    enrichedDataFull: contentPayload?.enrichedDataFull,
     unit: unit.unitNumber || index + 1,
   };
 }
 function estimateReaderBlockUnits(item: any): number {
   if (!item) return 0;
   const type = item.type || "text";
+
+  // NEW: Handle subsection_block — sum all children
+  if (type === "subsection_block") {
+    const childUnits = Array.isArray(item.children)
+      ? item.children.reduce(
+          (sum: number, child: any) => sum + estimateReaderBlockUnits(child),
+          0,
+        )
+      : 0;
+    return childUnits + 2; // +2 for block container overhead
+  }
 
   if (type === "heading1") return 5;
   if (type === "heading2") return 4;
@@ -3680,28 +4064,14 @@ function paginateReaderBlocks(items: any[], pageCapacity: number) {
 
   for (let index = 0; index < items.length; index += 1) {
     const item = items[index];
-    const nextItem = items[index + 1];
-    const isHeading = ["heading1", "heading2", "heading3"].includes(item?.type);
-    const keepWithNext =
-      isHeading &&
-      nextItem &&
-      !["heading1", "heading2", "heading3"].includes(nextItem?.type);
-    const group = keepWithNext ? [item, nextItem] : [item];
-    const groupUnits = group.reduce(
-      (sum, block) => sum + estimateReaderBlockUnits(block),
-      0,
-    );
 
-    if (currentPage.length && currentUnits + groupUnits > pageCapacity) {
+    // Force page break when encounter pageBreak block
+    if (item?.type === "pageBreak") {
       pushPage();
+      continue; // Skip the pageBreak block itself so it's not rendered
     }
 
-    currentPage.push(...group);
-    currentUnits += groupUnits;
-
-    if (keepWithNext) {
-      index += 1;
-    }
+    currentPage.push(item);
   }
 
   pushPage();
@@ -3780,6 +4150,16 @@ const BookContentWindowDemo = () => {
   const [editingHighlight, setEditingHighlight] = useState<Highlight | null>(
     null,
   );
+  const [selectedPart, setSelectedPart] = useState<string | null>(null);
+const [selectedTerm, setSelectedTerm] = useState<string | null>(null);
+  const filteredChapters = useMemo(() => {
+  if (!selectedBook?.chapters) return [];
+  return selectedBook.chapters.filter((ch) => {
+    if (selectedPart && ch.part !== selectedPart) return false;
+    if (selectedTerm && ch.term !== selectedTerm) return false;
+    return true;
+  });
+}, [selectedBook, selectedPart, selectedTerm]);
 
   // ── Stable storage key — unique per book + chapter ──────────────────────
   // Defined as a computed value (not useState) so it updates instantly.
@@ -3852,6 +4232,7 @@ const BookContentWindowDemo = () => {
 
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const persistentSelection = useRef("");
+  const persistentHighlightPieces = useRef<string[]>([]);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const { userHeader } = useAuth();
@@ -3883,6 +4264,8 @@ const BookContentWindowDemo = () => {
       chapters: (subjectGroup.units || []).map((unit, unitIndex) => ({
         id: unit.id,
         title: unit.unitTitle || unit.unitLabel || `Unit ${unitIndex + 1}`,
+        part: unit.part,   // ADD
+        term: unit.term,   // ADD  
         content: `${unit.unitTitle || unit.unitLabel || `Unit ${unitIndex + 1}`} content is available for reading.`,
         enhancedContent: `${unit.unitTitle || unit.unitLabel || `Unit ${unitIndex + 1}`} content is available for reading.`,
         unit: unit.unitNumber || unitIndex + 1,
@@ -3891,30 +4274,40 @@ const BookContentWindowDemo = () => {
   };
 
   const loadChapterContentPayload = async (unit: any) => {
-    const [enrichedResult] = await Promise.allSettled([
-      getUnitContent(unit.id, "enriched"),
+    // CHANGE: Request BOTH formats in parallel
+    const [structuredResult, enrichedResult] = await Promise.allSettled([
+      getUnitContent(unit.id, "structured"), // For READER view layout
+      getUnitContent(unit.id, "enriched"), // For GENIUS mode only
     ]);
 
+    // Extract structured content for reader
+    const structured =
+      structuredResult.status === "fulfilled"
+        ? structuredResult.value?.content
+        : null;
+
+    let structuredContent = structured;
+    if (structured?.units && Array.isArray(structured.units)) {
+      structuredContent = structured.units[0];
+    }
+
+    // Extract enriched content for genius mode
     const enriched =
       enrichedResult.status === "fulfilled" ? enrichedResult.value : null;
 
-    // NEW: If enriched data has units array, extract first unit
     let enrichedContent = enriched?.content;
-    if (
-      enrichedContent &&
-      enrichedContent.units &&
-      Array.isArray(enrichedContent.units)
-    ) {
+    if (enrichedContent?.units && Array.isArray(enrichedContent.units)) {
       enrichedContent = enrichedContent.units[0];
     }
 
     const sectionTopics = enriched?.sectionTopics || unit.sectionTopics || [];
 
     return {
-      enriched: enrichedContent || null, // NEW: Use properly extracted content
+      structured: structuredContent || null, // NEW: For reader view
+      enriched: enrichedContent || null, // For genius mode only
       hasEnrichedContent: Boolean(enrichedContent),
       sectionTopics,
-      enrichedDataFull: enriched?.content, // NEW: Store full enrichedData for later
+      enrichedDataFull: enriched?.content,
     };
   };
 
@@ -4187,21 +4580,9 @@ const BookContentWindowDemo = () => {
       setExpandedUnit(activeChapter.unit);
   }, [activeChapter]);
 
-  /* useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-
-    const media = window.matchMedia("(max-width: 900px)");
-    const handleChange = () => setIsSinglePageView(media.matches);
-    handleChange();
-
-    if (typeof media.addEventListener === "function") {
-      media.addEventListener("change", handleChange);
-      return () => media.removeEventListener("change", handleChange);
-    }
-
-    media.addListener(handleChange);
-    return () => media.removeListener(handleChange);
-  }, []); */
+  useEffect(() => {
+    setIsSinglePageView(true);
+  }, []);
 
   useEffect(() => {
     if (!displayChapter && activeChapter) {
@@ -4258,6 +4639,7 @@ const BookContentWindowDemo = () => {
   }, []);
 
   // â”€â”€â”€ Build content blocks, pages, and spreads â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // â"€â"€â"€ Build content blocks, pages, and spreads â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
   let allPageContent: any[] = [];
   if (displayChapter && !displayChapter.isUnitIntro) {
     const textContent =
@@ -4278,7 +4660,21 @@ const BookContentWindowDemo = () => {
         else layout.push({ type: "text", content: p });
       }
     }
-    allPageContent = layout;
+
+    // Inject page breaks BEFORE heading2 (sections) to ensure one section per page
+    const layoutWithPageBreaks: any[] = [];
+    layout.forEach((block, idx) => {
+      // Add page break before heading2 (section headings) UNLESS it's the very first item
+      if (block.type === "heading2" && idx > 0) {
+        layoutWithPageBreaks.push({
+          type: "pageBreak",
+          content: "",
+        });
+      }
+      layoutWithPageBreaks.push(block);
+    });
+
+    allPageContent = layoutWithPageBreaks;
   }
 
   const { pages: readerPages, anchorToPage } = paginateReaderBlocks(
@@ -4379,12 +4775,14 @@ const BookContentWindowDemo = () => {
       if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
         setMenuPos(null);
         persistentSelection.current = "";
+        persistentHighlightPieces.current = [];
         return;
       }
       const text = sel.toString().trim();
       if (!text) {
         setMenuPos(null);
         persistentSelection.current = "";
+        persistentHighlightPieces.current = [];
         return;
       }
 
@@ -4400,14 +4798,44 @@ const BookContentWindowDemo = () => {
       if (!isInsideBookBody) {
         setMenuPos(null);
         persistentSelection.current = "";
+        persistentHighlightPieces.current = [];
         return;
       }
 
       const rects = range.getClientRects();
       if (!rects || rects.length === 0) {
         setMenuPos(null);
+        persistentHighlightPieces.current = [];
         return;
       }
+
+      const selectableBlocks = Array.from(
+        document.querySelectorAll(
+          ".bk-page-inner .reader-paragraph, .bk-page-inner .reader-list-item",
+        ),
+      ) as HTMLElement[];
+      persistentHighlightPieces.current = selectableBlocks
+        .filter((block) => {
+          try {
+            return range.intersectsNode(block);
+          } catch {
+            return false;
+          }
+        })
+        .map((block) => {
+          const blockRange = document.createRange();
+          blockRange.selectNodeContents(block);
+
+          if (block.contains(range.startContainer)) {
+            blockRange.setStart(range.startContainer, range.startOffset);
+          }
+          if (block.contains(range.endContainer)) {
+            blockRange.setEnd(range.endContainer, range.endOffset);
+          }
+
+          return blockRange.toString().replace(/\s+/g, " ").trim();
+        })
+        .filter(Boolean);
 
       const last = rects[rects.length - 1];
       setMenuPos({ x: last.left + last.width / 2, y: last.bottom });
@@ -4504,10 +4932,13 @@ const BookContentWindowDemo = () => {
 
       try {
         // NEW: Include enriched data for better avatar context
-        const enrichedForAI = activeChapter?.enrichedDataFull 
-          ? serializeEnrichedForGenius(activeChapter.enrichedDataFull, activeChapter?.title)
+        const enrichedForAI = activeChapter?.enrichedDataFull
+          ? serializeEnrichedForGenius(
+              activeChapter.enrichedDataFull,
+              activeChapter?.title,
+            )
           : "";
-        
+
         const response = await askHighlight({
           unitId: String(activeChapter.id),
           highlightedText: selectedText || prompt,
@@ -4626,10 +5057,10 @@ const BookContentWindowDemo = () => {
         activeChapter.title ||
         selectedBook.title;
       const geniusContent = isRemoteChapter
-        ? serializeEnrichedForGenius(geniusSource, geniusUnitTitle)
+        ? serializeEnrichedForGenius(geniusSource, geniusUnitTitle) // returns a string
         : String(
             activeChapter.enhancedContent || activeChapter.content || "",
-          ).trim();
+          ).trim(); // also a string
       if (!geniusContent) {
         pushToast({
           title: "Genius Mode unavailable",
@@ -4703,6 +5134,53 @@ const BookContentWindowDemo = () => {
       .replace(/\u00AD/g, "")
       .trim();
 
+  const normaliseWithMap = (s: string) => {
+    let text = "";
+    const map: number[] = [];
+    let pendingSpace = false;
+
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i];
+      if (/\s/.test(ch)) {
+        pendingSpace = text.length > 0;
+        continue;
+      }
+
+      if (pendingSpace) {
+        text += " ";
+        map.push(i);
+        pendingSpace = false;
+      }
+
+      if (ch === "\u00AD") continue;
+      text += ch;
+      map.push(i);
+    }
+
+    return { text, map };
+  };
+
+  const findHighlightMatch = (source: string, highlightText: string) => {
+    const exactIdx = source.indexOf(highlightText);
+    if (exactIdx !== -1) {
+      return { start: exactIdx, end: exactIdx + highlightText.length };
+    }
+
+    const sourceNorm = normaliseWithMap(source);
+    const needle = normalise(highlightText);
+    const normIdx = sourceNorm.text.indexOf(needle);
+    if (normIdx === -1) return null;
+
+    const start = sourceNorm.map[normIdx];
+    const lastMapped = sourceNorm.map[normIdx + needle.length - 1];
+    if (start === undefined || lastMapped === undefined) return null;
+
+    return { start, end: lastMapped + 1 };
+  };
+
+  const hasMatchingHighlight = (text: string) =>
+    highlights.some((h) => h.text && findHighlightMatch(text, h.text));
+
   const applyHighlights = (
     text: string,
     baseKey: string,
@@ -4717,17 +5195,13 @@ const BookContentWindowDemo = () => {
           next.push(seg);
           return;
         }
-        const normSeg = normalise(seg);
-        let matchIdx = seg.indexOf(h.text);
-        let matchLen = h.text.length;
-        if (matchIdx === -1) {
-          matchIdx = normSeg.indexOf(needle);
-          matchLen = needle.length;
-          if (matchIdx === -1) {
-            next.push(seg);
-            return;
-          }
+        const match = findHighlightMatch(seg, needle);
+        if (!match) {
+          next.push(seg);
+          return;
         }
+        const matchIdx = match.start;
+        const matchLen = match.end - match.start;
         if (matchIdx > 0) next.push(seg.slice(0, matchIdx));
         const matchedText = seg.slice(matchIdx, matchIdx + matchLen);
         const hlCol = getHlColor(h.color || "yellow");
@@ -4736,6 +5210,8 @@ const BookContentWindowDemo = () => {
             key={`${baseKey}-${h.id}`}
             className="reader-highlight-wrap"
             onMouseDown={(e) => {
+              // Prevent browser selection/drag from interfering with dialog open.
+              e.preventDefault();
               e.stopPropagation();
             }}
             onClick={(e) => {
@@ -4777,48 +5253,80 @@ const BookContentWindowDemo = () => {
     return segs;
   };
 
+  const renderHighlightableText = (value: unknown, baseKey: string) => {
+    const text = String(value || "");
+    if (!hasMatchingHighlight(text)) {
+      return <FormattedAIContent value={value} />;
+    }
+
+    return applyHighlights(text, baseKey);
+  };
+
   // ─── Render one content item ───────────────────────────────────────────────
   // Headings/images are NOT selectable (pointer-events:none / user-select:none
   // applied via className). Only .reader-paragraph nodes are selectable.
   const renderItem = (item: any, index: number) => {
+    // NEW: Skip pageBreak type (used only for pagination, not rendering)
+    if (item.type === "pageBreak") {
+      return null;
+    }
+
+    // NEW: Flatten subsection_block — render children as individual items
+    if (item.type === "subsection_block" && Array.isArray(item.children)) {
+      return (
+        <div key={index} className="reader-subsection-block">
+          {item.children.map((child: any, childIdx: number) =>
+            renderItem(child, `${index}-${childIdx}`),
+          )}
+        </div>
+      );
+    }
+
     if (item.type === "text") {
       return (
         <p key={index} className="reader-paragraph">
-          {applyHighlights(item.content, `p-${index}`)}
+          {renderHighlightableText(item.content, `p-${index}`)}
         </p>
       );
     }
     if (item.type === "heading1")
       return (
         <h1 key={index} id={item.anchor} className="reader-h1 no-select">
-          {item.content}
+          <FormattedAIContent value={item.content} />
         </h1>
       );
     if (item.type === "heading2")
       return (
         <h2 key={index} id={item.anchor} className="reader-h2 no-select">
-          {item.content}
+          <FormattedAIContent value={item.content} />
         </h2>
       );
     if (item.type === "heading3")
       return (
         <h3 key={index} id={item.anchor} className="reader-h3 no-select">
-          {item.content}
+          <FormattedAIContent value={item.content} />
         </h3>
       );
     if (item.type === "formula") {
       // NEW: Detect LaTeX syntax
       const hasLatex = /\$|\\\(|\\\[|\\[a-zA-Z]/.test(item.content);
-      
+
       return (
         <div key={index} className="reader-formula no-select">
           {hasLatex ? (
-            <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+            <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
               {item.content}
             </pre>
           ) : (
-            <p style={{ fontFamily: 'monospace', padding: '12px', background: 'var(--bg-panel2)', borderRadius: '6px' }}>
-              {item.content}
+            <p
+              style={{
+                fontFamily: "monospace",
+                padding: "12px",
+                background: "var(--bg-panel2)",
+                borderRadius: "6px",
+              }}
+            >
+              <FormattedAIContent value={item.content} />
             </p>
           )}
         </div>
@@ -4838,7 +5346,7 @@ const BookContentWindowDemo = () => {
         <ul key={index} className="reader-list">
           {item.items.map((listItem: string, itemIndex: number) => (
             <li key={`${index}-${itemIndex}`} className="reader-list-item">
-              {applyHighlights(listItem, `li-${index}-${itemIndex}`)}
+              {renderHighlightableText(listItem, `li-${index}-${itemIndex}`)}
             </li>
           ))}
         </ul>
@@ -4852,7 +5360,9 @@ const BookContentWindowDemo = () => {
               <thead>
                 <tr>
                   {item.headers.map((header: string, headerIndex: number) => (
-                    <th key={`${index}-h-${headerIndex}`}>{header}</th>
+                    <th key={`${index}-h-${headerIndex}`}>
+                      <FormattedAIContent value={header} />
+                    </th>
                   ))}
                 </tr>
               </thead>
@@ -4861,7 +5371,9 @@ const BookContentWindowDemo = () => {
               {item.rows.map((row: string[], rowIndex: number) => (
                 <tr key={`${index}-r-${rowIndex}`}>
                   {row.map((cell: string, cellIndex: number) => (
-                    <td key={`${index}-c-${rowIndex}-${cellIndex}`}>{cell}</td>
+                    <td key={`${index}-c-${rowIndex}-${cellIndex}`}>
+                      <FormattedAIContent value={cell} />
+                    </td>
                   ))}
                 </tr>
               ))}
@@ -4870,6 +5382,267 @@ const BookContentWindowDemo = () => {
         </div>
       );
     }
+    // NEW: Flashcard rendering (moved before image check)
+    if (item.type === "flashcard") {
+      return (
+        <div
+          key={index}
+          className="reader-flashcard no-select"
+          style={{
+            padding: "16px",
+            background: "var(--bg-panel2)",
+            border: "1px solid var(--border2)",
+            borderRadius: "8px",
+            marginBottom: "16px",
+          }}
+        >
+          <div
+            style={{
+              fontSize: "12px",
+              fontWeight: "600",
+              color: "var(--text-muted)",
+              marginBottom: "8px",
+            }}
+          >
+            {item.card_title || "Flashcard"}
+          </div>
+          <div style={{ marginBottom: "12px" }}>
+            <strong>Q:</strong> {item.front}
+          </div>
+          <details style={{ cursor: "pointer" }}>
+            <summary style={{ color: "var(--indigo)", fontWeight: "500" }}>
+              Show Answer
+            </summary>
+            <div
+              style={{
+                marginTop: "8px",
+                paddingTop: "8px",
+                borderTop: "1px solid var(--border)",
+              }}
+            >
+              <strong>A:</strong> {item.back || item.answer}
+            </div>
+          </details>
+        </div>
+      );
+    }
+
+    // NEW: Avatar Explanation renderer
+    if (item.type === "avatar_explanation" && item.segments) {
+      return (
+        <div
+          key={index}
+          className="reader-avatar-explanation no-select"
+          style={{
+            padding: "16px",
+            background: "var(--bg-panel2)",
+            border: "1px solid var(--indigo, #6366f1)",
+            borderLeft: "4px solid var(--indigo, #6366f1)",
+            borderRadius: "6px",
+            marginBottom: "16px",
+          }}
+        >
+          {item.title && (
+            <div
+              style={{
+                fontSize: "13px",
+                fontWeight: "600",
+                color: "var(--indigo, #6366f1)",
+                marginBottom: "12px",
+              }}
+            >
+              {item.title}
+            </div>
+          )}
+          {Array.isArray(item.segments) && item.segments.length > 0 ? (
+            <div style={{ fontSize: "14px", lineHeight: "1.6" }}>
+              {item.segments.map((segment: any, segIdx: number) => {
+                const segmentType = String(segment?.type || "segment")
+                  .trim()
+                  .toLowerCase();
+
+                // ONLY render flashcards when segment type is explicitly "flashcard"
+                if (segmentType === "flashcard") {
+                  const avatarLine = String(segment?.avatar_line || "").trim();
+                  const avatarEmotion = String(
+                    segment?.avatar_emotion || "",
+                  ).trim();
+                  const cardTitle = String(
+                    segment?.card_title || segment?.title || "Flashcard",
+                  ).trim();
+                  const front = String(segment?.front || "").trim();
+                  const back = String(
+                    segment?.back || segment?.answer || "",
+                  ).trim();
+
+                  return (
+                    <div
+                      key={segIdx}
+                      className="reader-flashcard-segment no-select"
+                      style={{
+                        padding: "16px",
+                        background:
+                          "linear-gradient(135deg, var(--bg-panel2), rgba(99,102,241,0.05))",
+                        border: "2px solid var(--indigo, #6366f1)",
+                        borderRadius: "8px",
+                        marginBottom: "16px",
+                        marginTop: "12px",
+                      }}
+                    >
+                      {/* Card title */}
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          fontWeight: "700",
+                          color: "var(--indigo, #6366f1)",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.5px",
+                          marginBottom: "8px",
+                        }}
+                      >
+                        📌 Flashcard
+                      </div>
+
+                      {/* Card title heading */}
+                      <div
+                        style={{
+                          fontSize: "14px",
+                          fontWeight: "600",
+                          color: "var(--text)",
+                          marginBottom: "12px",
+                        }}
+                      >
+                        {cardTitle}
+                      </div>
+
+                      {/* Avatar narration line - only if present */}
+                      {avatarLine && (
+                        <div
+                          style={{
+                            fontSize: "13px",
+                            fontStyle: "italic",
+                            color: "var(--text-muted, #8891aa)",
+                            marginBottom: "12px",
+                            paddingLeft: "12px",
+                            borderLeft: "4px solid var(--indigo, #6366f1)",
+                            background: "rgba(99,102,241,0.08)",
+                            padding: "10px 12px",
+                            borderRadius: "4px",
+                          }}
+                        >
+                          💬 "{avatarLine}"
+                        </div>
+                      )}
+
+                      {/* Q&A Section */}
+                      <div>
+                        <div style={{ marginBottom: "10px" }}>
+                          <strong style={{ color: "var(--indigo, #6366f1)" }}>
+                            Q:
+                          </strong>{" "}
+                          <FormattedAIContent value={front} />
+                        </div>
+
+                        {/* Collapsible answer */}
+                        {back && (
+                          <details
+                            style={{
+                              cursor: "pointer",
+                              marginTop: "8px",
+                            }}
+                          >
+                            <summary
+                              style={{
+                                color: "var(--indigo, #6366f1)",
+                                fontWeight: "600",
+                                padding: "8px",
+                                borderRadius: "4px",
+                                userSelect: "none",
+                                background: "rgba(99,102,241,0.06)",
+                                marginBottom: "6px",
+                              }}
+                            >
+                              ▶ Show Answer
+                            </summary>
+                            <div
+                              style={{
+                                marginTop: "8px",
+                                paddingTop: "8px",
+                                borderTop: "1px solid var(--border)",
+                                marginLeft: "8px",
+                                paddingLeft: "8px",
+                                borderLeft: "2px solid var(--indigo, #6366f1)",
+                              }}
+                            >
+                              <strong
+                                style={{ color: "var(--indigo, #6366f1)" }}
+                              >
+                                A:
+                              </strong>{" "}
+                              <FormattedAIContent value={back} />
+                            </div>
+                          </details>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Teaching segment or generic segment - NOT flashcard
+                const segmentText = String(
+                  segment?.text || segment?.content || segment || "",
+                ).trim();
+                const imageUrl = segment?.image_url || segment?.image;
+
+                // Skip rendering if no text and no image
+                if (!segmentText && !imageUrl) {
+                  return null;
+                }
+
+                return (
+                  <div key={segIdx} style={{ marginBottom: "12px" }}>
+                    {/* Segment content - emotion NOT displayed in reader, only used by avatar */}
+                    {segmentText && (
+                      <div
+                        style={{
+                          fontSize: "14px",
+                          lineHeight: "1.6",
+                          color: "var(--text)",
+                        }}
+                      >
+                        <FormattedAIContent value={segmentText} />
+                      </div>
+                    )}
+                    {/* Segment image if present */}
+                    {imageUrl && (
+                      <div style={{ marginTop: "8px" }}>
+                        <img
+                          src={resolveMediaUrl(imageUrl)}
+                          alt={`Segment ${segIdx}`}
+                          style={{
+                            maxWidth: "100%",
+                            height: "auto",
+                            borderRadius: "6px",
+                            maxHeight: "300px",
+                          }}
+                          onError={(e) => {
+                            const target = e.target as HTMLElement;
+                            target.style.display = "none";
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p style={{ color: "var(--text-muted)" }}>No segments available.</p>
+          )}
+        </div>
+      );
+    }
+
     if (
       item.type === "image" ||
       item.imageUrl ||
@@ -4880,6 +5653,120 @@ const BookContentWindowDemo = () => {
       item.media
     ) {
       const figureKey = `${selectedBook?.id || "book"}-${displayChapter?.id || "chapter"}-${index}`;
+
+      // NEW: Handle image arrays (image_urls) with responsive grid
+      if (Array.isArray(item.images) || Array.isArray(item.image_urls)) {
+        const imageArray = item.images || item.image_urls;
+        return (
+          <div
+            key={index}
+            className="reader-image-gallery"
+            style={{
+              display: "grid",
+              gridTemplateColumns:
+                imageArray.length === 1
+                  ? "1fr"
+                  : imageArray.length === 2
+                    ? "repeat(2, 1fr)"
+                    : "repeat(auto-fit, minmax(200px, 1fr))",
+              gap: "16px",
+              marginBottom: "20px",
+            }}
+          >
+            {imageArray.map(
+              (
+                imgUrl: string | { url: string; caption?: string },
+                imgIdx: number,
+              ) => {
+                const imgData =
+                  typeof imgUrl === "string" ? { url: imgUrl } : imgUrl;
+                const resolvedUrl = resolveMediaUrl(imgData.url || imgData);
+                const imgKey = `${figureKey}-${imgIdx}`;
+
+                return (
+                  <figure
+                    key={imgKey}
+                    className="reader-figure no-select"
+                    style={{
+                      margin: 0,
+                      display: "flex",
+                      flexDirection: "column",
+                    }}
+                  >
+                    <div
+                      className="reader-figure-img-wrap"
+                      style={{
+                        flex: 1,
+                        minHeight: "200px",
+                        overflow: "hidden",
+                        borderRadius: "8px",
+                        backgroundColor: "var(--bg-panel2)",
+                      }}
+                    >
+                      {resolvedUrl && !brokenFigureImages[imgKey] ? (
+                        <img
+                          src={resolvedUrl}
+                          alt={
+                            item.caption ||
+                            imgData.caption ||
+                            displayChapter?.title ||
+                            selectedBook?.title ||
+                            "Illustration"
+                          }
+                          className="reader-figure-img"
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            objectFit: "cover",
+                            objectPosition: "center",
+                          }}
+                          draggable={false}
+                          onError={() =>
+                            setBrokenFigureImages((current) => ({
+                              ...current,
+                              [imgKey]: true,
+                            }))
+                          }
+                        />
+                      ) : (
+                        <div
+                          className="reader-figure-fallback"
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            backgroundColor: "var(--bg-panel)",
+                            color: "var(--text-muted)",
+                          }}
+                        >
+                          <span>Image unavailable</span>
+                        </div>
+                      )}
+                    </div>
+                    {(item.caption || imgData.caption) && (
+                      <figcaption
+                        className="reader-figcaption"
+                        style={{
+                          fontSize: "12px",
+                          color: "var(--text-muted)",
+                          marginTop: "8px",
+                          lineHeight: "1.4",
+                        }}
+                      >
+                        {item.caption || imgData.caption}
+                      </figcaption>
+                    )}
+                  </figure>
+                );
+              },
+            )}
+          </div>
+        );
+      }
+
+      // Single image handling
       const imageSrc = resolveMediaUrl(
         item.src ||
           item.imageUrl ||
@@ -4888,36 +5775,9 @@ const BookContentWindowDemo = () => {
           item.coverImage ||
           item.coverImageUrl ||
           item.url ||
-          item.images ||
           item.media,
       );
-// NEW: Flashcard rendering
-    if (item.type === "flashcard") {
-      return (
-        <div key={index} className="reader-flashcard no-select" style={{
-          padding: '16px',
-          background: 'var(--bg-panel2)',
-          border: '1px solid var(--border2)',
-          borderRadius: '8px',
-          marginBottom: '16px'
-        }}>
-          <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '8px' }}>
-            {item.card_title || 'Flashcard'}
-          </div>
-          <div style={{ marginBottom: '12px' }}>
-            <strong>Q:</strong> {item.front}
-          </div>
-          <details style={{ cursor: 'pointer' }}>
-            <summary style={{ color: 'var(--indigo)', fontWeight: '500' }}>
-              Show Answer
-            </summary>
-            <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--border)' }}>
-              <strong>A:</strong> {item.back || item.answer}
-            </div>
-          </details>
-        </div>
-      );
-    }
+
       return (
         <figure key={index} className="reader-figure no-select">
           <div className="reader-figure-img-wrap">
@@ -5050,6 +5910,26 @@ const BookContentWindowDemo = () => {
       setDisplaySpreadIndex(nextIndex);
       setIsFlipping(false);
     }, 420);
+  };
+
+  const handleSummariseCurrentPage = () => {
+    if (!activeChapter || activeChapter.isUnitIntro) return;
+
+    const visibleItems = [
+      ...(activeSpread.left?.items || []),
+      ...(activeSpread.right?.items || []),
+    ];
+    const visibleText = visibleItems
+      .map((item) => flattenContentToText(item?.content || item))
+      .join("\n\n")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+
+    handleAskAI(
+      `Summarize this page from ${displayChapter?.title || "the current chapter"}.`,
+      visibleText || displayChapter?.content || displayChapter?.enhancedContent || "",
+      "Summarize",
+    );
   };
 
   // ══════════════════════════════════════════════════════════════════════════════
@@ -5349,7 +6229,24 @@ const BookContentWindowDemo = () => {
               </div>
             </div>
           </div>
-
+<PartTermFilterBar
+  units={selectedBook.chapters.map((ch) => ({
+    id: String(ch.id),
+    unitNumber: ch.unit,
+    unitTitle: ch.title,
+    unitLabel: ch.title,
+    part: ch.part,
+    term: ch.term,
+    subject: selectedBook.subject,
+    board: "",
+    standard: "",
+  }))}
+  selectedPart={selectedPart}
+  selectedTerm={selectedTerm}
+  onPartChange={setSelectedPart}
+  onTermChange={setSelectedTerm}
+  onReset={() => { setSelectedPart(null); setSelectedTerm(null); }}
+/>
           {/* ── TOC unit + chapter cards ── */}
           <div className="toc-grid">
             {unitNumbers.map((unitNumber: any, idx: number) => {
@@ -5946,50 +6843,81 @@ const BookContentWindowDemo = () => {
                             const raw = newHighlightText;
                             if (!raw.trim()) return;
                             const color = newHlColor;
+                            const savedSelectionPieces =
+                              persistentHighlightPieces.current
+                                .map((piece) => piece.replace(/\s+/g, " ").trim())
+                                .filter((piece) => piece.length >= 3);
 
-                            // Split multi-paragraph selections per paragraph
-                            const paraNodes = Array.from(
+                            // Split multi-paragraph selections per paragraph.
+                            // Goal: save smaller highlight fragments that actually exist in each
+                            // paragraph node text, while being robust to whitespace/newlines.
+                            const readableNodes = Array.from(
                               document.querySelectorAll(
-                                ".bk-page-inner .reader-paragraph",
+                                ".bk-page-inner .reader-paragraph, .bk-page-inner .reader-list-item",
                               ),
                             ) as HTMLElement[];
-                            const pieces: { text: string }[] = [];
-                            const normRaw = raw.replace(/\s+/g, " ").trim();
+
+                            const collapseWS = (s: string) =>
+                              s.replace(/\s+/g, " ").trim();
+
+                            const normRaw = collapseWS(raw);
+                            const pieces: { text: string }[] =
+                              savedSelectionPieces.length > 0
+                                ? savedSelectionPieces.map((text) => ({ text }))
+                                : [];
+
+                            // remaining is the normalized selection content still not assigned to a paragraph
                             let remaining = normRaw;
-                            for (const para of paraNodes) {
-                              const paraText = (para.textContent || "")
-                                .replace(/\s+/g, " ")
-                                .trim();
-                              if (!paraText || !remaining) break;
+                            let matchedAnyNode = false;
+
+                            for (const para of readableNodes) {
+                              if (pieces.length > 0) break;
+                              const paraTextNorm = collapseWS(
+                                para.textContent || "",
+                              );
+                              if (!paraTextNorm) continue;
+                              if (!remaining) break;
+
+                              // Find the best prefix of `remaining` that exists somewhere in this paragraph.
+                              // Prefer longer matches first.
                               let found = "";
-                              for (
-                                let len = Math.min(
-                                  remaining.length,
-                                  paraText.length,
-                                );
-                                len >= 3;
-                                len--
-                              ) {
+                              const maxLen = Math.min(
+                                remaining.length,
+                                paraTextNorm.length,
+                              );
+
+                              for (let len = maxLen; len >= 5; len--) {
                                 const candidate = remaining.slice(0, len);
-                                if (paraText.includes(candidate)) {
+                                if (candidate.length < 5) continue;
+                                if (paraTextNorm.includes(candidate)) {
                                   found = candidate;
                                   break;
                                 }
                               }
-                              if (found) {
-                                pieces.push({ text: found });
-                                remaining = remaining
-                                  .slice(found.length)
-                                  .replace(/^\s+/, "");
+
+                              if (!found) {
+                                if (matchedAnyNode) break;
+                                continue;
                               }
+
+                              matchedAnyNode = true;
+                              pieces.push({ text: found });
+                              remaining = remaining
+                                .slice(found.length)
+                                .replace(/^\s+/, "");
                             }
+
                             const toSave =
-                              pieces.length > 0 ? pieces : [{ text: raw }];
+                              pieces.length > 0
+                                ? pieces
+                                : [{ text: collapseWS(raw) }];
 
                             setHighlights((prev) => [
                               ...prev,
                               ...toSave.map((p) => ({
-                                id: `h-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                                id: `h-${Date.now()}-${Math.random()
+                                  .toString(36)
+                                  .slice(2, 6)}`,
                                 text: p.text,
                                 comment: newCommentRef.current?.value || "",
                                 color,
@@ -6008,6 +6936,77 @@ const BookContentWindowDemo = () => {
                   </DialogContent>
                 </Dialog>
 
+                {!displayChapter?.isUnitIntro && (
+                  <>
+                    <div className="bk-float-btns no-select">
+                      <motion.button
+                        className={`bk-float-btn bk-float-genius ${!hasGeniusContent ? "locked" : ""}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEnhanceContent();
+                        }}
+                        disabled={!hasGeniusContent || isEnhancing}
+                        title="Open Genius Mode"
+                        whileHover={
+                          hasGeniusContent
+                            ? {
+                                y: -2,
+                                scale: 1.02,
+                                transition: { duration: 0.18 },
+                              }
+                            : {}
+                        }
+                        whileTap={{ scale: 0.96 }}
+                      >
+                        <span className="genius-orbit" />
+                        <span className="genius-icon-wrap">
+                          <Sparkles size={15} />
+                        </span>
+                        <span className="genius-copy">
+                          <strong>
+                            {isEnhancing ? "Launching..." : "Genius Mode"}
+                          </strong>
+                          <small>Study smarter</small>
+                        </span>
+                        {!hasGeniusContent && (
+                          <span className="bk-float-lock">ðŸ”’</span>
+                        )}
+                      </motion.button>
+
+                      {/* <button
+                        className="bk-float-btn bk-float-summary"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSummariseCurrentPage();
+                        }}
+                        title="Summarise this page"
+                      >
+                        <BookOpen size={14} />
+                        <span>Summarise</span>
+                      </button> */}
+                    </div>
+
+                    <button
+                      className={`bk-page-arrow bk-page-arrow-left ${!hasPrevSpread ? "disabled" : ""}`}
+                      onClick={() => hasPrevSpread && goSpread(-1)}
+                      disabled={!hasPrevSpread}
+                      title="Previous page"
+                      aria-label="Previous page"
+                    >
+                      <ChevronLeft size={22} />
+                    </button>
+                    <button
+                      className={`bk-page-arrow bk-page-arrow-right ${!hasNextSpread ? "disabled" : ""}`}
+                      onClick={() => hasNextSpread && goSpread(1)}
+                      disabled={!hasNextSpread}
+                      title="Next page"
+                      aria-label="Next page"
+                    >
+                      <ChevronRight size={22} />
+                    </button>
+                  </>
+                )}
+
                 <div className="book-container-wrapper">
                   {displayChapter && (
                     <div
@@ -6020,6 +7019,56 @@ const BookContentWindowDemo = () => {
 
                       {/* ── Single paper sheet that holds both pages ── */}
                       <div className="book-sheet book-sheet-paged">
+                        {false && (
+                          <div className="bk-float-btns no-select">
+                            <motion.button
+                              className={`bk-float-btn bk-float-genius ${!hasGeniusContent ? "locked" : ""}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleEnhanceContent();
+                              }}
+                              disabled={!hasGeniusContent || isEnhancing}
+                              title="Open Genius Mode"
+                              whileHover={
+                                hasGeniusContent
+                                  ? {
+                                      y: -2,
+                                      scale: 1.02,
+                                      transition: { duration: 0.18 },
+                                    }
+                                  : {}
+                              }
+                              whileTap={{ scale: 0.96 }}
+                            >
+                              <span className="genius-orbit" />
+                              <span className="genius-icon-wrap">
+                                <Sparkles size={15} />
+                              </span>
+                              <span className="genius-copy">
+                                <strong>
+                                  {isEnhancing ? "Launching..." : "Genius Mode"}
+                                </strong>
+                                <small>Study smarter</small>
+                              </span>
+                              {!hasGeniusContent && (
+                                <span className="bk-float-lock">🔒</span>
+                              )}
+                            </motion.button>
+
+                            <button
+                              className="bk-float-btn bk-float-summary"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSummariseCurrentPage();
+                              }}
+                              title="Summarise this page"
+                            >
+                              <BookOpen size={14} />
+                              <span>Summarise</span>
+                            </button>
+                          </div>
+                        )}
+
                         {/* ── TOP HEADER BAR (non-selectable) ── */}
                         <div className="bk-topbar no-select">
                           <span className="bk-topbar-left">
@@ -7399,25 +8448,28 @@ const readerStyles = `
 
 /* ══ FLOATING BOOK BUTTONS — Ask AI + AI Enhanced inside book ══ */
 .bk-float-btns {
-  position: absolute;
-  top: 44px;
-  right: 16px;
+  position: sticky;
+  top: 10px;
+  width: min(1040px, calc(100% - 132px));
+  margin: 14px auto 0;
+  padding: 10px 12px;
   display: flex;
-  flex-direction: row;   /* straight line side by side */
+  flex-direction: row;
   align-items: center;
-  gap: 8px;
-  z-index: 30;
+  justify-content: flex-end;
+  gap: 10px;
+  z-index: 95;
   pointer-events: auto !important;
   user-select: none;
 }
 .bk-float-btn {
-  display: flex; align-items: center; gap: 6px;
-  padding: 7px 14px; border-radius: 20px; border: none; cursor: pointer;
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 18px; border-radius: 30px; border: none; cursor: pointer;
   font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
-  font-size: 12px; font-weight: 700;
+  font-size: 14px; font-weight: 700;
   position: relative; white-space: nowrap;
   transition: all .2s cubic-bezier(.4,0,.2,1);
-  box-shadow: 0 3px 10px rgba(0,0,0,.14);
+  box-shadow: 0 4px 14px rgba(0,0,0,.15);
   pointer-events: auto !important;
 }
 .bk-float-ai {
@@ -7445,11 +8497,173 @@ const readerStyles = `
 }
 .bk-float-lock { font-size: 10px; }
 
+.reader-topbar-right > .bk-float-thunder,
+.genius-top-strip {
+  display: none !important;
+}
+
+.bk-float-genius {
+  min-height: 48px;
+  padding: 8px 14px 8px 9px;
+  border: 1px solid rgba(37,99,235,.24);
+  border-radius: 999px;
+  overflow: hidden;
+  isolation: isolate;
+  color: #fff;
+  background:
+    radial-gradient(circle at 18% 20%, rgba(255,255,255,.34), transparent 24%),
+    linear-gradient(135deg, #0f172a 0%, #2563eb 48%, #7c3aed 100%);
+  box-shadow:
+    0 14px 34px rgba(37,99,235,.28),
+    inset 0 1px 0 rgba(255,255,255,.22);
+}
+.bk-float-genius::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border-radius: inherit;
+  background: linear-gradient(120deg, transparent 0%, rgba(255,255,255,.22) 35%, transparent 62%);
+  transform: translateX(-120%);
+  animation: geniusShine 4.2s ease-in-out infinite;
+  pointer-events: none;
+  z-index: -1;
+}
+.genius-orbit {
+  position: absolute;
+  width: 78px;
+  height: 78px;
+  left: -24px;
+  top: 50%;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 50%;
+  transform: translateY(-50%);
+}
+.genius-orbit::before,
+.genius-orbit::after {
+  content: "";
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #facc15;
+  box-shadow: 0 0 12px rgba(250,204,21,.9);
+}
+.genius-orbit::before { top: 10px; right: 9px; }
+.genius-orbit::after { bottom: 9px; left: 16px; background: #67e8f9; box-shadow: 0 0 12px rgba(103,232,249,.8); }
+.genius-icon-wrap {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: rgba(255,255,255,.16);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.24);
+}
+.genius-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  line-height: 1.05;
+  text-align: left;
+}
+.genius-copy strong {
+  font-size: 12.5px;
+  font-weight: 900;
+  letter-spacing: .01em;
+}
+.genius-copy small {
+  font-size: 9.5px;
+  font-weight: 800;
+  color: rgba(255,255,255,.72);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+.bk-float-genius:hover:not(:disabled) {
+  box-shadow:
+    0 18px 42px rgba(37,99,235,.36),
+    0 0 0 5px rgba(96,165,250,.1),
+    inset 0 1px 0 rgba(255,255,255,.26);
+}
+.bk-float-genius.locked {
+  background: linear-gradient(135deg, #475569, #1e293b);
+  border-color: rgba(148,163,184,.24);
+  box-shadow: 0 8px 22px rgba(15,23,42,.18);
+  opacity: .78;
+}
+.bk-float-summary {
+  min-height: 42px;
+  border: 1px solid rgba(99,102,241,.14);
+  color: #334155;
+  background: rgba(255,255,255,.88);
+  backdrop-filter: blur(14px);
+}
+.bk-float-summary:hover {
+  color: #4f46e5;
+  border-color: rgba(99,102,241,.28);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(79,70,229,.16);
+}
+.dark .bk-float-summary {
+  color: #dbeafe;
+  background: rgba(15,23,42,.82);
+  border-color: rgba(129,140,248,.2);
+}
+@keyframes geniusShine {
+  0%, 56% { transform: translateX(-120%); }
+  72%, 100% { transform: translateX(120%); }
+}
+
+.bk-page-arrow {
+  position: fixed;
+  top: 50vh;
+  z-index: 90;
+  width: 48px;
+  height: 48px;
+  border: 1px solid rgba(99,102,241,.18);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #4f46e5;
+  background: rgba(255,255,255,.86);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 4px 14px rgba(15,23,42,.15);
+  cursor: pointer;
+  transition: transform .18s ease, box-shadow .18s ease, opacity .18s ease;
+  transform: translateY(-50%);
+}
+.bk-page-arrow-left { left: max(304px, calc(50vw - 560px)); }
+.bk-page-arrow-right { right: max(18px, calc(50vw - 680px)); }
+.focus-active .bk-page-arrow-left { left: max(18px, calc(50vw - 560px)); }
+.focus-active .bk-page-arrow-right { right: max(18px, calc(50vw - 560px)); }
+.bk-page-arrow:hover:not(.disabled) {
+  color: #fff;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  box-shadow: 0 16px 34px rgba(99,102,241,.28);
+}
+.bk-page-arrow-left:hover:not(.disabled) { transform: translate(-2px, -50%); }
+.bk-page-arrow-right:hover:not(.disabled) { transform: translate(2px, -50%); }
+.bk-page-arrow.disabled {
+  opacity: .24;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.dark .bk-page-arrow {
+  color: #c7d2fe;
+  background: rgba(15,23,42,.82);
+  border-color: rgba(129,140,248,.22);
+}
+
 /* On mobile ≤900px — icon only, still in a row */
 @media (max-width: 900px) {
-  .bk-float-btns { top: 36px; right: 10px; gap: 6px; }
+  .bk-float-btns { top: 8px; width: min(620px, calc(100% - 104px)); gap: 6px; padding: 8px 0; }
   .bk-float-btn  { padding: 7px 10px; }
-  .bk-float-btn > span:not(.bk-float-badge):not(.bk-float-lock) { display: none; }
+  .bk-float-summary > span { display: none; }
+  .bk-float-genius { min-height: 42px; padding: 7px 11px 7px 8px; }
+  .genius-copy small { display: none; }
+  .genius-copy strong { font-size: 11px; }
 }
 
 /* ══ INLINE HIGHLIGHTER — Word-doc style dialogs ══ */
@@ -7765,7 +8979,7 @@ mark.reader-highlight:hover { filter: brightness(1.15); }
 /* ── The spread wrapper — holds embossing layers + sheet ── */
 .book-spread {
   width: 100%;
-  max-width: 1160px;
+  max-width: min(1040px, calc(100% - 132px));
   position: relative;
   transform: rotateX(1.8deg);
   transform-origin: center top;
@@ -7964,7 +9178,7 @@ mark.reader-highlight:hover { filter: brightness(1.15); }
 .bk-page-inner {
   flex: 1;
   color: var(--text-main);
-  font-size: .97rem;
+  font-size: 1.05rem;
   line-height: 1.85;
   transition: opacity .25s;
   user-select: text;
@@ -7989,13 +9203,13 @@ mark.reader-highlight:hover { filter: brightness(1.15); }
 
 /* ── Only paragraph text is selectable ── */
 .reader-paragraph {
-  font-size: .97rem;
+  font-size: 1.05rem;
   line-height: 1.85;
-  margin-bottom: 1rem;
-  text-align: left;
-  hyphens: none;
+  margin-bottom: 1.25rem;
+  text-align: justify; /* Justify text for book look */
+  hyphens: auto;
   word-break: normal;
-  overflow-wrap: normal;
+  overflow-wrap: break-word;
   white-space: normal;
   color: var(--text-main);
   break-inside: avoid-column;    /* keep a paragraph on one column if possible */
@@ -8014,21 +9228,86 @@ mark.reader-highlight:hover { filter: brightness(1.15); }
   pointer-events: none;
 }
 /* Restore pointer-events for interactive wrappers that use no-select */
-.bk-nav-btn, .bk-nav-dot, .bk-float-btns, .bk-float-btn,
+.bk-nav-btn, .bk-nav-dot, .bk-float-btns, .bk-float-btn, .bk-page-arrow,
 .reader-highlight-wrap { pointer-events: auto !important; }
 
 .reader-h1 {
-  font-size: 1.6rem; font-weight: 800; color: var(--book-text-title);
-  margin: 2rem 0 .75rem; line-height: 1.18; letter-spacing: -.35px;
+  font-family: "Georgia", serif;
+  font-size: 2.2rem; font-weight: 800; color: var(--book-text-title);
+  margin: 2.5rem 0 1rem; line-height: 1.2; letter-spacing: -.5px;
   column-span: all;              /* big H1 spans both columns like a section break */
 }
 .reader-h2 {
-  font-size: 1.22rem; font-weight: 800; color: var(--book-text-title);
-  margin: 1.7rem 0 .65rem; line-height: 1.25;
+  font-family: "Georgia", serif;
+  font-size: 1.6rem; font-weight: 800; color: #4338ca; /* Distinct color for headers */
+  margin: 2rem 0 1rem; line-height: 1.3;
 }
 .reader-h3 {
-  font-size: 1rem; font-weight: 700; color: var(--accent);
-  margin: 1.35rem 0 .45rem; line-height: 1.35;
+  font-family: "Georgia", serif;
+  font-size: 1.3rem; font-weight: 700; color: #6366f1; /* Accent color */
+  margin: 1.5rem 0 .75rem; line-height: 1.35;
+}
+.reader-list {
+  padding-left: 1.5rem;
+  margin-bottom: 1.25rem;
+}
+.reader-list li {
+  font-size: 1.05rem;
+  line-height: 1.7;
+  color: var(--text-main);
+  margin-bottom: 0.5rem;
+}
+.reader-list li::marker {
+  color: #4338ca;
+  font-weight: bold;
+}
+.reader-paragraph strong, .reader-list strong, b {
+  font-weight: 700;
+  color: #1e1b4b; /* Darker bold text for emphasis */
+}
+.reader-paragraph em, .reader-list em, i {
+  font-style: italic;
+  color: #312e81; /* Dark italic for emphasis */
+}
+.reader-image-wrap {
+  margin: 1.5rem auto;
+  text-align: center;
+  max-width: 90%; /* prevent image from overflowing */
+}
+.reader-image-wrap img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  display: block;
+  margin: 0 auto;
+}
+.reader-image-caption {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-top: 0.5rem;
+}
+.reader-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  margin: 1.5rem 0;
+}
+.reader-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+.reader-table th, .reader-table td {
+  border: 1px solid var(--border);
+  padding: 0.75rem 1rem;
+  text-align: left;
+}
+.reader-table th {
+  background-color: var(--bg-hover);
+  font-weight: 600;
+  color: var(--text-main);
+}
   border-left: 3px solid var(--accent); padding-left: 11px;
 }
 
@@ -8089,7 +9368,7 @@ mark.reader-highlight:hover { filter: brightness(1.15); }
 }
 .reader-figure-img {
   width:100%; display:block; pointer-events:none; -webkit-user-drag:none;
-  max-height: 320px; object-fit: contain; background: rgba(99,102,241,.03);
+  max-height: 150px; object-fit: contain; background: rgba(99,102,241,.03);
 }
 .reader-figure-fallback {
   min-height: 180px;
@@ -8127,9 +9406,10 @@ mark.reader-highlight:hover { filter: brightness(1.15); }
 /* ── PREV / NEXT NAV ROW ── */
 .bk-nav-row {
   display: flex; align-items: center; justify-content: space-between;
-  gap: 12px; padding: 20px 0 8px;
+  gap: 12px; padding: 28px 0 12px;
   width: 100%; max-width: 1160px;
 }
+.bk-spread-row { margin-top: 12px; }
 .bk-nav-btn {
   display: flex; align-items: center; gap: 8px;
   padding: 11px 20px; border-radius: 14px;
@@ -8169,6 +9449,7 @@ mark.reader-highlight:hover { filter: brightness(1.15); }
 
 /* 1024–1200px: keep two columns, tighten spacing */
 @media (max-width: 1200px) {
+  .book-spread { max-width: calc(100% - 116px); }
   .bk-chapter-header { padding: 28px 32px 16px; }
   .bk-ch-title { font-size: clamp(1.3rem,2.5vw,2rem); max-width: calc(50% - 20px); }
   .bk-page-surface { padding: 0 22px 36px; }
@@ -8178,9 +9459,14 @@ mark.reader-highlight:hover { filter: brightness(1.15); }
 /* ≤900px: collapse to single column, hide spine */
 @media (max-width: 900px) {
   .book-container-wrapper { padding: 1.5rem .75rem 0; }
-  .book-spread { transform: none; max-width: 680px; }
+  .book-spread { transform: none; max-width: min(620px, calc(100% - 104px)); }
   .book-shadow-left, .book-shadow-right { display: none; }
   .bk-spine { display: none; }
+  .book-sheet-paged { min-height: 72vh; }
+  .bk-float-btns { top: 8px; width: min(620px, calc(100% - 104px)); margin-top: 12px; padding: 8px 0; }
+  .bk-page-arrow { width: 40px; height: 50px; border-radius: 15px; }
+  .bk-page-arrow-left { left: 12px; }
+  .bk-page-arrow-right { right: 12px; }
   .bk-pages-shell { grid-template-columns: 1fr; }
   .bk-page-surface { padding: 0 20px 34px; min-height: 54vh; }
   .bk-page-surface.left { border-right: none; }
@@ -8195,17 +9481,41 @@ mark.reader-highlight:hover { filter: brightness(1.15); }
 /* ≤640px: mobile */
 @media (max-width: 640px) {
   .book-container-wrapper { padding: 1rem .5rem 0; }
+  .book-spread { max-width: 100%; }
+  .book-sheet-paged { min-height: 68vh; }
+  .bk-float-btns { top: 6px; width: calc(100% - 16px); justify-content: center; margin-top: 10px; padding: 7px 0; }
+  .bk-page-arrow {
+    top: 50vh;
+    bottom: auto;
+    width: 38px;
+    height: 38px;
+    border-radius: 14px;
+    transform: translateY(-50%);
+  }
+  .bk-page-arrow-left { left: 8px; }
+  .bk-page-arrow-right { right: 8px; }
+  .bk-page-arrow-left:hover:not(.disabled),
+  .bk-page-arrow-right:hover:not(.disabled) { transform: translateY(-50%); }
   .bk-chapter-header { padding: 20px 20px 12px; }
   .bk-ch-title { font-size: 1.35rem; }
   .bk-page-surface { padding: 0 16px 28px; }
   .bk-topbar, .bk-footer { padding-left: 20px; padding-right: 20px; }
   .reader-paragraph { font-size: .92rem; line-height: 1.78; }
   .bk-nav-btn { padding: 9px 14px; font-size: .78rem; max-width: 180px; }
-  .bk-nav-row { padding-top: 14px; }
+  .bk-nav-row { padding-top: 22px; }
 }
 
 /* ≤480px */
 @media (max-width: 480px) {
+  .workstation { padding: 4px; gap: 4px; }
+  .reader-topbar { padding: 8px 10px; }
+  .reader-topbar-chapter { max-width: calc(100vw - 112px); font-size: 11.5px; }
+  .book-container-wrapper { padding: .75rem .25rem 0; }
+  .bk-float-btns { top: 6px; width: calc(100% - 12px); }
+  .bk-float-genius { padding-right: 9px; }
+  .genius-copy { display: none; }
+  .genius-icon-wrap { width: 30px; height: 30px; }
+  .bk-float-summary { min-height: 36px; padding: 7px 9px; }
   .bk-page-surface { padding: 0 12px 24px; }
   .bk-chapter-header { padding: 16px 14px 10px; }
   .bk-ch-title { font-size: 1.2rem; }
@@ -8270,8 +9580,6 @@ mark.reader-highlight:hover { filter: brightness(1.15); }
 `;
 
 export default BookContentWindowDemo;
-
-
 
 // function openEnhancedView(
 //   content: string,

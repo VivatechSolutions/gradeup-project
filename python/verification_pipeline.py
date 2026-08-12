@@ -27,9 +27,8 @@ except ImportError:
     OPENAI_API_KEY_TEXT = os.environ.get("OPENAI_API_KEY_TEXT") or os.environ.get("OPENAI_API_KEY")
 
 
-# =============================================================================
 # TOC EXTRACTOR — reads TOC from markdown to get expected unit list
-# =============================================================================
+
 
 def extract_toc_units_from_markdown(markdown: str) -> List[Dict[str, Any]]:
     """
@@ -142,9 +141,7 @@ def extract_toc_units_from_markdown(markdown: str) -> List[Dict[str, Any]]:
     return units
 
 
-# =============================================================================
 # UNIT CONTENT EXTRACTOR
-# =============================================================================
 
 def extract_unit_markdown(markdown: str, unit_number: int) -> str:
     """
@@ -492,16 +489,63 @@ def check_unit_completeness(
                 f"only {ex_extracted} captured"
             )
 
-    elif subject == "science":
+    elif subject.lower() in ("science",):
+        # Activity check — numbered activities (Activity 1, Activity 2 …)
         if re.search(r'(?:^|\n)#+\s*Activity\s*\d+', unit_md, re.IGNORECASE | re.MULTILINE):
             if "activity" not in present:
-                issues.append("Activity sections found in markdown but NOT extracted")
+                issues.append(
+                    "[MISSING_TYPE:activity] Activity sections found in markdown headings "
+                    "but NOT extracted — needs targeted re-extraction"
+                )
+        # Example check
+        if re.search(r'(?:^|\n)#+\s*Example\b', unit_md, re.IGNORECASE | re.MULTILINE):
+            if "example" not in present:
+                issues.append(
+                    "[MISSING_TYPE:example] Example sections found in markdown headings "
+                    "but NOT extracted — needs targeted re-extraction"
+                )
+        # Do You Know check
+        if re.search(r'(?:^|\n)#+\s*Do\s+You\s+Know', unit_md, re.IGNORECASE | re.MULTILINE):
+            if "do_you_know" not in present:
+                issues.append(
+                    "[MISSING_TYPE:do_you_know] 'Do You Know' boxes found in markdown "
+                    "but NOT extracted — needs targeted re-extraction"
+                )
 
-    elif subject == "mathematics":
+    elif subject.lower() in ("mathematics", "math", "maths"):
         ex_in_md = len(re.findall(r'Example\s+\d+\.\d+', unit_md))
         ex_extracted = len([s for s in sections if s.get("type") == "example"])
         if ex_in_md > max(ex_extracted * 2, 3) and ex_in_md > 5:
             warnings.append(f"~{ex_in_md} example refs in markdown, only {ex_extracted} extracted")
+
+    # ── Duplicate section detector (ALL subjects) ─────────────────────────────
+    # When the gap-filler adds a repair it can produce a second copy of the same
+    # type (e.g. two 'exercise' sections, one with sub_items and one without).
+    # Flag these so the gap-filler can remove the hollow duplicate.
+    type_buckets: Dict[str, list] = {}
+    for sec in sections:
+        stype = sec.get("type", "other")
+        type_buckets.setdefault(stype, []).append(sec)
+
+    for stype, bucket in type_buckets.items():
+        if len(bucket) < 2:
+            continue
+        # A hollow section has no content AND no sub_items/subsections
+        hollow = [
+            s for s in bucket
+            if not (s.get("content") or "").strip()
+            and not (s.get("sub_items") or s.get("subsections") or [])
+        ]
+        if hollow and len(hollow) < len(bucket):
+            # There are both populated and hollow copies → report duplicates
+            hollow_ids = ", ".join(
+                repr(str(s.get("id") or s.get("title") or stype)) for s in hollow
+            )
+            issues.append(
+                f"[DUPLICATE_SECTION:{stype}] Type '{stype}' has {len(bucket)} copies but "
+                f"{len(hollow)} hollow (no content/sub_items): {hollow_ids} — "
+                "remove hollow duplicates, keep populated copy"
+            )
 
     # ── Subsection coverage check (ALL subjects) ──────────────────────────────
     # Scans content.md for ALL heading levels (#/##/###) under each N.M section and
@@ -534,9 +578,7 @@ def check_unit_completeness(
 
 
 
-# =============================================================================
 # SECTION GAP DETECTOR
-# =============================================================================
 
 def _check_section_number_gaps(
     unit: Dict[str, Any],
@@ -544,63 +586,182 @@ def _check_section_number_gaps(
 ) -> List[str]:
     """
     Detect gaps in the section numbering sequence (e.g. 1.1, 1.2, 1.4 — missing 1.3).
-
-    Two causes:
-    A) The PDF author genuinely omitted the section number (common OCR artefact).
-       The content exists in the markdown but has no "## N.M" prefix.
-    B) The LLM skipped a section during extraction.
-
-    Returns issue strings that will trigger targeted repair for each gap.
-    Each issue includes whether content was found in the markdown between the
-    surrounding sections (so the repair LLM knows what raw text to process).
+    Supports both legacy (section_number) and auto-schema (id) formats.
+    Supports both Level 1 (X.Y) and Level 2 (X.Y.Z) section number gaps.
     """
     issues: List[str] = []
     if not unit_md:
         return issues
 
-    # Collect section numbers present in the extracted data
+    # Collect section numbers present in the extracted data.
+    # Only true numbered sections count — examples/exercises/activities carry
+    # their own numbering (e.g. "Example 2.54") and must NEVER register as
+    # section numbers, otherwise the gap check invents phantom sections
+    # (2.12 … 2.53) between the real last section and the example number.
     section_nums: List[tuple] = []
     for sec in unit.get("sections", []):
-        snum = sec.get("section_number", "")
+        stype = str(sec.get("type") or "").strip().lower()
+        if stype and stype not in ("section", "introduction"):
+            continue
+        snum = sec.get("section_number") or sec.get("id", "")
         if not snum:
             continue
-        m = re.match(r"(\d+)\.(\d+)", snum)
-        if m:
-            section_nums.append((int(m.group(1)), int(m.group(2)), snum))
-    if len(section_nums) < 2:
+        # Level 1: "X.Y"
+        m1 = re.match(r"^(\d+)\.(\d+)$", str(snum).strip())
+        if m1:
+            section_nums.append((int(m1.group(1)), int(m1.group(2)), None, str(snum).strip()))
+            continue
+        # Level 2: "X.Y.Z"
+        m2 = re.match(r"^(\d+)\.(\d+)\.(\d+)$", str(snum).strip())
+        if m2:
+            section_nums.append((int(m2.group(1)), int(m2.group(2)), int(m2.group(3)), str(snum).strip()))
+            continue
+
+    if not section_nums:
         return issues
 
-    section_nums.sort()
-
+    # Sort level 1 and level 2 numbers
+    level1_nums = sorted(list({(major, minor) for major, minor, _, _ in section_nums}))
+    
     # Collect section headings actually present in the markdown
-    section_re = re.compile(r"^#+\s*(\d+\.\d+)(?:\s|\.|$)", re.IGNORECASE | re.MULTILINE)
+    # (OCR sometimes bold-wraps headings: "# **2.5.3 Modulo operations**")
+    # Level 1: X.Y
+    section_re = re.compile(r"^#+\s*\**\s*(\d+\.\d+)(?:\s|\.|$)", re.IGNORECASE | re.MULTILINE)
     md_sections = {m.group(1) for m in section_re.finditer(unit_md)}
 
-    for i in range(len(section_nums) - 1):
-        curr_major, curr_minor, curr_snum = section_nums[i]
-        next_major, next_minor, next_snum = section_nums[i + 1]
+    # Level 2: X.Y.Z
+    subsection_re = re.compile(r"^#+\s*\**\s*(\d+\.\d+\.\d+)(?:\s|\.|$)", re.IGNORECASE | re.MULTILINE)
+    md_subsections = {m.group(1) for m in subsection_re.finditer(unit_md)}
 
-        if curr_major != next_major:
-            continue  # different units — skip
+    # ── Level 1 gap check ───────────────────────────────────
+    if len(level1_nums) >= 2:
+        for i in range(len(level1_nums) - 1):
+            curr_major, curr_minor = level1_nums[i]
+            next_major, next_minor = level1_nums[i + 1]
 
-        for missing_minor in range(curr_minor + 1, next_minor):
-            missing_snum = f"{curr_major}.{missing_minor}"
+            if curr_major != next_major:
+                continue
 
-            # Check if missing section exists in markdown (PDF just forgot to number it)
-            # by looking for unnumbered content between curr and next
-            in_markdown = missing_snum in md_sections
-            has_unnumbered_content = _has_unnumbered_content_between(
-                unit_md, curr_snum, next_snum
-            )
+            for missing_minor in range(curr_minor + 1, next_minor):
+                missing_snum = f"{curr_major}.{missing_minor}"
 
+                # Only report a gap when the textbook actually contains this
+                # section heading. An arithmetic gap without markdown evidence
+                # means the numbering simply skips (or an example/exercise id
+                # leaked in) — inventing sections here creates phantom entries
+                # like 2.14/2.15 with empty content.
+                if missing_snum not in md_sections:
+                    continue
+
+                curr_snum = f"{curr_major}.{curr_minor}"
+                next_snum = f"{curr_major}.{next_minor}"
+
+                has_unnumbered_content = _has_unnumbered_content_between(
+                    unit_md, curr_snum, next_snum
+                )
+
+                cause = (
+                    "OCR heading has no section number — content exists but was merged into "
+                    f"section {curr_snum}. The PDF author omitted the '{missing_snum}' label."
+                    if has_unnumbered_content
+                    else "Section appears to have been skipped entirely during extraction."
+                )
+                issues.append(
+                    f"Section {missing_snum} is MISSING (gap: {curr_snum} → {next_snum}). "
+                    f"{cause} — needs targeted extraction with section_number='{missing_snum}'."
+                )
+
+    # ── Missing PARENT check ────────────────────────────────
+    # A child like 2.7.1 implies parent 2.7 into level1_nums, so the gap loop
+    # above never notices the parent section itself was skipped. If the parent
+    # heading exists in the markdown but no level-1 section with that exact
+    # number was extracted, flag it — bounded (parent → first child) so the
+    # gap filler extracts exactly the parent's intro content.
+    level1_extracted = {(maj, mnr) for maj, mnr, sub, _ in section_nums if sub is None}
+    implied_parents  = {(maj, mnr) for maj, mnr, sub, _ in section_nums if sub is not None}
+    for maj, mnr in sorted(implied_parents - level1_extracted):
+        parent_snum = f"{maj}.{mnr}"
+        if parent_snum not in md_sections:
+            continue
+        first_child_sub = min(
+            sub for M, m, sub, _ in section_nums
+            if (M, m) == (maj, mnr) and sub is not None
+        )
+        first_child = f"{parent_snum}.{first_child_sub}"
+        issues.append(
+            f"Section {parent_snum} is MISSING (gap: {parent_snum} → {first_child}). "
+            f"The parent section heading exists in the textbook but only its "
+            f"subsections were extracted — needs targeted extraction with "
+            f"section_number='{parent_snum}'."
+        )
+
+    # ── Level 2 gap check ───────────────────────────────────
+    # Group extracted Level 2 subminors by parent (major, minor)
+    from collections import defaultdict
+    level2_by_parent = defaultdict(list)
+    for major, minor, subminor, _ in section_nums:
+        if subminor is not None:
+            level2_by_parent[(major, minor)].append(subminor)
+
+    # Only check parents that have BOTH extracted Level-2 sections AND markdown evidence.
+    # Do NOT add md-only parents here — if no Level-2 was extracted at all for a parent,
+    # the parent-level section itself should be repaired, not individual subsections.
+    all_parents = set(level2_by_parent.keys())
+
+    for parent in sorted(all_parents):
+        major, minor = parent
+        parent_snum = f"{major}.{minor}"
+        subminors = level2_by_parent[parent]
+        subminors.sort()
+
+        # Gather subsection numbers that actually appear as headings in the markdown.
+        # Only these are authoritative evidence that a subsection was truly present.
+        parent_prefix = parent_snum + "."
+        md_subminors = {
+            int(s.split('.')[-1]) for s in md_subsections
+            if s.startswith(parent_prefix) and s.split('.')[-1].isdigit()
+        }
+
+        # Determine expected: only count a subsection as "missing" if it actually
+        # appears in the markdown (confirmed textbook heading). Arithmetic gaps
+        # (range between min and max extracted) without markdown proof are skipped
+        # to avoid false positives on non-sequential subsection numbering.
+        expected_subminors = md_subminors  # only what the markdown confirms
+        extracted_subminors = set(subminors)
+        missing_subminors = expected_subminors - extracted_subminors
+
+        for missing_subminor in sorted(missing_subminors):
+            missing_snum = f"{parent_snum}.{missing_subminor}"
+
+            # Locate surrounding sections for bounds
+            before_candidates = [s for s in subminors if s < missing_subminor]
+            after_candidates  = [s for s in subminors if s > missing_subminor]
+
+            sec_before = f"{parent_snum}.{before_candidates[-1]}" if before_candidates else parent_snum
+
+            if after_candidates:
+                sec_after = f"{parent_snum}.{after_candidates[0]}"
+            else:
+                # Find next level 1 section
+                try:
+                    parent_idx = level1_nums.index((major, minor))
+                    if parent_idx < len(level1_nums) - 1:
+                        next_major, next_minor = level1_nums[parent_idx + 1]
+                        sec_after = f"{next_major}.{next_minor}"
+                    else:
+                        sec_after = ""
+                except ValueError:
+                    sec_after = ""
+
+            has_unnumbered = _has_unnumbered_content_between(unit_md, sec_before, sec_after) if sec_after else True
             cause = (
-                "OCR heading has no section number — content exists but was merged into "
-                f"section {curr_snum}. The PDF author omitted the '{missing_snum}' label."
-                if has_unnumbered_content
-                else "Section appears to have been skipped entirely during extraction."
+                "OCR heading has no subsection number — content exists but was merged into "
+                f"section {sec_before}. The PDF author omitted the '{missing_snum}' label."
+                if has_unnumbered
+                else "Subsection appears to have been skipped entirely during extraction."
             )
             issues.append(
-                f"Section {missing_snum} is MISSING (gap: {curr_snum} → {next_snum}). "
+                f"Section {missing_snum} is MISSING (gap: {sec_before} → {sec_after if sec_after else 'END'}). "
                 f"{cause} — needs targeted extraction with section_number='{missing_snum}'."
             )
 
@@ -616,7 +777,7 @@ def _has_unnumbered_content_between(unit_md: str, sec_a: str, sec_b: str) -> boo
     lines = unit_md.split("\n")
     sec_a_re  = re.compile(r"^#+\s*" + re.escape(sec_a) + r"(?:\s|$)", re.IGNORECASE)
     sec_b_re  = re.compile(r"^#+\s*" + re.escape(sec_b) + r"(?:\s|$)", re.IGNORECASE)
-    any_sec_re = re.compile(r"^#+\s*\d+\.\d+(?:\s|$)", re.IGNORECASE)
+    any_sec_re = re.compile(r"^#+\s*\d+\.\d+(?:\.\d+)*(?:\s|$)", re.IGNORECASE)
     heading_re = re.compile(r"^#+\s+(.+)")
 
     collecting = False
@@ -851,9 +1012,8 @@ def _check_subsection_coverage(
     return issues
 
 
-# =============================================================================
 # TARGETED SECTION REPAIR
-# =============================================================================
+
 
 def _extract_section_raw(unit_md: str, section_number: str) -> str:
     """
@@ -977,6 +1137,25 @@ def _is_auto_schema_unit(unit: Dict[str, Any]) -> bool:
     return False
 
 
+def _repair_sub_to_auto(rsub: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Convert one repaired subsection to the auto-schema sub_sections format.
+    Only headings with a REAL printed number become type='section'; unnumbered
+    blocks (theorems, notes, activities...) keep their title as id.
+    """
+    num = str(rsub.get("subsection_number") or "").strip()
+    title = (rsub.get("subsection_title") or "").strip()
+    is_numbered = bool(re.match(r"^\d+(?:\.\d+)+$", num))
+    return {
+        "type": "section" if is_numbered else "other",
+        "id": num if is_numbered else (title or num),
+        "title": title,
+        "content": rsub.get("content", ""),
+        "metadata": {},
+        "sub_items": [],
+    }
+
+
 def _legacy_to_auto_schema(repaired: Dict[str, Any]) -> Dict[str, Any]:
     """Convert a legacy-format repaired section to auto-schema format."""
     section = {
@@ -986,12 +1165,10 @@ def _legacy_to_auto_schema(repaired: Dict[str, Any]) -> Dict[str, Any]:
         "content": repaired.get("content", ""),
         "metadata": {},
         "sub_items": [],
+        "sub_sections": [],
     }
     for sub in repaired.get("subsections", []):
-        section["sub_items"].append({
-            "number": sub.get("subsection_number", ""),
-            "content": sub.get("content", ""),
-        })
+        section["sub_sections"].append(_repair_sub_to_auto(sub))
     return section
 
 
@@ -1001,15 +1178,48 @@ def _match_section_by_id(sections: List[Dict], section_number: str) -> int:
         # Legacy format
         if sec.get("section_number") == section_number:
             return i
-        # Auto-schema format: id might be "1.3" or "1.3_something"
+        # Auto-schema format: id might be "1.3", "1.3_something", or a
+        # mangled "1.3 Some Title" — match on the numeric prefix
         sec_id = str(sec.get("id", ""))
-        if sec_id == section_number or sec_id.startswith(section_number + "_"):
+        if (sec_id == section_number
+                or sec_id.startswith(section_number + "_")
+                or sec_id.startswith(section_number + " ")):
             return i
         # Also check title for "1.3 Title" pattern
         sec_title = sec.get("title", "")
         if sec_title and sec_title.startswith(section_number + " "):
             return i
     return -1
+
+
+def _parse_dotted_version(s: str):
+    s = str(s).strip()
+    m = re.match(r"^(\d+(?:\.\d+)+)", s)
+    if m:
+        return [int(x) for x in m.group(1).split(".")]
+    return None
+
+
+def _is_less_than(snum_a, snum_b) -> bool:
+    val_a = _parse_dotted_version(snum_a)
+    val_b = _parse_dotted_version(snum_b)
+    
+    if val_a is not None and val_b is not None:
+        return val_a < val_b
+        
+    name_a = str(snum_a).lower()
+    name_b = str(snum_b).lower()
+    
+    if "intro" in name_a:
+        return True
+    if "intro" in name_b:
+        return False
+    if "exercise" in name_a or "summary" in name_a or "glossary" in name_a:
+        return False
+    if "exercise" in name_b or "summary" in name_b or "glossary" in name_b:
+        return True
+        
+    return name_a < name_b
 
 
 def _merge_repaired_section(
@@ -1031,28 +1241,80 @@ def _merge_repaired_section(
     - Re-number sequentially after merge.
     """
     is_auto = _is_auto_schema_unit(unit)
+    sections = unit.get("sections", [])
+
+    # ── Handle Level 2 subsection (e.g. 2.5.3) ──────────────────────────────────
+    parts = section_number.split(".")
+    if len(parts) > 2:
+        parent_num = ".".join(parts[:-1]) # e.g. "2.5"
+        parent_idx = _match_section_by_id(sections, parent_num)
+        if parent_idx >= 0:
+            parent_sec = sections[parent_idx]
+            sub_sections = parent_sec.setdefault("sub_sections", [])
+            
+            sub_idx = _match_section_by_id(sub_sections, section_number)
+            if is_auto:
+                new_sub = _legacy_to_auto_schema(repaired)
+            else:
+                new_sub = repaired
+                
+            if sub_idx >= 0:
+                existing_sub = sub_sections[sub_idx]
+                if not (existing_sub.get("content") or "").strip() and (new_sub.get("content") or "").strip():
+                    existing_sub["content"] = new_sub["content"]
+
+                child_key = "sub_sections" if is_auto else "subsections"
+                new_items = (new_sub.get("sub_sections")
+                             or new_sub.get("subsections")
+                             or new_sub.get("sub_items") or [])
+                existing_items = existing_sub.get(child_key) or []
+                for item in new_items:
+                    if item not in existing_items:
+                        existing_items.append(item)
+                if existing_items:
+                    existing_sub[child_key] = existing_items
+                sub_sections[sub_idx] = existing_sub
+            else:
+                inserted = False
+                for i, sub in enumerate(sub_sections):
+                    sub_id = sub.get("id") or sub.get("section_number") or ""
+                    try:
+                        if sub_id and _is_less_than(section_number, sub_id):
+                            sub_sections.insert(i, new_sub)
+                            inserted = True
+                            break
+                    except TypeError:
+                        pass
+                if not inserted:
+                    sub_sections.append(new_sub)
+            
+            parent_sec["sub_sections"] = sub_sections
+            sections[parent_idx] = parent_sec
+            unit["sections"] = sections
+            return unit
 
     def _norm_title(t: str) -> str:
         t = re.sub(r"^\d+\.\s*", "", (t or "").lower())
         return re.sub(r"[^\w\s]", "", t).strip()
 
     repair_subs = repaired.get("subsections", [])
-    sections = unit.get("sections", [])
-
     idx = _match_section_by_id(sections, section_number)
 
     if idx >= 0:
         sec = sections[idx]
 
         if is_auto:
-            # Auto-schema: subsections go in sub_items
-            existing_subs = sec.get("sub_items", [])
+            # Auto-schema: repaired subsections go in sub_sections; also dedup
+            # against legacy sub_items so we never re-add content stored there
+            existing_subs = list(sec.get("sub_sections") or [])
+            dedup_pool = existing_subs + list(sec.get("sub_items") or [])
         else:
             existing_subs = sec.get("subsections", [])
+            dedup_pool = existing_subs
 
         existing_norm = {
-            _norm_title(s.get("subsection_title") or s.get("title") or s.get("content", "")[:40]): eidx
-            for eidx, s in enumerate(existing_subs)
+            _norm_title(s.get("subsection_title") or s.get("title") or str(s.get("content", ""))[:40]): eidx
+            for eidx, s in enumerate(dedup_pool)
         }
 
         # Also build content fingerprint set — catches duplicates with different titles
@@ -1062,7 +1324,7 @@ def _merge_repaired_section(
 
         existing_fps = {
             _content_fp(s.get("content", ""))
-            for s in existing_subs
+            for s in dedup_pool
             if (s.get("content") or "").strip()
         }
 
@@ -1077,10 +1339,7 @@ def _merge_repaired_section(
                 if repair_fp and repair_fp in existing_fps:
                     continue  # content already present, skip duplicate
                 if is_auto:
-                    additions.append({
-                        "number": rsub.get("subsection_number", ""),
-                        "content": rsub.get("content", ""),
-                    })
+                    additions.append(_repair_sub_to_auto(rsub))
                 else:
                     additions.append(rsub)
                 # Track the new content fingerprint too
@@ -1088,21 +1347,22 @@ def _merge_repaired_section(
                     existing_fps.add(repair_fp)
             else:
                 existing_idx = existing_norm[rtitle_norm]
+                if existing_idx >= len(existing_subs):
+                    continue  # matched a legacy sub_item — already present
                 existing_content = existing_subs[existing_idx].get("content") or ""
                 repair_content = rsub.get("content") or ""
                 if len(repair_content) > len(existing_content) * 1.2:
                     if is_auto:
-                        existing_subs[existing_idx] = {
-                            "number": rsub.get("subsection_number", ""),
-                            "content": repair_content,
-                        }
+                        upgraded = existing_subs[existing_idx]
+                        upgraded["content"] = repair_content
+                        existing_subs[existing_idx] = upgraded
                     else:
                         existing_subs[existing_idx] = rsub
 
         merged_subs = existing_subs + additions
 
         if is_auto:
-            sec["sub_items"] = merged_subs
+            sec["sub_sections"] = merged_subs
         else:
             for j, sub in enumerate(merged_subs, 1):
                 sub["subsection_number"] = f"{section_number}.{j}"
@@ -1137,7 +1397,7 @@ def _merge_repaired_section(
     for i, sec in enumerate(sections):
         existing_snum = sec.get("section_number") or sec.get("id", "")
         try:
-            if existing_snum and str(existing_snum) > section_number:
+            if existing_snum and _is_less_than(section_number, existing_snum):
                 sections.insert(i, new_section)
                 inserted = True
                 break
@@ -1483,7 +1743,7 @@ def run_verification_agent(
                     # ── Handle MISSING gap sections ──────────────────────────────────────
                     # e.g. "Section 1.3 is MISSING (gap: 1.2 → 1.4). OCR heading has no..."
                     gap_match = re.search(
-                        r'Section (\d+\.\d+) is MISSING \(gap: (\d+\.\d+) → (\d+\.\d+)\)',
+                        r'Section (\d+\.\d+(?:\.\d+)*) is MISSING \(gap: (\d+\.\d+(?:\.\d+)*) → (\d+\.\d+(?:\.\d+)*|END)\)',
                         issue
                     )
                     if gap_match:
@@ -1666,7 +1926,7 @@ def detect_available_fields_in_markdown(unit_content: str) -> Set[str]:
 def check_for_missing_fields(unit: Dict, available: Set[str]) -> List[str]:
     """Legacy: check which available fields are missing in unit data."""
     field_checks = {
-        "learning_objectives": lambda u: not u.get("learning_objectives"),
+        "learning_objectives": lambda u: not u.get("learning_objectives") and not any(s.get("type") == "learning_objectives" for s in u.get("sections", [])),
         "activities":          lambda u: not u.get("activities"),
         "notes":               lambda u: not u.get("notes"),
         "exercises":           lambda u: not u.get("exercises"),

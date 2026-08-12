@@ -82,8 +82,6 @@ const css = `
   margin: 0 auto;
   color: var(--hw-text);
   transition: color .3s ease;
-  min-height: 100vh;
-  background: var(--hw-bg);
 }
 
 /* ── Hero (same as td-hero) ── */

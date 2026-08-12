@@ -3,7 +3,6 @@ import { useAuth } from "../hooks/use-auth";
 import { Link } from "wouter";
 import { useToast } from "../hooks/use-toast";
 import { useTheme } from "../hooks/use-theme";
-import { buildApiUrl } from "../lib/apiBase";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   GraduationCap, Brain, Target, Sparkles, Users, Eye, EyeOff,
@@ -423,9 +422,9 @@ const REGISTER_STEPS = [
   { id:3, label:"Details"  },
   { id:4, label:"Password" },
 ];
-const BOARDS   = ["CBSE","State"];
+const BOARDS   = ["CBSE","ICSE","State Board","IB","Cambridge"];
 const GRADES   = ["Grade 6","Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"];
-const FALLBACK_SUBJECTS = ["Mathematics","Science","English","History","Geography","Computer Science","Physics","Chemistry","Biology"];
+const SUBJECTS = ["Mathematics","Science","English","History","Geography","Computer Science","Physics","Chemistry","Biology"];
 
 // ── Step indicator ────────────────────────────────────────────────────────────
 function StepIndicator({ current, steps }: { current:number; steps:typeof REGISTER_STEPS }) {
@@ -478,10 +477,8 @@ export default function AuthPage() {
   const [regBoard, setRegBoard]       = useState("");
   const [regGrade, setRegGrade]       = useState("");
   const [regSubjects, setRegSubjects] = useState<string[]>([]);
-  const [availableSubjects, setAvailableSubjects] = useState<string[]>([]);
-  const [subjectsLoading, setSubjectsLoading] = useState(false);
   const [regForm, setRegForm]         = useState({
-    firstName:"", lastName:"", username:"", email:"", school:"", password:"", confirmPassword:"",
+    firstName:"", lastName:"", username:"", email:"", password:"", confirmPassword:"",
   });
   const [showRegPw,   setShowRegPw]   = useState(false);
   const [showRegConf, setShowRegConf] = useState(false);
@@ -513,44 +510,6 @@ export default function AuthPage() {
     });
     setCaptchaLoading(false);
   };
-
-  useEffect(() => {
-    if (regRole !== "student" || !regBoard || !regGrade) {
-      setAvailableSubjects([]);
-      setRegSubjects([]);
-      return;
-    }
-
-    const controller = new AbortController();
-    const classNumber = regGrade.replace(/\D/g, "");
-    setSubjectsLoading(true);
-    fetch(buildApiUrl(`/api/v1/library/subjects?board=${encodeURIComponent(regBoard)}&standard=${encodeURIComponent(classNumber)}`), {
-      signal: controller.signal,
-      credentials: "include",
-    })
-      .then((res) => res.json())
-      .then((payload) => {
-        const subjects = Array.isArray(payload?.data)
-          ? payload.data.map((item: any) => item.subject || item.title).filter(Boolean)
-          : [];
-        const uniqueSubjects = Array.from(new Set(subjects)) as string[];
-        setAvailableSubjects(uniqueSubjects);
-        setRegSubjects((previous) => previous.filter((subject) => uniqueSubjects.includes(subject)));
-      })
-      .catch((error) => {
-        if (error?.name !== "AbortError") {
-          setAvailableSubjects([]);
-          setRegSubjects([]);
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) {
-          setSubjectsLoading(false);
-        }
-      });
-
-    return () => controller.abort();
-  }, [regRole, regBoard, regGrade]);
 
   // ── Login validation ──
   const validateLoginStep = (): boolean => {
@@ -627,7 +586,6 @@ export default function AuthPage() {
       if (!regForm.username.trim())  errs.username  = "Username is required";
       if (!regForm.email.trim())     errs.email     = "Email is required";
       else if (!/\S+@\S+\.\S+/.test(regForm.email)) errs.email = "Invalid email address";
-      if (regRole === "student" && !regForm.school.trim()) errs.school = "School is required";
     }
 
     if (step === 3) {
@@ -635,11 +593,7 @@ export default function AuthPage() {
         if (!regBoard) errs.board = "Please select a board";
         if (!regGrade) errs.grade = "Please select a grade";
       }
-      if (regRole === "student" && !subjectsLoading && availableSubjects.length === 0) {
-        errs.subjects = "No subjects are available for the selected class and board";
-      } else if (regSubjects.length === 0) {
-        errs.subjects = "Please select at least one subject";
-      }
+      if (regSubjects.length === 0) errs.subjects = "Please select at least one subject";
     }
 
     if (step === 4) {
@@ -666,18 +620,6 @@ export default function AuthPage() {
       grade:     regRole === "student" && regGrade
         ? parseInt(regGrade.replace(/\D/g, ""))
         : undefined,
-      class:     regRole === "student" ? regGrade.replace(/\D/g, "") : undefined,
-      board:     regRole === "student" ? regBoard : undefined,
-      school:    regRole === "student" ? regForm.school : undefined,
-      subjects:  regSubjects,
-    });
-  };
-
-  const handleGoogleLogin = () => {
-    toast({
-      title: "Google sign-in",
-      description: "Google Identity Services must provide a credential before signing in.",
-      variant: "destructive",
     });
   };
 
@@ -827,8 +769,10 @@ export default function AuthPage() {
                                   className="ap-oauth-btn"
                                   type="button"
                                   disabled={loginMutation.isPending}
-                                  title="Sign in with Google"
-                                  onClick={handleGoogleLogin}
+                                  title="Quick login as Student"
+                                  onClick={() => loginMutation.mutate({
+                                    email:"student@gradeup.com", password:"password123", role:"student"
+                                  })}
                                 >
                                   <FaGoogle style={{color:"#ea4335",fontSize:15}}/> Google
                                 </button>
@@ -836,8 +780,10 @@ export default function AuthPage() {
                                   className="ap-oauth-btn"
                                   type="button"
                                   disabled={loginMutation.isPending}
-                                  title="Microsoft sign-in is not enabled"
-                                  onClick={() => toast({ title:"Microsoft sign-in", description:"Microsoft authentication is not enabled for this flow.", variant:"destructive" })}
+                                  title="Quick login as Teacher"
+                                  onClick={() => loginMutation.mutate({
+                                    email:"teacher@gradeup.com", password:"password123", role:"teacher"
+                                  })}
                                 >
                                   <FaMicrosoft style={{color:"#00a4ef",fontSize:15}}/> Microsoft
                                 </button>
@@ -1075,18 +1021,6 @@ export default function AuthPage() {
                                 </div>
                                 {regErrors.email && <div className="ap-field-error"><AlertTriangle size={11}/>{regErrors.email}</div>}
                               </div>
-                              {regRole==="student" && (
-                                <div className="ap-field">
-                                  <label className="ap-field-label">School</label>
-                                  <input
-                                    className={`ap-input${regErrors.school?" is-error":""}`}
-                                    placeholder="Your school name"
-                                    value={regForm.school}
-                                    onChange={e => setRegForm(f=>({...f,school:e.target.value}))}
-                                  />
-                                  {regErrors.school && <div className="ap-field-error"><AlertTriangle size={11}/>{regErrors.school}</div>}
-                                </div>
-                              )}
                               <div className="ap-step-nav">
                                 <button className="ap-btn ap-btn-outline" onClick={() => setStep(1)}>
                                   <ChevronLeft size={16}/> Back
@@ -1136,7 +1070,7 @@ export default function AuthPage() {
                                   📚 {regRole==="student" ? "Subjects (select all that apply)" : "Subjects you teach"}
                                 </label>
                                 <div className="ap-chips">
-                                  {(regRole==="student" ? availableSubjects : FALLBACK_SUBJECTS).map(s => (
+                                  {SUBJECTS.map(s => (
                                     <button key={s} type="button"
                                       className={`ap-chip${regSubjects.includes(s)?" on":""}`}
                                       onClick={() => {
@@ -1147,12 +1081,6 @@ export default function AuthPage() {
                                     </button>
                                   ))}
                                 </div>
-                                {regRole==="student" && subjectsLoading && (
-                                  <div className="ap-field-hint">Loading subjects for the selected class and board...</div>
-                                )}
-                                {regRole==="student" && !subjectsLoading && regBoard && regGrade && availableSubjects.length===0 && (
-                                  <div className="ap-field-error"><AlertTriangle size={11}/>No subjects found for this class and board</div>
-                                )}
                                 {regErrors.subjects && <div className="ap-field-error"><AlertTriangle size={11}/>{regErrors.subjects}</div>}
                               </div>
                               <div className="ap-step-nav">

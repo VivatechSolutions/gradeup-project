@@ -1,4 +1,9 @@
 .env
+*service-account*.json
+*.key.json
+oauth_client.json
+google_token.json
+*client_secret*.json
 __pycache__/
 .vscode/
 scripts/
@@ -17,4 +22,5 @@ outputs/
 seminar_chat/
 seminar_practice_data/
 practice_session/
-
+avatar_data/
+google_student_tokens/

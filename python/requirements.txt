@@ -40,3 +40,16 @@ opencv-python>=4.8.0
 # PDF Report Generation (Debate & Seminar)
 reportlab>=4.0.0
 python-pptx==1.0.2
+
+# Seminar PPT co-pilot (LangGraph agents) — see SEMINAR_PPT_AUTOMATION_PLAN.md
+langgraph>=1.0,<2.0            # already used by extraction graphs; pin it explicitly
+# Google Slides Agent apply layer (M3) — service-account key required at runtime:
+google-api-python-client>=2.0  # Google Slides + Drive 3rd-party API (presentations, batchUpdate)
+google-auth>=2.0               # service-account credentials
+google-auth-oauthlib>=1.0      # OAuth alternative to the service account
+# Per-student Google auth via Scalekit connected accounts (see ppt/ppt_scalekit.py):
+scalekit-sdk-python>=2.0       # fetch each student's Google access token by identifier
+
+# Hybrid web search (SearXNG + Crawl4AI) needs no extra Python deps —
+# 'requests' (above) is all ppt/ppt_websearch.py uses; the rest runs in Docker.
+langchain-experimental>=0.0.50

@@ -10,6 +10,7 @@ function buildSubjectOptionLabel(group) {
 }
 
 export default function UploadSubjectPage() {
+  const [uploadMode, setUploadMode] = useState("single");
   const [form, setForm] = useState({
     processingMode: "single_unit",
     subjectAssignmentMode: "new_subject",
@@ -19,8 +20,10 @@ export default function UploadSubjectPage() {
     subject: "",
     unitOrChapterName: "",
     part: "",
-    file: null,
+    term: "",
+    files: [],
   });
+  const [fileMetadata, setFileMetadata] = useState([]);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const [successToast, setSuccessToast] = useState("");
@@ -92,6 +95,7 @@ export default function UploadSubjectPage() {
       standard: selectedGroup?.standard || current.standard,
       subject: selectedGroup?.subject || current.subject,
       part: selectedGroup?.part || "",
+      term: selectedGroup?.term || "",
     }));
   }
 
@@ -102,19 +106,96 @@ export default function UploadSubjectPage() {
     setIsSubmitting(true);
 
     try {
-      const formData = new FormData();
-      Object.entries(form).forEach(([key, value]) => {
-        if (value) {
-          formData.append(key, value);
+      // Validate form
+      if (!form.board?.trim()) {
+        setError("Board is required");
+        setIsSubmitting(false);
+        return;
+      }
+      if (!form.standard?.trim()) {
+        setError("Standard is required");
+        setIsSubmitting(false);
+        return;
+      }
+      if (!form.subject?.trim()) {
+        setError("Subject is required");
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (uploadMode === "single") {
+        if (!form.unitOrChapterName?.trim()) {
+          setError("Unit/Chapter name is required for single unit upload");
+          setIsSubmitting(false);
+          return;
         }
-      });
+        if (!form.files || form.files.length !== 1) {
+          setError("Please select exactly one file for single unit upload");
+          setIsSubmitting(false);
+          return;
+        }
+      } else {
+        if (!form.files || form.files.length < 2) {
+          setError("Please select at least 2 files for multiple units upload");
+          setIsSubmitting(false);
+          return;
+        }
+        // Validate metadata for each file
+        for (let i = 0; i < form.files.length; i++) {
+          if (!fileMetadata[i]?.unitTitle || !fileMetadata[i]?.unitTitle.trim()) {
+            setError(`Unit title is required for file ${i + 1}`);
+            setIsSubmitting(false);
+            return;
+          }
+        }
+      }
+
+      const formData = new FormData();
+      
+      // Add base form fields
+      formData.append("board", form.board);
+      formData.append("standard", form.standard);
+      formData.append("subject", form.subject);
+      formData.append("subjectAssignmentMode", form.subjectAssignmentMode);
+      
+      if (form.subjectAssignmentMode === "existing_subject") {
+        formData.append("existingSubjectKey", form.existingSubjectKey);
+      }
+
+      formData.append("processingMode", form.processingMode);
+      
+      if (form.part) {
+        formData.append("part", form.part);
+      }
+      if (form.term) {
+        formData.append("term", form.term);
+      }
+
+      if (uploadMode === "single") {
+        formData.append("file", form.files[0]);
+        formData.append("unitOrChapterName", form.unitOrChapterName);
+      } else {
+        // Multiple files upload
+        form.files.forEach((file) => {
+          formData.append("file", file);
+        });
+        fileMetadata.forEach((metadata, index) => {
+          formData.append(`fileMetadata[${index}]`, JSON.stringify(metadata));
+        });
+      }
 
       const response = await uploadSubject(formData);
       setResult(response.data);
-      setSuccessToast("Upload added to the processing queue.");
+      
+      const successMessage = uploadMode === "single"
+        ? "Upload added to the processing queue."
+        : `${form.files.length} files added to the processing queue. Units will be created in strict FIFO order.`;
+      
+      setSuccessToast(successMessage);
 
-      if (response.data?.uploadId) {
-        localStorage.setItem(ACTIVE_UPLOAD_STORAGE_KEY, response.data.uploadId);
+      if (response.data?.uploadId || response.data?.upload?._id) {
+        const uploadId = response.data?.uploadId || response.data?.upload?._id;
+        localStorage.setItem(ACTIVE_UPLOAD_STORAGE_KEY, uploadId);
       }
     } catch (submitError) {
       setError(submitError.message || "Upload failed");
@@ -125,9 +206,9 @@ export default function UploadSubjectPage() {
 
   const submitLabel = isSubmitting
     ? "Processing"
-    : result?.uploadStatus === "queued"
+    : result?.upload?.status === "queued" || result?.uploadStatus === "queued"
       ? "Queued"
-      : result?.uploadStatus === "processing"
+      : result?.upload?.status === "processing" || result?.uploadStatus === "processing"
         ? "Processing"
         : "Upload to queue";
 
@@ -142,14 +223,14 @@ export default function UploadSubjectPage() {
           <p className="eyebrow">Upload</p>
           <h2>Queue a new subject processing job</h2>
           <p className="muted">
-            Choose the processing mode first, then decide whether this upload
+            Choose the upload mode first (single or multiple units), then decide whether this upload
             belongs to a new subject or should be attached to an existing one.
           </p>
         </div>
         <div className="hero-metrics">
           <div className="metric-card">
-            <span>Mode</span>
-            <strong>{isUnitWise ? "Unit wise" : "Subject wise"}</strong>
+            <span>Upload Mode</span>
+            <strong>{uploadMode === "single" ? "Single Unit" : "Multiple Units"}</strong>
           </div>
           <div className="metric-card">
             <span>Assignment</span>
@@ -160,25 +241,51 @@ export default function UploadSubjectPage() {
 
       <div className="content-card upload-card">
         <form className="form-grid" onSubmit={handleSubmit}>
-          <label>
-            Processing mode
-            <select
-              value={form.processingMode}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  processingMode: event.target.value,
-                  unitOrChapterName:
-                    event.target.value === "single_unit"
-                      ? current.unitOrChapterName
-                      : "",
-                }))
-              }
-            >
-              <option value="single_unit">Unit wise</option>
-              <option value="whole_subject">Subject wise</option>
-            </select>
-          </label>
+          <div className="full-span upload-mode-selector">
+            <label style={{ display: "block", marginBottom: "1rem" }}>
+              <strong>Upload Mode *</strong>
+            </label>
+            <div style={{ display: "flex", gap: "2rem", marginBottom: "1.5rem" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
+                <input
+                  type="radio"
+                  name="uploadMode"
+                  value="single"
+                  checked={uploadMode === "single"}
+                  onChange={(e) => {
+                    setUploadMode(e.target.value);
+                    setForm((current) => ({
+                      ...current,
+                      files: [],
+                      unitOrChapterName: current.unitOrChapterName,
+                    }));
+                    setFileMetadata([]);
+                  }}
+                  disabled={isSubmitting}
+                />
+                <span>Single Unit (1 PDF)</span>
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
+                <input
+                  type="radio"
+                  name="uploadMode"
+                  value="multiple"
+                  checked={uploadMode === "multiple"}
+                  onChange={(e) => {
+                    setUploadMode(e.target.value);
+                    setForm((current) => ({
+                      ...current,
+                      files: [],
+                      unitOrChapterName: "",
+                    }));
+                    setFileMetadata([]);
+                  }}
+                  disabled={isSubmitting}
+                />
+                <span>Multiple Units (2+ PDFs)</span>
+              </label>
+            </div>
+          </div>
 
           <label>
             Subject destination
@@ -261,55 +368,137 @@ export default function UploadSubjectPage() {
 
           {isUnitWise ? (
             <>
-              <label>
-                Unit / Chapter name
-                <input
-                  value={form.unitOrChapterName}
-                  onChange={(event) =>
-                    updateField("unitOrChapterName", event.target.value)
-                  }
-                  placeholder="Unit 7 / Chapter name"
-                  required
-                />
-              </label>
+              {uploadMode === "single" && (
+                <label>
+                  Unit / Chapter name
+                  <input
+                    value={form.unitOrChapterName}
+                    onChange={(event) =>
+                      updateField("unitOrChapterName", event.target.value)
+                    }
+                    placeholder="Unit 7 / Chapter name"
+                    required={uploadMode === "single"}
+                  />
+                </label>
+              )}
 
               <label>
                 Part
                 <input
                   value={form.part}
                   onChange={(event) => updateField("part", event.target.value)}
-                  placeholder="History / Geography / Part A"
-                  disabled={isExistingSubject && Boolean(selectedExistingSubject?.part)}
+                  placeholder="Part A, Part B, History, Geography"
+               
+                />
+              </label>
+
+              <label>
+                Term
+                <input
+                  value={form.term}
+                  onChange={(event) => updateField("term", event.target.value)}
+                  placeholder="Term 1, Term 2"
+                
                 />
               </label>
             </>
-          ) : (
-            <div className="full-span info-banner">
-              Subject-wise processing uses the whole PDF and detects units during
-              processing. The job will stay in the queue until earlier uploads finish.
-            </div>
-          )}
+          ) : null}
 
-          {selectedExistingSubject ? (
+        {selectedExistingSubject ? (
             <div className="full-span inline-summary-card">
               <strong>{selectedExistingSubject.subjectTitle}</strong>
               <span className="muted small">
                 {selectedExistingSubject.board} • Class {selectedExistingSubject.standard}
+                {selectedExistingSubject.part && ` • ${selectedExistingSubject.part}`}
+                {selectedExistingSubject.term && ` • ${selectedExistingSubject.term}`}
               </span>
             </div>
           ) : null}
 
           <label className="full-span">
-            PDF file
+            PDF file{uploadMode === "multiple" ? "s" : ""} *
             <input
               type="file"
               accept="application/pdf"
-              onChange={(event) =>
-                updateField("file", event.target.files?.[0] || null)
-              }
+              onChange={(event) => {
+                const selectedFiles = Array.from(event.target.files || []);
+                if (uploadMode === "single" && selectedFiles.length > 1) {
+                  setError("Only one file can be selected for single unit upload");
+                  return;
+                }
+                if (uploadMode === "multiple" && selectedFiles.length < 2) {
+                  setError("At least 2 files required for multiple units upload");
+                  return;
+                }
+                setForm((current) => ({
+                  ...current,
+                  files: selectedFiles,
+                }));
+                setError("");
+
+                // Initialize metadata for multiple files
+                if (uploadMode === "multiple") {
+                  const newMetadata = selectedFiles.map((file, index) => ({
+                    unitTitle: `Unit ${index + 1}`,
+                    unitNumber: index + 1,
+                    part: form.part || null,
+                    term: form.term || null,
+                  }));
+                  setFileMetadata(newMetadata);
+                }
+              }}
+              multiple={uploadMode === "multiple"}
               required
+              disabled={isSubmitting}
             />
           </label>
+
+          {uploadMode === "multiple" && form.files.length > 0 && (
+            <div className="full-span file-metadata-section" style={{ marginTop: "1rem", padding: "1rem", backgroundColor: "#f9f9f9", borderRadius: "4px", border: "1px solid #e0e0e0" }}>
+              <strong style={{ display: "block", marginBottom: "1rem" }}>
+                File Metadata - Enter unit information for each file
+              </strong>
+              {[...form.files].reverse().map((file, index) => (
+                <div key={index} style={{ marginBottom: "1rem", padding: "1rem", backgroundColor: "white", borderRadius: "4px", border: "1px solid #e0e0e0" }}>
+                  <p style={{ margin: "0 0 0.75rem", fontSize: "0.875rem", color: "#666", fontWeight: 500 }}>
+                    File {index + 1}: {file.name}
+                  </p>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                    <input
+                      type="text"
+                      placeholder="Unit Title"
+                      value={fileMetadata[index]?.unitTitle || ""}
+                      onChange={(e) => {
+                        const newMetadata = [...fileMetadata];
+                        newMetadata[index] = {
+                          ...newMetadata[index],
+                          unitTitle: e.target.value,
+                        };
+                        setFileMetadata(newMetadata);
+                      }}
+                      disabled={isSubmitting}
+                      style={{ padding: "0.5rem", border: "1px solid #ccc", borderRadius: "4px", fontSize: "0.875rem" }}
+                    />
+                    <input
+                      type="number"
+                      placeholder="Unit Number"
+                      value={fileMetadata[index]?.unitNumber || ""}
+                      onChange={(e) => {
+                        const newMetadata = [...fileMetadata];
+                        newMetadata[index] = {
+                          ...newMetadata[index],
+                          unitNumber: parseInt(e.target.value) || null,
+                        };
+                        setFileMetadata(newMetadata);
+                      }}
+                      disabled={isSubmitting}
+                      style={{ padding: "0.5rem", border: "1px solid #ccc", borderRadius: "4px", fontSize: "0.875rem" }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           {error ? <div className="error-banner full-span">{error}</div> : null}
 
@@ -317,7 +506,7 @@ export default function UploadSubjectPage() {
             <button
               className="primary-btn"
               type="submit"
-              disabled={isSubmitting || result?.uploadStatus === "queued"}
+              disabled={isSubmitting || result?.upload?.status === "queued" || result?.uploadStatus === "queued"}
             >
               {submitLabel}
             </button>
@@ -334,7 +523,9 @@ export default function UploadSubjectPage() {
             <div>
               <h3>Job queued</h3>
               <p className="muted small">
-                The tracker page will keep refreshing until this upload is completed.
+                {uploadMode === "multiple"
+                  ? `${form.files.length} files queued. Each unit will be processed in strict FIFO order. The tracker page will keep refreshing until all units are completed.`
+                  : "The tracker page will keep refreshing until this upload is completed."}
               </p>
             </div>
             <Link className="primary-btn" to="/processing-tracker">
@@ -344,16 +535,25 @@ export default function UploadSubjectPage() {
           <div className="inline-details-grid">
             <div className="metric-card">
               <span>Status</span>
-              <strong>{result.uploadStatus}</strong>
+              <strong>{result.upload?.status || result.uploadStatus}</strong>
             </div>
             <div className="metric-card">
               <span>Queue position</span>
-              <strong>{result.queuePosition || "-"}</strong>
+              <strong>{result.upload?.queuePosition || result.queuePosition || "-"}</strong>
             </div>
+            {uploadMode === "multiple" && (
+              <div className="metric-card">
+                <span>Total files</span>
+                <strong>{result.totalFiles || form.files.length}</strong>
+              </div>
+            )}
           </div>
-          <p className="muted">Upload ID: {result.uploadId}</p>
+          <p className="muted">Upload ID: {result.upload?._id || result.uploadId}</p>
+          {result.transactionId && (
+            <p className="muted">Transaction ID: {result.transactionId}</p>
+          )}
           <p className="muted">
-            {result.progressMessage || "Waiting for the processing worker to start."}
+            {result.upload?.progressMessage || result.progressMessage || "Waiting for the processing worker to start."}
           </p>
         </div>
       ) : null}

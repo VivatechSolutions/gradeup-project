@@ -79,7 +79,63 @@ async function synthesizeSpeech({ text, voice, format = "mp3" }) {
   };
 }
 
+async function createRealtimeSession() {
+  const { apiKey } = ensureSpeechConfig();
+  
+  if (!apiKey) {
+    const error = new Error("OpenAI API key not configured");
+    error.statusCode = 500;
+    throw error;
+  }
+
+  try {
+    const sessionConfig = {
+      session: {
+        type: "realtime",
+        model: "gpt-realtime-2",
+        audio: {
+          output: {
+            voice: process.env.OPENAI_REALTIME_VOICE || "marin",
+          },
+        },
+      },
+    };
+
+    const response = await axios.post(
+      "https://api.openai.com/v1/realtime/client_secrets",
+      sessionConfig,
+      {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 10000,
+      }
+    );
+
+    if (!response.data?.value) {
+      throw new Error("Invalid realtime session response from OpenAI");
+    }
+
+    return {
+      clientSecret: response.data.value,
+      expiresAt: response.data.expires_at || null,
+      raw: response.data,
+    };
+  } catch (error) {
+    console.error("Realtime session creation error:", {
+      message: error.message,
+      status: error.response?.status,
+      data: error.response?.data,
+    });
+    const err = new Error(`Realtime session creation failed: ${error.message}`);
+    err.statusCode = error.response?.status || 500;
+    throw err;
+  }
+}
+
 module.exports = {
   transcribeAudioFile,
   synthesizeSpeech,
+  createRealtimeSession,
 };

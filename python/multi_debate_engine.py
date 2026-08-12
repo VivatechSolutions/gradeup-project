@@ -65,6 +65,18 @@ class MultiDebateEngine:
             json.dumps(room, indent=2, ensure_ascii=False), encoding="utf-8"
         )
 
+    def _advance_turn(self, room: Dict[str, Any]) -> None:
+        """Advance the turn to the next active participant."""
+        if "turn_order" not in room or not room["turn_order"]:
+            return
+        for _ in range(len(room["turn_order"])):
+            room["current_turn_index"] = (room.get("current_turn_index", 0) + 1) % len(room["turn_order"])
+            next_cid = room["turn_order"][room["current_turn_index"]]
+            # Check if next_cid is active
+            if next_cid == AI_STUDENT_ID or room["participants"].get(next_cid, {}).get("status", "active") != "removed":
+                room["current_turn_candidate_id"] = next_cid
+                break
+
     def _generate_room_id(self) -> str:
         seed = f"room_{datetime.now().isoformat()}_{time.time()}"
         return hashlib.md5(seed.encode()).hexdigest()[:12]
@@ -299,6 +311,19 @@ Respond with ONLY a JSON object:
         for cid in red_ids:
             room["participants"][cid]["team"] = "red_team"
 
+        # ── Setup Turn Order ──────────────────────────────────────────────
+        turn_order = []
+        max_len = max(len(blue_ids), len(red_ids))
+        for i in range(max_len):
+            if i < len(blue_ids):
+                turn_order.append(blue_ids[i])
+            if i < len(red_ids):
+                turn_order.append(red_ids[i])
+        
+        room["turn_order"] = turn_order
+        room["current_turn_index"] = 0
+        room["current_turn_candidate_id"] = turn_order[0] if turn_order else None
+
         # ── Build team name strings ───────────────────────────────────────
         blue_names = [room["participants"][cid]["candidate_name"] for cid in blue_ids]
         red_names = [room["participants"][cid]["candidate_name"] for cid in red_ids]
@@ -343,6 +368,8 @@ Keep it under 10 sentences. Be encouraging."""
             "ai_opening": ai_opening,
             "topic": room["topic"],
             "has_ai_student": is_odd,
+            "current_turn_candidate_id": room.get("current_turn_candidate_id"),
+            "turn_order": room.get("turn_order", []),
             "teams": {
                 "blue_team": [{"id": cid, "name": room["participants"][cid]["candidate_name"]} for cid in blue_ids],
                 "red_team": [{"id": cid, "name": room["participants"][cid]["candidate_name"]} for cid in red_ids],
@@ -368,6 +395,10 @@ Keep it under 10 sentences. Be encouraging."""
             return {"error": "You are not in this session", "success": False}
         if participant["status"] == "removed":
             return {"error": "You have been removed from this debate", "success": False}
+
+        # ── Turn Checking ─────────────────────────────────────────────────
+        if room.get("current_turn_candidate_id") and room["current_turn_candidate_id"] != candidate_id:
+            return {"error": "It is not your turn.", "success": False}
 
         # ── Content Safety ────────────────────────────────────────────────
         safety = self._check_content_safety(message)
@@ -436,6 +467,7 @@ Keep it under 10 sentences. Be encouraging."""
                 "target_candidate": candidate_id,
             })
 
+        self._advance_turn(room)
         self._save_room(room)
 
         # Count this student's turns
@@ -448,6 +480,7 @@ Keep it under 10 sentences. Be encouraging."""
             "success": True,
             "session_id": room_id,
             "your_turn_count": student_turns,
+            "current_turn_candidate_id": room.get("current_turn_candidate_id"),
             "warning_count": participant.get("warning_count", 0),
             "ai_moderation": ai_moderation,
             "is_off_topic": off_topic.get("is_off_topic", False),
@@ -531,6 +564,10 @@ You are on {team_label}.
         if not room.get("has_ai_student"):
             return {"error": "This session has no AI student (even number of participants)", "success": False}
 
+        # ── Turn Checking ─────────────────────────────────────────────────
+        if room.get("current_turn_candidate_id") and room["current_turn_candidate_id"] != AI_STUDENT_ID:
+            return {"error": "It is not the AI student's turn", "success": False}
+
         # ── Load or initialize context ────────────────────────────────────
         ctx = self._load_ai_student_ctx(room_id)
         if ctx:
@@ -584,6 +621,7 @@ You are on {team_label}.
             "is_off_topic": False,
         }
         room["messages"].append(msg_entry)
+        self._advance_turn(room)
         self._save_room(room)
 
         # ── Save updated context ──────────────────────────────────────────
@@ -604,6 +642,7 @@ You are on {team_label}.
             "ai_student_team": room.get("ai_student_team", ""),
             "ai_turn_count": ai_turn_count,
             "response": response,
+            "current_turn_candidate_id": room.get("current_turn_candidate_id"),
         }
 
     def end_room_debate(self, room_id: str) -> Dict[str, Any]:

@@ -6,8 +6,8 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 require("dotenv").config();
-
-//Routers
+const bodyParser = require('body-parser');
+//Routersconst bodyParser = require('body-parser');
 const AIFeaturesRouter = require("./router/TextHighlighting");
 const HighlightingRouter = require("./router/HighlightingV2");
 const AuthRouter = require("./router/Auth");
@@ -22,14 +22,18 @@ const DashboardRouter = require("./router/Dashboard");
 const AdminAuthRouter = require("./router/AdminAuth");
 const AdminSubjectRouter = require("./router/AdminSubject");
 const AdminUsersRouter = require("./router/AdminUsers");
+const realtimeRouter = require("./router/realtime"); 
+
 // const { logRoutes } = require("./utils/routeLogger");
 const  secureRequestLogger  = require("./utils/logger");
 const { initializeSubjectUploadQueue } = require("./services/adminSubjectService");
 
 // Allowing only added origins (i.e client side access)
 const allowedOrigins = [process.env.FE_URL,process.env.VITE_API_BASE_URL,process.env.FE_URL_2,"http://192.168.1.35:3000","http://localhost:3000","https://main.d303utafz3zrke.amplifyapp.com"];
-app.use(express.json());
-
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ limit: '100mb', extended: true }));
+app.use(bodyParser.json({ limit: '100mb' }));
+app.use(bodyParser.urlencoded({ limit: '100mb', extended: true }));
 app.use(secureRequestLogger);
 
 app.use(
@@ -51,7 +55,7 @@ app.use("/api", DashboardRouter);
 app.use("/api/v1/admin/auth", AdminAuthRouter);
 app.use("/api/v1/admin/users", AdminUsersRouter);
 app.use("/api/v1/admin/subjects", AdminSubjectRouter);
-
+app.use('/api/realtime', realtimeRouter);
 //AI Router
 app.use("/api/v1/AI/higlight", AIFeaturesRouter);
 app.use("/api/v1/highlight", HighlightingRouter);

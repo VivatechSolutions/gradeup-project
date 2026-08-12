@@ -717,11 +717,6 @@ export default function EnhancedContentManager() {
       <style>{css}</style>
       <div className="ec-root">
 
-        {/* Back */}
-        <Link href="/dashboard">
-          <button className="ec-back"><Svg d={ICONS.back} size={14}/> Back to Dashboard</button>
-        </Link>
-
         {/* ── HERO ── */}
         <div className="ec-hero">
           <span className="ec-float" style={{width:40,height:40,top:"18%",left:"58%",animationDelay:"0s"}}/>

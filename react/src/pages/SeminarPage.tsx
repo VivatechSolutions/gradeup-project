@@ -158,6 +158,36 @@ select.finput{cursor:pointer;appearance:none;background-image:url("data:image/sv
 .lo-progress{width:100%;height:3px;background:rgba(0,0,0,.06);border-radius:3px;overflow:hidden;margin-top:6px}
 .lo-progress-fill{height:100%;background:var(--grad);border-radius:3px;transition:width .35s ease}
 
+.mic-perm-card{border:1px solid rgba(255,255,255,.1);border-radius:14px;background:rgba(255,255,255,.04);padding:14px;margin-bottom:12px}
+.mic-perm-header{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.mic-perm-icon{width:38px;height:38px;border-radius:12px;background:rgba(0,195,122,.14);display:flex;align-items:center;justify-content:center;font-size:18px}
+.mic-perm-title{font-size:13px;font-weight:800;color:#fff}
+.mic-perm-sub{font-size:10.5px;color:rgba(255,255,255,.42);margin-top:1px}
+.mic-perm-status{display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.035);margin-bottom:10px}
+.mic-perm-status.granted{border-color:rgba(0,195,122,.28);background:rgba(0,195,122,.07)}
+.mic-perm-status.denied{border-color:rgba(229,62,62,.3);background:rgba(229,62,62,.07)}
+.mic-perm-status.requesting{border-color:rgba(45,156,219,.3);background:rgba(45,156,219,.07)}
+.mic-perm-dot{width:9px;height:9px;border-radius:50%;background:rgba(255,255,255,.35);flex-shrink:0}
+.mic-perm-status.granted .mic-perm-dot{background:var(--em);box-shadow:0 0 0 5px rgba(0,195,122,.12)}
+.mic-perm-status.denied .mic-perm-dot{background:var(--red);box-shadow:0 0 0 5px rgba(229,62,62,.12)}
+.mic-perm-status.requesting .mic-perm-dot{background:var(--sky);animation:pulse 1s infinite}
+.mic-perm-label{font-size:12px;font-weight:800;color:#fff}
+.mic-perm-hint{font-size:10.5px;color:rgba(255,255,255,.45);line-height:1.45;margin-top:2px}
+.mic-perm-action{border:none;border-radius:9px;padding:7px 11px;font-size:11.5px;font-weight:800;cursor:pointer;color:#fff;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.mic-perm-action.allow{background:var(--grad)}
+.mic-perm-action.retry{background:linear-gradient(135deg,#e53e3e,#f6a623)}
+.mic-perm-action:disabled{opacity:.55;cursor:not-allowed}
+.mic-perm-warn{padding:10px 11px;border-radius:11px;background:rgba(229,62,62,.08);border:1px solid rgba(229,62,62,.2);font-size:11.5px;line-height:1.55;color:#fecaca;margin-bottom:10px}
+.mic-level-row{display:flex;align-items:center;gap:9px;margin-top:2px;margin-bottom:10px}
+.mic-level-label{font-size:10.5px;font-weight:800;color:rgba(255,255,255,.5);white-space:nowrap}
+.mic-level-track{height:7px;flex:1;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden}
+.mic-level-fill{height:100%;border-radius:99px;background:var(--grad);transition:width .1s linear}
+.mic-toggle-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 10px;border-radius:11px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08)}
+.mic-toggle-label{font-size:11.5px;font-weight:700;color:rgba(255,255,255,.68)}
+.mic-toggle-btn{border:none;border-radius:999px;padding:5px 12px;font-size:11px;font-weight:800;color:#fff;cursor:pointer}
+.mic-toggle-btn.on{background:var(--grad)}
+.mic-toggle-btn.off{background:rgba(229,62,62,.72)}
+
 /* SETUP PAGE */
 .sp-setup{display:grid;grid-template-columns:36% 1fr;height:calc(100% - 0px);overflow:hidden;width:100%;flex:1;min-height:0}
 .sp-left{background:#060e1c;position:relative;overflow:hidden;display:flex;flex-direction:column}
@@ -556,8 +586,10 @@ select.finput{cursor:pointer;appearance:none;background-image:url("data:image/sv
 .room-body{flex:1;display:flex;min-height:0;overflow:hidden}
 .grid-area{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden;position:relative}
 .ss-area{flex:1;background:#030a14;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;min-height:0}
+.ss-video{width:100%;height:100%;object-fit:contain;background:#000;display:block}
+.ss-area.lk-screen-active > div:not(.ss-active-label){display:none!important}
 .ss-placeholder{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:rgba(255,255,255,.2)}
-.ss-active-label{position:absolute;top:10px;left:50%;transform:translateX(-50%);background:rgba(0,195,122,.15);border:1px solid rgba(0,195,122,.3);border-radius:8px;padding:5px 14px;font-size:11px;font-weight:700;color:#5ee3b7;white-space:nowrap;display:flex;align-items:center;gap:6px}
+.ss-active-label{position:absolute;top:10px;left:50%;transform:translateX(-50%);background:rgba(0,195,122,.15);border:1px solid rgba(0,195,122,.3);border-radius:8px;padding:5px 14px;font-size:11px;font-weight:700;color:#5ee3b7;white-space:nowrap;display:flex;align-items:center;gap:6px;z-index:2}
 .ss-active-dot{width:6px;height:6px;border-radius:50%;background:var(--em);animation:pulse 1s infinite}
 .presenter-strip{height:96px;background:rgba(0,0,0,.4);border-top:1px solid rgba(255,255,255,.06);display:flex;align-items:center;gap:6px;padding:6px 10px;overflow-x:auto;flex-shrink:0}
 .strip-tile{width:124px;min-width:124px;height:80px;border-radius:10px;background:#0d1e34;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center;border:1.5px solid rgba(255,255,255,.06);transition:.2s;flex-shrink:0}
@@ -638,7 +670,7 @@ select.finput{cursor:pointer;appearance:none;background-image:url("data:image/sv
 .results-loader-step.pending{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);color:rgba(255,255,255,.3)}
 
 /* Results page */
-.results-page{flex:1;overflow-y:auto;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:clamp(18px,4vw,52px);text-align:center;background:radial-gradient(ellipse at 50% 20%,rgba(0,195,122,.07) 0%,transparent 65%);-webkit-overflow-scrolling:touch;width:100%;min-height:100dvh}
+.results-page{flex:1;overflow-y:auto;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:max(40px, 10vh) clamp(18px,4vw,52px) clamp(18px,4vw,52px);text-align:center;background:radial-gradient(ellipse at 50% 20%,rgba(0,195,122,.07) 0%,transparent 65%);-webkit-overflow-scrolling:touch;width:100%;min-height:100dvh}
 .res-trophy{font-size:clamp(42px,8vw,64px);margin-bottom:12px;animation:scaleIn .55s cubic-bezier(.34,1.56,.64,1) .15s both}
 .res-h{font-size:clamp(17px,3vw,28px);font-weight:900;letter-spacing:-.4px;margin-bottom:6px;color:var(--t1)}
 .res-sub{font-size:12px;color:var(--t2);max-width:320px;line-height:1.75;margin-bottom:16px}
@@ -869,27 +901,200 @@ function useSpeechRecognition() {
 function useMicPerm() {
   const [state, setState] = useState("idle");
   const [stream, setStream] = useState(null);
+  const [micLevel, setMicLevel] = useState(0);
+  const [error, setError] = useState(null);
+  const streamRef = useRef(null);
+  const rafRef = useRef(null);
+  const audioContextRef = useRef(null);
+  const analyserRef = useRef(null);
 
-  async function request() {
+  const cleanupAnalysis = useCallback(() => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = null;
+    analyserRef.current = null;
+    try { audioContextRef.current?.close?.(); } catch {}
+    audioContextRef.current = null;
+    setMicLevel(0);
+  }, []);
+
+  const stop = useCallback((silent = false) => {
+    cleanupAnalysis();
+    streamRef.current?.getTracks?.().forEach((track) => track.stop());
+    streamRef.current = null;
+    if (!silent) {
+      setStream(null);
+      setState("idle");
+      setError(null);
+    }
+  }, [cleanupAnalysis]);
+
+  const request = useCallback(async () => {
+    setError(null);
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setState("denied");
+      setError("Microphone access is not supported in this browser.");
+      return null;
+    }
+    stop(true);
     setState("requesting");
     try {
       const nextStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      const audioTrack = nextStream.getAudioTracks?.()[0] || null;
+      if (!audioTrack) throw new Error("No audio track was returned from the browser.");
+      if (audioTrack.readyState !== "live") throw new Error("Microphone track is not live.");
+      audioTrack.enabled = true;
+      streamRef.current = nextStream;
       setStream(nextStream);
       setState("granted");
+
+      try {
+        const ctx = new AudioContext();
+        const src = ctx.createMediaStreamSource(nextStream);
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 256;
+        src.connect(analyser);
+        audioContextRef.current = ctx;
+        analyserRef.current = analyser;
+        const tick = () => {
+          const currentAnalyser = analyserRef.current;
+          if (!currentAnalyser) return;
+          const arr = new Uint8Array(currentAnalyser.frequencyBinCount);
+          currentAnalyser.getByteFrequencyData(arr);
+          const avg = arr.reduce((sum, value) => sum + value, 0) / arr.length;
+          setMicLevel(Math.min(100, (avg / 128) * 100));
+          rafRef.current = requestAnimationFrame(tick);
+        };
+        tick();
+      } catch {}
+
       return nextStream;
-    } catch {
+    } catch (err) {
+      stop(true);
       setState("denied");
+      const name = err?.name || "";
+      if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+        setError("PERMISSION_DENIED");
+      } else if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+        setError("No microphone found. Please connect a microphone and click Retry.");
+      } else if (name === "NotReadableError" || name === "TrackStartError") {
+        setError("Microphone is in use by another app. Close other apps using the mic and click Retry.");
+      } else {
+        setError(err?.message || "Microphone access was denied.");
+      }
       return null;
     }
-  }
+  }, [stop]);
 
-  function stop() {
-    stream?.getTracks().forEach((track) => track.stop());
-    setStream(null);
-    setState("idle");
-  }
+  const setMicEnabled = useCallback((next) => {
+    const track = streamRef.current?.getAudioTracks?.()[0] || null;
+    if (track) track.enabled = next;
+    setStream((current) => current ? new MediaStream(current.getTracks()) : current);
+  }, []);
 
-  return { state, stream, request, stop };
+  useEffect(() => {
+    const track = stream?.getAudioTracks?.()[0] || null;
+    if (!track) return;
+    const sync = () => setState(track.readyState === "live" ? "granted" : "denied");
+    track.addEventListener("ended", sync);
+    track.addEventListener("mute", sync);
+    track.addEventListener("unmute", sync);
+    return () => {
+      track.removeEventListener("ended", sync);
+      track.removeEventListener("mute", sync);
+      track.removeEventListener("unmute", sync);
+    };
+  }, [stream]);
+
+  const audioTrack = stream?.getAudioTracks?.()[0] || null;
+  const micEnabled = Boolean(audioTrack?.enabled);
+  const canProceed = Boolean(stream && audioTrack?.readyState === "live" && micEnabled);
+
+  return { state, stream, request, stop, micLevel, error, micEnabled, canProceed, setMicEnabled };
+}
+
+function MicPermCard({ perm, stream, micLevel, micOn, onRequest, onToggle, error }) {
+  const statusLabels = {
+    idle: {
+      label: "Microphone permission required",
+      hint: "Click Allow Mic to grant access before joining",
+    },
+    requesting: {
+      label: "Requesting microphone access...",
+      hint: "Please allow access in your browser prompt",
+    },
+    granted: {
+      label: "Microphone ready",
+      hint: "Your mic is connected and ready for the seminar",
+    },
+    denied: {
+      label: "Microphone access blocked",
+      hint: "Click the lock in your address bar or browser settings to allow, then Retry",
+    },
+  };
+  const { label, hint } = statusLabels[perm] || statusLabels.idle;
+
+  return (
+    <div className="mic-perm-card">
+      <div className="mic-perm-header">
+        <div className="mic-perm-icon">🎤</div>
+        <div>
+          <div className="mic-perm-title">Microphone Setup</div>
+          <div className="mic-perm-sub">Required before entering the seminar room</div>
+        </div>
+      </div>
+
+      <div className={`mic-perm-status ${perm}`}>
+        <div className="mic-perm-dot" />
+        <div style={{ flex: 1 }}>
+          <div className="mic-perm-label">{label}</div>
+          <div className="mic-perm-hint">{hint}</div>
+        </div>
+        {perm === "idle" && <button className="mic-perm-action allow" onClick={onRequest}>Allow Mic</button>}
+        {perm === "requesting" && (
+          <button className="mic-perm-action allow" disabled>
+            <span className="loader-spin" style={{ width: 14, height: 14, borderWidth: 2, marginRight: 4 }} />
+            Waiting...
+          </button>
+        )}
+        {perm === "denied" && <button className="mic-perm-action retry" onClick={onRequest}>Retry</button>}
+      </div>
+
+      {perm === "denied" && error === "PERMISSION_DENIED" && (
+        <div className="mic-perm-warn">
+          Your browser has blocked microphone access for this site.
+          <br /><br />
+          Desktop: click the lock icon in the address bar, set Microphone to Allow, then click Retry.
+          <br />
+          Mobile: open browser site permissions, allow Microphone, then click Retry.
+        </div>
+      )}
+      {perm === "denied" && error !== "PERMISSION_DENIED" && error && (
+        <div className="mic-perm-warn">{error}</div>
+      )}
+
+      {perm === "granted" && stream && (
+        <>
+          <div className="mic-level-row">
+            <span className="mic-level-label">Mic level</span>
+            <div className="mic-level-track">
+              <div className="mic-level-fill" style={{ width: `${micLevel}%` }} />
+            </div>
+            <span style={{ fontSize: 10, color: "rgba(255,255,255,.4)", minWidth: 26, textAlign: "right" }}>
+              {Math.round(micLevel)}%
+            </span>
+          </div>
+          <div className="mic-toggle-row">
+            <span className="mic-toggle-label">
+              {micOn ? "🎤 Mic is on - will be active in room" : "🔇 Mic is off - you'll join muted"}
+            </span>
+            <button className={`mic-toggle-btn ${micOn ? "on" : "off"}`} onClick={onToggle}>
+              {micOn ? "On" : "Off"}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 function useAIVoice() {
@@ -1520,12 +1725,12 @@ function AnalysisModal({topic,subject,unit,timer,exchanges,presenterName,apiScor
   const overall = hasApi ? (apiScores.total_score??0) : Math.round(Object.values(scores).reduce((a,b)=>a+b,0)/4);
   return (
     <div className="analysis-bg" onClick={onClose}>
-      <div className="analysis-box" onClick={e=>e.stopPropagation()}>
+      <div className="analysis-box" onClick={e=>e.stopPropagation()} style={{maxHeight:"90vh",overflowY:"auto"}}>
         <div className="analysis-head">
           <div className="analysis-title">📊 Seminar Performance Report</div>
           <button style={{width:24,height:24,borderRadius:6,border:"1px solid rgba(255,255,255,.1)",background:"rgba(255,255,255,.05)",cursor:"pointer",color:"rgba(255,255,255,.5)",fontSize:11}} onClick={onClose}>✕</button>
         </div>
-        <div className="analysis-body">
+        <div className="analysis-body" style={{gap:16,paddingBottom:20}}>
           <div className="a-sec">
             <div className="a-sec-title">Session Overview</div>
             <div style={{padding:"8px 11px",borderRadius:9,background:"rgba(0,195,122,.07)",border:"1px solid rgba(0,195,122,.16)",fontSize:12.5,fontWeight:700,color:"#e8ecf2",marginBottom:7}}>"{topic}"</div>
@@ -1538,51 +1743,100 @@ function AnalysisModal({topic,subject,unit,timer,exchanges,presenterName,apiScor
           <div className="a-sec" style={{animationDelay:".08s"}}>
             <div className="a-sec-title">Presenter Performance</div>
             <div style={{background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.07)",borderRadius:10,padding:"11px 13px"}}>
-              <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:10}}>
+              <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:14}}>
                 <div style={{width:40,height:40,borderRadius:"50%",background:avColor(presenterName||"U")+"22",color:avColor(presenterName||"U"),display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800}}>{avInit(presenterName||"?")}</div>
                 <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700,color:"#e8ecf2"}}>{presenterName}</div><div style={{fontSize:10.5,color:"rgba(255,255,255,.35)"}}>Seminar Presenter</div></div>
-                <div style={{fontSize:22,fontWeight:900,color:"#5ee3b7"}}>{overall}</div>
-              </div>
-              {[["Delivery",scores.delivery,"#00c37a"],["Clarity",scores.clarity,"#38bdf8"],["Depth",scores.depth,"#f59e0b"],["Audience Engagement",scores.engagement,"#ec4899"]].map(([l,v,c])=>(
-                <div key={l} className="prog-wrap">
-                  <div className="prog-lbl"><span>{l}</span><span>{v}%</span></div>
-                  <div className="prog-track"><div className="prog-fill" style={{width:`${v}%`,background:c}}/></div>
+                <div style={{fontSize:26,fontWeight:900,color:"#5ee3b7",textAlign:"right"}}>
+                  <div>{overall}</div>
+                  <div style={{fontSize:10,fontWeight:700,color:"var(--t2)",marginTop:2}}>TOTAL SCORE</div>
                 </div>
-              ))}
+              </div>
+              {hasApi ? (
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10}}>
+                  {[
+                    {label:"Conceptual Understanding",v:apiScores.conceptual_understanding??0,c:"#00c37a",m:30},
+                    {label:"Depth of Knowledge",v:apiScores.depth_of_knowledge??0,c:"#2d9cdb",m:25},
+                    {label:"Presentation Flow",v:apiScores.presentation_flow??0,c:"#7c3aed",m:20},
+                    {label:"Engagement",v:apiScores.engagement??0,c:"#f6a623",m:15},
+                    {label:"Hints Penalty",v:apiScores.hints_penalty??0,c:"#e53e3e",m:10,neg:true},
+                  ].map(s=>(
+                    <div key={s.label} style={{padding:"12px 14px",borderRadius:12,background:"rgba(255,255,255,.03)",border:"1px solid rgba(255,255,255,.08)",textAlign:"center"}}>
+                      <div style={{fontSize:18,fontWeight:900,color:s.c}}>{s.neg?"-":""}{s.v}</div>
+                      <div style={{fontSize:10,fontWeight:700,color:"var(--t2)",marginTop:4,lineHeight:1.3}}>{s.label}</div>
+                      <div style={{marginTop:8,height:4,borderRadius:4,background:"rgba(255,255,255,.06)"}}>
+                        <div style={{height:"100%",borderRadius:4,background:s.c,width:`${Math.min(100,(s.v/s.m)*100)}%`,transition:"width .6s"}}/>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <>
+                  {[["Delivery",scores.delivery,"#00c37a"],["Clarity",scores.clarity,"#38bdf8"],["Depth",scores.depth,"#f59e0b"],["Audience Engagement",scores.engagement,"#ec4899"]].map(([l,v,c])=>(
+                    <div key={l} className="prog-wrap">
+                      <div className="prog-lbl"><span>{l}</span><span>{v}%</span></div>
+                      <div className="prog-track"><div className="prog-fill" style={{width:`${v}%`,background:c}}/></div>
+                    </div>
+                  ))}
+                </>
+              )}
             </div>
           </div>
  <div className="a-sec" style={{animationDelay:".16s"}}>
-            <div className="a-sec-title">AI Feedback</div>
-            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            <div className="a-sec-title">AI Feedback & Insights</div>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
               {hasApi?(
                 <>
                   {apiScores.overall_feedback&&(
-                    <div style={{padding:"8px 11px",borderRadius:9,background:"rgba(45,156,219,.06)",border:"1px solid rgba(45,156,219,.2)",fontSize:11.5,fontWeight:600,color:"#7ed3f7",lineHeight:1.6,marginBottom:2}}>
-                      {apiScores.overall_feedback}
+                    <div style={{padding:"14px 16px",borderRadius:12,background:"var(--surf)",border:"1px solid var(--bdr)"}}>
+                      <div style={{fontSize:12,fontWeight:800,color:"var(--t1)",marginBottom:8}}>📋 Overall Feedback</div>
+                      <div style={{fontSize:13,color:"var(--t2)",lineHeight:1.6}}>
+                        {apiScores.overall_feedback}
+                      </div>
                     </div>
                   )}
-                  {(apiScores.strengths||[]).map((s,i)=>(
-                    <div key={`str-${i}`} style={{display:"flex",gap:9,padding:"8px 11px",borderRadius:9,background:"rgba(0,195,122,.08)",border:"1px solid rgba(0,195,122,.2)"}}>
-                      <span style={{fontSize:15,flexShrink:0}}>✅</span>
-                      <span style={{fontSize:11.5,fontWeight:600,color:"#5ee3b7",lineHeight:1.5}}>{s}</span>
-                    </div>
-                  ))}
-                  {(apiScores.improvements||[]).map((s,i)=>(
-                    <div key={`imp-${i}`} style={{display:"flex",gap:9,padding:"8px 11px",borderRadius:9,background:"rgba(246,166,35,.06)",border:"1px solid rgba(246,166,35,.18)"}}>
-                      <span style={{fontSize:15,flexShrink:0}}>🎯</span>
-                      <span style={{fontSize:11.5,fontWeight:600,color:"#fcd18e",lineHeight:1.5}}>{s}</span>
-                    </div>
-                  ))}
-                  {(apiScores.topics_need_work||[]).map((t,i)=>(
-                    <div key={`tnw-${i}`} style={{display:"flex",gap:9,padding:"8px 11px",borderRadius:9,background:"rgba(229,62,62,.06)",border:"1px solid rgba(229,62,62,.18)"}}>
-                      <span style={{fontSize:15,flexShrink:0}}>📚</span>
-                      <span style={{fontSize:11.5,fontWeight:600,color:"#fca5a5",lineHeight:1.5}}>{t}</span>
-                    </div>
-                  ))}
+
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                    {apiScores.strengths?.length>0&&(
+                      <div style={{padding:"12px 14px",borderRadius:12,background:"rgba(0,195,122,.06)",border:"1px solid rgba(0,195,122,.18)"}}>
+                        <div style={{fontSize:12,fontWeight:800,color:"var(--em)",marginBottom:8}}>✅ Strengths</div>
+                        {apiScores.strengths.map((s,i)=>(
+                          <div key={`str-${i}`} style={{fontSize:12,color:"var(--t2)",marginBottom:6,paddingLeft:8,borderLeft:"2px solid rgba(0,195,122,.4)",lineHeight:1.4}}>{s}</div>
+                        ))}
+                      </div>
+                    )}
+                    {apiScores.improvements?.length>0&&(
+                      <div style={{padding:"12px 14px",borderRadius:12,background:"rgba(229,62,62,.06)",border:"1px solid rgba(229,62,62,.18)"}}>
+                        <div style={{fontSize:12,fontWeight:800,color:"var(--red)",marginBottom:8}}>🎯 Areas to Improve</div>
+                        {apiScores.improvements.map((s,i)=>(
+                          <div key={`imp-${i}`} style={{fontSize:12,color:"var(--t2)",marginBottom:6,paddingLeft:8,borderLeft:"2px solid rgba(229,62,62,.4)",lineHeight:1.4}}>{s}</div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                    {apiScores.topics_mastered?.length>0&&(
+                      <div style={{padding:"12px 14px",borderRadius:12,background:"rgba(45,156,219,.06)",border:"1px solid rgba(45,156,219,.18)"}}>
+                        <div style={{fontSize:12,fontWeight:800,color:"var(--sky)",marginBottom:8}}>🏆 Topics Mastered</div>
+                        {apiScores.topics_mastered.map((t,i)=>(
+                          <div key={`tm-${i}`} style={{fontSize:12,color:"var(--t2)",marginBottom:5,paddingLeft:8,borderLeft:"2px solid rgba(45,156,219,.4)",lineHeight:1.4}}>{t}</div>
+                        ))}
+                      </div>
+                    )}
+                    {apiScores.topics_need_work?.length>0&&(
+                      <div style={{padding:"12px 14px",borderRadius:12,background:"rgba(246,166,35,.06)",border:"1px solid rgba(246,166,35,.18)"}}>
+                        <div style={{fontSize:12,fontWeight:800,color:"#f6a623",marginBottom:8}}>📚 Needs More Work</div>
+                        {apiScores.topics_need_work.map((t,i)=>(
+                          <div key={`tnw-${i}`} style={{fontSize:12,color:"var(--t2)",marginBottom:5,paddingLeft:8,borderLeft:"2px solid rgba(246,166,35,.4)",lineHeight:1.4}}>{t}</div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                   {hintsUsed>0&&(
-                    <div style={{display:"flex",gap:9,padding:"8px 11px",borderRadius:9,background:"rgba(229,62,62,.06)",border:"1px solid rgba(229,62,62,.18)"}}>
-                      <span style={{fontSize:15,flexShrink:0}}>💡</span>
-                      <span style={{fontSize:11.5,fontWeight:600,color:"#fca5a5",lineHeight:1.5}}>{hintsUsed} hint{hintsUsed>1?"s":""} used during the session.</span>
+                    <div style={{display:"flex",gap:9,padding:"10px 12px",borderRadius:10,background:"rgba(229,62,62,.06)",border:"1px solid rgba(229,62,62,.18)"}}>
+                      <span style={{fontSize:16,flexShrink:0}}>💡</span>
+                      <span style={{fontSize:12,fontWeight:600,color:"#fca5a5",lineHeight:1.4}}>{hintsUsed} hint{hintsUsed>1?"s":""} used during the session.</span>
                     </div>
                   )}
                 </>
@@ -1965,7 +2219,17 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
   const nameInitializedRef = useRef(false);
   const roomId = useRef(genId());
   const roomLink = genRoomLink(roomId.current);
-  const { state: perm, stream, request } = useMicPerm();
+  const {
+    state: perm,
+    stream,
+    request,
+    stop: stopMic,
+    micLevel,
+    error: micError,
+    micEnabled,
+    canProceed: micReady,
+    setMicEnabled,
+  } = useMicPerm();
   const { show: toast$, node: toastNode } = useToast();
   const toastRef = useRef(toast$);
   const finalTopic = topic === "__custom__" ? custom.trim() : topic;
@@ -2127,10 +2391,11 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
   };
 
   const canJoinObserver = !!(selectedSession || parseSeminarSessionId(joinId));
+  const hasPrepareSubMode = seminarMode !== "prepare" || sessionSubMode === "practice" || sessionSubMode === "demo";
   const presenterSteps = [
     { label: "Choose mode", done: seminarMode !== "" },
+    ...(seminarMode === "prepare" ? [{ label: "Choose preparation type", done: hasPrepareSubMode }] : []),
     { label: "Enter your name", done: name.trim().length > 0 },
-    { label: "Allow microphone", done: perm === "granted" },
     { label: "Select subject and unit", done: !!subject && !!unit && !!selectedUnitId },
     { label: "Select topic", done: !!finalTopic },
   ];
@@ -2140,22 +2405,31 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
     { label: "Pick a live session or paste a link", done: Boolean(selectedSession || parseSeminarSessionId(joinId)) },
   ];
   const activeSteps =
-    seminarMode === "session" && sessionSubMode === "observer" ? observerSteps : presenterSteps;
+    seminarMode === "session" && sessionSubMode === "observer" ? observerSteps : seminarMode === "prepare" && sessionSubMode === "demo" ? [...presenterSteps, { label: "Upload presentation file", done: !!setupFile }] : presenterSteps;
   const canLaunch =
     seminarMode !== "" &&
+    hasPrepareSubMode &&
     name.trim().length > 0 &&
     (seminarMode === "session" && sessionSubMode === "observer"
       ? canJoinObserver
-      : perm === "granted" && !!subject && !!selectedUnitId && !!finalTopic);
+      : !!subject && !!selectedUnitId && !!finalTopic) &&
+    (seminarMode === "prepare" && sessionSubMode === "demo" ? !!setupFile : true);
 
   const leftFeatures =
     seminarMode === "prepare"
-      ? [
-          { ic: "AI", t: "AI Coach", d: "Practice seminar flow with guided help." },
-          { ic: "TT", t: "Transcript", d: "Speech can be captured and reused for feedback." },
-          { ic: "CH", t: "Coach Chat", d: "Ask follow-up questions any time." },
-          { ic: "FB", t: "Formatted Feedback", d: "Readable end-of-session analysis." },
-        ]
+      ? sessionSubMode === "demo"
+        ? [
+            { ic: "UP", t: "File First", d: "Upload the seminar file during setup." },
+            { ic: "DM", t: "Demo Room", d: "Enter directly into AI demo practice." },
+            { ic: "AI", t: "Live Coach", d: "AI follows your spoken presentation." },
+            { ic: "FB", t: "Demo Feedback", d: "End with a clean session report." },
+          ]
+        : [
+            { ic: "AI", t: "AI Coach", d: "Practice seminar flow with guided help." },
+            { ic: "TT", t: "Transcript", d: "Speech can be captured and reused for feedback." },
+            { ic: "CH", t: "Coach Chat", d: "Ask follow-up questions any time." },
+            { ic: "FB", t: "Preparation Complete", d: "End with a preparation summary." },
+          ]
       : sessionSubMode === "observer"
         ? [
             { ic: "LV", t: "Watch Live", d: "Join active seminar rooms as an observer." },
@@ -2169,6 +2443,25 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
             { ic: "OB", t: "Observer Join", d: "Share a real room link backed by MongoDB." },
             { ic: "RP", t: "Session Report", d: "End with clean seminar feedback." },
           ];
+
+  const needsLaunchMic = seminarMode !== "session" || sessionSubMode !== "observer";
+
+  async function handleRequestLaunchMic() {
+    const nextStream = await request();
+    if (!nextStream) {
+      toast$("Microphone permission is required to enter the seminar room.", "error");
+      return;
+    }
+    toast$("Microphone ready", "success");
+  }
+
+  async function handleLaunchMicContinue() {
+    if (needsLaunchMic && !micReady) {
+      toast$("Please allow and enable your microphone before continuing.", "warn");
+      return;
+    }
+    await handleJoin();
+  }
 
   async function handleJoin() {
     setJoining(true);
@@ -2255,7 +2548,7 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
 
       const selectedUnit = availableUnits.find((item) => item.id === selectedUnitId);
       console.log("startSeminar called", {
-        mode: "practice",
+        mode: sessionSubMode === "demo" ? "demo" : "practice",
         candidateId: candidate.candidateId,
         candidateName: candidate.candidateName,
         subject: selectedUnit?.subject || selectedSubjectLabel,
@@ -2272,8 +2565,9 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
         board: selectedUnit?.board || undefined,
         classNumber: selectedUnit?.standard || undefined,
         unitName: selectedUnit?.unitTitle || selectedUnit?.unitLabel || unit,
-        mode: "practice",
-        session_mode: "practice",
+        mode: sessionSubMode === "demo" ? "demo" : "practice",
+        session_mode: sessionSubMode === "demo" ? "demo" : "practice",
+        file: sessionSubMode === "demo" ? (setupFile || undefined) : undefined,
       });
       console.log("startSeminar success", {
         sessionId: liveSession?.session_id || liveSession?.sessionId || "",
@@ -2298,7 +2592,8 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
         liveSession: liveSession?.liveSession || null,
         initialFacilitatorMessage: liveSession?.ai_greeting || liveSession?.message || liveSession?.opening_statement || "",
         seminarMode: "prepare",
-        sessionSubMode: "practice",
+        sessionSubMode: sessionSubMode,
+        setupFile: setupFile || null,
       });
     } catch (error) {
       toast$(getErrorMessage(error, "Unable to launch the seminar flow."), "error");
@@ -2348,7 +2643,7 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
           <div className="sp-right-inner">
             {onBack && <button className="back-btn" onClick={onBack}>← Back</button>}
             <h2 className="setup-h">🎓 Seminar Setup</h2>
-            <p className="setup-sub">Choose your mode first, then we keep the new design while routing through the live Node and Python seminar APIs.</p>
+            <p className="setup-sub">Choose your setup path first. Prepare with AI now has separate preparation and demo-session flows.</p>
             <div className="sec-div">Choose Mode</div>
             <div className="module-grid fi">
               {[{ id: "prepare", ic: "🤖", t: "Prepare with AI", d: "AI coach helps you rehearse, build outline, transcribe speech and practice demo." }, { id: "session", ic: "🔴", t: "Seminar Session", d: "Start or join a live seminar with AI moderator, screen share & full report." }].map((item) => (
@@ -2358,6 +2653,22 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
                 </div>
               ))}
             </div>
+
+            {seminarMode === "prepare" && (
+              <>
+                <div className="sec-div">Choose Preparation Type</div>
+                <div className="submode-grid fi">
+                  <div className={`submode-card${sessionSubMode === "practice" ? " sel" : ""}`} onClick={() => setSessionSubMode("practice")}>
+                    <div className="submode-ic">🤖</div><div className="submode-title">Prepare with AI for Seminar</div>
+                    <div className="submode-desc">Rehearse, ask questions, build notes, then end preparation.</div>
+                  </div>
+                  <div className={`submode-card${sessionSubMode === "demo" ? " sel" : ""}`} onClick={() => setSessionSubMode("demo")}>
+                    <div className="submode-ic">▶️</div><div className="submode-title">Demo Session</div>
+                    <div className="submode-desc">Upload your file here and present directly to AI.</div>
+                  </div>
+                </div>
+              </>
+            )}
 
             {seminarMode === "session" && (
               <>
@@ -2414,7 +2725,7 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
               </>
             )}
 
-            {(seminarMode === "prepare" || (seminarMode === "session" && sessionSubMode === "presenter")) && (
+            {((seminarMode === "prepare" && hasPrepareSubMode) || (seminarMode === "session" && sessionSubMode === "presenter")) && (
               <>
                 <div className="sec-div">Your Identity</div>
                 <div className="fi"><label className="fl">Your Name</label><input className="finput" placeholder="e.g. Alex Johnson" value={name} onChange={(event) => setName(event.target.value)} maxLength={40} /></div>
@@ -2491,11 +2802,28 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
                       <div className="link-lbl">🔗 Your Room Link — Share with Observers</div>
                       <div className="link-row"><span className="link-val">{roomLink}</span><button className="copy-btn" onClick={copyLink}>{copied ? "✓ Copied" : "Copy"}</button></div>
                     </div>
+                  </>
+                )}
+                {((seminarMode === "session" && sessionSubMode === "presenter") || (seminarMode === "prepare" && sessionSubMode === "demo")) && (
+                  <>
                     <div className="sec-div">Upload Presentation File</div>
-                    <div style={{ padding: "12px", borderRadius: 12, background: "rgba(255,255,255,.03)", border: "1px dashed rgba(255,255,255,.15)", marginBottom: 4 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,.5)", marginBottom: 7 }}>📎 PDF / PPT / PPTX — Optional. Sent to AI when session starts.</div>
-                      <input type="file" accept=".pdf,.ppt,.pptx" onChange={e => { if (e.target.files && e.target.files[0]) setSetupFile(e.target.files[0]); }} style={{ width: "100%", padding: "8px", background: "rgba(255,255,255,.04)", border: "1px dashed rgba(255,255,255,.18)", borderRadius: "8px", color: "white", fontSize: 12 }} />
-                      {setupFile && <div style={{ marginTop: 6, fontSize: 11, color: "#5ee3b7" }}>✅ {setupFile.name}</div>}
+                    <div style={{ padding: "12px", borderRadius: 12, background: "var(--surf2)", border: "1px dashed var(--bdr)", marginBottom: 4, color: "var(--t1)" }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "var(--t2)", marginBottom: 7 }}>📎 PDF / PPT / PPTX — {seminarMode==="prepare"?"Required for demo.":"Optional."} Sent to AI when session starts.</div>
+                      <input
+                        type="file"
+                        accept=".pdf,.ppt,.pptx"
+                        onChange={e => { if (e.target.files && e.target.files[0]) setSetupFile(e.target.files[0]); }}
+                        style={{
+                          width: "100%",
+                          padding: "8px",
+                          background: "var(--surf)",
+                          border: "1px dashed var(--bdr)",
+                          borderRadius: "8px",
+                          fontSize: 12,
+                          color: "var(--t1)",
+                        }}
+                      />
+                      {setupFile && <div style={{ marginTop: 6, fontSize: 11, color: "var(--em)" }}>✅ {setupFile.name}</div>}
                     </div>
                   </>
                 )}
@@ -2508,9 +2836,8 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
                       return <div key={index} className={`step-r ${done ? "done" : act ? "act" : "pend"}`}><div className="step-num">{done ? "✓" : index + 1}</div><div className="step-lbl">{step.label}</div></div>;
                     })}
                   </div>
-                  {perm !== "granted" && <button className="btn-s" style={{ width: "100%", justifyContent: "center", marginBottom: 8 }} onClick={request}>🎤 Allow Microphone</button>}
                   <button className="btn-p" onClick={() => setShowConfirm(true)} disabled={!canLaunch || (seminarType === "schedule" && !scheduled)}>
-                    {seminarMode === "prepare" ? "🤖 Start AI Preparation" : sessionSubMode === "observer" ? "👁️ Join as Observer" : "🎙️ Launch Seminar Room"}
+                    {seminarMode === "prepare" ? (sessionSubMode === "demo" ? "▶️ Launch Demo Session" : "🤖 Start AI Preparation") : sessionSubMode === "observer" ? "👁️ Join as Observer" : "🎙️ Launch Seminar Room"}
                   </button>
                 </div>
               </>
@@ -2523,11 +2850,71 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
       {showSchedule && <ScheduleSeminarModal config={{ topic: finalTopic, subject: selectedSubjectLabel || subject, unit, roomLink }} onSchedule={(info) => { setScheduledInfo(info); setScheduled(true); setShowSchedule(false); toast$("📅 Seminar scheduled & published!", "success"); }} onClose={() => setShowSchedule(false)} />}
       {showConfirm && (
         <div className="overlay">
+          {needsLaunchMic ? (
+            <div className="modal dark" style={{ maxWidth: 440, background: "#0c1422", border: "1px solid rgba(255,255,255,.1)" }}>
+              <div className="mh">
+                <span className="mh-title" style={{ color: "#fff" }}>Mic Permission Required</span>
+                <button
+                  className="mh-close"
+                  style={{ borderColor: "rgba(255,255,255,.1)", background: "rgba(255,255,255,.06)", color: "rgba(255,255,255,.6)" }}
+                  onClick={() => {
+                    stopMic();
+                    setShowConfirm(false);
+                    toast$("Microphone permission is required to enter the seminar room.", "warn");
+                  }}
+                  disabled={joining}
+                >
+                  x
+                </button>
+              </div>
+              <div className="mb" style={{ padding: "16px 20px", background: "#0c1422" }}>
+                <div style={{ padding: "12px 14px", borderRadius: 13, background: "rgba(99,102,241,.08)", border: "1px solid rgba(99,102,241,.18)", marginBottom: 14, color: "#fff", fontSize: 12.5, lineHeight: 1.7 }}>
+                  We need microphone access before you can enter the seminar room. This lets the seminar use your live mic, show your speaking state, and keep the room synced.
+                </div>
+                {finalTopic && (
+                  <div style={{ padding: "9px 11px", borderRadius: 9, background: "rgba(45,156,219,.06)", border: "1px solid rgba(45,156,219,.2)", marginBottom: 12, fontSize: 11.5, fontWeight: 600, color: "var(--sky)" }}>
+                    {`🎓 Topic: ${finalTopic}`}
+                  </div>
+                )}
+                <MicPermCard
+                  perm={perm}
+                  stream={stream}
+                  micLevel={micLevel}
+                  micOn={micEnabled}
+                  onRequest={handleRequestLaunchMic}
+                  onToggle={() => setMicEnabled(!micEnabled)}
+                  error={micError}
+                />
+                <div style={{ fontSize: 12, color: perm === "denied" ? "#fecaca" : "rgba(255,255,255,.65)", lineHeight: 1.6 }}>
+                  {perm === "denied" || micError
+                    ? micError || "Microphone access was denied. Please allow it in your browser settings or retry permission, then continue."
+                    : "Press the permission button first. Continue unlocks only after mic access is granted."}
+                </div>
+              </div>
+              <div className="mf" style={{ borderColor: "rgba(255,255,255,.08)", background: "#0c1422", flexDirection: "column", gap: 8 }}>
+                <button className="btn-p" onClick={handleLaunchMicContinue} disabled={joining || !micReady} style={{ fontSize: 14 }}>
+                  {joining ? <><span className="loader-spin" />{joinProgress > 0 ? `Loading ${joinProgress}%` : "Joining..."}</> : micReady ? (seminarMode === "prepare" ? (sessionSubMode === "demo" ? "Continue to Demo Session" : "Continue to AI Preparation") : "Continue to Seminar Room") : perm === "requesting" ? "Waiting for Mic..." : "Enable Mic to Continue"}
+                </button>
+                {joinProgress > 0 && <div className="lo-progress"><div className="lo-progress-fill" style={{ width: `${joinProgress}%` }} /></div>}
+                <button
+                  className="btn-s"
+                  onClick={() => {
+                    stopMic();
+                    setShowConfirm(false);
+                  }}
+                  disabled={joining}
+                  style={{ width: "100%", justifyContent: "center", background: "rgba(255,255,255,.04)", borderColor: "rgba(255,255,255,.1)", color: "rgba(255,255,255,.5)" }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
           <div className="modal" style={{ maxWidth: 340, background: "#0c1422", border: "1px solid rgba(255,255,255,.1)" }}>
             <div style={{ background: "linear-gradient(135deg,#060e1c,#081a10)", padding: "20px 18px", textAlign: "center" }}>
               <div style={{ fontSize: 38, marginBottom: 8 }}>{seminarMode === "prepare" ? "🤖" : sessionSubMode === "observer" ? "👁️" : "🎓"}</div>
               <div style={{ fontSize: 14, fontWeight: 800, color: "#fff", marginBottom: 2 }}>{name}</div>
-              <div style={{ fontSize: 10.5, color: "rgba(255,255,255,.4)" }}>{seminarMode === "prepare" ? "Launching AI practice" : sessionSubMode === "observer" ? "Joining as Observer" : "Preparing Seminar Room"}</div>
+              <div style={{ fontSize: 10.5, color: "rgba(255,255,255,.4)" }}>{seminarMode === "prepare" ? (sessionSubMode === "demo" ? "Launching Demo Session" : "Launching AI Preparation") : sessionSubMode === "observer" ? "Joining as Observer" : "Preparing Seminar Room"}</div>
             </div>
             <div className="mb" style={{ background: "#0c1422" }}>
               {(selectedSession || finalTopic) && <div style={{ padding: "9px 11px", borderRadius: 9, background: "rgba(45,156,219,.06)", border: "1px solid rgba(45,156,219,.2)", marginBottom: 9, fontSize: 11.5, fontWeight: 600, color: "var(--sky)" }}>
@@ -2540,12 +2927,13 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
             </div>
             <div className="mf" style={{ borderColor: "rgba(255,255,255,.08)", background: "#0c1422", flexDirection: "column", gap: 7 }}>
               <button className="btn-p" onClick={handleJoin} disabled={joining || ((seminarMode !== "session" || sessionSubMode !== "observer") && perm !== "granted")}>
-                {joining ? <><span className="loader-spin" />{joinProgress > 0 ? `Loading ${joinProgress}%` : "Joining…"}</> : seminarMode === "prepare" ? "🤖 Enter AI Practice" : sessionSubMode === "observer" ? "👁️ Enter as Observer" : "🎙️ Enter Seminar Room"}
+                {joining ? <><span className="loader-spin" />{joinProgress > 0 ? `Loading ${joinProgress}%` : "Joining…"}</> : seminarMode === "prepare" ? (sessionSubMode === "demo" ? "▶️ Enter Demo Session" : "🤖 Enter AI Preparation") : sessionSubMode === "observer" ? "👁️ Enter as Observer" : "🎙️ Enter Seminar Room"}
               </button>
               {joinProgress > 0 && <div className="lo-progress"><div className="lo-progress-fill" style={{ width: `${joinProgress}%` }} /></div>}
               <button className="btn-s" onClick={() => setShowConfirm(false)} disabled={joining} style={{ width: "100%", justifyContent: "center", background: "rgba(255,255,255,.04)", borderColor: "rgba(255,255,255,.1)", color: "rgba(255,255,255,.5)" }}>Cancel</button>
             </div>
           </div>
+          )}
         </div>
       )}
       {toastNode}
@@ -2559,10 +2947,10 @@ function PrepareWithAIRoom({config,onEnd}) {
   const DEMO_HELP_SILENCE_MS = 10000;
   
   // Setup Flow State
-  const [setupPhase, setSetupPhase] = useState(config.sessionSubMode === "demo" ? "intro" : "session"); // intro, tutoring, preparing, session
+  const [setupPhase, setSetupPhase] = useState("session"); // session for all
   const [demoPreviewModal, setDemoPreviewModal] = useState(false);
-  const [demoFile, setDemoFile] = useState(null);
-  const [chatOptions, setChatOptions] = useState([{label: "Show me how to present", action: "tutoring"}]);
+  const [demoFile, setDemoFile] = useState(config.setupFile || null);
+  const [chatOptions, setChatOptions] = useState([]);
   const [actionLoader, setActionLoader] = useState(null);
 
   const [demoReady,setDemoReady]=useState(false);
@@ -3265,8 +3653,33 @@ useEffect(()=>{
   // ─── Demo Mode ────────────────────────────────────────────────────────────
   function enterDemoReadyState(){
     if(timer.isPaused){toast$("Resume session first","warn");return;}
-    setDemoReady(true);
-    toast$("▶️ Click 'Start Demo Now' to begin your presentation practice","info");
+    if (config.sessionSubMode === "demo" || config.setupFile) {
+      startPreconfiguredDemo();
+    } else {
+      setDemoReady(true);
+      toast$("▶️ Click 'Start Demo Now' to begin your presentation practice","info");
+    }
+  }
+
+  function startPreconfiguredDemo(){
+    if(config.sessionSubMode === "demo" && !demoFile){
+      toast$("Presentation file is missing. Please go back and upload the file in demo setup.","warn");
+      return;
+    }
+    setDemoReady(false);
+    setDemoMode(true);
+    setDemoRunning(true);
+    setDemoTimer(0);
+    setActiveSeminarMode("demo");
+    lastSpeechTimeRef.current = Date.now();
+    const msg = config.initialFacilitatorMessage || `Demo mode activated for "${config.topic}". Begin your seminar when you are ready.`;
+    setMessages(m=>[...m,{from:"system",text:"▶️ Demo Mode Started — Present now"},{from:"ai",text:msg}]);
+    addNote("Demo mode started",`Source file: ${demoFile?.name || "pre-uploaded"}`);
+    if(speakAiReplyRef.current) speakAiReplyRef.current(msg,{ resumeCapture: true });
+    micPreferenceRef.current = true;
+    setMicOn(true);
+    toast$("▶️ Demo started — speak freely","info");
+    setPanelOpen(false);
   }
 
   function actuallyStartDemo(){
@@ -3555,7 +3968,7 @@ speakAiReply(msg,{ resumeCapture: true });
         {isScreenSharing&&!demoMode&&<div className="prep-pill" style={{background:"rgba(229,62,62,.12)",borderColor:"rgba(229,62,62,.22)",color:"var(--red)",animation:"recBlink 1.4s infinite"}}>🖥️ PRESENTING</div>}
         {!demoMode&&!isScreenSharing&&<div className="prep-pill pp-mode">🤖 AI Coach</div>}
         <div className={`prep-pill ${timer.isPaused?"pp-paused":"pp-timer"}`}>{timer.isPaused?"⏸ PAUSED":timer.display}</div>
-        {!isPracticeMode&&<button className="prep-bar-end" onClick={()=>setShowEnd(true)}>End</button>}
+        <button className="prep-bar-end" onClick={()=>setShowEnd(true)}>End</button>
       </div>
 
       {/* AI auto-paused banner */}
@@ -3572,17 +3985,17 @@ speakAiReply(msg,{ resumeCapture: true });
       )}
 
       {(isGreetingPending || isAiResponsePending || aiVoice.isSpeaking || setupPhase === "session") && (
-        <div style={{margin:"0 18px 10px",padding:"12px 16px",borderRadius:14,background:(isGreetingPending || isAiResponsePending)?"linear-gradient(135deg,rgba(45,156,219,.16),rgba(0,195,122,.12))":"rgba(255,255,255,.04)",border:(isGreetingPending || isAiResponsePending)?"1px solid rgba(126,211,247,.28)":"1px solid rgba(255,255,255,.08)",display:"flex",alignItems:"center",gap:12,boxShadow:"var(--sh2)"}}>
-          <div style={{width:34,height:34,borderRadius:"50%",display:"grid",placeItems:"center",background:(isGreetingPending || isAiResponsePending)?"rgba(126,211,247,.14)":"rgba(0,195,122,.12)",color:(isGreetingPending || isAiResponsePending)?"#7ed3f7":"#5ee3b7",fontSize:16,fontWeight:900}}>
+        <div style={{margin:"0 auto 8px",width:"fit-content",maxWidth:"90%",padding:"4px 12px",borderRadius:20,background:(isGreetingPending || isAiResponsePending)?"linear-gradient(135deg,rgba(45,156,219,.16),rgba(0,195,122,.12))":"rgba(255,255,255,.04)",border:(isGreetingPending || isAiResponsePending)?"1px solid rgba(126,211,247,.28)":"1px solid rgba(255,255,255,.08)",display:"flex",alignItems:"center",gap:8,boxShadow:"var(--sh2)"}}>
+          <div style={{width:20,height:20,borderRadius:"50%",display:"grid",placeItems:"center",background:(isGreetingPending || isAiResponsePending)?"rgba(126,211,247,.14)":"rgba(0,195,122,.12)",color:(isGreetingPending || isAiResponsePending)?"#7ed3f7":"#5ee3b7",fontSize:10,fontWeight:900}}>
             {greetingState === "speaking" ? "AI" : (isGreetingPending || isAiResponsePending) ? "…" : "🎤"}
           </div>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:13,fontWeight:800,color:"#fff"}}>
-              {greetingState === "speaking" ? "AI greeting in progress" : isGreetingPending ? "Connecting to AI speaker" : isAiResponsePending ? "Preparing AI response" : "Microphone status"}
+          <div style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:6}}>
+            <div style={{fontSize:11,fontWeight:800,color:"#fff",whiteSpace:"nowrap"}}>
+              {greetingState === "speaking" ? "AI Speaking" : isGreetingPending ? "Connecting AI" : isAiResponsePending ? "Preparing AI" : "Microphone"}
             </div>
-            <div style={{fontSize:12,color:"rgba(255,255,255,.68)",lineHeight:1.5}}>{micStatusText}</div>
+            <div style={{fontSize:11,color:"rgba(255,255,255,.68)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{micStatusText}</div>
           </div>
-          {(isGreetingPending || isAiResponsePending || aiVoice.isSpeaking) && <SoundAnalyser active color={greetingState === "speaking" ? "#7ed3f7" : "#5ee3b7"} bars={4} size={18}/>}
+          {(isGreetingPending || isAiResponsePending || aiVoice.isSpeaking) && <SoundAnalyser active color={greetingState === "speaking" ? "#7ed3f7" : "#5ee3b7"} bars={3} size={12}/>}
         </div>
       )}
       {/* MAIN BODY */}
@@ -3943,21 +4356,21 @@ speakAiReply(msg,{ resumeCapture: true });
     ))}
 
   {/* Demo controls — appear only after demo starts */}
-  {!demoMode && !demoReady && (
+  {!isPracticeMode && !demoMode && !demoReady && (
     <button className="cbtn em" onClick={enterDemoReadyState} disabled={timer.isPaused}>
       <span className="cbtn-ic">▶</span>
       <span>Start Demo</span>
     </button>
   )}
 
-  {demoReady && (
+  {!isPracticeMode && demoReady && (
     <button className="cbtn em" onClick={actuallyStartDemoLive}>
       <span className="cbtn-ic">▶</span>
       <span>Start!</span>
     </button>
   )}
 
-  {demoMode && demoRunning && !isAiPaused && (
+  {!isPracticeMode && demoMode && demoRunning && !isAiPaused && (
     <>
       <button className="cbtn pause-btn" onClick={pauseDemoLive}>
         <span className="cbtn-ic">⏸</span>
@@ -3970,7 +4383,7 @@ speakAiReply(msg,{ resumeCapture: true });
     </>
   )}
 
-  {demoMode && !demoRunning && !isAiPaused && (
+  {!isPracticeMode && demoMode && !demoRunning && !isAiPaused && (
     <>
       <button className="cbtn em" onClick={resumeDemoLive} disabled={timer.isPaused}>
         <span className="cbtn-ic">▶</span>
@@ -3996,7 +4409,7 @@ speakAiReply(msg,{ resumeCapture: true });
               <button className={`cbtn${activePanel==="chat"&&panelOpen?" hi":""}`} onClick={()=>{setActivePanel("chat");setPanelOpen(true);}}><span className="cbtn-ic">🤖</span><span>Chat</span></button>
               {!isPracticeMode&&<button className={`cbtn${activePanel==="notes"&&panelOpen?" hi":""}`} onClick={()=>{setActivePanel("notes");setPanelOpen(true);}}><span className="cbtn-ic">📋</span><span>Notes</span></button>}
               {!isPracticeMode&&<button className={`cbtn${activePanel==="actions"&&panelOpen?" hi":""}`} onClick={()=>{setActivePanel("actions");setPanelOpen(true);}}><span className="cbtn-ic">⚡</span><span>Quick</span></button>}
-              {!isPracticeMode&&<button className="end-room-btn" onClick={()=>setShowEnd(true)}>End</button>}
+              <button className="end-room-btn" onClick={()=>setShowEnd(true)}>End</button>
             </div>
           </div>
           )}
@@ -4260,6 +4673,80 @@ function isSeminarParticipantApproved(session, participantId) {
   return participant?.status === "approved_to_speak";
 }
 
+function LiveKitVideoTrack({track, className = "ss-video"}) {
+  const containerRef = useRef(null);
+
+  useEffect(()=>{
+    const container = containerRef.current;
+    if(!container || !track) return;
+    let element = null;
+    try{
+      element = track.attach();
+      element.className = className;
+      element.autoplay = true;
+      element.playsInline = true;
+      element.muted = true;
+      container.replaceChildren(element);
+      console.log("[SeminarPage][SCREEN] video track attached", {
+        trackSid: track.sid,
+        source: track.source,
+        kind: track.kind,
+      });
+    } catch(error){
+      console.error("[SeminarPage][SCREEN] failed to attach video track", error);
+    }
+    return ()=>{
+      try{
+        if(element) track.detach(element);
+        element?.remove?.();
+        container.replaceChildren();
+      } catch(error){
+        console.warn("[SeminarPage][SCREEN] failed to detach video track", error);
+      }
+    };
+  },[track, className]);
+
+  return <div ref={containerRef} style={{position:"absolute",inset:0,width:"100%",height:"100%"}} />;
+}
+
+function attachLiveKitScreenTrack(track, ownerLabel = "screen") {
+  const container = document.querySelector(".room-page .room-body .grid-area .ss-area");
+  if(!container || !track) return () => {};
+
+  let element = null;
+  try{
+    element = track.attach();
+    element.className = "ss-video";
+    element.autoplay = true;
+    element.playsInline = true;
+    element.muted = true;
+    element.style.position = "absolute";
+    element.style.inset = "0";
+    element.style.zIndex = "1";
+    container.classList.add("lk-screen-active");
+    container.prepend(element);
+    console.log("[SeminarPage][SCREEN] LiveKit screen track rendered", {
+      ownerLabel,
+      trackSid: track.sid,
+      source: track.source,
+      kind: track.kind,
+    });
+  } catch(error){
+    console.error("[SeminarPage][SCREEN] failed to render LiveKit screen track", { ownerLabel, error });
+  }
+
+  return () => {
+    try{
+      if(element) track.detach(element);
+      element?.remove?.();
+      container.classList.remove("lk-screen-active");
+      console.log("[SeminarPage][SCREEN] LiveKit screen track removed", { ownerLabel });
+    } catch(error){
+      console.warn("[SeminarPage][SCREEN] failed to remove LiveKit screen track", { ownerLabel, error });
+    }
+  };
+}
+
 function PresenterRoomLegacy({config,onEnd}) {
   const timer=useTimer(true);
   const [panelTab,setPanelTab]=useState(null);
@@ -4475,7 +4962,7 @@ function PresenterRoom({config,onEnd}) {
     sessionId: config.sessionId || "",
     candidateId: currentCandidateId,
     candidateName: config.name,
-    enabled: Boolean(config.sessionId && config.stream),
+    enabled: Boolean(config.sessionId && currentCandidateId),
     localStream: config.stream || null,
     apiBase: `${process.env.REACT_APP_API_BASE_URL}`,
     startMuted: false,
@@ -4507,6 +4994,13 @@ const participantList = (liveSession?.participants || []).filter((item)=>!item.i
       console.log("[PresenterRoom] 🔄 LiveKit connecting...");
     }
   }, [livekitHost.connected, livekitHost.error]);
+  useEffect(()=>{
+    setScreenSharing(Boolean(livekitHost.isScreenSharing && livekitHost.localScreenShareTrack));
+  },[livekitHost.isScreenSharing, livekitHost.localScreenShareTrack]);
+  useEffect(()=>{
+    if(!livekitHost.localScreenShareTrack) return undefined;
+    return attachLiveKitScreenTrack(livekitHost.localScreenShareTrack, "presenter-local");
+  },[livekitHost.localScreenShareTrack]);
   const syncSession = useCallback(async (showFullLoader = false)=>{
     const latestConfig = latestConfigRef.current;
     if(!latestConfig?.sessionId) return;
@@ -4656,15 +5150,16 @@ useEffect(()=>{
 
   async function toggleScreen(){
     if(screenSharing){
-      setScreenSharing(false);
+      await livekitHost.stopScreenShare();
       toast$("Screen sharing stopped.","warn");
       return;
     }
-    try{
-      await navigator.mediaDevices.getDisplayMedia({video:true});
-      setScreenSharing(true);
+    const started = await livekitHost.startScreenShare();
+    if(started){
       toast$("Screen sharing started.","success");
-    } catch {
+    } else if(livekitHost.error){
+      toast$(livekitHost.error,"error");
+    } else {
       toast$("Screen share cancelled.","warn");
     }
   }
@@ -5063,6 +5558,18 @@ function ObserverRoom({config,onEnd}) {
     apiBase: `${process.env.REACT_APP_API_BASE_URL}`,
     startMuted: true,
   });
+  useEffect(()=>{
+    if(livekitParticipant.connected){
+      console.log("[ObserverRoom] LiveKit connected for seminar media");
+    }
+    if(livekitParticipant.error){
+      console.error("[ObserverRoom] LiveKit connection error:", livekitParticipant.error);
+    }
+  },[livekitParticipant.connected, livekitParticipant.error]);
+  useEffect(()=>{
+    if(!livekitParticipant.remoteScreenShareTrack) return undefined;
+    return attachLiveKitScreenTrack(livekitParticipant.remoteScreenShareTrack, "observer-remote");
+  },[livekitParticipant.remoteScreenShareTrack]);
   useEffect(()=>{chatEndRef.current?.scrollIntoView({behavior:"smooth"});},[messages]);
   useEffect(()=>{setMessages(mapSeminarTurnsToMessages(liveSession, config.name));},[liveSession, config.name]);
   useEffect(()=>{if(!approvedToSpeak && micOn) setMicOn(false);},[approvedToSpeak, micOn]);
@@ -5330,110 +5837,6 @@ function SeminarResults({result,onNew}) {
           <div key={s.l} className="res-stat" style={{animationDelay:`${i*.1}s`}}><div className="res-stat-ic">{s.i}</div><div className="res-stat-v">{s.v}</div><div className="res-stat-l">{s.l}</div></div>
         ))}
       </div>
-{(result.isHost === true) && !isObserver && result.canViewFeedback && result.scores && Object.keys(result.scores).length > 0 && (
-        <div style={{width:"100%",maxWidth:780,margin:"6px auto 18px",display:"flex",flexDirection:"column",gap:14}}>
-
-          {/* Score Cards */}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10}}>
-            {[
-              {label:"Conceptual Understanding",key:"conceptual_understanding",color:"#00c37a",max:30},
-              {label:"Depth of Knowledge",key:"depth_of_knowledge",color:"#2d9cdb",max:25},
-              {label:"Presentation Flow",key:"presentation_flow",color:"#7c3aed",max:20},
-              {label:"Engagement",key:"engagement",color:"#f6a623",max:15},
-              {label:"Hints Penalty",key:"hints_penalty",color:"#e53e3e",max:10,negative:true},
-            ].map(s=>(
-              <div key={s.key} style={{padding:"14px 16px",borderRadius:14,background:"var(--surf)",border:"1px solid var(--bdr)",textAlign:"center"}}>
-                <div style={{fontSize:22,fontWeight:900,color:s.color}}>{s.negative?"-":""}{result.scores[s.key]??"-"}</div>
-                <div style={{fontSize:10,fontWeight:700,color:"var(--t2)",marginTop:4,lineHeight:1.4}}>{s.label}</div>
-                <div style={{marginTop:8,height:4,borderRadius:4,background:"rgba(255,255,255,.06)"}}>
-                  <div style={{height:"100%",borderRadius:4,background:s.color,width:`${Math.min(100,((result.scores[s.key]??0)/s.max)*100)}%`,transition:"width .6s"}}/>
-                </div>
-              </div>
-            ))}
-            <div style={{padding:"14px 16px",borderRadius:14,background:"linear-gradient(135deg,rgba(0,195,122,.12),rgba(45,156,219,.12))",border:"1px solid rgba(0,195,122,.25)",textAlign:"center",display:"flex",flexDirection:"column",justifyContent:"center"}}>
-              <div style={{fontSize:28,fontWeight:900,color:"var(--em)"}}>{result.scores.total_score??"-"}</div>
-              <div style={{fontSize:10,fontWeight:700,color:"var(--t2)",marginTop:4}}>TOTAL SCORE</div>
-              {result.hintsUsed>0&&<div style={{fontSize:10,color:"#e53e3e",marginTop:4}}>💡 {result.hintsUsed} hint{result.hintsUsed>1?"s":""} used</div>}
-            </div>
-          </div>
-
-          {/* Overall Feedback */}
-          {result.scores.overall_feedback&&(
-            <div style={{padding:"16px 18px",borderRadius:14,background:"var(--surf)",border:"1px solid var(--bdr)"}}>
-              <div style={{fontSize:12,fontWeight:800,color:"var(--t1)",marginBottom:8}}>📋 Overall Feedback</div>
-              <div style={{fontSize:13,color:"var(--t2)",lineHeight:1.7}}>{result.scores.overall_feedback}</div>
-            </div>
-          )}
-
-          {/* Strengths & Improvements */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-            {result.scores.strengths?.length>0&&(
-              <div style={{padding:"14px 16px",borderRadius:14,background:"rgba(0,195,122,.06)",border:"1px solid rgba(0,195,122,.18)"}}>
-                <div style={{fontSize:12,fontWeight:800,color:"var(--em)",marginBottom:10}}>✅ Strengths</div>
-                {result.scores.strengths.map((s,i)=>(
-                  <div key={i} style={{fontSize:12,color:"var(--t2)",marginBottom:6,paddingLeft:10,borderLeft:"2px solid rgba(0,195,122,.4)",lineHeight:1.5}}>{s}</div>
-                ))}
-              </div>
-            )}
-            {result.scores.improvements?.length>0&&(
-              <div style={{padding:"14px 16px",borderRadius:14,background:"rgba(229,62,62,.06)",border:"1px solid rgba(229,62,62,.18)"}}>
-                <div style={{fontSize:12,fontWeight:800,color:"var(--red)",marginBottom:10}}>🎯 Areas to Improve</div>
-                {result.scores.improvements.map((s,i)=>(
-                  <div key={i} style={{fontSize:12,color:"var(--t2)",marginBottom:6,paddingLeft:10,borderLeft:"2px solid rgba(229,62,62,.4)",lineHeight:1.5}}>{s}</div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Topics Mastered & Need Work */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-            {result.scores.topics_mastered?.length>0&&(
-              <div style={{padding:"14px 16px",borderRadius:14,background:"rgba(45,156,219,.06)",border:"1px solid rgba(45,156,219,.18)"}}>
-                <div style={{fontSize:12,fontWeight:800,color:"var(--sky)",marginBottom:10}}>🏆 Topics Mastered</div>
-                {result.scores.topics_mastered.map((t,i)=>(
-                  <div key={i} style={{fontSize:12,color:"var(--t2)",marginBottom:5,paddingLeft:10,borderLeft:"2px solid rgba(45,156,219,.4)",lineHeight:1.5}}>{t}</div>
-                ))}
-              </div>
-            )}
-            {result.scores.topics_need_work?.length>0&&(
-              <div style={{padding:"14px 16px",borderRadius:14,background:"rgba(246,166,35,.06)",border:"1px solid rgba(246,166,35,.18)"}}>
-                <div style={{fontSize:12,fontWeight:800,color:"#f6a623",marginBottom:10}}>📚 Needs More Work</div>
-                {result.scores.topics_need_work.map((t,i)=>(
-                  <div key={i} style={{fontSize:12,color:"var(--t2)",marginBottom:5,paddingLeft:10,borderLeft:"2px solid rgba(246,166,35,.4)",lineHeight:1.5}}>{t}</div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Topics Covered */}
-          {result.topicsCovered?.length>0&&(
-            <div style={{padding:"14px 16px",borderRadius:14,background:"var(--surf)",border:"1px solid var(--bdr)"}}>
-              <div style={{fontSize:12,fontWeight:800,color:"var(--t1)",marginBottom:10}}>📖 Topics Covered</div>
-              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                {result.topicsCovered.map((t,i)=>(
-                  <span key={i} style={{padding:"4px 12px",borderRadius:20,background:"rgba(124,58,237,.1)",border:"1px solid rgba(124,58,237,.22)",fontSize:11,fontWeight:700,color:"var(--vio)"}}>{t}</span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Session Transcript */}
-          {result.turns?.filter(t=>t.role==="user").length>0&&(
-            <div style={{padding:"14px 16px",borderRadius:14,background:"var(--surf)",border:"1px solid var(--bdr)"}}>
-              <div style={{fontSize:12,fontWeight:800,color:"var(--t1)",marginBottom:10}}>🗣️ Session Transcript</div>
-              {result.turns.map((turn,i)=>(
-                <div key={i} style={{marginBottom:10,paddingBottom:10,borderBottom:"1px solid var(--bdr)"}}>
-                  <div style={{fontSize:10,fontWeight:800,color:turn.role==="user"?"var(--em)":"var(--sky)",marginBottom:4}}>
-                    {turn.role==="user"?`👤 ${turn.speakerName}`:"🤖 AI Coach"} · {new Date(turn.createdAt).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}
-                  </div>
-                  <div style={{fontSize:12,color:"var(--t2)",lineHeight:1.6}}>{turn.message}</div>
-                </div>
-              ))}
-            </div>
-          )}
-
-        </div>
-      )}
       <div className="res-acts">
         {!isObserver&&<button className="btn-s" style={{borderColor:"rgba(0,195,122,.28)",color:"var(--em)"}} onClick={()=>setShowAnalysis(true)}>📊 View Report</button>}
         
@@ -5461,7 +5864,7 @@ function SeminarResults({result,onNew}) {
           </div>
         </div>
       )}
-      {showAnalysis&&<AnalysisModal topic={result.topic} subject={result.subject} unit={result.unit} timer={result.timer} exchanges={result.exchanges||0} presenterName={result.presenterName} onClose={()=>setShowAnalysis(false)} onDownload={handleDownload}/>}
+      {showAnalysis&&<AnalysisModal topic={result.topic} subject={result.subject} unit={result.unit} timer={result.timer} exchanges={result.exchanges||0} presenterName={result.presenterName} apiScores={result.scores||result.feedback||null} hintsUsed={result.hintsUsed||0} onClose={()=>setShowAnalysis(false)} onDownload={handleDownload}/>}
     </div>
   );
 }

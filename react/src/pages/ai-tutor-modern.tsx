@@ -33,6 +33,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu";
+
 import FunnyLoader from "../components/ui/FunnyLoader";
 import {
   BookOpen,
@@ -99,23 +100,34 @@ import {
   getLibrarySubjects,
   getTutorConversation,
   getTutorConversations,
+  synthesizeDebateSpeech,
+  getRealtimeSessionToken,
   type LibrarySubject,
 } from "../lib/gradeupApi";
+import { realtimeAudioService } from "../lib/realtimeAudioService";
 import { buildApiUrl } from "../lib/apiBase";
 
 // ── Typing Markdown Component ──────────────────────────────────────────────────
-function TypingMarkdown({ content, isLast }: { content: string; isLast: boolean }) {
-  const [displayedContent, setDisplayedContent] = useState(isLast ? "" : content);
+function TypingMarkdown({
+  content,
+  isLast,
+}: {
+  content: string;
+  isLast: boolean;
+}) {
+  const [displayedContent, setDisplayedContent] = useState(
+    isLast ? "" : content,
+  );
 
   useEffect(() => {
     if (!isLast) {
       setDisplayedContent(content);
       return;
     }
-    
+
     let index = 0;
-    const charsPerTick = Math.max(1, Math.floor(content.length / 50)); 
-    
+    const charsPerTick = Math.max(1, Math.floor(content.length / 50));
+
     const interval = setInterval(() => {
       index += charsPerTick;
       if (index >= content.length) {
@@ -132,8 +144,8 @@ function TypingMarkdown({ content, isLast }: { content: string; isLast: boolean 
     if (isLast) {
       // Use requestAnimationFrame to ensure DOM is fully painted
       requestAnimationFrame(() => {
-        const scrollEls = document.querySelectorAll('.at-msgs-area');
-        scrollEls.forEach(el => {
+        const scrollEls = document.querySelectorAll(".at-msgs-area");
+        scrollEls.forEach((el) => {
           el.scrollTop = el.scrollHeight + 100; // Adding buffer to ensure bottom
         });
       });
@@ -151,8 +163,14 @@ interface ChatMessage {
   timestamp: Date;
   subject?: string;
   unit?: string;
-  attachments?: { name: string; type: string; size: number }[];
+  attachments?: {
+    name: string;
+    type: string;
+    size: number;
+    dataUrl?: string;
+  }[];
   audioSrc?: string;
+  suggestedQuestions?: string[];
 }
 
 export interface ChatHistory {
@@ -340,7 +358,11 @@ const CSS = `
   min-height: 0;
   overflow: hidden;
 }
-
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .at-hist-section-head {
   display: flex;
   justify-content: space-between;
@@ -913,6 +935,8 @@ const formattedSubjects: {
   color: string;
   id: number;
   emoji: string;
+  standard: string;
+  board: string;
 }[] = [
   {
     value: "all",
@@ -1477,11 +1501,14 @@ export default function AITutorModern() {
               color,
               id: index + 1,
               emoji,
+              standard: subjectGroup.standard,
+              board: subjectGroup.board,
             };
           }),
         ]
       : [formattedSubjects[0]];
   const selectedSubjectData = subjects.find((s) => s.id === selectedSubject);
+  // console.log(selectedSubjectData);
   const selectedSubjectGroup =
     selectedSubjectData && selectedSubjectData.value !== "all"
       ? subjectCatalog.find(
@@ -1490,18 +1517,18 @@ export default function AITutorModern() {
         ) || null
       : null;
   const candidateContext = getCandidateContext(userHeader);
- const filteredChatHistory = chatHistory.filter((chat) => {
-  if (selectedSubject === 0) return true;
-  if (!chat.subject) return false;
+  const filteredChatHistory = chatHistory.filter((chat) => {
+    if (selectedSubject === 0) return true;
+    if (!chat.subject) return false;
 
-  return (
-    chat.subject === selectedSubjectData?.label ||
-    chat.subject === selectedSubjectData?.value
-  );
-});
+    return (
+      chat.subject === selectedSubjectData?.label ||
+      chat.subject === selectedSubjectData?.value
+    );
+  });
   useEffect(() => {
     if (userHeader?.role) setCurrentRole(userHeader.role);
-  } ,[userHeader]);
+  }, [userHeader]);
 
   useEffect(() => {
     const { documentElement } = document;
@@ -1584,7 +1611,7 @@ export default function AITutorModern() {
 
       setCurrentChatId((prev) => {
         const refId = currentChatIdRef.current;
-        console.log('[loadConversationList] setCurrentChatId called', {
+        console.log("[loadConversationList] setCurrentChatId called", {
           prev,
           refId,
           pendingFresh: pendingFreshChatRef.current,
@@ -1594,7 +1621,9 @@ export default function AITutorModern() {
         // If user clicked New Chat, stay on empty new chat.
         if (pendingFreshChatRef.current) {
           pendingFreshChatRef.current = false;
-          console.log('[loadConversationList] → pendingFresh=true, returning null');
+          console.log(
+            "[loadConversationList] → pendingFresh=true, returning null",
+          );
           return null;
         }
 
@@ -1602,19 +1631,28 @@ export default function AITutorModern() {
         // sendMessage synchronously, even before React flushes state.
         const activeId = prev ?? refId;
 
-        if (activeId && mappedHistory.some((chat: ChatHistory) => chat.id === activeId)) {
-          console.log('[loadConversationList] → activeId found in history, keeping:', activeId);
+        if (
+          activeId &&
+          mappedHistory.some((chat: ChatHistory) => chat.id === activeId)
+        ) {
+          console.log(
+            "[loadConversationList] → activeId found in history, keeping:",
+            activeId,
+          );
           return activeId;
         }
 
         // If activeId exists but isn't in the list yet (history fetch raced
         // ahead of the server persisting the new conversation), keep it.
         if (activeId) {
-          console.warn('[loadConversationList] ⚠️ activeId NOT in history yet (race?) — keeping anyway:', activeId);
+          console.warn(
+            "[loadConversationList] ⚠️ activeId NOT in history yet (race?) — keeping anyway:",
+            activeId,
+          );
           return activeId;
         }
 
-        console.log('[loadConversationList] → no activeId, returning null');
+        console.log("[loadConversationList] → no activeId, returning null");
         return null;
       });
 
@@ -1629,12 +1667,14 @@ export default function AITutorModern() {
         variant: "destructive",
       });
       setChatHistory([]);
-      console.error('[loadConversationList] ❌ fetch failed — resetting currentChatId → null');
+      console.error(
+        "[loadConversationList] ❌ fetch failed — resetting currentChatId → null",
+      );
       setCurrentChatId(null);
       currentChatIdRef.current = null;
       return [];
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candidateContext.candidateId, selectedSubjectData?.value]);
   // ↑ INTENTIONALLY omitting `toast` — it recreates every render in most
   // useToast implementations and would cause an infinite loop if included.
@@ -1687,7 +1727,11 @@ export default function AITutorModern() {
   const handleSubjectSelect = (subjectId: number) => {
     setIsLoading(true);
     setSelectedSubject(subjectId);
-    console.log('[handleSubjectSelect] resetting currentChatId → null (subjectId:', subjectId, ')');
+    console.log(
+      "[handleSubjectSelect] resetting currentChatId → null (subjectId:",
+      subjectId,
+      ")",
+    );
     setCurrentChatId(null);
     currentChatIdRef.current = null;
     setMessages([]);
@@ -1704,7 +1748,7 @@ export default function AITutorModern() {
       setSelectedSubject(parseInt(savedSubject, 10));
       if (savedUnit) setSelectedUnit(savedUnit);
       // We no longer auto-set view to "tutor" so the user always sees Subject Selection first.
-      // setView("tutor"); 
+      // setView("tutor");
     }
   }, []);
 
@@ -1739,6 +1783,10 @@ export default function AITutorModern() {
   const [speechSpeed, setSpeechSpeed] = useState(0.7);
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isSpeechLoading, setIsSpeechLoading] = useState(false);
+  const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(
+    null,
+  );
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -1754,9 +1802,22 @@ export default function AITutorModern() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
-
+  // WebRTC Realtime Speech state
+  const [realtimeSession, setRealtimeSession] = useState<{
+    sessionId: string;
+    clientSecret: string;
+  } | null>(null);
+  const [useRealtimeMode, setUseRealtimeMode] = useState(true); // Feature flag
+  const isInitializingRealtimeRef = useRef(false);
+  const currentSpeechIdRef = useRef<string>("");
+  const [currentlyPlayingMessageId, setCurrentlyPlayingMessageId] = useState<
+    string | null
+  >(null);
   useEffect(() => {
-    console.log('[useEffect:syncRef] currentChatId state changed → syncing ref:', currentChatId);
+    console.log(
+      "[useEffect:syncRef] currentChatId state changed → syncing ref:",
+      currentChatId,
+    );
     currentChatIdRef.current = currentChatId;
   }, [currentChatId]);
 
@@ -1764,7 +1825,11 @@ export default function AITutorModern() {
     if (newUnit === selectedUnit) return;
     setIsLoading(true);
     setChatError(null);
-    console.log('[handleUnitChange] resetting currentChatId → null (unit changed to:', newUnit, ')');
+    console.log(
+      "[handleUnitChange] resetting currentChatId → null (unit changed to:",
+      newUnit,
+      ")",
+    );
     setCurrentChatId(null);
     currentChatIdRef.current = null;
     setMessages([]);
@@ -1809,7 +1874,25 @@ export default function AITutorModern() {
       }
     }
   }, [selectedUnit, selectedSubject, availableUnits]);
-
+  // Cleanup blob URLs when component unmounts or messages change
+  useEffect(() => {
+    return () => {
+      // Revoke all blob URLs on unmount
+      messages.forEach((msg) => {
+        if (msg.attachments) {
+          msg.attachments.forEach((att) => {
+            if (att.dataUrl && att.dataUrl.startsWith("blob:")) {
+              try {
+                URL.revokeObjectURL(att.dataUrl);
+              } catch (e) {
+                // Ignore errors from already-revoked URLs
+              }
+            }
+          });
+        }
+      });
+    };
+  }, [messages]);
   useEffect(() => {
     localStorage.setItem(
       "ai-tutor-selected-subject",
@@ -1821,18 +1904,30 @@ export default function AITutorModern() {
   }, [selectedUnit]);
   useEffect(() => {
     if (!selectedSubjectData || view !== "tutor") return;
-    console.log('[useEffect:loadConversationList] triggered — subject:', selectedSubjectData?.value, 'unit:', selectedUnit);
+    console.log(
+      "[useEffect:loadConversationList] triggered — subject:",
+      selectedSubjectData?.value,
+      "unit:",
+      selectedUnit,
+    );
     loadConversationList();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSubjectData?.value, selectedUnit, view]);
   // ↑ Use primitive selectedSubjectData?.value (string) NOT the object reference.
   // Do NOT include loadConversationList — it's a useCallback that recreates when
   // its own deps change, causing this effect to re-fire → infinite API loop.
 
   useEffect(() => {
-    console.log('[useEffect:currentChatId] fired — currentChatId:', currentChatId, '| ref:', currentChatIdRef.current);
+    console.log(
+      "[useEffect:currentChatId] fired — currentChatId:",
+      currentChatId,
+      "| ref:",
+      currentChatIdRef.current,
+    );
     if (!currentChatId) {
-      console.warn('[useEffect:currentChatId] ⚠️ currentChatId is null — clearing messages');
+      console.warn(
+        "[useEffect:currentChatId] ⚠️ currentChatId is null — clearing messages",
+      );
       conversationLoadRequestRef.current += 1;
       setMessages([]);
       return;
@@ -1842,11 +1937,16 @@ export default function AITutorModern() {
     // the server won't have messages yet and the fetch would wipe the live chat.
     // We detect "existing" by checking if this id already exists in chatHistory.
     const isExistingChat = chatHistory.some((c) => c.id === currentChatId);
-    console.log('[useEffect:currentChatId] isExistingChat:', isExistingChat, 'for id:', currentChatId);
+    console.log(
+      "[useEffect:currentChatId] isExistingChat:",
+      isExistingChat,
+      "for id:",
+      currentChatId,
+    );
     if (isExistingChat) {
       loadConversationMessages(currentChatId);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentChatId]);
   // ↑ INTENTIONALLY only depending on currentChatId (primitive string).
   // Adding loadConversationMessages causes it to re-fire on every render
@@ -1896,130 +1996,426 @@ export default function AITutorModern() {
   useEffect(() => {
     // Scroll both mobile and desktop instances of the chat area
     requestAnimationFrame(() => {
-      const scrollEls = document.querySelectorAll('.at-msgs-area');
-      scrollEls.forEach(el => {
+      const scrollEls = document.querySelectorAll(".at-msgs-area");
+      scrollEls.forEach((el) => {
         el.scrollTop = el.scrollHeight + 100;
       });
     });
   }, [messages, isLoading]);
+  const highlightTextSync = (text: string) => {
+    // Clear any existing timeout/interval
+    if (highlightTimeoutRef.current) {
+      clearInterval(highlightTimeoutRef.current);
+      highlightTimeoutRef.current = null;
+    }
 
-  const highlightTextSync = useCallback(
-    (text: string) => {
-      // Strip markdown before splitting — must match renderHighlightedText's stripMarkdown
-    const cleanForHighlight = text
-      .replace(/#{1,6}\s+/g, "")
-      .replace(/\*\*(.*?)\*\*/g, "$1")
-      .replace(/\*(.*?)\*/g, "$1")
-      .replace(/`{1,3}(.*?)`{1,3}/g, "$1")
-      .replace(/~~(.*?)~~/g, "$1")
-      .replace(/^\s*[-*+]\s+/gm, "")
-      .replace(/^\s*\d+\.\s+/gm, "")
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-      .replace(/\n{2,}/g, " ")
-      .replace(/\n/g, " ")
-      .trim();
-    const words = cleanForHighlight.split(/\s+/).filter((w) => w.length > 0);
-      setResponseWords(words);
-      setCurrentWordIndex(-1);
-      if (!words.length) return;
-      const dur = (text.length / 15) * 1000 * (1 / speechSpeed);
-      const wdur = dur / words.length;
-      let curr = 0;
-      const start = Date.now();
-      const interval = setInterval(() => {
-        const exp = Math.floor((Date.now() - start) / wdur);
-        if (exp < words.length && exp !== curr) {
-          setCurrentWordIndex(exp);
-          curr = exp;
-        }
-        if (exp >= words.length) {
-          clearInterval(interval);
-          setCurrentWordIndex(-1);
-          setResponseWords([]);
-        }
-      }, 50);
-      if (highlightTimeoutRef.current)
-        clearInterval(highlightTimeoutRef.current);
-      highlightTimeoutRef.current = interval;
-    },
-    [speechSpeed],
-  );
+    const words = text.split(/\s+/);
+    if (words.length === 0) return;
 
-  const speakText = async (text: any) => {
+    // For TTS audio element
+    if (audioRef.current && audioRef.current instanceof HTMLAudioElement) {
+      const updateHighlight = () => {
+        const currentTime = audioRef.current?.currentTime || 0;
+        const duration = audioRef.current?.duration || 0;
+
+        if (duration > 0) {
+          // Calculate word index based on audio progress
+          const progress = currentTime / duration;
+          const wordIndex = Math.floor(progress * words.length);
+          const boundedIndex = Math.min(
+            Math.max(wordIndex, 0),
+            words.length - 1,
+          );
+          setCurrentWordIndex(boundedIndex);
+        }
+      };
+
+      // Update highlight every 50ms for smooth progression
+      highlightTimeoutRef.current = setInterval(updateHighlight, 50);
+    }
+    // For Realtime/WebRTC audio
+    else if (useRealtimeMode && realtimeAudioService.isConnected()) {
+      // Realtime API handles audio timing, just initialize word tracking
+      setCurrentWordIndex(0);
+      // Could implement more sophisticated timing if OpenAI provides word-level timestamps
+    }
+  };
+  // const highlightTextSync = useCallback(
+  //   (text: string) => {
+  //     // Strip markdown before splitting — must match renderHighlightedText's stripMarkdown
+  //     const cleanForHighlight = text
+  //       .replace(/#{1,6}\s+/g, "")
+  //       .replace(/\*\*(.*?)\*\*/g, "$1")
+  //       .replace(/\*(.*?)\*/g, "$1")
+  //       .replace(/`{1,3}(.*?)`{1,3}/g, "$1")
+  //       .replace(/~~(.*?)~~/g, "$1")
+  //       .replace(/^\s*[-*+]\s+/gm, "")
+  //       .replace(/^\s*\d+\.\s+/gm, "")
+  //       .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+  //       .replace(/\n{2,}/g, " ")
+  //       .replace(/\n/g, " ")
+  //       .trim();
+  //     const words = cleanForHighlight.split(/\s+/).filter((w) => w.length > 0);
+  //     setResponseWords(words);
+  //     setCurrentWordIndex(-1);
+  //     if (!words.length) return;
+  //     const dur = (text.length / 15) * 1000 * (1 / speechSpeed);
+  //     const wdur = dur / words.length;
+  //     let curr = 0;
+  //     const start = Date.now();
+  //     const interval = setInterval(() => {
+  //       const exp = Math.floor((Date.now() - start) / wdur);
+  //       if (exp < words.length && exp !== curr) {
+  //         setCurrentWordIndex(exp);
+  //         curr = exp;
+  //       }
+  //       if (exp >= words.length) {
+  //         clearInterval(interval);
+  //         setCurrentWordIndex(-1);
+  //         setResponseWords([]);
+  //       }
+  //     }, 50);
+  //     if (highlightTimeoutRef.current)
+  //       clearInterval(highlightTimeoutRef.current);
+  //     highlightTimeoutRef.current = interval;
+  //   },
+  //   [speechSpeed],
+  // );
+  // Initialize realtime session on component mount
+  const speakText = async (text: any, messageId?: string) => {
     const textStr =
       typeof text === "string" ? text : text?.response || String(text) || "";
-    if (!textStr.trim() || isSpeaking) return;
-    setIsSpeaking(true);
-    try {
-      const res = await fetch(buildApiUrl("/api/voice/tts"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: textStr.slice(0, 3000),
-          speed: speechSpeed,
-          format: "mp3",
-        }),
-        credentials: "include",
-      });
-      if (res.ok) {
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        if (audioRef.current) audioRef.current.pause();
-        audioRef.current = new Audio(url);
-        audioRef.current.onplay = () => highlightTextSync(textStr);
-        audioRef.current.onended = () => {
-          setIsSpeaking(false);
-          setCurrentWordIndex(-1);
-          setResponseWords([]);
-          URL.revokeObjectURL(url);
-        };
-        audioRef.current.onerror = () => {
-          setIsSpeaking(false);
-          setCurrentWordIndex(-1);
-          setResponseWords([]);
-          URL.revokeObjectURL(url);
-        };
-        await audioRef.current.play();
-        return;
+
+    if (!textStr.trim()) return;
+
+    // Stop any currently playing audio first
+    stopSpeaking();
+
+    // Generate unique ID for this speech request
+    const speechId = `speech-${Date.now()}-${Math.random()}`;
+    currentSpeechIdRef.current = speechId;
+
+    // Track which message is being spoken
+    if (messageId) {
+      setCurrentlyPlayingMessageId(messageId);
+      setSpeakingMessageId(messageId);
+    } else {
+      // Fallback: try to find by content (less reliable)
+      const messageBeingSpoken = messages.find((m) => m.content === textStr);
+      if (messageBeingSpoken) {
+        setCurrentlyPlayingMessageId(messageBeingSpoken.id);
+        setSpeakingMessageId(messageBeingSpoken.id);
       }
-    } catch {}
-    if ("speechSynthesis" in window) {
-      const u = new SpeechSynthesisUtterance(textStr);
-      u.rate = speechSpeed;
-      u.volume = 1;
-      u.lang =
-        selectedAccent === "uk"
-          ? "en-GB"
-          : selectedAccent === "indian"
-            ? "en-IN"
-            : "en-US";
-      u.onstart = () => highlightTextSync(textStr);
-      u.onend = () => {
+    }
+
+    setIsSpeaking(true);
+    setIsSpeechLoading(true);
+    setResponseWords(textStr.split(/\s+/));
+
+    try {
+      // Try realtime if enabled and initialized
+      if (useRealtimeMode && realtimeSession) {
+        console.log("Attempting realtime speech...");
+        await speakTextRealtime(textStr, speechId);
+        // setIsSpeechLoading(false);
+      } else {
+        // Fallback to TTS
+        console.log("Realtime not available, using TTS fallback...");
+        await speakTextTTS(textStr);
+        // setIsSpeechLoading(false);
+      }
+    } catch (error) {
+      console.error("Speech synthesis failed:", error);
+
+      // Fallback to TTS only if realtime never started audio
+      if (useRealtimeMode && currentSpeechIdRef.current === speechId && !isSpeaking) {
+        console.log("Realtime failed, attempting TTS fallback...");
+        try {
+          await speakTextTTS(textStr);
+          setIsSpeechLoading(false);
+        } catch (fallbackError) {
+          console.error("TTS fallback also failed:", fallbackError);
+          setIsSpeaking(false);
+          setIsSpeechLoading(false);
+          setCurrentWordIndex(-1);
+          setResponseWords([]);
+          setCurrentlyPlayingMessageId(null);
+          setSpeakingMessageId(null);
+        }
+      } else {
         setIsSpeaking(false);
+        setIsSpeechLoading(false);
         setCurrentWordIndex(-1);
         setResponseWords([]);
-      };
-      u.onerror = () => {
-        setIsSpeaking(false);
-        setCurrentWordIndex(-1);
-        setResponseWords([]);
-      };
-      speechSynthesis.speak(u);
-    } else setIsSpeaking(false);
+        setCurrentlyPlayingMessageId(null);
+        setSpeakingMessageId(null);
+      }
+    }
   };
 
+  const speakTextRealtime = async (text: string, speechId: string) => {
+    // Verify session is initialized
+    if (!realtimeSession) {
+      throw new Error("Realtime session not initialized. Please try again.");
+    }
+
+    // Establish connection if needed
+    if (!realtimeAudioService.isConnected()) {
+      console.log("🔌 Establishing WebRTC connection...");
+      await realtimeAudioService.establishConnection();
+    }
+
+    // Return promise that resolves when audio completes
+    return new Promise<void>((resolve, reject) => {
+      try {
+        // Define handlers first
+        const handleAudioStart = () => {
+          if (currentSpeechIdRef.current === speechId) {
+            console.log("✅ Realtime audio started playing");
+            setIsSpeechLoading(false);
+            setIsSpeaking(true); // Ensure speaking state is set
+            highlightTextSync(text);
+          }
+        };
+
+        const handleAudioEnd = () => {
+          if (currentSpeechIdRef.current === speechId) {
+            console.log("✅ Realtime audio ended");
+            setIsSpeaking(false);
+            setIsSpeechLoading(false);
+            setCurrentWordIndex(-1);
+            setResponseWords([]);
+            setCurrentlyPlayingMessageId(null);
+            setSpeakingMessageId(null);
+            resolve(); // RESOLVE WHEN AUDIO ENDS
+          }
+        };
+
+        const handleError = (error: Error) => {
+          if (currentSpeechIdRef.current === speechId) {
+            console.error("❌ Realtime audio error:", error);
+            setIsSpeaking(false);
+            setIsSpeechLoading(false);
+            setCurrentWordIndex(-1);
+            setResponseWords([]);
+            setCurrentlyPlayingMessageId(null);
+            setSpeakingMessageId(null);
+            reject(error); // REJECT ON ERROR
+          }
+        };
+
+        // Register handlers FIRST (before any async operations)
+        realtimeAudioService.onAudioStart(handleAudioStart);
+        realtimeAudioService.onAudioEnd(handleAudioEnd);
+        realtimeAudioService.onError(handleError);
+
+        // Wait for data channel to actually open before sending
+        realtimeAudioService
+          .waitForDataChannelOpen(10000)
+          .then(() => {
+            try {
+              console.log("📤 Sending text to realtime API...");
+              realtimeAudioService.sendText(text.slice(0, 4000));
+              console.log("✅ Text sent to realtime API");
+              // Text sent — stop loader, show pause button immediately
+              if (currentSpeechIdRef.current === speechId) {
+                setIsSpeechLoading(false);
+                setIsSpeaking(true);
+              }
+            } catch (error) {
+              const err =
+                error instanceof Error ? error : new Error(String(error));
+              console.error("❌ Failed to send text:", err);
+              reject(err);
+            }
+          })
+          .catch((error) => {
+            console.error("❌ Data channel failed to open:", error);
+            reject(error);
+          });
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        console.error("❌ Realtime speech error:", err);
+        reject(err);
+      }
+    });
+  };
+
+  const speakTextTTS = async (text: string) => {
+    return new Promise<void>((resolve, reject) => {
+      try {
+        synthesizeDebateSpeech({
+          text: text.slice(0, 3000),
+          voice: "shimmer",
+        })
+          .then((audioData) => {
+            setIsSpeechLoading(false);
+            if (!audioData?.dataUrl) {
+              setIsSpeechLoading(false);
+              throw new Error("No audio data received from TTS");
+            }
+
+            // Stop any currently playing audio
+            if (audioRef.current) {
+              audioRef.current.pause();
+              audioRef.current.currentTime = 0;
+            }
+
+            // Create audio element
+            audioRef.current = new Audio(audioData.dataUrl);
+
+            audioRef.current.onplay = () => {
+              console.log("TTS audio started");
+              highlightTextSync(text);
+            };
+
+            audioRef.current.onended = () => {
+              console.log("TTS audio ended");
+              setIsSpeaking(false);
+              setIsSpeechLoading(false);
+              setCurrentWordIndex(-1);
+              setResponseWords([]);
+              setCurrentlyPlayingMessageId(null);
+              resolve();
+            };
+
+            audioRef.current.onerror = () => {
+              console.error("TTS audio error");
+              setIsSpeaking(false);
+              setIsSpeechLoading(false);
+              setCurrentWordIndex(-1);
+              setResponseWords([]);
+              setCurrentlyPlayingMessageId(null);
+              reject(new Error("TTS audio playback failed"));
+            };
+
+            audioRef.current.play().catch(reject);
+            console.log("TTS audio playing");
+          })
+          .catch((error) => {
+            const err =
+              error instanceof Error ? error : new Error(String(error));
+            console.error("TTS speech error:", err);
+            setIsSpeechLoading(false);
+            reject(err);
+          });
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        console.error("TTS speech error:", err);
+        setIsSpeechLoading(false);
+        reject(err);
+      }
+    });
+  };
+  /**
+   * Synchronize text highlighting with audio playback
+   * Works with both TTS and Realtime audio
+   */
+
   const stopSpeaking = () => {
+    // Mark current speech as cancelled
+    currentSpeechIdRef.current = `cancelled-${Date.now()}`;
+
+    // Stop WebRTC audio if connected
+    if (realtimeAudioService.isConnected()) {
+      try {
+        realtimeAudioService.cancel();
+        console.log("Sent cancel to realtime API");
+      } catch (error) {
+        console.error("Error cancelling realtime audio:", error);
+      }
+    }
+
+    // Stop legacy audio
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
     }
-    if (highlightTimeoutRef.current) clearInterval(highlightTimeoutRef.current);
-    if ("speechSynthesis" in window) speechSynthesis.cancel();
+
+    if (highlightTimeoutRef.current) {
+      clearInterval(highlightTimeoutRef.current);
+    }
+
+    if ("speechSynthesis" in window) {
+      speechSynthesis.cancel();
+    }
+
     setIsSpeaking(false);
     setCurrentWordIndex(-1);
+    setIsSpeechLoading(false);
     setResponseWords([]);
+    setCurrentWordIndex(-1);
+    setCurrentlyPlayingMessageId(null); // ADDED: Clear message ID
+    currentSpeechIdRef.current = "";
   };
+  useEffect(() => {
+    if (!useRealtimeMode) return;
+    if (realtimeSession) return; // Already initialized
+    if (isInitializingRealtimeRef.current) return; // Already initializing
 
+    const initializeRealtime = async () => {
+      try {
+        isInitializingRealtimeRef.current = true;
+        console.log("🔌 Initializing realtime session...");
+
+        const sessionData = await getRealtimeSessionToken();
+
+        // GA API doesn't return sessionId, generate one locally
+        const session = {
+          sessionId: sessionData.sessionId || `session-${Date.now()}`,
+          clientSecret: sessionData.clientSecret,
+          expiresAt: sessionData.expiresAt,
+        };
+
+        console.log("📝 Session token received, initializing service...");
+        await realtimeAudioService.initializeSession(session);
+
+        setRealtimeSession(session);
+        console.log("✅ Realtime session initialized:", session.sessionId);
+      } catch (error) {
+        console.error("❌ Failed to initialize realtime session:", error);
+        // Graceful degradation: fall back to TTS
+        setUseRealtimeMode(false);
+        setRealtimeSession(null);
+      } finally {
+        isInitializingRealtimeRef.current = false;
+      }
+    };
+
+    // Delay initialization slightly to avoid race conditions
+    const timeoutId = setTimeout(initializeRealtime, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [useRealtimeMode]); // IMPORTANT: Only depend on useRealtimeMode, NOT realtimeSession
+  useEffect(() => {
+    return () => {
+      // Cleanup WebRTC connection
+      try {
+        realtimeAudioService.cleanup();
+      } catch (error) {
+        console.error("Error cleaning up realtime service:", error);
+      }
+
+      // Cleanup legacy audio
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      }
+      if (highlightTimeoutRef.current)
+        clearInterval(highlightTimeoutRef.current);
+      if ("speechSynthesis" in window) speechSynthesis.cancel();
+
+      // Reset refs
+      isInitializingRealtimeRef.current = false;
+      currentSpeechIdRef.current = "";
+
+      // Reset state
+      setIsSpeaking(false);
+      setCurrentWordIndex(-1);
+      setResponseWords([]);
+      setCurrentlyPlayingMessageId(null);
+    };
+  }, []);
   const startListening = () => {
     if (!recognitionRef.current) {
       toast({ title: "Not supported", variant: "destructive" });
@@ -2124,14 +2520,18 @@ export default function AITutorModern() {
   };
 
   // ── FIXED sendMessage — does NOT reset to new chat on error ──────────────
-  const sendMessage = async () => {
-    if ((!currentMessage.trim() && !attachedFiles.length) || isLoading) return;
+  const sendMessage = async (textOverride?: string) => {
+    const textToSend =
+      textOverride !== undefined ? textOverride : currentMessage;
+    const hasText =
+      textToSend && typeof textToSend === "string" && textToSend.trim();
+    if ((!hasText && !attachedFiles.length) || isLoading) return;
     setChatError(null);
 
     const userMsg: ChatMessage = {
       id: Date.now().toString(),
       type: "user",
-      content: currentMessage,
+      content: textToSend,
       timestamp: new Date(),
       subject:
         selectedSubjectData?.value !== "all"
@@ -2142,33 +2542,88 @@ export default function AITutorModern() {
             name: f.name,
             type: f.type,
             size: f.size,
+            dataUrl: URL.createObjectURL(f), // ADD THIS LINE
           }))
         : undefined,
     };
     setMessages((prev) => [...prev, userMsg]);
-    setCurrentMessage("");
+    if (textOverride === undefined) {
+      setCurrentMessage("");
+    }
+
+    // ⚠️ CRITICAL: Set loading FIRST, clear files SECOND before any async
+    setIsLoading(true);
+
+    // Convert image to base64
+    let imageBase64: string | undefined;
+    if (attachedFiles.length > 0) {
+      const imageFile = attachedFiles[0];
+
+      // Validate file size (max 5MB)
+      const MAX_SIZE = 5 * 1024 * 1024;
+      if (imageFile.size > MAX_SIZE) {
+        toast({
+          title: "File too large",
+          description: "Image must be less than 5MB",
+          variant: "destructive",
+        });
+        setIsLoading(false);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        return;
+      }
+
+      try {
+        imageBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          const imageFileRef = imageFile; // Store reference
+          reader.onload = () => {
+            const result = reader.result as string;
+            // Extract base64 part (after "data:image/...;base64,")
+            const base64 = result.split(",")[1];
+            if (!base64) {
+              reject(new Error("Failed to convert image to base64"));
+              return;
+            }
+            resolve(base64);
+          };
+          reader.onerror = () => reject(new Error("Failed to read file"));
+          reader.readAsDataURL(imageFileRef);
+        });
+      } catch (err) {
+        toast({
+          title: "Error reading image",
+          description:
+            err instanceof Error ? err.message : "Failed to process image",
+          variant: "destructive",
+        });
+        setIsLoading(false);
+        setAttachedFiles([]); // Clear files on error
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        return;
+      }
+    }
+
+    // Clear files after processing
     setAttachedFiles([]);
     if (fileInputRef.current) fileInputRef.current.value = "";
-    setIsLoading(true);
 
     try {
       if (!selectedUnitId) {
         throw new Error("Please select a unit before asking the AI Tutor.");
       }
 
-      // The API never returns a conversationId in its response.
-      // Generate one client-side on the FIRST message of a new session and
-      // reuse it for every subsequent message — keeping all messages grouped
-      // under one conversation ID for the duration of the session.
       let sessionId = currentChatIdRef.current || currentChatId;
       if (!sessionId) {
         sessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-        console.log('[sendMessage] 🆕 New session — generated client-side id:', sessionId);
+        console.log(
+          "[sendMessage] 🆕 New session — generated client-side id:",
+          sessionId,
+        );
         currentChatIdRef.current = sessionId;
         setCurrentChatId(sessionId);
       }
 
-      console.log('[sendMessage] Sending with conversationId:', sessionId);
+      console.log("[sendMessage] Sending with conversationId:", sessionId);
       const data = await askTutor({
         unitId: selectedUnitId,
         candidateId: candidateContext.candidateId,
@@ -2176,6 +2631,7 @@ export default function AITutorModern() {
         query: userMsg.content,
         conversationId: sessionId,
         limit: 5,
+        image_base64: imageBase64,
       });
       const assistantText =
         data?.answer ||
@@ -2192,13 +2648,14 @@ export default function AITutorModern() {
           selectedSubjectData?.value !== "all"
             ? selectedSubjectData?.value
             : undefined,
+        suggestedQuestions: data?.suggested_questions || undefined,
       };
       // Ensure ref stays set after the await (defensive against any mid-flight reset)
       if (!currentChatIdRef.current) {
         currentChatIdRef.current = sessionId;
         setCurrentChatId(sessionId);
       }
-      console.log('[sendMessage] ✅ Session held:', currentChatIdRef.current);
+      console.log("[sendMessage] ✅ Session held:", currentChatIdRef.current);
       setMessages((prev) => [...prev, assistantMsg]);
       // Refresh sidebar after a short delay — gives the server time to persist
       // the new conversation before we fetch the list. Avoids the race that
@@ -2218,30 +2675,30 @@ export default function AITutorModern() {
     }
   };
 
-const startNewChat = () => {
-  pendingFreshChatRef.current = true;
-  pendingConversationIdRef.current = null;
-  conversationLoadRequestRef.current += 1;
+  const startNewChat = () => {
+    pendingFreshChatRef.current = true;
+    pendingConversationIdRef.current = null;
+    conversationLoadRequestRef.current += 1;
 
-  setIsLoading(false);
-  setChatError(null);
-  setMessages([]);
-  setCurrentChatId(null);
-  currentChatIdRef.current = null;
-  setCurrentMessage("");
-  setAttachedFiles([]);
+    setIsLoading(false);
+    setChatError(null);
+    setMessages([]);
+    setCurrentChatId(null);
+    currentChatIdRef.current = null;
+    setCurrentMessage("");
+    setAttachedFiles([]);
 
-  if (fileInputRef.current) {
-    fileInputRef.current.value = "";
-  }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
 
-  stopSpeaking();
-};
+    stopSpeaking();
+  };
 
   const loadChat = (chat: ChatHistory) => {
     pendingConversationIdRef.current = null;
     conversationLoadRequestRef.current += 1;
-    console.log('[loadChat] switching to chat id:', chat.id);
+    console.log("[loadChat] switching to chat id:", chat.id);
     setMessages(chat.messages);
     setCurrentChatId(chat.id);
     currentChatIdRef.current = chat.id;
@@ -2272,7 +2729,9 @@ const startNewChat = () => {
       return;
     }
     if (currentChatId === chatId) {
-      console.log('[deleteChat] deleted active chat, resetting currentChatId → null');
+      console.log(
+        "[deleteChat] deleted active chat, resetting currentChatId → null",
+      );
       setMessages([]);
       setCurrentChatId(null);
       currentChatIdRef.current = null;
@@ -2285,7 +2744,7 @@ const startNewChat = () => {
       await clearTutorHistory({
         candidateId: candidateContext.candidateId,
       });
-      console.log('[clearAllHistory] resetting currentChatId → null');
+      console.log("[clearAllHistory] resetting currentChatId → null");
       setChatHistory([]);
       setMessages([]);
       setCurrentChatId(null);
@@ -2346,28 +2805,50 @@ const startNewChat = () => {
     }
   };
 
-const renderHighlightedText = (text: string) => {
-  return (
-    <FormattedAIContent
-      value={text}
-      highlightEnabled={
-        responseWords.length > 0 && currentWordIndex !== -1
-      }
-      currentWordIndex={currentWordIndex}
-    />
-  );
-};
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) setAttachedFiles(Array.from(e.target.files));
+  const renderHighlightedText = (text: string) => {
+    return (
+      <FormattedAIContent
+        value={text}
+        highlightEnabled={responseWords.length > 0 && currentWordIndex !== -1}
+        currentWordIndex={currentWordIndex}
+      />
+    );
   };
-  const triggerFileInput = (accept?: string) => {
+  // const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  //   if (e.target.files) setAttachedFiles(Array.from(e.target.files));
+  // };
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files) return;
+    const files = Array.from(e.target.files);
+
+    // Only accept images
+    const imageFiles = files.filter((f) => f.type.startsWith("image/"));
+    if (imageFiles.length === 0) {
+      toast({
+        title: "Invalid file",
+        description:
+          "Please upload image files only (JPG, PNG, GIF, WebP, etc.)",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setAttachedFiles(imageFiles);
+  };
+
+  const triggerFileInput = () => {
     if (!fileInputRef.current) return;
-    if (accept) fileInputRef.current.accept = accept;
-    else fileInputRef.current.removeAttribute("accept");
+    // Force image-only accept
+    fileInputRef.current.accept = "image/*";
     fileInputRef.current.click();
   };
 
+  // const triggerFileInput = (accept?: string) => {
+  //   if (!fileInputRef.current) return;
+  //   if (accept) fileInputRef.current.accept = accept;
+  //   else fileInputRef.current.removeAttribute("accept");
+  //   fileInputRef.current.click();
+  // };
   const quickPrompts =
     selectedSubjectData && selectedSubjectData.value !== "all"
       ? [
@@ -2605,7 +3086,18 @@ const renderHighlightedText = (text: string) => {
               >
                 <ChevronLeft style={{ width: 17, height: 17 }} />
               </button>
-              <span style={{ fontSize: 16 }}><img src={roboImg} alt="AI" style={{ width: "1.2em", height: "1.2em", objectFit: "contain" }} /></span> Ask AI
+              <span style={{ fontSize: 16 }}>
+                <img
+                  src={roboImg}
+                  alt="AI"
+                  style={{
+                    width: "1.2em",
+                    height: "1.2em",
+                    objectFit: "contain",
+                  }}
+                />
+              </span>{" "}
+              Ask AI
             </div>
           </div>
           <AskAIPanel initialQuestion={askAIInitialQuestion} />
@@ -2673,7 +3165,20 @@ const renderHighlightedText = (text: string) => {
               { icon: "📝", label: "Quiz" },
               { icon: "📖", label: "Q-Bank" },
               { icon: "❓", label: "FAQ" },
-              { icon: <img src={roboImg} alt="AI" style={{ width: "2.2em", height: "2.2em", objectFit: "contain" }} />, label: "Ask AI" },
+              {
+                icon: (
+                  <img
+                    src={roboImg}
+                    alt="AI"
+                    style={{
+                      width: "2.2em",
+                      height: "2.2em",
+                      objectFit: "contain",
+                    }}
+                  />
+                ),
+                label: "Ask AI",
+              },
             ].map((item, i) => (
               <WithTooltip key={i} label={item.label} collapsed={true}>
                 <div className="at-col-icon">{item.icon}</div>
@@ -2733,7 +3238,7 @@ const renderHighlightedText = (text: string) => {
                 transition={{ delay: 0.1 }}
                 onClick={() => {
                   setLocation(
-                    `/studio/question-bank?subjectId=${selectedSubject !== 0 ? selectedSubject : ""}&from=/ai-tutor`,
+                    `/studio/question-bank?subjectGroupKey=${selectedSubjectData?.value}&classNumber=${selectedSubjectData?.standard}&board=${selectedSubjectData?.board}&subject=${selectedSubjectData?.label}&from=/ai-tutor`,
                   );
                   if (isMobile) setIsRightPanelOpen(false);
                 }}
@@ -2781,7 +3286,17 @@ const renderHighlightedText = (text: string) => {
               minWidth: 0,
             }}
           >
-            <div className="at-chat-avatar"><img src={roboImg} alt="AI" style={{ width: "1.2em", height: "1.2em", objectFit: "contain" }} /></div>
+            <div className="at-chat-avatar">
+              <img
+                src={roboImg}
+                alt="AI"
+                style={{
+                  width: "1.2em",
+                  height: "1.2em",
+                  objectFit: "contain",
+                }}
+              />
+            </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="at-chat-badge">
                 <Sparkles style={{ width: 9, height: 9 }} /> Gemma 3 12B
@@ -2828,25 +3343,78 @@ const renderHighlightedText = (text: string) => {
         </div>
         {/* Mobile Dropdowns inside header */}
         {isMobileOrTablet && (
-          <div style={{ display: "flex", gap: 8, marginTop: 12, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.2)" }}>
-             <select
-                value={selectedSubject.toString()}
-                onChange={(e) => handleSubjectSelect(parseInt(e.target.value, 10))}
-                disabled={subjectsLoading || subjects.length <= 1}
-                style={{ flex: 1, padding: "6px 8px", borderRadius: 8, border: "none", fontSize: 12, background: "rgba(255,255,255,0.9)", color: "#0f172a", outline: "none", cursor: "pointer" }}
-              >
-                <option value="0">{subjectsLoading ? "Loading..." : "Select Subject"}</option>
-                {subjects.filter(s => s.id !== 0).map(s => <option key={s.id} value={s.id}>{s.emoji} {s.label}</option>)}
-             </select>
-             <select
-                value={selectedUnit}
-                onChange={(e) => handleUnitChange(e.target.value)}
-                disabled={subjectsLoading || !selectedSubject || selectedSubject === 0 || !availableUnits.length}
-                style={{ flex: 1, padding: "6px 8px", borderRadius: 8, border: "none", fontSize: 12, background: "rgba(255,255,255,0.9)", color: "#0f172a", outline: "none", cursor: "pointer" }}
-              >
-                <option value="">{!selectedSubject ? "Subject first" : !availableUnits.length ? "No units" : "Select Unit"}</option>
-                {availableUnits.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}
-             </select>
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              marginTop: 12,
+              paddingTop: 10,
+              borderTop: "1px solid rgba(255,255,255,0.2)",
+            }}
+          >
+            <select
+              value={selectedSubject.toString()}
+              onChange={(e) =>
+                handleSubjectSelect(parseInt(e.target.value, 10))
+              }
+              disabled={subjectsLoading || subjects.length <= 1}
+              style={{
+                flex: 1,
+                padding: "6px 8px",
+                borderRadius: 8,
+                border: "none",
+                fontSize: 12,
+                background: "rgba(255,255,255,0.9)",
+                color: "#0f172a",
+                outline: "none",
+                cursor: "pointer",
+              }}
+            >
+              <option value="0">
+                {subjectsLoading ? "Loading..." : "Select Subject"}
+              </option>
+              {subjects
+                .filter((s) => s.id !== 0)
+                .map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.emoji} {s.label}
+                  </option>
+                ))}
+            </select>
+            <select
+              value={selectedUnit}
+              onChange={(e) => handleUnitChange(e.target.value)}
+              disabled={
+                subjectsLoading ||
+                !selectedSubject ||
+                selectedSubject === 0 ||
+                !availableUnits.length
+              }
+              style={{
+                flex: 1,
+                padding: "6px 8px",
+                borderRadius: 8,
+                border: "none",
+                fontSize: 12,
+                background: "rgba(255,255,255,0.9)",
+                color: "#0f172a",
+                outline: "none",
+                cursor: "pointer",
+              }}
+            >
+              <option value="">
+                {!selectedSubject
+                  ? "Subject first"
+                  : !availableUnits.length
+                    ? "No units"
+                    : "Select Unit"}
+              </option>
+              {availableUnits.map((u) => (
+                <option key={u.id} value={u.name}>
+                  {u.name}
+                </option>
+              ))}
+            </select>
           </div>
         )}
       </div>
@@ -2886,7 +3454,17 @@ const renderHighlightedText = (text: string) => {
           </div>
         ) : messages.length === 0 ? (
           <div className="at-empty">
-            <div className="at-empty-icon"><img src={roboImg} alt="AI" style={{ width: "1.2em", height: "1.2em", objectFit: "contain" }} /></div>
+            <div className="at-empty-icon">
+              <img
+                src={roboImg}
+                alt="AI"
+                style={{
+                  width: "1.2em",
+                  height: "1.2em",
+                  objectFit: "contain",
+                }}
+              />
+            </div>
             <div className="at-empty-title">Welcome to AI Tutor!</div>
             <div className="at-empty-sub">
               {!selectedUnit
@@ -2924,27 +3502,54 @@ const renderHighlightedText = (text: string) => {
                   <div
                     className={`at-msg-avatar${message.type === "user" ? " user-av" : " bot"}`}
                   >
-                    {message.type === "user"
-                      ? userHeader?.firstName?.[0]?.toUpperCase() || "U"
-                      : <img src={roboImg} alt="AI" style={{ width: "1.2em", height: "1.2em", objectFit: "contain" }} />}
+                    {message.type === "user" ? (
+                      userHeader?.firstName?.[0]?.toUpperCase() || "U"
+                    ) : (
+                      <img
+                        src={roboImg}
+                        alt="AI"
+                        style={{
+                          width: "1.2em",
+                          height: "1.2em",
+                          objectFit: "contain",
+                        }}
+                      />
+                    )}
                   </div>
                   <div
                     className={`at-bubble${message.type === "user" ? " user" : " bot"}`}
                   >
+                    {/* Display image if attached */}
+                    {message.attachments &&
+                      message.attachments.length > 0 &&
+                      message.attachments[0].dataUrl && (
+                        <div style={{ marginBottom: 8 }}>
+                          <img
+                            src={message.attachments[0].dataUrl}
+                            alt="Attached image"
+                            style={{
+                              maxWidth: "100%",
+                              maxHeight: 200,
+                              borderRadius: 8,
+                              objectFit: "cover",
+                            }}
+                          />
+                        </div>
+                      )}
                     <div style={{ fontSize: 13.5, lineHeight: 1.6 }}>
-{message.audioSrc ? (
-  <audio
-    controls
-    src={message.audioSrc}
-    style={{ maxWidth: "100%" }}
-  />
-) : message.type === "assistant" &&
-  isSpeaking &&
-  messages[messages.length - 1]?.id === message.id ? (
-  renderHighlightedText(message.content)
-) : (
-  <FormattedAIContent value={message.content} />
-)}
+                      {message.audioSrc ? (
+                        <audio
+                          controls
+                          src={message.audioSrc}
+                          style={{ maxWidth: "100%" }}
+                        />
+                      ) : message.type === "assistant" &&
+                        isSpeaking &&
+                        messages[messages.length - 1]?.id === message.id ? (
+                        renderHighlightedText(message.content)
+                      ) : (
+                        <FormattedAIContent value={message.content} />
+                      )}
                     </div>
                     <div className="at-bubble-footer">
                       <span className="at-bubble-time">
@@ -2957,24 +3562,50 @@ const renderHighlightedText = (text: string) => {
                         <button
                           className="at-speak-btn"
                           onClick={() => {
+                            // If this specific message is currently being spoken, stop it
                             if (
                               isSpeaking &&
-                              messages[messages.length - 1]?.id === message.id
+                              currentlyPlayingMessageId === message.id
                             ) {
                               stopSpeaking();
-                            } else {
-                              speakText(message.content);
                             }
+                            // If nothing is playing, speak this message
+                            else if (!isSpeaking) {
+                              speakText(message.content, message.id);
+                            }
+                            // Else: something else is playing, do nothing (disabled state handles this)
                           }}
                           title={
                             isSpeaking &&
-                            messages[messages.length - 1]?.id === message.id
+                            currentlyPlayingMessageId === message.id
                               ? "Stop reading"
                               : "Read aloud"
                           }
+                          aria-label={
+                            isSpeaking &&
+                            currentlyPlayingMessageId === message.id
+                              ? "Stop reading aloud"
+                              : "Read message aloud"
+                          }
+                          disabled={
+                            isSpeaking &&
+                            currentlyPlayingMessageId !== message.id
+                          }
                         >
-                          {isSpeaking &&
-                          messages[messages.length - 1]?.id === message.id ? (
+                          {isSpeechLoading &&
+                          speakingMessageId === message.id ? (
+                            <div
+                              style={{
+                                width: 11,
+                                height: 11,
+                                border: "2px solid rgba(99,102,241,.3)",
+                                borderTop: "2px solid #6366f1",
+                                borderRadius: "50%",
+                                animation: "spin 0.8s linear infinite",
+                              }}
+                            />
+                          ) : isSpeaking &&
+                            currentlyPlayingMessageId === message.id ? (
                             <Pause style={{ width: 11, height: 11 }} />
                           ) : (
                             <Volume2 style={{ width: 11, height: 11 }} />
@@ -2982,6 +3613,29 @@ const renderHighlightedText = (text: string) => {
                         </button>
                       )}
                     </div>
+                    {message.type === "assistant" &&
+                      message.suggestedQuestions &&
+                      message.suggestedQuestions.length > 0 && (
+                        <div
+                          className="at-empty-chips"
+                          style={{
+                            marginTop: 12,
+                            justifyContent: "flex-start",
+                          }}
+                        >
+                          {message.suggestedQuestions.map((q, qIndex) => (
+                            <button
+                              key={qIndex}
+                              className="at-chip"
+                              onClick={() => {
+                                sendMessage(q);
+                              }}
+                            >
+                              {q}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                   </div>
                 </motion.div>
               ))}
@@ -2992,7 +3646,17 @@ const renderHighlightedText = (text: string) => {
                 initial={{ opacity: 0, y: 7 }}
                 animate={{ opacity: 1, y: 0 }}
               >
-                <div className="at-msg-avatar bot"><img src={roboImg} alt="AI" style={{ width: "1.2em", height: "1.2em", objectFit: "contain" }} /></div>
+                <div className="at-msg-avatar bot">
+                  <img
+                    src={roboImg}
+                    alt="AI"
+                    style={{
+                      width: "1.2em",
+                      height: "1.2em",
+                      objectFit: "contain",
+                    }}
+                  />
+                </div>
                 <div className="at-bubble bot" style={{ padding: "13px 15px" }}>
                   <div className="at-typing">
                     <span />
@@ -3011,34 +3675,49 @@ const renderHighlightedText = (text: string) => {
       <div className="at-input-area">
         {attachedFiles.length > 0 && !isRecording && (
           <div className="at-attachments">
-            {attachedFiles.map((f, i) => (
-              <div key={i} className="at-attach-chip">
-                <FileText style={{ width: 10, height: 10 }} />
-                <span
-                  style={{
-                    maxWidth: 90,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {f.name}
-                </span>
-                <button
-                  className="at-attach-del"
-                  onClick={() =>
-                    setAttachedFiles((prev) =>
-                      prev.filter((_, idx) => idx !== i),
-                    )
-                  }
-                >
-                  <X style={{ width: 10, height: 10 }} />
-                </button>
-              </div>
-            ))}
+            {attachedFiles.map((f, i) => {
+              const isImage = f.type.startsWith("image/");
+              const imageUrl = isImage ? URL.createObjectURL(f) : null;
+              return (
+                <div key={i} className="at-attach-chip">
+                  {isImage && imageUrl && (
+                    <img
+                      src={imageUrl}
+                      alt={f.name}
+                      style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: 4,
+                        objectFit: "cover",
+                      }}
+                    />
+                  )}
+                  {!isImage && <FileText style={{ width: 10, height: 10 }} />}
+                  <span
+                    style={{
+                      maxWidth: 90,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {f.name}
+                  </span>
+                  <button
+                    className="at-attach-del"
+                    onClick={() =>
+                      setAttachedFiles((prev) =>
+                        prev.filter((_, idx) => idx !== i),
+                      )
+                    }
+                  >
+                    <X style={{ width: 10, height: 10 }} />
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
-
         {isRecording ? (
           <div className="at-recording-bar">
             <button
@@ -3113,31 +3792,14 @@ const renderHighlightedText = (text: string) => {
             <div className="at-input-actions">
               {/* Attach */}
               <span id="tut-attach-btn">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      className="at-iabtn"
-                      disabled={!selectedUnit || isLoading}
-                      title="Attach file"
-                    >
-                      <Paperclip style={{ width: 15, height: 15 }} />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent className="bg-white dark:bg-slate-900 dark:text-slate-200 border dark:border-slate-700">
-                    <DropdownMenuItem
-                      onClick={() => triggerFileInput("image/*")}
-                    >
-                      <Image className="mr-2 h-4 w-4" />
-                      Images
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => triggerFileInput(".pdf,.doc,.docx,.txt")}
-                    >
-                      <FileText className="mr-2 h-4 w-4" />
-                      Documents
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <button
+                  className="at-iabtn"
+                  onClick={triggerFileInput}
+                  disabled={!selectedUnit || isLoading}
+                  title="Attach image"
+                >
+                  <Image style={{ width: 15, height: 15 }} />
+                </button>
               </span>
               {/* Mic */}
               <span id="tut-mic-btn">
@@ -3165,7 +3827,7 @@ const renderHighlightedText = (text: string) => {
               <span id="tut-send-btn">
                 <button
                   className="at-send-btn"
-                  onClick={sendMessage}
+                  onClick={() => sendMessage()}
                   disabled={!selectedUnit || isLoading}
                 >
                   <Send style={{ width: 12, height: 12 }} /> Send
@@ -3178,7 +3840,8 @@ const renderHighlightedText = (text: string) => {
           type="file"
           ref={fileInputRef}
           onChange={handleFileChange}
-          multiple
+          accept="image/*"
+          multiple={false}
           className="hidden"
         />
       </div>
