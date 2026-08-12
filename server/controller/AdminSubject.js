@@ -1,6 +1,12 @@
 const SubjectUnit = require("../model/SubjectUnit");
 const SubjectUpload = require("../model/SubjectUpload");
 const { handleAdminSubjectUpload } = require("../services/adminSubjectService");
+const {
+  buildSubjectTitle,
+  compareSubjectIdentity,
+  getSubjectIdentityKey,
+  unitCountLabel,
+} = require("../utils/subjectIdentity");
 // const { logApiStep, logError } = require("../utils/logger");
 const multer = require("multer");
 const axios = require("axios");
@@ -33,14 +39,12 @@ function logApiStep({ api, status, message, requestId }) {
 }
 const API_NAME = "UPLOAD_SUBJECT";
 
+function escapeRegExp(value = "") {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function buildFallbackGroupKey(unit) {
-  return [
-    unit.board,
-    unit.standard,
-    unit.subject,
-    unit.part || "general",
-    unit.uploadId || "standalone",
-  ].join("::");
+  return getSubjectIdentityKey(unit);
 }
 
 function getGroupKeyFromUnit(unit) {
@@ -100,26 +104,21 @@ function formatGroupFromUnits(units = []) {
       ? "processing"
       : "completed";
 
-  // Build subject title with part and term
-  let subjectTitle = firstUnit.subject;
-  if (firstUnit.part) {
-    subjectTitle += ` - ${firstUnit.part}`;
-  }
-  if (firstUnit.term) {
-    subjectTitle += ` (${firstUnit.term})`;
-  }
+  const subjectTitle = buildSubjectTitle(firstUnit);
 
   return {
-    id: getGroupKeyFromUnit(firstUnit),
+    id: getSubjectIdentityKey(firstUnit),
     subjectGroupKey: firstUnit.subjectGroupKey || null,
     board: firstUnit.board,
     standard: firstUnit.standard,
+    class: firstUnit.standard,
     subject: firstUnit.subject,
     part: firstUnit.part || null,
     term: firstUnit.term || null,
     subjectTitle,
     status,
     unitCount: sortedUnits.length,
+    unitCountLabel: unitCountLabel(sortedUnits.length),
     displayMode: sortedUnits.length === 1 ? "single_subject" : "subject_with_units",
     createdAt: sortedUnits[0].createdAt,
     updatedAt: sortedUnits[sortedUnits.length - 1].updatedAt,
@@ -131,7 +130,7 @@ function buildSubjectGroups(items = []) {
   const grouped = new Map();
 
   items.forEach((unit) => {
-    const key = getGroupKeyFromUnit(unit);
+    const key = getSubjectIdentityKey(unit);
     const existing = grouped.get(key) || [];
     existing.push(unit);
     grouped.set(key, existing);
@@ -140,11 +139,13 @@ function buildSubjectGroups(items = []) {
   return Array.from(grouped.values())
     .map((units) => formatGroupFromUnits(units))
     .filter(Boolean)
-    .sort((left, right) => new Date(right.updatedAt) - new Date(left.updatedAt));
+    .sort((left, right) => compareSubjectIdentity(left, right));
 }
 
 async function findGroupUnits(groupKey) {
-  let units = await SubjectUnit.find({ subjectGroupKey: groupKey }).sort({
+  let units = await SubjectUnit.find({
+    $or: [{ subjectGroupKey: groupKey }, { subjectGroupKey: String(groupKey).toLowerCase() }],
+  }).sort({
     partSequence: 1,
     termSequence: 1,
     unitNumber: 1,
@@ -156,22 +157,35 @@ async function findGroupUnits(groupKey) {
   }
 
   const parts = String(groupKey).split("::");
-  const [board, standard, subject, rawPart, rawTerm, uploadId] = parts.length >= 6 ? parts : [parts[0], parts[1], parts[2], parts[3], null, parts[4]];
+  let fallbackFilter;
+
+  if (parts[0] === "subject" && parts.length >= 6) {
+    const [, board, standard, rawTerm, subject, rawPart] = parts;
+    fallbackFilter = {
+      board: new RegExp(`^${escapeRegExp(board)}$`, "i"),
+      standard: new RegExp(`^${escapeRegExp(standard)}$`, "i"),
+      subject: new RegExp(`^${escapeRegExp(subject)}$`, "i"),
+      term: rawTerm === "__none__" ? null : new RegExp(`^${escapeRegExp(rawTerm)}$`, "i"),
+      part: rawPart === "__none__" ? null : new RegExp(`^${escapeRegExp(rawPart)}$`, "i"),
+    };
+  } else {
+    const [board, standard, subject, rawPart, rawTerm, uploadId] = parts.length >= 6 ? parts : [parts[0], parts[1], parts[2], parts[3], null, parts[4]];
   
-  if (!board || !standard || !subject) {
-    return [];
-  }
+    if (!board || !standard || !subject) {
+      return [];
+    }
 
-  const fallbackFilter = {
-    board,
-    standard,
-    subject,
-    part: rawPart === "general" || !rawPart ? null : rawPart,
-    term: rawTerm === "general" || !rawTerm ? null : rawTerm,
-  };
+    fallbackFilter = {
+      board,
+      standard,
+      subject,
+      part: rawPart === "general" || !rawPart ? null : rawPart,
+      term: rawTerm === "general" || !rawTerm ? null : rawTerm,
+    };
 
-  if (uploadId && uploadId !== "standalone") {
-    fallbackFilter.uploadId = uploadId;
+    if (uploadId && uploadId !== "standalone") {
+      fallbackFilter.uploadId = uploadId;
+    }
   }
 
   units = await SubjectUnit.find(fallbackFilter).sort({
@@ -299,8 +313,17 @@ const controller = {
       if (req.query.standard) {
         filter.standard = req.query.standard;
       }
+      if (req.query.class || req.query.classNumber) {
+        filter.standard = String(req.query.class || req.query.classNumber);
+      }
       if (req.query.subject) {
-        filter.subject = req.query.subject;
+        filter.subject = new RegExp(`^${escapeRegExp(req.query.subject)}$`, "i");
+      }
+      if (Object.prototype.hasOwnProperty.call(req.query, "term")) {
+        filter.term = req.query.term ? new RegExp(`^${escapeRegExp(req.query.term)}$`, "i") : null;
+      }
+      if (Object.prototype.hasOwnProperty.call(req.query, "part")) {
+        filter.part = req.query.part ? new RegExp(`^${escapeRegExp(req.query.part)}$`, "i") : null;
       }
       if (search) {
         filter.$or = [
@@ -507,7 +530,7 @@ const controller = {
       const units = await SubjectUnit.find({ uploadId: upload._id })
         .sort({ unitNumber: 1, createdAt: 1 })
         .select(
-          "_id documentId board standard subject part unitNumber unitLabel unitTitle processing debateTopics createdAt subjectGroupKey",
+          "_id documentId board standard subject part term unitNumber unitLabel unitTitle processing debateTopics createdAt subjectGroupKey",
         );
 
       return res.status(200).json({
@@ -520,6 +543,7 @@ const controller = {
           subject: upload.subject,
           subjectGroupKey: upload.subjectGroupKey,
           part: upload.part,
+          term: upload.term,
           originalFileName: upload.originalFileName,
           processingMode: upload.processingMode,
           uploadStatus: upload.status,
@@ -539,6 +563,7 @@ const controller = {
             subject: unit.subject,
             subjectGroupKey: unit.subjectGroupKey || null,
             part: unit.part,
+            term: unit.term,
             unitNumber: unit.unitNumber,
             unitLabel: unit.unitLabel,
             unitTitle: unit.unitTitle,
@@ -581,6 +606,8 @@ const controller = {
             standard: upload.standard,
             subject: upload.subject,
             subjectGroupKey: upload.subjectGroupKey || null,
+            part: upload.part || null,
+            term: upload.term || null,
             processingMode: upload.processingMode,
             originalFileName: upload.originalFileName,
             status: upload.status,
@@ -647,14 +674,7 @@ const controller = {
         return new Date(left.createdAt) - new Date(right.createdAt);
       });
 
-      // Build subject title with part and term
-      let subjectTitle = subjectUnit.subject;
-      if (subjectUnit.part) {
-        subjectTitle += ` - ${subjectUnit.part}`;
-      }
-      if (subjectUnit.term) {
-        subjectTitle += ` (${subjectUnit.term})`;
-      }
+      const subjectTitle = buildSubjectTitle(subjectUnit);
 
       return res.status(200).json({
         status: true,
@@ -884,4 +904,3 @@ async uploadQuestionBank(req, res) {
 };
 
 module.exports = controller;
-

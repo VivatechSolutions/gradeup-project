@@ -79,6 +79,11 @@ interface Book {
   id: string;
   title: string;
   subject: string;
+  subjectFilterLabel?: string;
+  standard?: string;
+  term?: string | null;
+  part?: string | null;
+  unitCount?: number;
   color: string;
   chapters: Chapter[];
   coverImageUrl?: string | null;
@@ -215,6 +220,24 @@ function normalizeArrayField(value: any): string[] {
   }
 
   return [];
+}
+
+const DEFAULT_LIBRARY_TERMS = ["Term 1", "Term 2", "Term 3"];
+
+function naturalLabelSort(left: string, right: string) {
+  return left.localeCompare(right, undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+}
+
+function getBookSubjectLabel(book: Pick<Book, "subject" | "part" | "subjectFilterLabel">) {
+  return book.subjectFilterLabel || (book.part ? `${book.subject} - ${book.part}` : book.subject);
+}
+
+function formatUnitCount(count?: number) {
+  if (!count) return null;
+  return `${count} unit${count === 1 ? "" : "s"}`;
 }
 // DEPRECATED: Avatar explanation segments now handled via pushAvatarExplanationSegments()
 // within the main serialization flow. Kept as empty stub to prevent reference errors.
@@ -3356,6 +3379,54 @@ function buildTextLayoutFromString(value: string) {
     });
 }
 
+const MARKDOWN_IMAGE_PATTERN =
+  /!\[([^\]]*)\]\((<[^>]+>|[^\s)]+)(?:\s+["'][^"']*["'])?\)/g;
+
+function normalizeImageUrlKey(value: any) {
+  return String(value || "")
+    .trim()
+    .replace(/^<|>$/g, "");
+}
+
+function buildReaderBlocksFromMarkdownText(
+  value: string,
+  seenImageUrls?: Set<string>,
+) {
+  const text = String(value || "");
+  const blocks: any[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  MARKDOWN_IMAGE_PATTERN.lastIndex = 0;
+
+  while ((match = MARKDOWN_IMAGE_PATTERN.exec(text)) !== null) {
+    const before = text.slice(lastIndex, match.index);
+    if (before.trim()) {
+      blocks.push(...buildTextLayoutFromString(before));
+    }
+
+    const caption = String(match[1] || "").trim();
+    const imageUrl = normalizeImageUrlKey(match[2]);
+    if (imageUrl && !seenImageUrls?.has(imageUrl)) {
+      seenImageUrls?.add(imageUrl);
+      blocks.push({
+        type: "image",
+        imageUrl,
+        caption: caption || null,
+      });
+    }
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  const after = text.slice(lastIndex);
+  if (after.trim()) {
+    blocks.push(...buildTextLayoutFromString(after));
+  }
+
+  return blocks.length ? blocks : buildTextLayoutFromString(text);
+}
+
 function extractSectionTopicsFromContent(
   content: any,
   chapterId: string | number,
@@ -3430,6 +3501,7 @@ function buildStructuredLayout(
   topicMap: Map<string, string>,
 ) {
   const blocks: any[] = [];
+  const seenImageUrls = new Set<string>();
   const metadataKeys = new Set([
     "id",
     "_id",
@@ -3457,10 +3529,22 @@ function buildStructuredLayout(
     "image_urls",
   ]);
 
-  const pushTextField = (value: any) => {
+  const pushImageBlock = (imageUrl: any, caption?: any, targetBlocks = blocks) => {
+    const normalizedUrl = normalizeImageUrlKey(imageUrl);
+    if (!normalizedUrl || seenImageUrls.has(normalizedUrl)) return;
+    seenImageUrls.add(normalizedUrl);
+    targetBlocks.push({
+      type: "image",
+      imageUrl: normalizedUrl,
+      caption: caption || null,
+    });
+  };
+
+  const pushTextField = (value: any, targetBlocks = blocks) => {
     const text = flattenContentToText(value).trim();
     if (!text) return;
-    blocks.push(...buildTextLayoutFromString(text));
+    const destination = Array.isArray(targetBlocks) ? targetBlocks : blocks;
+    destination.push(...buildReaderBlocksFromMarkdownText(text, seenImageUrls));
   };
 
   const pushListField = (value: any) => {
@@ -3530,9 +3614,7 @@ function buildStructuredLayout(
           block?.type || block?.kind || "",
         ).toLowerCase();
         if (blockType.includes("image")) {
-          blocks.push({
-            type: "image",
-            imageUrl:
+          pushImageBlock(
               block.imageUrl ||
               block.image ||
               block.url ||
@@ -3541,8 +3623,8 @@ function buildStructuredLayout(
               block.asset ||
               block.images ||
               block.media,
-            caption: block.caption || block.title || null,
-          });
+            block.caption || block.title || null,
+          );
           return;
         }
         if (blockType.includes("table")) {
@@ -3660,18 +3742,15 @@ function buildStructuredLayout(
             // Build children for this subsection block
             if (subType === "illustration") {
               if (subsection.content) {
-                subsectionBlock.children.push({
-                  type: "text",
-                  content: subsection.content,
-                });
+                pushTextField(subsection.content, subsectionBlock.children);
               }
               normalizeArrayField(subsection.image_urls).forEach(
                 (url: string) => {
-                  subsectionBlock.children.push({
-                    type: "image",
-                    imageUrl: url,
-                    caption: `Illustration${subTitle ? ": " + subTitle : ""}`,
-                  });
+                  pushImageBlock(
+                    url,
+                    `Illustration${subTitle ? ": " + subTitle : ""}`,
+                    subsectionBlock.children,
+                  );
                 },
               );
             } else if (subType === "definition") {
@@ -3680,10 +3759,7 @@ function buildStructuredLayout(
                 content: subTitle || "Definition",
               });
               if (subsection.content) {
-                subsectionBlock.children.push({
-                  type: "text",
-                  content: subsection.content,
-                });
+                pushTextField(subsection.content, subsectionBlock.children);
               }
             } else if (subType === "example") {
               subsectionBlock.children.push({
@@ -3691,24 +3767,21 @@ function buildStructuredLayout(
                 content: subTitle || subsection.id || "Example",
               });
               if (subsection.content) {
-                subsectionBlock.children.push({
-                  type: "text",
-                  content: subsection.content,
-                });
+                pushTextField(subsection.content, subsectionBlock.children);
               }
               if (subsection.metadata?.solution) {
-                subsectionBlock.children.push({
-                  type: "text",
-                  content: "Solution: " + subsection.metadata.solution,
-                });
+                pushTextField(
+                  "Solution: " + subsection.metadata.solution,
+                  subsectionBlock.children,
+                );
               }
               normalizeArrayField(subsection.image_urls).forEach(
                 (url: string) => {
-                  subsectionBlock.children.push({
-                    type: "image",
-                    imageUrl: url,
-                    caption: `Example${subTitle ? ": " + subTitle : ""}`,
-                  });
+                  pushImageBlock(
+                    url,
+                    `Example${subTitle ? ": " + subTitle : ""}`,
+                    subsectionBlock.children,
+                  );
                 },
               );
             } else if (subType === "exercise") {
@@ -3717,10 +3790,7 @@ function buildStructuredLayout(
                 content: subTitle || subsection.id || "Exercise",
               });
               if (subsection.content) {
-                subsectionBlock.children.push({
-                  type: "text",
-                  content: subsection.content,
-                });
+                pushTextField(subsection.content, subsectionBlock.children);
               }
               if (
                 Array.isArray(subsection.sub_items) &&
@@ -3755,10 +3825,7 @@ function buildStructuredLayout(
                 });
               }
               if (subsection.content) {
-                subsectionBlock.children.push({
-                  type: "text",
-                  content: subsection.content,
-                });
+                pushTextField(subsection.content, subsectionBlock.children);
               }
               if (
                 Array.isArray(subsection.sub_items) &&
@@ -3787,11 +3854,7 @@ function buildStructuredLayout(
               }
               normalizeArrayField(subsection.image_urls).forEach(
                 (url: string) => {
-                  subsectionBlock.children.push({
-                    type: "image",
-                    imageUrl: url,
-                    caption: subTitle || null,
-                  });
+                  pushImageBlock(url, subTitle || null, subsectionBlock.children);
                 },
               );
             }
@@ -3828,11 +3891,7 @@ function buildStructuredLayout(
 
         // Section-level image_urls
         normalizeArrayField(section.image_urls).forEach((url: string) => {
-          blocks.push({
-            type: "image",
-            imageUrl: url,
-            caption: section.caption || title || null,
-          });
+          pushImageBlock(url, section.caption || title || null);
         });
 
         [section.children, section.items, section.topics, section.sub_items].forEach(visit);
@@ -3861,19 +3920,14 @@ function buildStructuredLayout(
       value.images ||
       value.media;
     if (imageCandidate) {
-      blocks.push({
-        type: "image",
-        imageUrl: imageCandidate,
-        caption: value.caption || value.title || value.section_title || null,
-      });
+      pushImageBlock(
+        imageCandidate,
+        value.caption || value.title || value.section_title || null,
+      );
     }
 
     normalizeArrayField(value.image_urls).forEach((url: string) => {
-      blocks.push({
-        type: "image",
-        imageUrl: url,
-        caption: value.caption || value.title || value.section_title || null,
-      });
+      pushImageBlock(url, value.caption || value.title || value.section_title || null);
     });
 
     [
@@ -4134,6 +4188,7 @@ const BookContentWindowDemo = () => {
   const [isSummaryOpen, setIsSummaryOpen] = useState(false);
   const [isEnhancing, setIsEnhancing] = useState(false);
   const [activeFilter, setActiveFilter] = useState<string>("All");
+  const [activeLibraryTerm, setActiveLibraryTerm] = useState<string>("All");
   const [libraryBooks, setLibraryBooks] = useState<Book[]>([]);
   const [isLibraryLoading, setIsLibraryLoading] = useState(true);
   const [brokenBookImages, setBrokenBookImages] = useState<
@@ -4151,15 +4206,15 @@ const BookContentWindowDemo = () => {
     null,
   );
   const [selectedPart, setSelectedPart] = useState<string | null>(null);
-const [selectedTerm, setSelectedTerm] = useState<string | null>(null);
+  const [selectedTerm, setSelectedTerm] = useState<string | null>(null);
   const filteredChapters = useMemo(() => {
-  if (!selectedBook?.chapters) return [];
-  return selectedBook.chapters.filter((ch) => {
-    if (selectedPart && ch.part !== selectedPart) return false;
-    if (selectedTerm && ch.term !== selectedTerm) return false;
-    return true;
-  });
-}, [selectedBook, selectedPart, selectedTerm]);
+    if (!selectedBook?.chapters) return [];
+    return selectedBook.chapters.filter((ch) => {
+      if (selectedPart && ch.part !== selectedPart) return false;
+      if (selectedTerm && ch.term !== selectedTerm) return false;
+      return true;
+    });
+  }, [selectedBook, selectedPart, selectedTerm]);
 
   // ── Stable storage key — unique per book + chapter ──────────────────────
   // Defined as a computed value (not useState) so it updates instantly.
@@ -4245,8 +4300,13 @@ const [selectedTerm, setSelectedTerm] = useState<string | null>(null);
     subjectGroup: Pick<
       LibrarySubject,
       | "subjectGroupKey"
+      | "id"
       | "title"
       | "subject"
+      | "standard"
+      | "part"
+      | "term"
+      | "unitCount"
       | "units"
       | "coverImageUrl"
       | "imageCandidates"
@@ -4255,17 +4315,24 @@ const [selectedTerm, setSelectedTerm] = useState<string | null>(null);
   ): Book => {
     const palette = ["#6366f1", "#0ea5e9", "#10b981", "#f59e0b", "#ec4899"];
     return {
-      id: subjectGroup.subjectGroupKey,
+      id: subjectGroup.subjectGroupKey || subjectGroup.id,
       title: subjectGroup.title,
       subject: subjectGroup.subject,
+      subjectFilterLabel: subjectGroup.part
+        ? `${subjectGroup.subject} - ${subjectGroup.part}`
+        : subjectGroup.subject,
+      standard: subjectGroup.standard,
+      term: subjectGroup.term || null,
+      part: subjectGroup.part || null,
+      unitCount: subjectGroup.unitCount,
       color: palette[index % palette.length],
       coverImageUrl: subjectGroup.coverImageUrl || null,
       imageCandidates: subjectGroup.imageCandidates || [],
       chapters: (subjectGroup.units || []).map((unit, unitIndex) => ({
         id: unit.id,
         title: unit.unitTitle || unit.unitLabel || `Unit ${unitIndex + 1}`,
-        part: unit.part,   // ADD
-        term: unit.term,   // ADD  
+        part: unit.part || subjectGroup.part || undefined,
+        term: unit.term || subjectGroup.term || undefined,
         content: `${unit.unitTitle || unit.unitLabel || `Unit ${unitIndex + 1}`} content is available for reading.`,
         enhancedContent: `${unit.unitTitle || unit.unitLabel || `Unit ${unitIndex + 1}`} content is available for reading.`,
         unit: unit.unitNumber || unitIndex + 1,
@@ -4352,6 +4419,8 @@ const [selectedTerm, setSelectedTerm] = useState<string | null>(null);
     try {
       setIsLoadingPage(true);
       setBookLoadError(null);
+      setSelectedPart(null);
+      setSelectedTerm(null);
       if (book.id.startsWith("sci-") || book.id.startsWith("phy-")) {
         const firstChapter = book.chapters[0] || null;
         setSelectedBook(book);
@@ -4430,9 +4499,14 @@ const [selectedTerm, setSelectedTerm] = useState<string | null>(null);
 
       const palettes = ["#6366f1", "#0ea5e9", "#10b981", "#f59e0b", "#ec4899"];
       const remoteBook: Book = {
-        id: detail.subjectGroupKey,
+        id: detail.subjectGroupKey || detail.id,
         title: detail.title,
         subject: detail.subject,
+        subjectFilterLabel: detail.part ? `${detail.subject} - ${detail.part}` : detail.subject,
+        standard: detail.standard,
+        term: detail.term || null,
+        part: detail.part || null,
+        unitCount: detail.unitCount,
         color: palettes[0],
         coverImageUrl: detail.coverImageUrl || null,
         imageCandidates: detail.imageCandidates || [],
@@ -4446,6 +4520,8 @@ const [selectedTerm, setSelectedTerm] = useState<string | null>(null);
         null;
 
       setSelectedBook(remoteBook);
+      setSelectedPart(null);
+      setSelectedTerm(null);
       setActiveChapter(nextChapter);
       setDisplayChapter(nextChapter);
       setIsTocView(false);
@@ -5937,14 +6013,31 @@ const [selectedTerm, setSelectedTerm] = useState<string | null>(null);
   // ══════════════════════════════════════════════════════════════════════════════
   if (!selectedBook) {
     const booksForLibrary = libraryBooks;
+    const libraryTerms = [
+      "All",
+      ...Array.from(
+        new Set([
+          ...DEFAULT_LIBRARY_TERMS,
+          ...(booksForLibrary.map((book) => book.term).filter(Boolean) as string[]),
+        ]),
+      ).sort(naturalLabelSort),
+    ];
     const subjects = [
       "All",
-      ...new Set(booksForLibrary.map((b) => b.subject.split(" • ")[0])),
+      ...Array.from(
+        new Set(
+          booksForLibrary
+            .filter((book) => activeLibraryTerm === "All" || book.term === activeLibraryTerm)
+            .map(getBookSubjectLabel),
+        ),
+      ).sort(naturalLabelSort),
     ];
-    const filteredBooks =
-      activeFilter === "All"
-        ? booksForLibrary
-        : booksForLibrary.filter((b) => b.subject.includes(activeFilter));
+    const filteredBooks = booksForLibrary.filter((book) => {
+      const subjectLabel = getBookSubjectLabel(book);
+      const matchesTerm = activeLibraryTerm === "All" || book.term === activeLibraryTerm;
+      const matchesSubject = activeFilter === "All" || subjectLabel === activeFilter;
+      return matchesTerm && matchesSubject;
+    });
 
     return (
       <div className="app-root">
@@ -6019,7 +6112,7 @@ const [selectedTerm, setSelectedTerm] = useState<string | null>(null);
                   {
                     label: "Subjects",
                     value: new Set(
-                      booksForLibrary.map((b) => b.subject.split(" • ")[0]),
+                      booksForLibrary.map((book) => getBookSubjectLabel(book)),
                     ).size,
                     icon: "🎯",
                     color: "purple",
@@ -6046,6 +6139,20 @@ const [selectedTerm, setSelectedTerm] = useState<string | null>(null);
           </div>
 
           {/* ── Filter chips ── */}
+          <div className="lib-filter-row lib-term-filter-row">
+            {libraryTerms.map((term) => (
+              <button
+                key={term}
+                className={`lib-chip ${activeLibraryTerm === term ? "active" : ""}`}
+                onClick={() => {
+                  setActiveLibraryTerm(term);
+                  setActiveFilter("All");
+                }}
+              >
+                {term}
+              </button>
+            ))}
+          </div>
           <div className="lib-filter-row">
             {subjects.map((subject) => (
               <button
@@ -6142,18 +6249,23 @@ const [selectedTerm, setSelectedTerm] = useState<string | null>(null);
                       </span>
                     </div>
                     <div className="lib-book-info">
-                      <span className="lib-subject-tag">{book.subject}</span>
+                      <span className="lib-subject-tag">{getBookSubjectLabel(book)}</span>
                       <h3 className="lib-book-title">{book.title}</h3>
+                      <div className="lib-book-meta">
+                        {[book.standard, book.term, book.part].filter(Boolean).join(" - ")}
+                      </div>
                       <div className="lib-progress-bg">
                         <div
                           className="lib-progress-fill"
                           style={{ width: "45%", background: book.color }}
                         />
                       </div>
-                      <div className="lib-progress-pct">45% complete</div>
+                      <div className="lib-progress-pct">
+                        {formatUnitCount(book.unitCount || book.chapters.length)}
+                      </div>
                       <div className="lib-card-footer">
                         <span className="lib-chapters">
-                          {book.chapters.length} Chapters
+                          {formatUnitCount(book.unitCount || book.chapters.length)}
                         </span>
                         <button
                           className="lib-open-btn"
@@ -6182,7 +6294,7 @@ const [selectedTerm, setSelectedTerm] = useState<string | null>(null);
   // ══════════════════════════════════════════════════════════════════════════════
   if (selectedBook && isTocView) {
     const unitNumbers = Array.from(
-      new Set(selectedBook.chapters.map((ch) => ch.unit)),
+      new Set(filteredChapters.map((ch) => ch.unit)),
     );
 
     return (
@@ -6199,7 +6311,7 @@ const [selectedTerm, setSelectedTerm] = useState<string | null>(null);
                 <div className="toc-hero-subject">{selectedBook.subject}</div>
                 <div className="lib-hero-title">{selectedBook.title}</div>
                 <div className="lib-hero-sub">
-                  {selectedBook.chapters.length} chapters across{" "}
+                  {filteredChapters.length} chapters across{" "}
                   {unitNumbers.length} units · Select a chapter to begin
                 </div>
               </div>
@@ -6211,7 +6323,7 @@ const [selectedTerm, setSelectedTerm] = useState<string | null>(null);
                 <div className="lib-hero-div" />
                 <div className="lib-hero-stat">
                   <div className="lib-hero-sn">
-                    {selectedBook.chapters.length}
+                    {filteredChapters.length}
                   </div>
                   <div className="lib-hero-sl">Chapters</div>
                 </div>
@@ -6221,6 +6333,8 @@ const [selectedTerm, setSelectedTerm] = useState<string | null>(null);
                   onClick={() => {
                     setSelectedBook(null);
                     setIsTocView(false);
+                    setSelectedPart(null);
+                    setSelectedTerm(null);
                     clearReaderState();
                   }}
                 >
@@ -6250,7 +6364,7 @@ const [selectedTerm, setSelectedTerm] = useState<string | null>(null);
           {/* ── TOC unit + chapter cards ── */}
           <div className="toc-grid">
             {unitNumbers.map((unitNumber: any, idx: number) => {
-              const unitChapters = selectedBook.chapters.filter(
+              const unitChapters = filteredChapters.filter(
                 (ch) => ch.unit === unitNumber,
               );
               const firstChapter = unitChapters[0];
@@ -7867,6 +7981,7 @@ const libStyles = `
 
 /* ═══════════════════════════ FILTER CHIPS ═══════════════════════════ */
 .lib-filter-row { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:24px; }
+.lib-term-filter-row { margin-bottom:12px; }
 .lib-chip {
   padding:8px 18px; border-radius:24px; border:1.5px solid #e2e8f0;
   background:#fff; font-size:13px; font-weight:600; color:#64748b;
@@ -7939,6 +8054,7 @@ const libStyles = `
 .dark .lib-subject-tag { background:rgba(99,102,241,.2); color:#a5b4fc; }
 .lib-book-title { font-size:14px; font-weight:700; color:#0f172a; margin:0 0 10px; line-height:1.35; }
 .dark .lib-book-title { color:#e2e8f0; }
+.lib-book-meta { color:#94a3b8; font-size:11px; font-weight:700; min-height:14px; margin:-4px 0 10px; }
 .lib-progress-bg   { height:6px; background:#f1f5f9; border-radius:6px; overflow:hidden; margin-bottom:4px; }
 .dark .lib-progress-bg { background:rgba(255,255,255,.08); }
 .lib-progress-fill { height:100%; border-radius:6px; transition:width .8s cubic-bezier(.4,0,.2,1); opacity:.85; }

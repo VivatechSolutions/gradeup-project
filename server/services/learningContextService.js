@@ -2,13 +2,48 @@ const mongoose = require("mongoose");
 const SubjectUnit = require("../model/SubjectUnit");
 const Unit = require("../model/Unit");
 const BookContent = require("../model/BookContent");
+const {
+  buildSubjectTitle,
+  compareSubjectIdentity,
+  getSubjectIdentityKey,
+  normalizePart,
+  normalizeTerm,
+  unitCountLabel,
+} = require("../utils/subjectIdentity");
 
 function escapeRegExp(value = "") {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function getSubjectGroupLookup(unit) {
-  return unit.subjectGroupKey || [unit.board, unit.standard, unit.subject].join("::");
+  return unit.subjectGroupKey || getSubjectIdentityKey(unit);
+}
+
+function buildSubjectGroupKeyFilter(subjectGroupKey) {
+  const key = String(subjectGroupKey || "");
+  const parts = key.split("::");
+  const filters = [
+    { subjectGroupKey: key },
+    { subjectGroupKey: key.toLowerCase() },
+    {
+      $expr: {
+        $eq: [{ $concat: ["$board", "::", "$standard", "::", "$subject"] }, key],
+      },
+    },
+  ];
+
+  if (parts[0] === "subject" && parts.length >= 6) {
+    const [, board, standard, rawTerm, subject, rawPart] = parts;
+    filters.push({
+      board: new RegExp(`^${escapeRegExp(board)}$`, "i"),
+      standard: new RegExp(`^${escapeRegExp(standard)}$`, "i"),
+      subject: new RegExp(`^${escapeRegExp(subject)}$`, "i"),
+      term: rawTerm === "__none__" ? null : new RegExp(`^${escapeRegExp(rawTerm)}$`, "i"),
+      part: rawPart === "__none__" ? null : new RegExp(`^${escapeRegExp(rawPart)}$`, "i"),
+    });
+  }
+
+  return { $or: filters };
 }
 
 function normalizeAssetPath(value = "") {
@@ -649,18 +684,20 @@ function toSubjectGroup(units = []) {
   });
 
   const firstUnit = orderedUnits[0];
-  const subjectGroupKey = getSubjectGroupLookup(firstUnit);
+  const subjectGroupKey = getSubjectIdentityKey(firstUnit);
 
   return {
     id: subjectGroupKey,
-    subjectGroupKey,
-    title: firstUnit.subject,
+    subjectGroupKey: firstUnit.subjectGroupKey || subjectGroupKey,
+    title: buildSubjectTitle(firstUnit) || firstUnit.subject,
     subject: firstUnit.subject,
     board: firstUnit.board,
     standard: firstUnit.standard,
-    part: firstUnit.part,
-    term: firstUnit.term,
+    class: firstUnit.standard,
+    part: firstUnit.part || null,
+    term: firstUnit.term || null,
     unitCount: orderedUnits.length,
+    unitCountLabel: unitCountLabel(orderedUnits.length),
     visual: getSubjectVisual(firstUnit.subject),
     coverImageUrl: null,
     imageCandidates: [],
@@ -686,6 +723,15 @@ async function listSubjectGroups(filters = {}) {
   if (filters.standard) {
     query.standard = filters.standard;
   }
+  if (filters.class || filters.classNumber) {
+    query.standard = String(filters.class || filters.classNumber);
+  }
+  if (Object.prototype.hasOwnProperty.call(filters, "term")) {
+    query.term = filters.term ? new RegExp(`^${escapeRegExp(normalizeTerm(filters.term))}$`, "i") : null;
+  }
+  if (Object.prototype.hasOwnProperty.call(filters, "part")) {
+    query.part = filters.part ? new RegExp(`^${escapeRegExp(normalizePart(filters.part))}$`, "i") : null;
+  }
   if (filters.subject) {
     query.subject = new RegExp(`^${escapeRegExp(filters.subject)}$`, "i");
   }
@@ -700,7 +746,11 @@ async function listSubjectGroups(filters = {}) {
   const units = await SubjectUnit.find(query).sort({
     board: 1,
     standard: 1,
+    termSequence: 1,
+    term: 1,
     subject: 1,
+    partSequence: 1,
+    part: 1,
     unitNumber: 1,
     unitTitle: 1,
   });
@@ -708,14 +758,14 @@ async function listSubjectGroups(filters = {}) {
   const groups = new Map();
 
   units.forEach((unit) => {
-    const key = getSubjectGroupLookup(unit);
+    const key = getSubjectIdentityKey(unit);
     if (!groups.has(key)) {
       groups.set(key, []);
     }
     groups.get(key).push(unit);
   });
 
-  const subjectGroups = [...groups.values()].map(toSubjectGroup);
+  const subjectGroups = [...groups.values()].map(toSubjectGroup).sort(compareSubjectIdentity);
 
   return Promise.all(
     subjectGroups.map(async (group) => ({
@@ -726,16 +776,9 @@ async function listSubjectGroups(filters = {}) {
 }
 
 async function getSubjectGroupByKey(subjectGroupKey) {
-  const units = await SubjectUnit.find({
-    $or: [
-      { subjectGroupKey },
-      {
-        $expr: {
-          $eq: [{ $concat: ["$board", "::", "$standard", "::", "$subject"] }, subjectGroupKey],
-        },
-      },
-    ],
-  }).sort({
+  const units = await SubjectUnit.find(buildSubjectGroupKeyFilter(subjectGroupKey)).sort({
+    termSequence: 1,
+    partSequence: 1,
     unitNumber: 1,
     unitTitle: 1,
   });
@@ -786,14 +829,7 @@ async function resolveSubjectUnit({
 
   if (subjectGroupKey && unitNumber !== undefined && unitNumber !== null && unitNumber !== "") {
     const unit = await SubjectUnit.findOne({
-      $or: [
-        { subjectGroupKey },
-        {
-          $expr: {
-            $eq: [{ $concat: ["$board", "::", "$standard", "::", "$subject"] }, subjectGroupKey],
-          },
-        },
-      ],
+      ...buildSubjectGroupKeyFilter(subjectGroupKey),
       unitNumber: Number(unitNumber),
     });
 
@@ -805,14 +841,7 @@ async function resolveSubjectUnit({
   const fallbackFilter = {};
 
   if (subjectGroupKey) {
-    fallbackFilter.$or = [
-      { subjectGroupKey },
-      {
-        $expr: {
-          $eq: [{ $concat: ["$board", "::", "$standard", "::", "$subject"] }, subjectGroupKey],
-        },
-      },
-    ];
+    Object.assign(fallbackFilter, buildSubjectGroupKeyFilter(subjectGroupKey));
   }
 
   if (subject) {

@@ -400,6 +400,7 @@ function SubjectManageModal({
     standard: "",
     subject: "",
     part: "",
+    term: "",
   });
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -419,6 +420,7 @@ function SubjectManageModal({
           standard: response.data.standard || "",
           subject: response.data.subject || "",
           part: response.data.part || "",
+          term: response.data.term || "",
         });
       })
       .catch((modalError) => {
@@ -572,7 +574,7 @@ function SubjectManageModal({
                     part: event.target.value,
                   }))
                 }
-                disabled={isUploading}
+                disabled={isSaving}
               />
             </label>
 
@@ -589,7 +591,7 @@ function SubjectManageModal({
                     term: event.target.value,
                   }))
                 }
-                disabled={isUploading}
+                disabled={isSaving}
               />
             </label>
             </div>

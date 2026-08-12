@@ -3,10 +3,28 @@ import { Link } from "react-router-dom";
 import { fetchSubjects, uploadSubject } from "../api/client";
 
 const BOARDS = ["State Board", "CBSE"];
+const DEFAULT_TERMS = ["Term 1", "Term 2", "Term 3"];
 const ACTIVE_UPLOAD_STORAGE_KEY = "gradeup_admin_active_upload_id";
 
 function buildSubjectOptionLabel(group) {
-  return `${group.subjectTitle} (${group.unitCount} unit${group.unitCount === 1 ? "" : "s"})`;
+  const pieces = [group.subject, group.term, group.part].filter(Boolean);
+  const unitText = `${group.unitCount} unit${group.unitCount === 1 ? "" : "s"}`;
+  return `${pieces.join(" — ")} — ${unitText}${group.isNewTermOption ? " — new term" : ""}`;
+}
+
+function uniqueSorted(values) {
+  return Array.from(new Set(values.filter(Boolean))).sort((left, right) =>
+    String(left).localeCompare(String(right), undefined, {
+      numeric: true,
+      sensitivity: "base",
+    }),
+  );
+}
+
+function subjectPartKey(option) {
+  return [option.subject || "", option.part || ""]
+    .map((value) => String(value).trim().toLowerCase())
+    .join("::");
 }
 
 export default function UploadSubjectPage() {
@@ -68,10 +86,88 @@ export default function UploadSubjectPage() {
     return () => window.clearTimeout(timeoutId);
   }, [successToast]);
 
+  const existingBoardOptions = useMemo(
+    () => uniqueSorted([...BOARDS, ...subjectOptions.map((option) => option.board)]),
+    [subjectOptions],
+  );
+
+  const existingClassOptions = useMemo(
+    () =>
+      uniqueSorted(
+        subjectOptions
+          .filter((option) => !form.board || option.board === form.board)
+          .map((option) => option.standard),
+      ),
+    [form.board, subjectOptions],
+  );
+
+  const existingTermOptions = useMemo(
+    () =>
+      uniqueSorted(
+        [
+          ...DEFAULT_TERMS,
+          ...subjectOptions
+            .filter((option) => !form.board || option.board === form.board)
+            .filter((option) => !form.standard || option.standard === form.standard)
+            .map((option) => option.term || "No term"),
+        ],
+      ),
+    [form.board, form.standard, subjectOptions],
+  );
+
+  const filteredExistingSubjects = useMemo(
+    () =>
+      subjectOptions
+        .filter((option) => option.board === form.board)
+        .filter((option) => option.standard === form.standard)
+        .filter((option) => (option.term || "No term") === form.term),
+    [form.board, form.standard, form.term, subjectOptions],
+  );
+
+  const newTermSubjectOptions = useMemo(() => {
+    if (!form.board || !form.standard || !form.term) {
+      return [];
+    }
+
+    const exactSubjectParts = new Set(filteredExistingSubjects.map(subjectPartKey));
+    const uniqueBaseSubjects = new Map();
+
+    subjectOptions
+      .filter((option) => option.board === form.board)
+      .filter((option) => option.standard === form.standard)
+      .forEach((option) => {
+        const key = subjectPartKey(option);
+        if (exactSubjectParts.has(key) || uniqueBaseSubjects.has(key)) {
+          return;
+        }
+
+        uniqueBaseSubjects.set(key, {
+          ...option,
+          id: `new-term::${form.board}::${form.standard}::${form.term}::${option.subject}::${option.part || "__none__"}`,
+          subjectGroupKey: null,
+          term: form.term,
+          unitCount: 0,
+          isNewTermOption: true,
+        });
+      });
+
+    return Array.from(uniqueBaseSubjects.values()).sort((left, right) =>
+      buildSubjectOptionLabel(left).localeCompare(buildSubjectOptionLabel(right), undefined, {
+        numeric: true,
+        sensitivity: "base",
+      }),
+    );
+  }, [filteredExistingSubjects, form.board, form.standard, form.term, subjectOptions]);
+
+  const subjectDropdownOptions = useMemo(
+    () => [...filteredExistingSubjects, ...newTermSubjectOptions],
+    [filteredExistingSubjects, newTermSubjectOptions],
+  );
+
   const selectedExistingSubject = useMemo(
     () =>
-      subjectOptions.find((option) => option.id === form.existingSubjectKey) || null,
-    [form.existingSubjectKey, subjectOptions],
+      subjectDropdownOptions.find((option) => option.id === form.existingSubjectKey) || null,
+    [form.existingSubjectKey, subjectDropdownOptions],
   );
 
   const isUnitWise = form.processingMode === "single_unit";
@@ -84,9 +180,42 @@ export default function UploadSubjectPage() {
     }));
   }
 
+  function handleExistingBoardChange(nextBoard) {
+    setForm((current) => ({
+      ...current,
+      board: nextBoard,
+      standard: "",
+      term: "",
+      subject: "",
+      part: "",
+      existingSubjectKey: "",
+    }));
+  }
+
+  function handleExistingClassChange(nextClass) {
+    setForm((current) => ({
+      ...current,
+      standard: nextClass,
+      term: "",
+      subject: "",
+      part: "",
+      existingSubjectKey: "",
+    }));
+  }
+
+  function handleExistingTermChange(nextTerm) {
+    setForm((current) => ({
+      ...current,
+      term: nextTerm,
+      subject: "",
+      part: "",
+      existingSubjectKey: "",
+    }));
+  }
+
   function handleExistingSubjectChange(nextKey) {
     const selectedGroup =
-      subjectOptions.find((option) => option.id === nextKey) || null;
+      subjectDropdownOptions.find((option) => option.id === nextKey) || null;
 
     setForm((current) => ({
       ...current,
@@ -95,7 +224,7 @@ export default function UploadSubjectPage() {
       standard: selectedGroup?.standard || current.standard,
       subject: selectedGroup?.subject || current.subject,
       part: selectedGroup?.part || "",
-      term: selectedGroup?.term || "",
+      term: selectedGroup?.term || "No term",
     }));
   }
 
@@ -107,6 +236,11 @@ export default function UploadSubjectPage() {
 
     try {
       // Validate form
+      if (isExistingSubject && !selectedExistingSubject) {
+        setError("Select a valid existing subject");
+        setIsSubmitting(false);
+        return;
+      }
       if (!form.board?.trim()) {
         setError("Board is required");
         setIsSubmitting(false);
@@ -308,63 +442,119 @@ export default function UploadSubjectPage() {
           </label>
 
           {isExistingSubject ? (
-            <label className="full-span">
-              Existing subject
-              <select
-                value={form.existingSubjectKey}
-                onChange={(event) => handleExistingSubjectChange(event.target.value)}
-                required
-              >
-                <option value="">
-                  {loadingSubjects ? "Loading subjects..." : "Select a subject"}
-                </option>
-                {subjectOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {buildSubjectOptionLabel(option)}
+            <>
+              <label>
+                Board
+                <select
+                  value={form.board}
+                  onChange={(event) => handleExistingBoardChange(event.target.value)}
+                  required
+                >
+                  <option value="">
+                    {loadingSubjects ? "Loading boards..." : "Select board"}
                   </option>
-                ))}
-              </select>
-            </label>
+                  {existingBoardOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                Class
+                <select
+                  value={form.standard}
+                  onChange={(event) => handleExistingClassChange(event.target.value)}
+                  required
+                  disabled={!form.board}
+                >
+                  <option value="">Select class</option>
+                  {existingClassOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                Term
+                <select
+                  value={form.term}
+                  onChange={(event) => handleExistingTermChange(event.target.value)}
+                  required
+                  disabled={!form.standard}
+                >
+                  <option value="">Select term</option>
+                  {existingTermOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                Subject
+                <select
+                  value={form.existingSubjectKey}
+                  onChange={(event) => handleExistingSubjectChange(event.target.value)}
+                  required
+                  disabled={!form.term}
+                >
+                  <option value="">
+                    {loadingSubjects ? "Loading subjects..." : "Select subject"}
+                  </option>
+                  {subjectDropdownOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {buildSubjectOptionLabel(option)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
           ) : null}
 
-          <label>
-            Board
-            <select
-              value={form.board}
-              onChange={(event) => updateField("board", event.target.value)}
-              disabled={isExistingSubject}
-            >
-              {BOARDS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </label>
+          {!isExistingSubject ? (
+            <>
+              <label>
+                Board
+                <select
+                  value={form.board}
+                  onChange={(event) => updateField("board", event.target.value)}
+                >
+                  {BOARDS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-          <label>
-            Standard
-            <input
-              type="text"
-              value={form.standard}
-              onChange={(event) => updateField("standard", event.target.value)}
-              placeholder="Class 10"
-              required
-              disabled={isExistingSubject}
-            />
-          </label>
+              <label>
+                Standard
+                <input
+                  type="text"
+                  value={form.standard}
+                  onChange={(event) => updateField("standard", event.target.value)}
+                  placeholder="Class 10"
+                  required
+                />
+              </label>
 
-          <label>
-            Subject
-            <input
-              type="text"
-              value={form.subject}
-              onChange={(event) => updateField("subject", event.target.value)}
-              placeholder="Science"
-              required
-              disabled={isExistingSubject}
-            />
-          </label>
+              <label>
+                Subject
+                <input
+                  type="text"
+                  value={form.subject}
+                  onChange={(event) => updateField("subject", event.target.value)}
+                  placeholder="Science"
+                  required
+                />
+              </label>
+            </>
+          ) : null}
 
           {isUnitWise ? (
             <>
@@ -382,31 +572,33 @@ export default function UploadSubjectPage() {
                 </label>
               )}
 
-              <label>
-                Part
-                <input
-                  value={form.part}
-                  onChange={(event) => updateField("part", event.target.value)}
-                  placeholder="Part A, Part B, History, Geography"
-               
-                />
-              </label>
+              {!isExistingSubject ? (
+                <>
+                  <label>
+                    Part
+                    <input
+                      value={form.part}
+                      onChange={(event) => updateField("part", event.target.value)}
+                      placeholder="Part A, Part B, History, Geography"
+                    />
+                  </label>
 
-              <label>
-                Term
-                <input
-                  value={form.term}
-                  onChange={(event) => updateField("term", event.target.value)}
-                  placeholder="Term 1, Term 2"
-                
-                />
-              </label>
+                  <label>
+                    Term
+                    <input
+                      value={form.term}
+                      onChange={(event) => updateField("term", event.target.value)}
+                      placeholder="Term 1, Term 2"
+                    />
+                  </label>
+                </>
+              ) : null}
             </>
           ) : null}
 
         {selectedExistingSubject ? (
             <div className="full-span inline-summary-card">
-              <strong>{selectedExistingSubject.subjectTitle}</strong>
+              <strong>{buildSubjectOptionLabel(selectedExistingSubject)}</strong>
               <span className="muted small">
                 {selectedExistingSubject.board} • Class {selectedExistingSubject.standard}
                 {selectedExistingSubject.part && ` • ${selectedExistingSubject.part}`}
@@ -506,7 +698,12 @@ export default function UploadSubjectPage() {
             <button
               className="primary-btn"
               type="submit"
-              disabled={isSubmitting || result?.upload?.status === "queued" || result?.uploadStatus === "queued"}
+              disabled={
+                isSubmitting ||
+                (isExistingSubject && !selectedExistingSubject) ||
+                result?.upload?.status === "queued" ||
+                result?.uploadStatus === "queued"
+              }
             >
               {submitLabel}
             </button>

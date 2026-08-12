@@ -2,13 +2,18 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { promisify } = require("util");
-const mongoose = require("mongoose");
 const { formidable } = require("formidable");
 const axios = require("axios");
 const SubjectUpload = require("../model/SubjectUpload");
 const SubjectUnit = require("../model/SubjectUnit");
 // const { logApiStep, logError } = require("../utils/logger");
 const { callPython } = require("../services/pythonGateway");
+const {
+  cleanText,
+  normalizePart,
+  normalizeTerm,
+  subjectIdentityKey,
+} = require("../utils/subjectIdentity");
 
 function formatTimestamp(date = new Date()) {
   const pad = (value) => String(value).padStart(2, "0");
@@ -39,6 +44,10 @@ const PYTHON_REQUEST_TIMEOUT_MS = Number(
   process.env.PYTHON_REQUEST_TIMEOUT_MS || 15 * 60 * 1000,
 );
 const BACKGROUND_UPLOAD_PREFIX = "gradeup-subject-upload";
+
+function escapeRegExp(value = "") {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 const API_NAME = "UPLOAD_SUBJECT";
 
 let isQueueRunning = false;
@@ -212,21 +221,11 @@ function normalizeProcessingMode(value) {
 }
 
 function parseTerm(termString) {
-  if (!termString) return null;
-  const normalized = String(termString).trim().toLowerCase();
-  if (/^term\s*[1-4]$/i.test(normalized)) {
-    return normalized.replace(/\s+/g, " ");
-  }
-  return normalized.length > 0 ? normalized : null;
+  return normalizeTerm(termString);
 }
 
 function parsePart(partString) {
-  if (!partString) return null;
-  const normalized = String(partString).trim().toUpperCase();
-  if (/^part\s*[a-d]$/i.test(normalized)) {
-    return normalized.replace(/\s+/g, " ");
-  }
-  return normalized.length > 0 ? normalized : null;
+  return normalizePart(partString);
 }
 
 function getPartSequence(part) {
@@ -248,14 +247,7 @@ function getTermSequence(term) {
 }
 
 function buildSubjectGroupKeyWithPartTerm(unit) {
-  return [
-    unit.board,
-    unit.standard,
-    unit.subject,
-    unit.part || "general",
-    unit.term || "general",
-    unit.uploadId || "standalone",
-  ].join("::");
+  return subjectIdentityKey(unit);
 }
 
 function buildUnitLabel(unitNumber, fallbackTitle) {
@@ -282,18 +274,11 @@ function getReaderIndex(structuredData) {
 }
 
 function buildGroupKeyFromUnit(unit) {
-  return [
-    unit.board,
-    unit.standard,
-    unit.subject,
-    unit.part || "general",
-    unit.term || "general",
-    unit.uploadId || "standalone",
-  ].join("::");
+  return subjectIdentityKey(unit);
 }
 
-function createSubjectGroupKey() {
-  return new mongoose.Types.ObjectId().toString();
+function createSubjectGroupKey({ board, standard, subject, part, term }) {
+  return subjectIdentityKey({ board, standard, subject, part, term });
 }
 
 function createTransactionId() {
@@ -441,6 +426,8 @@ async function createOrUpdateSubjectUnit({
   standard,
   subject,
   subjectGroupKey,
+  part,
+  term,
   requestedTitle,
   pythonResponse,
   structuredData,
@@ -460,7 +447,8 @@ async function createOrUpdateSubjectUnit({
     structuredUnit?.unit_number ?? enrichedUnit?.unit_number ?? null;
   const resolvedUnitTitle =
     structuredUnit?.title || enrichedUnit?.title || requestedTitle;
-  const resolvedPart = structuredUnit?.part || pythonResponse?.part || null;
+  const resolvedPart = parsePart(structuredUnit?.part || pythonResponse?.part || part);
+  const resolvedTerm = parseTerm(structuredUnit?.term || pythonResponse?.term || term);
   const pythonDocumentId = pythonResponse.document_id;
   const documentId = await resolveSubjectUnitDocumentId({
     pythonDocumentId,
@@ -480,6 +468,9 @@ async function createOrUpdateSubjectUnit({
     subject,
     subjectGroupKey,
     part: resolvedPart,
+    term: resolvedTerm,
+    partSequence: getPartSequence(resolvedPart),
+    termSequence: getTermSequence(resolvedTerm),
     unitNumber: resolvedUnitNumber,
     unitTitle: resolvedUnitTitle,
     unitLabel: buildUnitLabel(resolvedUnitNumber, requestedTitle),
@@ -561,7 +552,7 @@ async function processSingleUnitUpload(upload) {
         // Call Python API for this file — send as multipart form with actual PDF
         const pythonBaseUrl = process.env.AI_URL;
         const pythonResponse = await sendPdfToPython({
-          endpoint: `${pythonBaseUrl}/upload-subject`,
+          endpoint: `${pythonBaseUrl}/upload-agentic`,
           filePath,
           fileName: path.basename(filePath),
           payload: {
@@ -758,13 +749,14 @@ async function processWholeSubjectUpload(upload) {
   });
 
   const pythonResponse = await sendPdfToPython({
-    endpoint: `${pythonBaseUrl}/upload-subject`,
+    endpoint: `${pythonBaseUrl}/upload-agentic`,
     filePath: upload.queuedFilePath,
     fileName: upload.originalFileName,
     payload: {
       board: upload.board,
       subject: upload.subject,
       part: upload.part,
+      term: upload.term,
       class_name: upload.standard,
       auto_upload: true,
       skip_enrichment: upload.skipEnrichment,
@@ -814,6 +806,8 @@ async function processWholeSubjectUpload(upload) {
       standard: upload.standard,
       subject: upload.subject,
       subjectGroupKey: upload.subjectGroupKey,
+      part: upload.part,
+      term: upload.term,
       requestedTitle: upload.unitOrChapterName,
       pythonResponse: item,
       structuredData,
@@ -1010,26 +1004,51 @@ function ensureSubjectUploadQueueRunning() {
 }
 
 async function findSubjectGroupSnapshot(subjectGroupKey) {
-  let units = await SubjectUnit.find({ subjectGroupKey }).sort({
+  const key = String(subjectGroupKey || "");
+  let units = await SubjectUnit.find({
+    $or: [
+      { subjectGroupKey: key },
+      { subjectGroupKey: key.toLowerCase() },
+    ],
+  }).sort({
+    termSequence: 1,
+    partSequence: 1,
     unitNumber: 1,
     createdAt: 1,
   });
 
-  if (!units.length && String(subjectGroupKey).includes("::")) {
-    const [board, standard, subject, rawPart, uploadId] =
-      String(subjectGroupKey).split("::");
-    const fallbackFilter = {
-      board,
-      standard,
-      subject,
-      part: rawPart === "general" ? null : rawPart,
-    };
+  if (!units.length && key.includes("::")) {
+    const parts = key.split("::");
+    let fallbackFilter = null;
 
-    if (uploadId && uploadId !== "standalone") {
-      fallbackFilter.uploadId = uploadId;
+    if (parts[0] === "subject" && parts.length >= 6) {
+      const [, board, standard, rawTerm, subject, rawPart] = parts;
+      fallbackFilter = {
+        board: new RegExp(`^${escapeRegExp(board)}$`, "i"),
+        standard: new RegExp(`^${escapeRegExp(standard)}$`, "i"),
+        subject: new RegExp(`^${escapeRegExp(subject)}$`, "i"),
+        term: rawTerm === "__none__" ? null : new RegExp(`^${escapeRegExp(rawTerm)}$`, "i"),
+        part: rawPart === "__none__" ? null : new RegExp(`^${escapeRegExp(rawPart)}$`, "i"),
+      };
+    } else {
+      const [board, standard, subject, rawPart, rawTerm, uploadId] =
+        parts.length >= 6 ? parts : [parts[0], parts[1], parts[2], parts[3], null, parts[4]];
+      fallbackFilter = {
+        board,
+        standard,
+        subject,
+        part: rawPart === "general" || !rawPart ? null : rawPart,
+        ...(rawTerm ? { term: rawTerm === "general" ? null : rawTerm } : {}),
+      };
+
+      if (uploadId && uploadId !== "standalone") {
+        fallbackFilter.uploadId = uploadId;
+      }
     }
 
     units = await SubjectUnit.find(fallbackFilter).sort({
+      termSequence: 1,
+      partSequence: 1,
       unitNumber: 1,
       createdAt: 1,
     });
@@ -1038,11 +1057,14 @@ async function findSubjectGroupSnapshot(subjectGroupKey) {
   if (units.length) {
     const firstUnit = units[0];
     return {
-      subjectGroupKey: firstUnit.subjectGroupKey || subjectGroupKey,
+      subjectGroupKey: key.startsWith("subject::")
+        ? key
+        : firstUnit.subjectGroupKey || subjectGroupKey,
       board: firstUnit.board,
       standard: firstUnit.standard,
       subject: firstUnit.subject,
       part: firstUnit.part || null,
+      term: firstUnit.term || null,
       unitCount: units.length,
       units,
     };
@@ -1062,6 +1084,7 @@ async function findSubjectGroupSnapshot(subjectGroupKey) {
     standard: upload.standard,
     subject: upload.subject,
     part: upload.part || null,
+    term: upload.term || null,
     unitCount: 0,
     units: [],
   };
@@ -1075,11 +1098,11 @@ async function handleAdminSubjectUpload(req) {
       ? "existing_subject"
       : "new_subject";
   const existingSubjectKey = pickField(fields, "existingSubjectKey");
-  let board = pickField(fields, "board");
-  let standard = pickField(fields, "standard");
-  let subject = pickField(fields, "subject");
-  let part = pickField(fields, "part");
-  let term = pickField(fields, "term");
+  let board = cleanText(pickField(fields, "board"));
+  let standard = cleanText(pickField(fields, "standard"));
+  let subject = cleanText(pickField(fields, "subject"));
+  let part = parsePart(pickField(fields, "part"));
+  let term = parseTerm(pickField(fields, "term"));
   const unitOrChapterName = pickField(fields, "unitOrChapterName");
   const processingMode = normalizeProcessingMode(
     pickField(fields, "processingMode"),
@@ -1108,21 +1131,36 @@ async function handleAdminSubjectUpload(req) {
       throw error;
     }
 
-    const existingGroup = await findSubjectGroupSnapshot(existingSubjectKey);
+    const isNewTermSubjectSelection = String(existingSubjectKey).startsWith("new-term::");
+    const existingGroup = isNewTermSubjectSelection
+      ? null
+      : await findSubjectGroupSnapshot(existingSubjectKey);
     if (!existingGroup) {
-      const error = new Error("Selected subject was not found");
-      error.statusCode = 404;
-      throw error;
-    }
+      if (!isNewTermSubjectSelection) {
+        const error = new Error("Selected subject was not found");
+        error.statusCode = 404;
+        throw error;
+      }
 
-    subjectGroupKey = existingGroup.subjectGroupKey;
-    board = existingGroup.board;
-    standard = existingGroup.standard;
-    subject = existingGroup.subject;
-    part = existingGroup.part;
-    term = existingGroup.term || term;
+      if (!board || !standard || !subject || !term) {
+        const error = new Error(
+          "board, standard, term, and subject are required for a new term subject upload",
+        );
+        error.statusCode = 400;
+        throw error;
+      }
+
+      subjectGroupKey = createSubjectGroupKey({ board, standard, subject, part, term });
+    } else {
+      subjectGroupKey = existingGroup.subjectGroupKey;
+      board = existingGroup.board;
+      standard = existingGroup.standard;
+      subject = existingGroup.subject;
+      part = existingGroup.part || null;
+      term = existingGroup.term || null;
+    }
   } else {
-    subjectGroupKey = createSubjectGroupKey();
+    subjectGroupKey = createSubjectGroupKey({ board, standard, subject, part, term });
   }
 
   if (!board || !standard || !subject) {
@@ -1188,8 +1226,8 @@ async function handleAdminSubjectUpload(req) {
     }
   }
 
-  const parsedPart = part ? parsePart(part) : null;
-  const parsedTerm = term ? parseTerm(term) : null;
+  const parsedPart = parsePart(part);
+  const parsedTerm = parseTerm(term);
 
   const upload = await SubjectUpload.create({
     board,

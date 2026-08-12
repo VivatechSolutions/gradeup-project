@@ -7,7 +7,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node app.js",
     "dev": "nodemon app.js",
-    "admin:hash": "node scripts/createAdminHash.js"
+    "admin:hash": "node scripts/createAdminHash.js",
+    "test:subject-identity": "node tests/subjectIdentity.test.js"
   },
   "author": "",
   "license": "ISC",

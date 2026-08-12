@@ -57,7 +57,7 @@ def _flow(state: Optional[str] = None):
         # Inline JSON content supplied directly in the env var.
         client_config = json.loads(val)
         return Flow.from_client_config(
-            client_config, scopes=SCOPES, redirect_uri=REDIRECT_URI, state=state)
+            client_config, scopes=SCOPES, redirect_uri=REDIRECT_URI, state=state, autogenerate_code_verifier=False,)
     else:
         return Flow.from_client_secrets_file(
             val, scopes=SCOPES, redirect_uri=REDIRECT_URI, state=state,
