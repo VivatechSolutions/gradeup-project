@@ -3396,10 +3396,12 @@ function buildReaderBlocksFromMarkdownText(
   const blocks: any[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
+  let foundMarkdownImage = false;
 
   MARKDOWN_IMAGE_PATTERN.lastIndex = 0;
 
   while ((match = MARKDOWN_IMAGE_PATTERN.exec(text)) !== null) {
+    foundMarkdownImage = true;
     const before = text.slice(lastIndex, match.index);
     if (before.trim()) {
       blocks.push(...buildTextLayoutFromString(before));
@@ -3424,7 +3426,7 @@ function buildReaderBlocksFromMarkdownText(
     blocks.push(...buildTextLayoutFromString(after));
   }
 
-  return blocks.length ? blocks : buildTextLayoutFromString(text);
+  return blocks.length || foundMarkdownImage ? blocks : buildTextLayoutFromString(text);
 }
 
 function extractSectionTopicsFromContent(
