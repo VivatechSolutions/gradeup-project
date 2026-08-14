@@ -3668,6 +3668,21 @@ function buildStructuredLayout(
       });
   };
 
+  const resolveImageFromKnownFolder = (fileName: string) => {
+    const normalizedFileName = getImageFileName(fileName);
+    if (!normalizedFileName) return null;
+
+    for (const knownUrl of mediaImageMap.values()) {
+      const cleanUrl = normalizeImageUrlKey(knownUrl);
+      const withoutQuery = cleanUrl.split(/[?#]/)[0];
+      const lastSlashIndex = withoutQuery.lastIndexOf("/");
+      if (lastSlashIndex === -1) continue;
+      return `${withoutQuery.slice(0, lastSlashIndex + 1)}${normalizedFileName}`;
+    }
+
+    return null;
+  };
+
   const collectMediaImages = (value: any) => {
     if (!value) return;
     if (typeof value === "string") {
@@ -3714,7 +3729,8 @@ function buildStructuredLayout(
   collectMediaImages(content);
 
   const resolveImageRef = (fileName: string) =>
-    mediaImageMap.get(getImageFileName(fileName)) || null;
+    mediaImageMap.get(getImageFileName(fileName)) ||
+    resolveImageFromKnownFolder(fileName);
 
   const pushImageBlock = (imageUrl: any, caption?: any, targetBlocks = blocks) => {
     const normalizedUrl = normalizeImageUrlKey(imageUrl);
@@ -3930,16 +3946,27 @@ function buildStructuredLayout(
             const subTitle = normalizeReaderLabel(
               subsection.title || subsection.id || "",
             );
+            const subNumber = normalizeReaderLabel(
+              subsection.id ||
+                subsection.section_id ||
+                subsection.sectionId ||
+                subsection.section_number ||
+                subsection.sectionNumber,
+            );
+            const subHeadingLabel =
+              subNumber && subTitle && subTitle !== subNumber
+                ? `${subNumber} ${subTitle}`.trim()
+                : subTitle || subNumber;
 
             // Create a logical block for this subsection (keeps all parts together during pagination)
             const subsectionBlock = {
               type: "subsection_block",
               subType: subType,
-              title: subTitle,
+              title: subHeadingLabel,
               anchor: makeAnchorId(
                 chapterId,
                 subType,
-                subTitle || subsection.id,
+                subNumber || subTitle || subsection.id,
               ),
               children: [],
             };
@@ -3961,7 +3988,7 @@ function buildStructuredLayout(
             } else if (subType === "definition") {
               subsectionBlock.children.push({
                 type: "heading3",
-                content: subTitle || "Definition",
+                content: subHeadingLabel || "Definition",
               });
               if (subsection.content) {
                 pushTextField(subsection.content, subsectionBlock.children);
@@ -3969,7 +3996,7 @@ function buildStructuredLayout(
             } else if (subType === "example") {
               subsectionBlock.children.push({
                 type: "heading3",
-                content: subTitle || subsection.id || "Example",
+                content: subHeadingLabel || "Example",
               });
               if (subsection.content) {
                 pushTextField(subsection.content, subsectionBlock.children);
@@ -4019,10 +4046,10 @@ function buildStructuredLayout(
                 }
               }
             } else {
-              if (subTitle) {
+              if (subHeadingLabel) {
                 subsectionBlock.children.push({
                   type: "heading3",
-                  content: subTitle,
+                  content: subHeadingLabel,
                 });
               }
               if (subsection.content) {
@@ -4378,6 +4405,9 @@ function paginateReaderBlocks(items: any[], pageCapacity: number) {
       : null;
     const keepWithNextUnits =
       itemUnits + (nextContentBlock ? estimateReaderBlockUnits(nextContentBlock) : 0);
+    const currentPageOnlyHasHeading =
+      currentPage.length === 1 &&
+      (currentPage[0]?.type === "heading2" || currentPage[0]?.type === "heading3");
 
     if (
       currentPage.length &&
@@ -4391,7 +4421,8 @@ function paginateReaderBlocks(items: any[], pageCapacity: number) {
     if (
       currentPage.length &&
       currentUnits + itemUnits > pageCapacity &&
-      !canAbsorbTinyTail
+      !canAbsorbTinyTail &&
+      !currentPageOnlyHasHeading
     ) {
       pushPage();
     }
@@ -9731,6 +9762,26 @@ mark.reader-highlight:hover { filter: brightness(1.15); }
 }
 .reader-table tbody tr:last-child td {
   border-bottom: 0;
+}
+.dark .reader-table-wrap,
+[data-theme="dark"] .reader-table-wrap {
+  background: rgba(15,23,42,.82);
+  border-color: rgba(148,163,184,.24);
+  box-shadow: 0 8px 22px rgba(0,0,0,.24);
+}
+.dark .reader-table th,
+[data-theme="dark"] .reader-table th {
+  background: rgba(99,102,241,.22);
+  color: #e5e7eb;
+}
+.dark .reader-table td,
+[data-theme="dark"] .reader-table td {
+  color: #d1d5db;
+  border-bottom-color: rgba(148,163,184,.2);
+}
+.dark .reader-table tbody tr:nth-child(even),
+[data-theme="dark"] .reader-table tbody tr:nth-child(even) {
+  background: rgba(255,255,255,.045);
 }
 .reader-html-block {
   break-inside: avoid-column;
