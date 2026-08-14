@@ -1236,7 +1236,7 @@ export default function ExamPreparationPage() {
                           {(FAQS_DATA[subj.name] || []).length} Questions
                         </span>
                       </div>
-                      <div className="ep-hub-title">FAQs & Notes</div>
+                      <div className="ep-hub-title">FAQs & Exercises</div>
                       <div className="ep-hub-desc">
                         Important questions for revision — browse by unit,
                         search by keyword. Perfect for quick exam-day reference.

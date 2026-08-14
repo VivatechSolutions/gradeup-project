@@ -3250,7 +3250,7 @@ export default function AITutorModern() {
                 </div>
               </motion.div>
               <motion.div
-                className="at-ml-card orange col2"
+                className="at-ml-card orange "
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.15 }}
@@ -3260,6 +3260,19 @@ export default function AITutorModern() {
                 <div className="at-ml-name">FAQ & Notes</div>
                 <div className="at-ml-desc">
                   Frequently asked questions and study notes
+                </div>
+              </motion.div>
+              <motion.div
+                className="at-ml-card orange"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.15 }}
+                // onClick={() => setRightPanelView("faq")}
+              >
+                <span className="at-ml-icon">💡</span>
+                <div className="at-ml-name">Homework Helper</div>
+                <div className="at-ml-desc">
+                  Get help with your homework
                 </div>
               </motion.div>
             </div>

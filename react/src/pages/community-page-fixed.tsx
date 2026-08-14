@@ -581,7 +581,7 @@ export default function CommunityPage() {
 
   const tabs = [
     { id:"feed",        label:"Feed",       icon:<MessageSquare /> },
-    { id:"messaging",   label:"Messages",   icon:<Send /> },
+    // { id:"messaging",   label:"Messages",   icon:<Send /> },
     { id:"blogs",       label:"Blogs",      icon:<BookOpen /> },
     { id:"leaderboard", label:"Leaderboard",icon:<Trophy /> },
   ];

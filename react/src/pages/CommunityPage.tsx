@@ -52,6 +52,7 @@ import {
   Video,
   Phone,
   MapPin,
+  Presentation,
   Crown,
   ChevronLeft,
   Hash as HashIcon,
@@ -1895,7 +1896,8 @@ const { meetingUI, openMeeting, renderMeetingCard } = useMeetingSystem({
                   style={{ position: "relative" }}
                   onClick={() => setIsSeminarSidebarOpen(true)}
                 >
-                  <Video size={14} />
+                  <Presentation size={14} />
+
                   {communitySessions.length > 0 && (
                     <span
                       style={{

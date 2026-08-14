@@ -1181,7 +1181,7 @@ export default function HomeworkHelper() {
         </div>
 
         {/* Subject pills (desktop/tablet) */}
-        {!bp.mobile && (
+        {/* {!bp.mobile && (
           <div style={{ flex: 1, display: "flex", justifyContent: "center", overflow: "hidden" }}>
             <div style={{
               display: "flex", gap: 3,
@@ -1206,13 +1206,13 @@ export default function HomeworkHelper() {
               })}
             </div>
           </div>
-        )}
+        )} */}
 
         {/* Right: Mode + actions */}
         <div style={{ display: "flex", alignItems: "center", gap: bp.mobile ? 4 : 6, marginLeft: "auto", flexShrink: 0 }}>
 
           {/* Subject dropdown (mobile only) */}
-          {bp.mobile && (
+          {/* {bp.mobile && (
             <div ref={subjDropRef} style={{ position: "relative" }}>
               <button
                 onClick={() => { setSubjDropOpen((o) => !o); setModeDropOpen(false); }}
@@ -1248,10 +1248,10 @@ export default function HomeworkHelper() {
                 </div>
               )}
             </div>
-          )}
+          )} */}
 
           {/* Mode dropdown */}
-          <div ref={modeDropRef} style={{ position: "relative" }}>
+          {/* <div ref={modeDropRef} style={{ position: "relative" }}>
             <button
               onClick={() => { setModeDropOpen((o) => !o); setSubjDropOpen(false); }}
               style={{
@@ -1290,7 +1290,7 @@ export default function HomeworkHelper() {
                 })}
               </div>
             )}
-          </div>
+          </div> */}
 
           {/* History (desktop) */}
           {!bp.mobile && (

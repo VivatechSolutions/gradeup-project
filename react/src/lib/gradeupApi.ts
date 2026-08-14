@@ -434,7 +434,6 @@ export async function completeDebateRoomOpening(payload: {
     body: JSON.stringify(payload),
   });
 }
-
 export async function completeDebateRoomAiStudent(payload: {
   sessionId: string;
   nextSpeakerId?: string | null;
@@ -614,6 +613,55 @@ export async function getSeminarSession(sessionId: string) {
 
 export async function getActiveSeminarSessions() {
   return apiFetch<any[]>("/api/v1/seminar/active");
+}
+
+export async function createSeminarAiDocument(payload: any) {
+  return apiFetch<any>("/api/v1/seminar/create-ai/documents", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getSeminarAiDocument(documentId: string) {
+  return apiFetch<any>(
+    `/api/v1/seminar/create-ai/documents/${encodeURIComponent(documentId)}`,
+  );
+}
+
+export async function saveSeminarAiDocument(documentId: string, updates: any) {
+  return apiFetch<any>(
+    `/api/v1/seminar/create-ai/documents/${encodeURIComponent(documentId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(updates),
+    },
+  );
+}
+
+export async function sendSeminarAiDocumentChat(payload: {
+  documentId: string;
+  prompt: string;
+  hasFile?: boolean;
+  documentText?: string;
+  companionNotesText?: string;
+  config?: any;
+}) {
+  return apiFetch<any>(
+    `/api/v1/seminar/create-ai/documents/${encodeURIComponent(payload.documentId)}/chat`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export async function deleteSeminarAiDocument(documentId: string) {
+  return apiFetch<any>(
+    `/api/v1/seminar/create-ai/documents/${encodeURIComponent(documentId)}`,
+    {
+      method: "DELETE",
+    },
+  );
 }
 
 export async function joinSeminarSession(payload: {

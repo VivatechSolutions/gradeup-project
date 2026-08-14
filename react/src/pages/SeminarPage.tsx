@@ -7,11 +7,14 @@ import FormattedAIContent from "../components/ai/FormattedAIContent";
 import { useAuth } from "../hooks/use-auth";
 import { useSessionState } from "../hooks/useSessionState";
 import {
+  createSeminarAiDocument,
   createSeminarRoom,
+  deleteSeminarAiDocument,
   endSeminarWithTranscript,
   getActiveSeminarSessions,
   getCandidateContext,
   getLibrarySubjects,
+  getSeminarAiDocument,
   getSeminarSession,
   getSeminarTopics,
   guideSeminar,
@@ -21,9 +24,11 @@ import {
   requestSeminarSpeakingAccess,
   respondSeminarSpeakingAccess,
   sendSeminarMessage,
+  saveSeminarAiDocument,
   startSeminar,
   startSeminarChat,
   respondSeminarChat,
+  sendSeminarAiDocumentChat,
   startSeminarRoom,
   transcribeDebateAudio,
   synthesizeDebateSpeech,
@@ -222,7 +227,7 @@ select.finput{cursor:pointer;appearance:none;background-image:url("data:image/sv
 .setup-h{font-size:clamp(14px,1.6vw,18px);font-weight:900;letter-spacing:-.3px;color:var(--t1);margin-bottom:3px}
 .setup-sub{font-size:11px;color:var(--t2);margin-bottom:14px;line-height:1.6}
 
-.module-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:14px}
+.module-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:14px}
 .module-card{padding:13px;border-radius:13px;border:2px solid var(--bdr);background:var(--surf2);cursor:pointer;transition:all .2s;display:flex;gap:10px;align-items:flex-start}
 .module-card:hover{border-color:rgba(0,195,122,.3);background:rgba(0,195,122,.03);transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,195,122,.1)}
 .module-card.sel{border-color:var(--em);background:rgba(0,195,122,.06);box-shadow:0 6px 20px rgba(0,195,122,.12)}
@@ -271,6 +276,9 @@ select.finput{cursor:pointer;appearance:none;background-image:url("data:image/sv
 .link-val{flex:1;font-family:var(--mono);font-size:10px;color:var(--em);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .copy-btn{padding:4px 10px;border-radius:6px;border:none;cursor:pointer;background:var(--grad);color:#fff;font-size:11px;font-weight:700;transition:.15s;flex-shrink:0}
 .copy-btn:hover{transform:scale(1.04)}
+.create-open-link{display:flex;align-items:center;justify-content:center;margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--grad);color:#fff;text-decoration:none;font-size:12.5px;font-weight:800;box-shadow:0 5px 18px rgba(0,195,122,.22)}
+.create-open-link:hover{transform:translateY(-1px);box-shadow:0 8px 24px rgba(0,195,122,.32)}
+.create-link-ready{animation:fadeUp .22s ease both}
 .obs-join-section{padding:14px;border-radius:14px;background:linear-gradient(135deg,rgba(45,156,219,.07),rgba(124,58,237,.05));border:1.5px solid rgba(45,156,219,.2);margin-bottom:14px}
 .obs-join-title{font-size:12px;font-weight:800;color:var(--sky);margin-bottom:10px;display:flex;align-items:center;gap:6px}
 .obs-join-input-row{display:flex;gap:7px;margin-bottom:10px}
@@ -686,12 +694,91 @@ select.finput{cursor:pointer;appearance:none;background-image:url("data:image/sv
 .sched-info-text{font-size:11.5px;font-weight:700;color:var(--em)}
 .sched-info-sub{font-size:10.5px;color:var(--t2)}
 
+/* CREATE WITH AI */
+.create-ai-page{height:100dvh;width:100vw;background:#07111e;color:#e8ecf2;display:flex;flex-direction:column;overflow:hidden}
+.create-ai-bar{height:52px;background:rgba(7,17,30,.98);border-bottom:1px solid rgba(255,255,255,.07);display:flex;align-items:center;gap:10px;padding:0 14px;flex-shrink:0;min-width:0}
+.create-ai-logo{display:flex;align-items:center;gap:8px;color:#fff;font-size:13px;font-weight:900;border:none;background:none;cursor:pointer;font-family:var(--font);white-space:nowrap}
+.create-ai-logo-ic{width:28px;height:28px;border-radius:9px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:13px}
+.create-ai-topic{flex:1;min-width:0;font-size:11px;color:rgba(255,255,255,.42);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.create-ai-topic strong{color:#fff}
+.create-ai-pill{padding:5px 10px;border-radius:8px;border:1px solid rgba(0,195,122,.22);background:rgba(0,195,122,.1);color:#5ee3b7;font-size:10px;font-weight:800;white-space:nowrap}
+.create-ai-pill.unsaved{border-color:rgba(246,166,35,.28);background:rgba(246,166,35,.1);color:#fcd18e}
+.create-ai-pill.saving{border-color:rgba(45,156,219,.28);background:rgba(45,156,219,.1);color:#7ed3f7}
+.create-ai-pill.draft{border-color:rgba(124,58,237,.28);background:rgba(124,58,237,.1);color:#c4b5fd}
+.create-ai-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.doc-action{height:30px;border-radius:8px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.06);color:rgba(255,255,255,.68);font-size:10.5px;font-weight:800;padding:0 10px;cursor:pointer;white-space:nowrap}
+.doc-action:hover{background:rgba(255,255,255,.12);color:#fff}
+.doc-action:disabled{opacity:.38;cursor:not-allowed;transform:none}
+.doc-action.primary{background:var(--grad);border-color:transparent;color:#fff}
+.doc-action.ghost{background:rgba(255,255,255,.035)}
+.doc-action.danger{border-color:rgba(229,62,62,.35);background:rgba(229,62,62,.1);color:#fca5a5}
+.create-ai-body{flex:1;display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,360px);min-height:0;overflow:hidden}
+.create-doc-pane{background:#eef1f5;display:flex;flex-direction:column;min-width:0;overflow:hidden}
+.create-doc-toolbar{min-height:46px;background:#fff;border-bottom:1px solid rgba(0,0,0,.08);display:flex;align-items:center;gap:8px;padding:8px 14px;flex-wrap:wrap;flex-shrink:0}
+.doc-tool{height:28px;min-width:28px;border-radius:7px;border:1px solid rgba(0,0,0,.08);background:#f8fafc;color:#334155;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;padding:0 9px}
+.doc-tool.active{border-color:rgba(0,195,122,.35);background:rgba(0,195,122,.08);color:#008b58}
+.doc-tool:disabled{opacity:.38;cursor:not-allowed}
+.doc-tool-sep{width:1px;height:20px;background:rgba(0,0,0,.1);margin:0 2px}
+.doc-status{margin-left:auto;font-size:10.5px;font-weight:800;color:#00a366;white-space:nowrap}
+.create-doc-scroll{flex:1;overflow:auto;padding:22px;display:flex;justify-content:center;-webkit-overflow-scrolling:touch}
+.create-doc-scroll.full-preview{padding:0;overflow:hidden;background:#111827}
+.create-doc-paper{width:min(820px,100%);min-height:calc(100dvh - 150px);background:#fff;color:#111827;border:1px solid rgba(0,0,0,.08);box-shadow:0 12px 38px rgba(15,23,42,.12);border-radius:4px;padding:clamp(24px,4vw,54px);font-size:15px;line-height:1.75;white-space:pre-wrap;outline:none}
+.create-doc-paper:focus{box-shadow:0 0 0 3px rgba(0,195,122,.14),0 12px 38px rgba(15,23,42,.12)}
+.create-file-preview{width:min(1000px,100%);min-height:calc(100dvh - 150px);background:#fff;border:1px solid rgba(0,0,0,.08);box-shadow:0 12px 38px rgba(15,23,42,.12);border-radius:6px;display:flex;flex-direction:column;overflow:hidden}
+.create-file-preview.full{width:100%;height:100%;min-height:0;border:0;border-radius:0;box-shadow:none;background:#0b1220}
+.create-file-preview-head{min-height:46px;padding:9px 12px;border-bottom:1px solid rgba(0,0,0,.08);display:flex;align-items:center;justify-content:space-between;gap:10px;background:#fff;color:#111827}
+.create-file-preview.full .create-file-preview-head{min-height:38px;padding:7px 12px;background:#0f172a;border-bottom:1px solid rgba(255,255,255,.08);color:#e8ecf2}
+.create-file-preview-head div{min-width:0;display:flex;flex-direction:column;gap:2px}
+.create-file-preview-head strong{font-size:12px;font-weight:900;color:#111827}
+.create-file-preview.full .create-file-preview-head strong{color:#fff}
+.create-file-preview-head span{font-size:10px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:720px}
+.create-file-preview.full .create-file-preview-head span{color:rgba(255,255,255,.45);max-width:none}
+.create-file-stage{position:relative;flex:1;min-height:0;background:#020617;display:flex}
+.create-file-frame{border:0;width:100%;flex:1;min-height:620px;background:#f8fafc}
+.create-file-preview.full .create-file-frame{height:100%;min-height:0;background:#020617}
+.create-slide-image-wrap{position:relative;flex:1;min-height:0;background:#020617;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.create-slide-image{max-width:100%;max-height:100%;width:100%;height:100%;object-fit:contain;background:#020617}
+.create-slide-counter{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:6;padding:5px 11px;border-radius:999px;background:rgba(15,23,42,.84);border:1px solid rgba(255,255,255,.12);color:#fff;font-size:11px;font-weight:800}
+.create-slide-nav{position:absolute;top:50%;transform:translateY(-50%);z-index:5;width:38px;height:58px;border:none;border-radius:10px;background:rgba(15,23,42,.82);color:#fff;font-size:24px;font-weight:900;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 24px rgba(0,0,0,.28);transition:.16s}
+.create-slide-nav:hover{background:rgba(0,195,122,.9);transform:translateY(-50%) scale(1.04)}
+.create-slide-nav:disabled{opacity:.28;cursor:not-allowed;transform:translateY(-50%);background:rgba(15,23,42,.72)}
+.create-slide-nav.prev{left:12px}
+.create-slide-nav.next{right:12px}
+.create-file-fallback{flex:1;min-height:420px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#64748b;font-size:13px;text-align:center;padding:24px}
+.create-file-viewer-fallback{padding:8px 12px;font-size:11px;color:#64748b;border-top:1px solid rgba(0,0,0,.06);display:flex;justify-content:space-between;align-items:center;gap:10px;background:#fff}
+.create-file-viewer-fallback a{color:#00a366;font-weight:800;text-decoration:none;white-space:nowrap}
+.create-file-viewer-links{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.create-chat-pane{background:rgba(7,17,30,.98);border-left:1px solid rgba(255,255,255,.07);display:flex;flex-direction:column;min-width:0;overflow:hidden}
+.create-chat-head{padding:13px 14px;border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0}
+.create-chat-title{font-size:13px;font-weight:900;color:#fff;margin-bottom:3px}
+.create-chat-sub{font-size:10.5px;color:rgba(255,255,255,.36);line-height:1.45}
+.create-chat-msgs{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px}
+.create-chat-msg{display:flex;gap:8px;align-items:flex-start;animation:fadeUp .2s ease}
+.create-chat-msg.me{flex-direction:row-reverse}
+.create-chat-av{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;flex-shrink:0}
+.create-chat-msg.ai .create-chat-av{background:rgba(45,156,219,.18);color:#7ed3f7;border:1px solid rgba(45,156,219,.22)}
+.create-chat-msg.me .create-chat-av{background:rgba(0,195,122,.18);color:#5ee3b7;border:1px solid rgba(0,195,122,.22)}
+.create-chat-bubble{max-width:86%;padding:9px 11px;border-radius:11px;font-size:11.5px;line-height:1.65;white-space:pre-wrap}
+.create-chat-msg.ai .create-chat-bubble{background:rgba(45,156,219,.08);border:1px solid rgba(45,156,219,.15);color:#d0e8ff;border-top-left-radius:3px}
+.create-chat-msg.me .create-chat-bubble{background:var(--grad);color:#fff;border-top-right-radius:3px}
+.create-chat-prompts{display:flex;gap:6px;flex-wrap:wrap;padding:8px 12px;border-top:1px solid rgba(255,255,255,.06)}
+.create-refresh-log{width:100%;display:flex;flex-direction:column;gap:5px;margin-bottom:2px}
+.create-refresh-log span{padding:6px 8px;border-radius:8px;background:rgba(0,195,122,.07);border:1px solid rgba(0,195,122,.16);color:#5ee3b7;font-size:10px;font-weight:700;line-height:1.4}
+.create-prompt{border:1px solid rgba(45,156,219,.22);background:rgba(45,156,219,.08);color:#7ed3f7;border-radius:8px;padding:5px 9px;font-size:10px;font-weight:800;cursor:pointer}
+.create-prompt:hover{background:rgba(45,156,219,.16)}
+.create-chat-input{padding:10px 12px;border-top:1px solid rgba(255,255,255,.07);display:flex;gap:8px;align-items:flex-end;flex-shrink:0}
+.create-chat-input textarea{flex:1;min-height:40px;max-height:94px;resize:none;border-radius:10px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.06);color:#e8ecf2;padding:9px 10px;font-size:12px;line-height:1.5;outline:none;font-family:var(--font)}
+.create-chat-input textarea:focus{border-color:rgba(0,195,122,.45)}
+.create-chat-input button{width:40px;height:40px;border-radius:10px;border:none;background:var(--grad);color:#fff;font-size:14px;font-weight:900;cursor:pointer;flex-shrink:0}
+.create-chat-input button:disabled{opacity:.4;cursor:not-allowed}
+
 /* RESPONSIVE */
 @media(max-width:1200px){:root{--panel-w:280px}}
 @media(max-width:1024px){
   .sp-setup{grid-template-columns:34% 1fr}
   .side-panel{width:240px;min-width:240px}
   :root{--panel-w:260px}
+  .create-ai-body{grid-template-columns:minmax(0,1fr) minmax(280px,320px)}
 }
 @media(max-width:900px){
   :root{--panel-w:100%}
@@ -699,6 +786,10 @@ select.finput{cursor:pointer;appearance:none;background-image:url("data:image/sv
   .prep-side-panel{position:absolute;right:0;top:0;bottom:0;z-index:30;width:min(320px,85vw);box-shadow:-8px 0 32px rgba(0,0,0,.5)}
   .prep-body.panel-closed .prep-side-panel{display:none}
   .prep-bar-topic{display:none}
+  .create-ai-body{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) 330px}
+  .create-chat-pane{border-left:none;border-top:1px solid rgba(255,255,255,.07)}
+  .create-doc-scroll{padding:14px}
+  .create-doc-scroll.full-preview{padding:0}
 }
 @media(max-width:860px){
   .sp-setup{grid-template-columns:1fr;height:auto;overflow:visible}
@@ -720,6 +811,24 @@ select.finput{cursor:pointer;appearance:none;background-image:url("data:image/sv
   .prep-tiles-grid .prep-tile:nth-child(2){display:none}
   :root{--panel-w:100vw}
   .prep-side-panel{width:100vw;left:0;right:0}
+  .create-ai-bar{height:auto;min-height:50px;align-items:flex-start;flex-wrap:wrap;padding:8px 10px;gap:6px}
+  .create-ai-topic{flex-basis:100%;order:3}
+  .create-ai-actions{order:4;width:100%;justify-content:flex-start}
+  .doc-action{height:28px;font-size:10px;padding:0 8px}
+  .create-ai-body{grid-template-rows:minmax(0,1fr) 300px}
+  .create-doc-paper{font-size:13.5px;padding:20px;min-height:520px}
+  .create-file-preview{min-height:520px}
+  .create-file-preview.full{min-height:0}
+  .create-file-frame{min-height:470px}
+  .create-file-preview.full .create-file-frame{min-height:0}
+  .create-file-preview-head{align-items:flex-start;flex-direction:column}
+  .create-file-preview-head span{max-width:calc(100vw - 56px)}
+  .create-slide-nav{width:32px;height:48px;font-size:20px}
+  .create-slide-nav.prev{left:8px}.create-slide-nav.next{right:8px}
+  .create-file-viewer-fallback{align-items:flex-start;flex-direction:column}
+  .create-file-viewer-links{justify-content:flex-start}
+  .create-doc-toolbar{padding:7px 9px}
+  .doc-status{width:100%;margin-left:0}
 }
 @media(max-width:480px){
   .room-bar{height:44px;padding:0 8px;gap:4px}.r-pill{font-size:8.5px;padding:2px 5px}
@@ -798,6 +907,419 @@ const avColor = n => COLORS[(n||"U").charCodeAt(0) % COLORS.length];
 const avInit = n => (n||"U").split(/[_\s]/).map(w=>w[0]).join("").slice(0,2).toUpperCase();
 const genId = () => Math.random().toString(36).slice(2,12);
 const genRoomLink = id => `${typeof window!=="undefined"?window.location.origin:""}/seminarPage/join?room=${id}`;
+const CREATE_AI_DOCS_KEY = "gradeup_create_ai_docs_v1";
+const CREATE_AI_DEFAULT_FILE_URL = "https://docs.google.com/presentation/d/13UVvA8_S5u35Pafd9cCsxwZYZq5E8Kfwihndh_PPNGg";
+const genCreateAILink = id => `${typeof window !== "undefined" ? window.location.origin : ""}/seminarPage?createAi=${id}`;
+const isHttpUrl = (value) => typeof value === "string" && /^https?:\/\//i.test(value);
+const cleanUrl = (value = "") => String(value).trim().replace(/^[<[(]+/g, "").replace(/[>\])}.,;:!?]+$/g, "");
+const firstUrlFromText = (value = "") => cleanUrl(String(value).match(/https?:\/\/[^\s"'<>()[\]]+/i)?.[0] || "");
+const normalizeCreateFileLink = (value = "") => firstUrlFromText(value) || cleanUrl(value);
+function slugify(value = "", fallback = "seminar-file") {
+  const slug = String(value).trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return slug || fallback;
+}
+const inferCreateArtifact = (config = {}) => {
+  const sourceUrl = normalizeCreateFileLink(
+    config.fileUrl ||
+    config.documentUrl ||
+    config.artifactUrl ||
+    config.sourceUrl ||
+    config.previewSourceUrl ||
+    (isHttpUrl(config.link) && !/\/seminarPage\?createAi=/i.test(config.link) ? config.link : "")
+  );
+  const rawType = String(config.fileType || config.mimeType || config.kind || "").toLowerCase();
+  const lowerUrl = String(sourceUrl || "").toLowerCase();
+
+  const googleMatch = sourceUrl.match(/docs\.google\.com\/(presentation|document|spreadsheets)\/d\/([^/?#]+)/i);
+  const isGoogleSlides = googleMatch?.[1]?.toLowerCase() === "presentation";
+  const isGoogleDoc = googleMatch?.[1]?.toLowerCase() === "document";
+  const isGoogleSheet = googleMatch?.[1]?.toLowerCase() === "spreadsheets";
+  const googleFileId = googleMatch?.[2] || "";
+
+  const driveMatch = sourceUrl.match(/drive\.google\.com\/file\/d\/([^/?#]+)/i);
+  const isDriveFile = Boolean(driveMatch);
+  const driveFileId = driveMatch?.[1] || "";
+  const extFromUrl = (lowerUrl.match(/\.([a-z0-9]{2,5})(?:\?|#|$)/) || [])[1] || "";
+
+  const isPdf = rawType.includes("pdf") || extFromUrl === "pdf";
+  const isPpt = rawType.includes("presentation") || rawType.includes("powerpoint") || ["ppt", "pptx"].includes(extFromUrl) || isGoogleSlides;
+  const isDoc = rawType.includes("document") || rawType.includes("word") || ["doc", "docx"].includes(extFromUrl) || isGoogleDoc;
+  const isSheet = rawType.includes("sheet") || rawType.includes("excel") || ["xls", "xlsx", "csv"].includes(extFromUrl) || isGoogleSheet;
+  const googleViewerUrl = sourceUrl ? `https://docs.google.com/viewer?url=${encodeURIComponent(sourceUrl)}&embedded=true` : "";
+  const officeViewerUrl = sourceUrl ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(sourceUrl)}` : "";
+
+  const previewUrl =
+    config.previewUrl ||
+    (isGoogleSlides ? `https://docs.google.com/presentation/d/${googleFileId}/embed?start=false&loop=false&delayms=3000` :
+      isGoogleDoc ? `https://docs.google.com/document/d/${googleFileId}/preview` :
+      isGoogleSheet ? `https://docs.google.com/spreadsheets/d/${googleFileId}/preview` :
+      isDriveFile ? `https://drive.google.com/file/d/${driveFileId}/preview` :
+      (isPpt || isDoc || isSheet || isPdf) && sourceUrl ? googleViewerUrl :
+      sourceUrl);
+
+  const googleViewerFallbackUrl = googleViewerUrl;
+  const editUrl =
+    config.editUrl ||
+    (isGoogleSlides ? `https://docs.google.com/presentation/d/${googleFileId}/edit` :
+      isGoogleDoc ? `https://docs.google.com/document/d/${googleFileId}/edit` :
+      isGoogleSheet ? `https://docs.google.com/spreadsheets/d/${googleFileId}/edit` :
+      sourceUrl);
+  const downloadUrl =
+    config.downloadUrl ||
+    (isGoogleSlides ? `https://docs.google.com/presentation/d/${googleFileId}/export/pptx` :
+      isGoogleDoc ? `https://docs.google.com/document/d/${googleFileId}/export?format=docx` :
+      isGoogleSheet ? `https://docs.google.com/spreadsheets/d/${googleFileId}/export?format=xlsx` :
+      isDriveFile && driveFileId ? `https://drive.google.com/uc?export=download&id=${driveFileId}` :
+      sourceUrl);
+  const extension =
+    config.fileExtension ||
+    (isPpt ? "pptx" : isDoc ? "docx" : isSheet ? (extFromUrl === "csv" ? "csv" : "xlsx") : isPdf ? "pdf" : "");
+  const label = isPpt ? "Presentation" : isDoc ? "Document" : isSheet ? "Spreadsheet" : isPdf ? "PDF" : sourceUrl ? "File" : "Text Draft";
+  const downloadFileName = `${slugify(config.topic || config.title || "seminar-file")}${extension ? `.${extension}` : ""}`;
+  const rawSlides = config.slides || config.slideImages || config.slidePreviewUrls || config.previewImages || [];
+  const slides = Array.isArray(rawSlides)
+    ? rawSlides
+        .map((item, index) => {
+          if (typeof item === "string") return { id: `slide-${index + 1}`, imageUrl: item, title: `Slide ${index + 1}` };
+          return {
+            id: item?.id || item?.slideId || `slide-${index + 1}`,
+            imageUrl: item?.imageUrl || item?.url || item?.previewUrl || item?.thumbnailUrl || "",
+            title: item?.title || item?.name || `Slide ${index + 1}`,
+          };
+        })
+        .filter((item) => item.imageUrl)
+    : [];
+  return {
+    hasFile: Boolean(sourceUrl),
+    sourceUrl,
+    previewUrl,
+    slides,
+    googleViewerFallbackUrl,
+    officeViewerUrl,
+    editUrl,
+    downloadUrl,
+    extension,
+    label,
+    downloadFileName,
+    isGoogleFile: isGoogleSlides || isGoogleDoc || isGoogleSheet,
+  };
+};
+async function downloadArtifactFile(artifact, toast$) {
+  if (!artifact?.hasFile || !artifact.downloadUrl) return;
+
+  if (artifact.isGoogleFile || /drive\.google\.com\/uc\?export=download/i.test(artifact.downloadUrl)) {
+    const link = document.createElement("a");
+    link.href = artifact.downloadUrl;
+    link.target = "_blank";
+    link.rel = "noopener";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    return;
+  }
+
+  try {
+    const response = await fetch(artifact.downloadUrl, { mode: "cors" });
+    if (!response.ok) throw new Error(`Download failed (${response.status})`);
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = artifact.downloadFileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  } catch {
+    toast$?.("This file host blocked direct download. Opening it in a new tab instead.", "warn");
+    window.open(artifact.downloadUrl, "_blank", "noopener");
+  }
+}
+function buildCompanionNotes(config = {}) {
+  return `AI Companion Notes for "${config.topic || "Untitled Seminar"}"
+
+These notes track every change you and the AI agree on for the linked ${config.fileType || "file"}.
+The preview stays open while the backend applies or records requested changes.
+
+Starting Notes
+- Confirm the opening hook clearly states the topic.
+- Confirm each section has one supporting example.
+- Confirm the closing slide/paragraph ends with a clear takeaway.
+`;
+}
+const getCreateDocs = () => {
+  try {
+    return JSON.parse(localStorage.getItem(CREATE_AI_DOCS_KEY) || "{}") || {};
+  } catch {
+    return {};
+  }
+};
+const saveCreateDocConfig = (id, config) => {
+  localStorage.setItem(CREATE_AI_DOCS_KEY, JSON.stringify({ ...getCreateDocs(), [id]: config }));
+};
+const getCreateAIReply = (prompt, isFileMode = false) => {
+  const lower = prompt.toLowerCase();
+  const suffix = isFileMode
+    ? " I've sent this request for the linked presentation and refreshed the preview. If the backend has not updated the source file yet, the request is saved in Companion Notes."
+    : " I've updated the document on the left with this change.";
+  if (lower.includes("simpl")) return `I simplified the language and shortened the sentences for easier delivery.${suffix}`;
+  if (lower.includes("question")) return `I added stronger audience questions and discussion points.${suffix}`;
+  if (lower.includes("conclusion") || lower.includes("closing")) return `I refreshed the closing with a more direct final takeaway.${suffix}`;
+  if (lower.includes("example") || lower.includes("evidence")) return `I added evidence prompts and example placeholders to strengthen each point.${suffix}`;
+  return `I updated the content based on your request.${suffix}`;
+};
+const buildCreateAISection = (prompt, config = {}) => {
+  const lower = prompt.toLowerCase();
+  if (lower.includes("simpl")) {
+    return `Simplified Presenter Notes
+- Use short sentences for every main point.
+- Explain one idea at a time.
+- Add a pause before each example.
+- End each section with one clear takeaway.`;
+  }
+  if (lower.includes("question")) {
+    return `Audience Q&A Section
+1. What is the main idea behind ${config?.topic || "this topic"}?
+2. Which example best explains the topic?
+3. What is one real-world application?
+4. What is one limitation or counterargument?
+5. How would you summarise this seminar in one sentence?`;
+  }
+  if (lower.includes("conclusion") || lower.includes("closing")) {
+    return `Improved Closing
+To close, ${config?.topic || "this topic"} matters because it helps us connect classroom learning with practical decisions. The strongest takeaway is that good understanding comes from clear context, strong evidence, and thoughtful reflection. Thank you.`;
+  }
+  if (lower.includes("example") || lower.includes("evidence")) {
+    return `Examples and Evidence
+- Add one classroom example that directly connects to the selected unit.
+- Add one current or real-world case to show practical impact.
+- Add one comparison that helps the audience understand the concept faster.
+- Mention one source, study, report, or textbook reference while presenting.`;
+  }
+  return `AI Suggested Update
+${getCreateAIReply(prompt)}
+
+Presenter Line
+"The key point I want the audience to remember is that ${config?.topic || "this topic"} becomes clearer when we connect the concept, evidence, and real-world impact."`;
+};
+const appendCreateAIRefresh = (documentText, prompt, config = {}) => {
+  const stamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return {
+    documentText: `${(documentText || "").trim()}
+
+${buildCreateAISection(prompt, config)}`,
+    refreshNote: `Refreshed at ${stamp}: ${prompt}`,
+  };
+};
+const buildSeminarDocument = ({ name, subject, unit, topic, requirements = "" }) => {
+  const focus = requirements.trim() || "Build a complete, classroom-ready seminar file with clear sections, presenter notes, audience interaction points, and a concise conclusion.";
+  return `Seminar File: ${topic || "Untitled Seminar"}
+
+Presenter: ${name || "Student"}
+Subject: ${subject || "General"}${unit ? ` | Unit: ${unit}` : ""}
+
+Purpose
+This seminar explains ${topic || "the selected topic"} in a structured, audience-friendly way. It is designed to help the presenter introduce the context, develop the core ideas, support them with examples, and close with a memorable takeaway.
+
+User Requirements
+${focus}
+
+Seminar Outline
+1. Opening Hook
+Start with a question, short story, or useful statistic that makes the audience care about the topic.
+
+2. Context and Background
+Define the topic, explain why it matters, and connect it to the selected subject or unit.
+
+3. Main Point One
+Present the first key idea with one example, case study, or classroom reference.
+
+4. Main Point Two
+Develop the second key idea and show how it connects to real-world use.
+
+5. Main Point Three
+Address the deeper implication, limitation, or opposing view.
+
+6. Audience Interaction
+Ask one check-for-understanding question and one discussion question.
+
+7. Conclusion
+Summarise the strongest insight and end with a final reflection or call to action.
+
+Presenter Notes
+- Keep each main point short and evidence-led.
+- Pause after important claims.
+- Use simple transitions between sections.
+- Invite questions before the conclusion if the format allows it.
+
+Draft Opening
+Good morning everyone. My name is ${name || "[Name]"}, and today I will be presenting on ${topic || "[Topic]"}. This topic is important because it connects what we study in class with the decisions, systems, and problems we see around us. I will cover the background, three key points, and a short conclusion before taking questions.
+
+Discussion Questions
+1. What is the most important idea from this seminar?
+2. Where can this topic be applied in real life?
+3. What is one limitation or counterpoint we should consider?
+
+Closing Statement
+To conclude, ${topic || "this topic"} is not only a concept to understand, but also a way to think more clearly about evidence, impact, and responsibility. Thank you.`;
+};
+const buildCreateDocConfig = (payload = {}, backendDoc = {}) => {
+  const sourcePayload = {
+    ...payload,
+    ...backendDoc,
+    fileUrl: CREATE_AI_DEFAULT_FILE_URL,
+    sourceUrl: CREATE_AI_DEFAULT_FILE_URL,
+  };
+  const id = sourcePayload.id || sourcePayload.documentId || sourcePayload._id || payload.id || `create-${Date.now()}-${genId()}`;
+  const linkedArtifact = inferCreateArtifact({ ...sourcePayload, topic: sourcePayload.topic });
+  const documentText = sourcePayload.documentText || buildSeminarDocument(sourcePayload);
+  const config = {
+    ...sourcePayload,
+    id,
+    documentId: sourcePayload.documentId || id,
+    documentText,
+    companionNotesText: sourcePayload.companionNotesText || (linkedArtifact.hasFile ? buildCompanionNotes({ ...sourcePayload, fileType: linkedArtifact.label }) : ""),
+    ...(linkedArtifact.hasFile ? {
+      sourceUrl: linkedArtifact.sourceUrl,
+      fileUrl: linkedArtifact.sourceUrl,
+      previewUrl: linkedArtifact.previewUrl,
+      editUrl: linkedArtifact.editUrl,
+      downloadUrl: linkedArtifact.downloadUrl,
+      fileType: linkedArtifact.label,
+      fileExtension: linkedArtifact.extension,
+      slides: linkedArtifact.slides,
+    } : {}),
+    seminarMode: "create",
+    sessionSubMode: "create-ai",
+    role: "Author",
+    status: sourcePayload.status || "unsaved",
+    createdAt: sourcePayload.createdAt || new Date().toISOString(),
+    updatedAt: sourcePayload.updatedAt || new Date().toISOString(),
+  };
+  return { ...config, link: sourcePayload.link || genCreateAILink(id) };
+};
+const CREATE_AI_API = {
+  // Backend integration point:
+  // POST /api/v1/seminar/create-ai/documents
+  // Return shape expected here:
+  // { id, link?, fileUrl?/documentUrl?/artifactUrl?, previewUrl?, editUrl?, downloadUrl?, fileType?/mimeType?, documentText?, ...config }
+  async createDocument(payload) {
+    const requestPayload = {
+      ...payload,
+      fileUrl: CREATE_AI_DEFAULT_FILE_URL,
+      sourceUrl: CREATE_AI_DEFAULT_FILE_URL,
+      previewSourceUrl: CREATE_AI_DEFAULT_FILE_URL,
+    };
+    try {
+      const backendDoc = await createSeminarAiDocument(requestPayload);
+      const config = buildCreateDocConfig(requestPayload, backendDoc || {});
+      saveCreateDocConfig(config.id, config);
+      return config;
+    } catch {
+      const config = buildCreateDocConfig(requestPayload);
+      saveCreateDocConfig(config.id, config);
+      return config;
+    }
+  },
+  // Backend integration point:
+  // GET /api/v1/seminar/create-ai/documents/:id
+  async getDocument(id) {
+    try {
+      const backendDoc = await getSeminarAiDocument(id);
+      if (backendDoc) {
+        const local = getCreateDocs()[id] || {};
+        const config = buildCreateDocConfig({ ...local, id }, backendDoc);
+        saveCreateDocConfig(config.id, config);
+        return config;
+      }
+    } catch {}
+    return getCreateDocs()[id] || null;
+  },
+  // Backend integration point:
+  // PATCH /api/v1/seminar/create-ai/documents/:id
+  async saveDocument(id, updates) {
+    const current = getCreateDocs()[id] || {};
+    let backendUpdates = {};
+    try {
+      backendUpdates = await saveSeminarAiDocument(id, updates);
+    } catch {}
+    const next = { ...current, ...updates, ...(backendUpdates || {}), id, updatedAt: new Date().toISOString() };
+    saveCreateDocConfig(id, next);
+    return next;
+  },
+  // Backend integration point:
+  // POST /api/v1/seminar/create-ai/documents/:id/chat
+  // Return shape expected here:
+  // { reply, documentText?, fileUrl?/documentUrl?/artifactUrl?, previewUrl?, editUrl?, downloadUrl?, fileType?/mimeType? }
+  async sendChat({ documentId, prompt, hasFile, documentText, companionNotesText, config }) {
+    try {
+      const backendResponse = await sendSeminarAiDocumentChat({
+        documentId,
+        prompt,
+        hasFile,
+        documentText,
+        companionNotesText,
+        config: {
+          ...config,
+          fileUrl: CREATE_AI_DEFAULT_FILE_URL,
+          sourceUrl: CREATE_AI_DEFAULT_FILE_URL,
+        },
+      });
+      if (backendResponse) {
+        const updates = {
+          ...(backendResponse.documentText ? { documentText: backendResponse.documentText } : {}),
+          ...(backendResponse.companionNotesText ? { companionNotesText: backendResponse.companionNotesText } : {}),
+          ...(backendResponse.refreshNote ? { refreshNote: backendResponse.refreshNote } : {}),
+          ...(backendResponse.previewUrl ? { previewUrl: backendResponse.previewUrl } : {}),
+          ...(backendResponse.editUrl ? { editUrl: backendResponse.editUrl } : {}),
+          ...(backendResponse.downloadUrl ? { downloadUrl: backendResponse.downloadUrl } : {}),
+          ...(backendResponse.slides ? { slides: backendResponse.slides } : {}),
+          ...(backendResponse.slideImages ? { slideImages: backendResponse.slideImages } : {}),
+          ...(backendResponse.slidePreviewUrls ? { slidePreviewUrls: backendResponse.slidePreviewUrls } : {}),
+          fileUrl: CREATE_AI_DEFAULT_FILE_URL,
+          sourceUrl: CREATE_AI_DEFAULT_FILE_URL,
+        };
+        if (documentId && Object.keys(updates).length) {
+          await this.saveDocument(documentId, updates);
+        }
+        return {
+          reply: backendResponse.reply || getCreateAIReply(prompt, hasFile),
+          ...updates,
+        };
+      }
+    } catch (error) {
+      if (hasFile) {
+        throw error;
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500 + Math.random() * 400));
+    if (hasFile) {
+      const refresh = appendCreateAIRefresh(companionNotesText, prompt, config);
+      const reply = getCreateAIReply(prompt, true);
+      if (documentId) {
+        await this.saveDocument(documentId, { companionNotesText: refresh.documentText });
+      }
+      return { reply, companionNotesText: refresh.documentText, refreshNote: refresh.refreshNote };
+    }
+    const refresh = appendCreateAIRefresh(documentText, prompt, config);
+    const reply = getCreateAIReply(prompt, false);
+    if (documentId) {
+      await this.saveDocument(documentId, { documentText: refresh.documentText });
+    }
+    return { reply, documentText: refresh.documentText, refreshNote: refresh.refreshNote };
+  },
+  // Backend integration point:
+  // DELETE /api/v1/seminar/create-ai/documents/:id
+  async deleteDocument(id) {
+    try {
+      await deleteSeminarAiDocument(id);
+    } catch {}
+    const docs = getCreateDocs();
+    delete docs[id];
+    localStorage.setItem(CREATE_AI_DOCS_KEY, JSON.stringify(docs));
+    return { id, deleted: true };
+  },
+};
 const getErrorMessage = (error, fallback) => {
   const raw =
     error?.message ??
@@ -2210,6 +2732,9 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [joining, setJoining] = useState(false);
   const [setupFile, setSetupFile] = useState<File | null>(null);
+  const [createDocLink, setCreateDocLink] = useState("");
+  const [createDocConfig, setCreateDocConfig] = useState(null);
+  const [showCreateLinkModal, setShowCreateLinkModal] = useState(false);
   const [joinProgress, setJoinProgress] = useState(0);
   const [joinId, setJoinId] = useState("");
   const [selectedSession, setSelectedSession] = useState(null);
@@ -2399,13 +2924,19 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
     { label: "Select subject and unit", done: !!subject && !!unit && !!selectedUnitId },
     { label: "Select topic", done: !!finalTopic },
   ];
+  const createSteps = [
+    { label: "Choose Create with AI", done: seminarMode === "create" },
+    { label: "Enter your name", done: name.trim().length > 0 },
+    { label: "Select subject and unit", done: !!subject && !!unit && !!selectedUnitId },
+    { label: "Select topic", done: !!finalTopic },
+  ];
   const observerSteps = [
     { label: "Choose observer mode", done: seminarMode === "session" && sessionSubMode === "observer" },
     { label: "Enter your name", done: name.trim().length > 0 },
     { label: "Pick a live session or paste a link", done: Boolean(selectedSession || parseSeminarSessionId(joinId)) },
   ];
   const activeSteps =
-    seminarMode === "session" && sessionSubMode === "observer" ? observerSteps : seminarMode === "prepare" && sessionSubMode === "demo" ? [...presenterSteps, { label: "Upload presentation file", done: !!setupFile }] : presenterSteps;
+    seminarMode === "create" ? createSteps : seminarMode === "session" && sessionSubMode === "observer" ? observerSteps : seminarMode === "prepare" && sessionSubMode === "demo" ? [...presenterSteps, { label: "Upload presentation file", done: !!setupFile }] : presenterSteps;
   const canLaunch =
     seminarMode !== "" &&
     hasPrepareSubMode &&
@@ -2416,7 +2947,14 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
     (seminarMode === "prepare" && sessionSubMode === "demo" ? !!setupFile : true);
 
   const leftFeatures =
-    seminarMode === "prepare"
+    seminarMode === "create"
+      ? [
+          { ic: "DOC", t: "Google Docs Style", d: "Edit the generated seminar file on the left." },
+          { ic: "AI", t: "Chat Builder", d: "Ask AI to expand, rewrite, or refresh sections." },
+          { ic: "RF", t: "Auto Refresh", d: "Requirements update the document instantly." },
+          { ic: "RS", t: "Responsive Workspace", d: "Works across mobile, tablet, laptop, and desktop." },
+        ]
+      : seminarMode === "prepare"
       ? sessionSubMode === "demo"
         ? [
             { ic: "UP", t: "File First", d: "Upload the seminar file during setup." },
@@ -2444,7 +2982,49 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
             { ic: "RP", t: "Session Report", d: "End with clean seminar feedback." },
           ];
 
-  const needsLaunchMic = seminarMode !== "session" || sessionSubMode !== "observer";
+  const needsLaunchMic = seminarMode !== "create" && (seminarMode !== "session" || sessionSubMode !== "observer");
+
+  async function handleCreateSubmit() {
+    setJoining(true);
+    setCreateDocLink("");
+    setCreateDocConfig(null);
+    setShowCreateLinkModal(false);
+    try {
+      const previewFileLink = CREATE_AI_DEFAULT_FILE_URL;
+      for (let progress = 0; progress <= 100; progress += 20) {
+        await new Promise((resolve) => setTimeout(resolve, 170));
+        setJoinProgress(progress);
+      }
+      const selectedUnit = availableUnits.find((item) => item.id === selectedUnitId);
+      const createdDocument = await CREATE_AI_API.createDocument({
+        name,
+        subject: selectedSubjectLabel,
+        unit,
+        topic: finalTopic,
+        requirements: `Create a complete seminar file for "${finalTopic}" with an outline, speaker notes, examples, audience questions, and a strong conclusion.`,
+        fileUrl: previewFileLink,
+        unitId: selectedUnitId,
+        unitMeta: selectedUnit || null,
+      });
+      setCreateDocConfig(createdDocument);
+      setCreateDocLink(createdDocument.link || genCreateAILink(createdDocument.id));
+      setShowCreateLinkModal(true);
+      toast$("AI seminar file link ready", "success");
+    } catch (error) {
+      toast$(getErrorMessage(error, "Unable to create the AI seminar file."), "error");
+    } finally {
+      setJoining(false);
+      setJoinProgress(0);
+    }
+  }
+
+  function openCreateDoc(event) {
+    event?.preventDefault?.();
+    if (!createDocConfig) return;
+    window.history.pushState({}, "", genCreateAILink(createDocConfig.id));
+    setShowCreateLinkModal(false);
+    onLaunch(createDocConfig);
+  }
 
   async function handleRequestLaunchMic() {
     const nextStream = await request();
@@ -2643,11 +3223,11 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
           <div className="sp-right-inner">
             {onBack && <button className="back-btn" onClick={onBack}>← Back</button>}
             <h2 className="setup-h">🎓 Seminar Setup</h2>
-            <p className="setup-sub">Choose your setup path first. Prepare with AI now has separate preparation and demo-session flows.</p>
+            <p className="setup-sub">Choose your setup path first. Prepare, create a seminar file with AI, or run a live seminar session.</p>
             <div className="sec-div">Choose Mode</div>
             <div className="module-grid fi">
-              {[{ id: "prepare", ic: "🤖", t: "Prepare with AI", d: "AI coach helps you rehearse, build outline, transcribe speech and practice demo." }, { id: "session", ic: "🔴", t: "Seminar Session", d: "Start or join a live seminar with AI moderator, screen share & full report." }].map((item) => (
-                <div key={item.id} className={`module-card${seminarMode === item.id ? " sel" : ""}`} onClick={() => { setSeminarMode(item.id); setSessionSubMode(""); }}>
+              {[{ id: "prepare", ic: "🤖", t: "Prepare with AI", d: "AI coach helps you rehearse, build outline, transcribe speech and practice demo." }, { id: "create", ic: "📄", t: "Create with AI", d: "Generate an editable seminar file with a Docs-style editor and AI chat." }, { id: "session", ic: "🔴", t: "Seminar Session", d: "Start or join a live seminar with AI moderator, screen share & full report." }].map((item) => (
+                <div key={item.id} className={`module-card${seminarMode === item.id ? " sel" : ""}`} onClick={() => { setSeminarMode(item.id); setSessionSubMode(""); setCreateDocLink(""); setCreateDocConfig(null); setShowCreateLinkModal(false); }}>
                   <div className="mod-ic">{item.ic}</div>
                   <div><div className="mod-title">{item.t}</div><div className="mod-desc">{item.d}</div></div>
                 </div>
@@ -2725,7 +3305,7 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
               </>
             )}
 
-            {((seminarMode === "prepare" && hasPrepareSubMode) || (seminarMode === "session" && sessionSubMode === "presenter")) && (
+            {(seminarMode === "create" || (seminarMode === "prepare" && hasPrepareSubMode) || (seminarMode === "session" && sessionSubMode === "presenter")) && (
               <>
                 <div className="sec-div">Your Identity</div>
                 <div className="fi"><label className="fl">Your Name</label><input className="finput" placeholder="e.g. Alex Johnson" value={name} onChange={(event) => setName(event.target.value)} maxLength={40} /></div>
@@ -2836,9 +3416,10 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
                       return <div key={index} className={`step-r ${done ? "done" : act ? "act" : "pend"}`}><div className="step-num">{done ? "✓" : index + 1}</div><div className="step-lbl">{step.label}</div></div>;
                     })}
                   </div>
-                  <button className="btn-p" onClick={() => setShowConfirm(true)} disabled={!canLaunch || (seminarType === "schedule" && !scheduled)}>
-                    {seminarMode === "prepare" ? (sessionSubMode === "demo" ? "▶️ Launch Demo Session" : "🤖 Start AI Preparation") : sessionSubMode === "observer" ? "👁️ Join as Observer" : "🎙️ Launch Seminar Room"}
+                  <button className="btn-p" onClick={() => seminarMode === "create" ? handleCreateSubmit() : setShowConfirm(true)} disabled={joining || !canLaunch || (seminarType === "schedule" && !scheduled)}>
+                    {joining && seminarMode === "create" ? <><span className="loader-spin" />Creating {joinProgress > 0 ? `${joinProgress}%` : ""}</> : seminarMode === "create" ? "📄 Submit & Create with AI" : seminarMode === "prepare" ? (sessionSubMode === "demo" ? "▶️ Launch Demo Session" : "🤖 Start AI Preparation") : sessionSubMode === "observer" ? "👁️ Join as Observer" : "🎙️ Launch Seminar Room"}
                   </button>
+                  {seminarMode === "create" && joinProgress > 0 && <div className="lo-progress"><div className="lo-progress-fill" style={{ width: `${joinProgress}%` }} /></div>}
                 </div>
               </>
             )}
@@ -2848,6 +3429,35 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
       </div>
 
       {showSchedule && <ScheduleSeminarModal config={{ topic: finalTopic, subject: selectedSubjectLabel || subject, unit, roomLink }} onSchedule={(info) => { setScheduledInfo(info); setScheduled(true); setShowSchedule(false); toast$("📅 Seminar scheduled & published!", "success"); }} onClose={() => setShowSchedule(false)} />}
+      {showCreateLinkModal && createDocLink && (
+        <div className="overlay">
+          <div className="modal" style={{ maxWidth: 460, background: "#0c1422", border: "1px solid rgba(255,255,255,.1)" }}>
+            <div className="mh" style={{ borderColor: "rgba(255,255,255,.08)" }}>
+              <span className="mh-title" style={{ color: "#fff" }}>AI file is ready</span>
+              <button className="mh-close" onClick={() => setShowCreateLinkModal(false)} style={{ borderColor: "rgba(255,255,255,.1)", background: "rgba(255,255,255,.06)", color: "rgba(255,255,255,.65)" }}>x</button>
+            </div>
+            <div className="mb" style={{ background: "#0c1422" }}>
+              <div style={{ padding: "13px 14px", borderRadius: 13, background: "rgba(0,195,122,.08)", border: "1px solid rgba(0,195,122,.22)", color: "#5ee3b7", fontSize: 12.5, fontWeight: 800, marginBottom: 12 }}>
+                Your Create with AI workspace link has been generated.
+              </div>
+              <div className="link-row" style={{ background: "rgba(255,255,255,.04)", borderColor: "rgba(255,255,255,.1)" }}>
+                <a className="link-val" href={createDocLink} onClick={openCreateDoc} style={{ color: "#5ee3b7", textDecoration: "none" }}>{createDocLink}</a>
+                <button className="copy-btn" onClick={() => { navigator.clipboard.writeText(createDocLink); toast$("Link copied", "success"); }}>Copy</button>
+              </div>
+              {createDocConfig && inferCreateArtifact(createDocConfig).hasFile && (
+                <div style={{ marginTop: 10, fontSize: 11.5, lineHeight: 1.6, color: "rgba(255,255,255,.5)" }}>
+                  Attached file detected: {inferCreateArtifact(createDocConfig).label}. The next page will open it in the previewer.
+                </div>
+              )}
+            </div>
+            <div className="mf" style={{ borderColor: "rgba(255,255,255,.08)", background: "#0c1422" }}>
+              <button className="btn-s" onClick={() => setShowCreateLinkModal(false)} style={{ background: "rgba(255,255,255,.04)", borderColor: "rgba(255,255,255,.1)", color: "rgba(255,255,255,.65)" }}>Stay here</button>
+              <a className="create-open-link" href={createDocLink} onClick={openCreateDoc} style={{ marginTop: 0, width: "auto", padding: "8px 14px" }}>Open workspace</a>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showConfirm && (
         <div className="overlay">
           {needsLaunchMic ? (
@@ -5874,7 +6484,368 @@ function AutoAdvance({delay,onDone}) {
   return null;
 }
 
-// ─── MAIN ─────────────────────────────────────────────────────────────────────
+function CreateWithAIWorkspace({ config, onCancel }) {
+  const [artifactConfig, setArtifactConfig] = useState(config || {});
+  const artifact = useMemo(() => inferCreateArtifact(artifactConfig), [artifactConfig]);
+  const [docText, setDocText] = useState(() => config?.documentText || buildSeminarDocument(config || {}));
+  const [companionNotesText, setCompanionNotesText] = useState(
+    () => config?.companionNotesText || (artifact.hasFile ? buildCompanionNotes(config || {}) : "")
+  );
+  const [viewMode, setViewMode] = useState("preview");
+  const [chatInput, setChatInput] = useState("");
+  const [messages, setMessages] = useState(() => {
+    const initialArtifact = inferCreateArtifact(config || {});
+    return [
+      {
+        id: "welcome",
+        role: "ai",
+        text: initialArtifact.hasFile
+          ? `I've linked your ${initialArtifact.label.toLowerCase()} for "${config?.topic || "your topic"}". Ask for slide changes here; the preview will refresh after the backend applies or records the request.`
+          : `I created the first seminar file for "${config?.topic || "your topic"}". Edit directly on the left, or ask me to add sections, simplify, expand, or refresh it from your requirements.`,
+      },
+    ];
+  });
+  const [saveState, setSaveState] = useState(config?.status === "saved" ? "saved" : config?.status === "draft" ? "draft" : "unsaved");
+  const [refreshNotes, setRefreshNotes] = useState(() => config?.refreshNotes || []);
+  const [downloading, setDownloading] = useState(false);
+  const [aiThinking, setAiThinking] = useState(false);
+  const [previewRefreshKey, setPreviewRefreshKey] = useState(0);
+  const [slideIndex, setSlideIndex] = useState(0);
+  const docRef = useRef(null);
+  const iframeRef = useRef(null);
+  const chatEndRef = useRef(null);
+  const { show: toast$, node: toastNode } = useToast();
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, aiThinking]);
+
+  useEffect(() => {
+    setSlideIndex(0);
+  }, [artifact.slides?.length, artifact.previewUrl]);
+
+  function markUnsaved() {
+    setSaveState((current) => (current === "saving" ? current : "unsaved"));
+  }
+
+  function handleDocChange(event) {
+    setDocText(event.target.value);
+    markUnsaved();
+  }
+
+  function handleNotesChange(event) {
+    setCompanionNotesText(event.target.value);
+    markUnsaved();
+  }
+
+  function replaceSelection(transform) {
+    const element = docRef.current;
+    if (!element) return;
+    const activeText = artifact.hasFile ? companionNotesText : docText;
+    const start = element.selectionStart ?? 0;
+    const end = element.selectionEnd ?? start;
+    const selected = activeText.slice(start, end);
+    const lineEndIndex = activeText.indexOf("\n", start);
+    const lineEnd = lineEndIndex === -1 ? activeText.length : lineEndIndex;
+    const source = selected || activeText.slice(start, lineEnd) || "Text";
+    const replacement = transform(source);
+    const nextText = `${activeText.slice(0, start)}${replacement}${activeText.slice(selected ? end : lineEnd)}`;
+    if (artifact.hasFile) setCompanionNotesText(nextText);
+    else setDocText(nextText);
+    markUnsaved();
+    setTimeout(() => {
+      element.focus();
+      element.setSelectionRange(start, start + replacement.length);
+    }, 0);
+  }
+
+  function applyDocTool(tool) {
+    if (tool === "bold") replaceSelection((text) => `**${text.trim() || "Bold text"}**`);
+    if (tool === "italic") replaceSelection((text) => `*${text.trim() || "Italic text"}*`);
+    if (tool === "h1") replaceSelection((text) => `\n# ${text.replace(/^#+\s*/, "").trim() || "Heading"}\n`);
+    if (tool === "list") replaceSelection((text) => text.split("\n").map((line) => line.trim() ? `- ${line.replace(/^[-*]\s*/, "")}` : line).join("\n"));
+  }
+
+  async function saveDocument(status = "saved") {
+    if (!config?.id) return;
+    setSaveState("saving");
+    try {
+      const saved = await CREATE_AI_API.saveDocument(config.id, {
+        ...artifactConfig,
+        documentText: docText,
+        companionNotesText,
+        refreshNotes,
+        status,
+      });
+      setArtifactConfig(saved || artifactConfig);
+      setSaveState(status === "draft" ? "draft" : "saved");
+      toast$(status === "draft" ? "Saved as draft" : "Saved", "success");
+    } catch (error) {
+      setSaveState("unsaved");
+      toast$(getErrorMessage(error, "Unable to save right now."), "error");
+    }
+  }
+
+  async function deleteDocument() {
+    if (!config?.id || !window.confirm("Delete this AI seminar file?")) return;
+    await CREATE_AI_API.deleteDocument(config.id);
+    window.history.pushState({}, "", window.location.pathname);
+    onCancel?.();
+  }
+
+  function cancelWorkspace() {
+    window.history.pushState({}, "", window.location.pathname);
+    onCancel?.();
+  }
+
+  async function downloadDocument() {
+    if (saveState !== "saved") return;
+    if (artifact.hasFile) {
+      setDownloading(true);
+      try {
+        await downloadArtifactFile(artifact, toast$);
+      } finally {
+        setDownloading(false);
+      }
+      return;
+    }
+    const blob = new Blob([docText], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${slugify(config?.topic || "seminar-file")}.txt`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function openEditor() {
+    if (artifact.hasFile && artifact.editUrl) {
+      window.open(artifact.editUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+    docRef.current?.focus();
+  }
+
+  function refreshPreview() {
+    setPreviewRefreshKey((current) => current + 1);
+    toast$("Preview refreshed", "info");
+  }
+
+  function movePreview(direction) {
+    if (artifact.slides?.length) {
+      setSlideIndex((current) => {
+        const max = artifact.slides.length - 1;
+        return direction === "next" ? Math.min(max, current + 1) : Math.max(0, current - 1);
+      });
+      return;
+    }
+    toast$("External Google Slides iframes do not allow parent-page arrow control. Return slide images from the backend to enable these arrows.", "warn");
+  }
+
+  async function sendMessage(value = chatInput) {
+    const prompt = value.trim();
+    if (!prompt || aiThinking) return;
+    setMessages((current) => [...current, { id: `me-${Date.now()}`, role: "me", text: prompt }]);
+    setChatInput("");
+    setAiThinking(true);
+    try {
+      const response = await CREATE_AI_API.sendChat({
+        documentId: config?.id,
+        prompt,
+        hasFile: artifact.hasFile,
+        documentText: docText,
+        companionNotesText,
+        config: artifactConfig,
+      });
+      if (artifact.hasFile) {
+        const nextNotes = response.companionNotesText || companionNotesText;
+        setCompanionNotesText(nextNotes);
+        setArtifactConfig((current) => ({
+          ...current,
+          ...response,
+          companionNotesText: nextNotes,
+          fileUrl: response.fileUrl || response.sourceUrl || current.fileUrl,
+          sourceUrl: response.sourceUrl || response.fileUrl || current.sourceUrl,
+          previewUrl: response.previewUrl || current.previewUrl,
+          editUrl: response.editUrl || current.editUrl,
+          downloadUrl: response.downloadUrl || current.downloadUrl,
+          slides: response.slides || response.slideImages || response.slidePreviewUrls || current.slides,
+        }));
+        setViewMode("preview");
+        setPreviewRefreshKey((current) => current + 1);
+      } else {
+        const nextDocText = response.documentText || docText;
+        setDocText(nextDocText);
+        setArtifactConfig((current) => ({ ...current, documentText: nextDocText }));
+      }
+      if (response.refreshNote) setRefreshNotes((current) => [...current, response.refreshNote]);
+      markUnsaved();
+      setMessages((current) => [...current, { id: `ai-${Date.now()}`, role: "ai", text: response.reply || getCreateAIReply(prompt, artifact.hasFile) }]);
+    } catch (error) {
+      setMessages((current) => [
+        ...current,
+        {
+          id: `ai-error-${Date.now()}`,
+          role: "ai",
+          text: artifact.hasFile
+            ? getErrorMessage(error, "The backend did not update the linked Google Slides file. To make chat work like an agent, the backend must edit the deck through Google Slides API and return an updated preview or slide image list.")
+            : getErrorMessage(error, "Unable to update the seminar file right now."),
+        },
+      ]);
+    } finally {
+      setAiThinking(false);
+    }
+  }
+
+  const renderEditorTools = () => (
+    <>
+      <button className="doc-tool" onClick={() => applyDocTool("bold")}>B</button>
+      <button className="doc-tool" onClick={() => applyDocTool("italic")}>I</button>
+      <button className="doc-tool" onClick={() => applyDocTool("h1")}>H1</button>
+      <button className="doc-tool" onClick={() => applyDocTool("list")}>List</button>
+    </>
+  );
+
+  return (
+    <div className="create-ai-page route-enter">
+      <div className="create-ai-bar">
+        <button className="create-ai-logo" onClick={cancelWorkspace}><span className="create-ai-logo-ic">📄</span><span>Create with AI</span></button>
+        <div className="create-ai-topic"><strong>{config?.topic || "Seminar File"}</strong>{config?.subject ? ` · ${config.subject}` : ""}{config?.unit ? ` · ${config.unit}` : ""}</div>
+        <div className={`create-ai-pill ${saveState}`}>{saveState === "saving" ? "Saving..." : saveState === "unsaved" ? "Unsaved changes" : saveState === "draft" ? "Draft saved" : "Saved"}</div>
+        <div className="create-ai-actions">
+          <button className="doc-action ghost" onClick={() => saveDocument("draft")} disabled={saveState === "saving"}>Save as Draft</button>
+          <button className="doc-action primary" onClick={() => saveDocument("saved")} disabled={saveState === "saving"}>Save</button>
+          <button
+            className="doc-action"
+            onClick={downloadDocument}
+            disabled={saveState !== "saved" || downloading}
+            title={saveState !== "saved" ? "Save before downloading" : `Download ${artifact.hasFile ? `.${artifact.extension}` : ".txt"}`}
+          >
+            {downloading ? "Preparing..." : `Download${artifact.hasFile && artifact.extension ? ` .${artifact.extension}` : ""}`}
+          </button>
+          <button className="doc-action danger" onClick={deleteDocument}>Delete</button>
+          <button className="doc-action ghost" onClick={cancelWorkspace}>Cancel</button>
+        </div>
+      </div>
+      <div className="create-ai-body">
+        <section className="create-doc-pane">
+          <div className="create-doc-toolbar">
+            {artifact.hasFile ? (
+              <>
+                <button className={`doc-tool${viewMode === "preview" ? " active" : ""}`} onClick={() => setViewMode("preview")}>Preview</button>
+                <button className={`doc-tool${viewMode === "notes" ? " active" : ""}`} onClick={() => setViewMode("notes")}>Companion Notes</button>
+                <span className="doc-tool-sep" />
+                <button className="doc-tool" onClick={openEditor}>Manual Edit</button>
+                <button className="doc-tool" onClick={refreshPreview}>Refresh Preview</button>
+                {viewMode === "notes" && renderEditorTools()}
+              </>
+            ) : renderEditorTools()}
+            <div className="doc-status">{saveState === "unsaved" ? "Unsaved edits" : saveState === "draft" ? "Draft saved" : saveState === "saving" ? "Saving document" : "All changes saved"}</div>
+          </div>
+          <div className={`create-doc-scroll${artifact.hasFile && viewMode === "preview" ? " full-preview" : ""}`}>
+            {artifact.hasFile && viewMode === "preview" ? (
+              <div className="create-file-preview full">
+                <div className="create-file-preview-head">
+                  <div><strong>{artifact.label} Preview</strong><span>{artifact.sourceUrl}</span></div>
+                </div>
+                {artifact.slides?.length ? (
+                  <div className="create-file-stage">
+                    <button className="create-slide-nav prev" type="button" title="Previous slide" onClick={() => movePreview("previous")} disabled={slideIndex <= 0}>‹</button>
+                    <div className="create-slide-image-wrap">
+                      <img className="create-slide-image" src={artifact.slides[Math.min(slideIndex, artifact.slides.length - 1)]?.imageUrl} alt={artifact.slides[Math.min(slideIndex, artifact.slides.length - 1)]?.title || `Slide ${slideIndex + 1}`} />
+                      <div className="create-slide-counter">{Math.min(slideIndex + 1, artifact.slides.length)} / {artifact.slides.length}</div>
+                    </div>
+                    <button className="create-slide-nav next" type="button" title="Next slide" onClick={() => movePreview("next")} disabled={slideIndex >= artifact.slides.length - 1}>›</button>
+                  </div>
+                ) : artifact.previewUrl ? (
+                  <div className="create-file-stage">
+                    <iframe
+                      ref={iframeRef}
+                      key={`${artifact.previewUrl}-${previewRefreshKey}`}
+                      className="create-file-frame"
+                      title={`${artifact.label} preview`}
+                      src={artifact.previewUrl}
+                      allowFullScreen
+                    />
+                  </div>
+                ) : (
+                  <div className="create-file-fallback">
+                    <div>No embeddable preview is available for this file.</div>
+                    <button className="doc-action primary" onClick={openEditor}>Open File</button>
+                  </div>
+                )}
+                {!artifact.isGoogleFile && (
+                  <div className="create-file-viewer-fallback">
+                    <span>Trouble viewing this file?</span>
+                    <div className="create-file-viewer-links">
+                      <a href={artifact.googleViewerFallbackUrl || artifact.sourceUrl} target="_blank" rel="noopener noreferrer">Google viewer</a>
+                      {artifact.officeViewerUrl && <a href={artifact.officeViewerUrl} target="_blank" rel="noopener noreferrer">Office viewer</a>}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : artifact.hasFile && viewMode === "notes" ? (
+              <textarea ref={docRef} className="create-doc-paper" aria-label="Companion notes" value={companionNotesText} onChange={handleNotesChange} />
+            ) : (
+              <textarea ref={docRef} className="create-doc-paper" aria-label="Editable seminar document" value={docText} onChange={handleDocChange} />
+            )}
+          </div>
+        </section>
+        <aside className="create-chat-pane">
+          <div className="create-chat-head">
+            <div className="create-chat-title">AI Seminar Builder</div>
+            <div className="create-chat-sub">
+              {artifact.hasFile
+                ? "Chat sends changes to the backend and refreshes this preview when a response returns."
+                : "Requests in chat refresh the document directly."}
+            </div>
+          </div>
+          <div className="create-chat-msgs">
+            {messages.map((message) => (
+              <div key={message.id} className={`create-chat-msg ${message.role === "me" ? "me" : "ai"}`}>
+                <div className="create-chat-av">{message.role === "me" ? avInit(config?.name) : "AI"}</div>
+                <div className="create-chat-bubble">{message.text}</div>
+              </div>
+            ))}
+            {aiThinking && (
+              <div className="create-chat-msg ai">
+                <div className="create-chat-av">AI</div>
+                <div className="create-chat-bubble" style={{ display: "flex", gap: 4 }}>
+                  {[0, 1, 2].map((item) => (
+                    <span key={item} style={{ width: 5, height: 5, borderRadius: "50%", background: "#7ed3f7", animation: "dotPulse .8s ease-in-out infinite", animationDelay: `${item * 0.2}s` }} />
+                  ))}
+                </div>
+              </div>
+            )}
+            <div ref={chatEndRef} />
+          </div>
+          <div className="create-chat-prompts">
+            {refreshNotes.length > 0 && (
+              <div className="create-refresh-log">
+                {refreshNotes.slice(-3).map((note, index) => <span key={`${note}-${index}`}>{note}</span>)}
+              </div>
+            )}
+            {["Add examples", "Simplify language", "Create Q&A", "Improve conclusion"].map((prompt) => (
+              <button key={prompt} className="create-prompt" onClick={() => sendMessage(prompt)}>{prompt}</button>
+            ))}
+          </div>
+          <div className="create-chat-input">
+            <textarea
+              value={chatInput}
+              onChange={(event) => setChatInput(event.target.value)}
+              onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendMessage(); } }}
+              placeholder="Tell AI what to add or change..."
+              disabled={aiThinking}
+            />
+            <button onClick={() => sendMessage()} disabled={!chatInput.trim() || aiThinking}>➤</button>
+          </div>
+        </aside>
+      </div>
+      {toastNode}
+    </div>
+  );
+}
+
 const POST_AUTH_REDIRECT_KEY = "gradeup_post_auth_redirect";
 const SEMINAR_GUEST_NAME_KEY = "gradeup_seminar_guest_name";
 const SEMINAR_GUEST_ID_KEY = "gradeup_seminar_guest_id";
@@ -5969,6 +6940,16 @@ export default function SeminarPage() {
 
   useEffect(()=>{
     const params = new URLSearchParams(window.location.search);
+    const createDocId = params.get("createAi") || "";
+    if (createDocId) {
+      CREATE_AI_API.getDocument(createDocId).then((docConfig) => {
+        if (docConfig) {
+          setConfig({ ...docConfig, seminarMode: "create", sessionSubMode: "create-ai" });
+          setScreen("loading");
+        }
+      }).catch(() => null);
+      return;
+    }
     const linkedSessionId = params.get("sessionId") || params.get("session") || params.get("room") || "";
     if(!linkedSessionId || autoJoinRef.current) return;
     autoJoinRef.current = true;
@@ -6004,12 +6985,14 @@ export default function SeminarPage() {
 
   const loaderSteps={
     prepare:[{ic:"🎙️",label:"Enabling voice transcription"},{ic:"🤖",label:"Loading AI coach"},{ic:"📋",label:"Preparing notes board"},{ic:"✅",label:"Room ready"}],
+    create:[{ic:"📄",label:"Opening AI document"},{ic:"✏️",label:"Loading editor"},{ic:"🤖",label:"Connecting chat builder"},{ic:"✅",label:"Workspace ready"}],
     presenter:[{ic:"🖥️",label:"Setting up screen share"},{ic:"🤖",label:"Initialising AI moderator"},{ic:"🎙️",label:"Enabling live transcript"},{ic:"✅",label:"Seminar room ready"}],
     observer:[{ic:"👁️",label:"Connecting to session"},{ic:"💬",label:"Loading chat"},{ic:"✅",label:"Joined as observer"}],
   };
 
   function getLoaderSteps(){
     if(!config)return loaderSteps.prepare;
+    if(config.seminarMode==="create")return loaderSteps.create;
     if(config.seminarMode==="prepare")return loaderSteps.prepare;
     if(config.sessionSubMode==="observer")return loaderSteps.observer;
     return loaderSteps.presenter;
@@ -6093,8 +7076,8 @@ export default function SeminarPage() {
         {screen==="loading"&&config&&(
           <>
             <PageLoader
-              label={config.seminarMode==="prepare"?"Entering AI Coach Room…":config.sessionSubMode==="observer"?"Joining as Observer…":"Launching Seminar Room…"}
-              sublabel={config.seminarMode==="prepare"?"Setting up voice transcription & AI coach":config.sessionSubMode==="observer"?"Connecting to live session":"Preparing screen share & AI moderator"}
+              label={config.seminarMode==="create"?"Opening AI Seminar File…":config.seminarMode==="prepare"?"Entering AI Coach Room…":config.sessionSubMode==="observer"?"Joining as Observer…":"Launching Seminar Room…"}
+              sublabel={config.seminarMode==="create"?"Loading document editor and AI chat":config.seminarMode==="prepare"?"Setting up voice transcription & AI coach":config.sessionSubMode==="observer"?"Connecting to live session":"Preparing screen share & AI moderator"}
               steps={getLoaderSteps()}
             />
             <AutoAdvance delay={2600} onDone={()=>setScreen("room")}/>
@@ -6107,6 +7090,7 @@ export default function SeminarPage() {
           </div>
         )}
 
+        {screen==="room"&&config&&config.seminarMode==="create"&&<CreateWithAIWorkspace config={config} onCancel={handleNew}/>}
         {screen==="room"&&config&&config.seminarMode==="prepare"&&<PrepareWithAIRoom config={config} onEnd={handleEnd}/>}
         {screen==="room"&&config&&config.seminarMode==="session"&&config.sessionSubMode==="presenter"&&<PresenterRoom config={config} onEnd={handleEnd}/>}
         {screen==="room"&&config&&config.seminarMode==="session"&&config.sessionSubMode==="observer"&&<ObserverRoom config={config} onEnd={handleEnd}/>}

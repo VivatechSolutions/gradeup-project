@@ -138,7 +138,7 @@ function MeetingTypeModal({ isDark, onClose, onSelect }: {
   isDark: boolean; onClose: () => void; onSelect: (t: string) => void;
 }) {
   const opts = [
-    { key: "meeting", ...TYPE_META.meeting, desc: "Video call for team discussions & check-ins",     badge: null },
+    // { key: "meeting", ...TYPE_META.meeting, desc: "Video call for team discussions & check-ins",     badge: null },
     { key: "debate",  ...TYPE_META.debate,  desc: "Structured argument with speaking turns & rounds", badge: { text: "Live", bg: "rgba(245,158,11,.12)", color: "#d97706" } },
     { key: "seminar", ...TYPE_META.seminar, desc: "Host-led educational session with Q&A",            badge: null },
   ];
@@ -184,10 +184,10 @@ function SubModal({ isDark, type, onBack, onClose, onQuick, onSchedule }: {
 }) {
   const meta = TYPE_META[type];
   const sets: Record<string, any[]> = {
-    meeting: [
-      // { key: "quick",    icon: "⚡", label: "Quick Meeting",    desc: "Start instantly — anyone joins via link",             badge: { text: "Instant", bg: "rgba(14,165,233,.12)", color: "#0ea5e9" } },
-      { key: "schedule", icon: "📅", label: "Schedule Meeting", desc: "Pick a date & time — lands on calendar tile",         badge: null },
-    ],
+    // meeting: [
+    //   // { key: "quick",    icon: "⚡", label: "Quick Meeting",    desc: "Start instantly — anyone joins via link",             badge: { text: "Instant", bg: "rgba(14,165,233,.12)", color: "#0ea5e9" } },
+    //   { key: "schedule", icon: "📅", label: "Schedule Meeting", desc: "Pick a date & time — lands on calendar tile",         badge: null },
+    // ],
     debate: [
       // { key: "quick",    icon: "⚡", label: "Quick Debate",      desc: "1v1 AI debate room — start right now",               badge: { text: "1v1",    bg: "rgba(245,158,11,.12)", color: "#d97706" } },
       // { key: "multi",    icon: "👥", label: "Multi-User Debate", desc: "Up to 8 speakers — AI mediates",                     badge: { text: "Up to 8", bg: "rgba(239,68,68,.1)",   color: "#dc2626" } },

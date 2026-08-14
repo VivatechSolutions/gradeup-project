@@ -1,15 +1,11 @@
 import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  AlertTriangle, Check, Eye, Mic, MicOff, Shield,
+  AlertTriangle, Check, Mic, MicOff, Shield,
   Timer as TimerIcon, Star, Sun, Moon, GripVertical,
-  LayoutGrid, Skull, ChevronLeft, ChevronRight, BookOpen,
+  LayoutGrid, ChevronLeft, ChevronRight, BookOpen,
   HelpCircle, PencilRuler, BrainCircuit, Download, FileText,
 } from 'lucide-react';
-import {
-  AlertDialog, AlertDialogAction, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from '../components/ui/alert-dialog';
 import {
   Drawer, DrawerClose, DrawerContent, DrawerFooter,
   DrawerHeader, DrawerTitle, DrawerTrigger,
@@ -17,7 +13,6 @@ import {
 import ExamResultDisplay from '../components/exam-result-display';
 import { useTheme } from '../hooks/use-theme';
 import { useMediaQuery } from '../hooks/use-media-query';
-import MotionDetector from '../components/MotionDetector';
 import { mockExamQuestions, Question } from '../lib/mock-exam-data';
 
 
@@ -324,13 +319,10 @@ const Loader = () => (
 
 /* ─── System Check ─── */
 const SystemCheck = ({ onComplete }: { onComplete: () => void }) => {
-  const [step, setStep]    = useState<"welcome"|"mic"|"webcam"|"ready">("welcome");
-  const [micP, setMicP]    = useState<"prompt"|"granted"|"denied">("prompt");
-  const [camP, setCamP]    = useState<"prompt"|"granted"|"denied">("prompt");
-  const vidRef             = useRef<HTMLVideoElement>(null);
-  const [stream, setStream]= useState<MediaStream|null>(null);
+  const [step, setStep]    = useState<"welcome"|"ready">("welcome");
   const [loading, setLoad] = useState(false);
 
+  /*
   const reqMic = async () => {
     setLoad(true);
     try {
@@ -351,16 +343,21 @@ const SystemCheck = ({ onComplete }: { onComplete: () => void }) => {
   };
 
   useEffect(() => { if (stream && vidRef.current) vidRef.current.srcObject = stream; }, [stream]);
+  */
+  const skipProctoringCheck = () => {
+    // Proctoring permission checks are disabled because they were producing
+    // strike warnings during normal exam usage.
+    setLoad(true);
+    setTimeout(() => { setLoad(false); setStep("ready"); }, 700);
+  };
   if (loading) return <Loader/>;
 
-  const allSteps = ["welcome","mic","webcam","ready"];
+  const allSteps = ["welcome","ready"];
   const si = allSteps.indexOf(step);
 
   const cfg: Record<string, any> = {
-    welcome: { bg:"linear-gradient(135deg,#6366f1,#8b5cf6)", icon:<Shield size={28} color="#fff"/>,  title:"Secure Environment Check",   desc:"Before the exam begins, we must verify your system's integrity.",           btn:"Begin Verification",   act:()=>setStep("mic"), red:false },
-    mic:     { bg:"linear-gradient(135deg,#0ea5e9,#22d3ee)", icon:<Mic size={28} color="#fff"/>,     title:"Microphone Verification",     desc:"Proctoring requires microphone access. Please grant permission when prompted.", btn:"Authorise Microphone", act:reqMic, red:false, denied:micP==="denied" },
-    webcam:  { bg:"linear-gradient(135deg,#10b981,#0d9488)", icon:<Eye size={28} color="#fff"/>,     title:"Camera Verification",         desc:"Your camera feed is required for proctoring. Confirm you can see yourself.",   btn:"Authorise Camera",    act:reqCam, red:false, denied:camP==="denied" },
-    ready:   { bg:"linear-gradient(135deg,#10b981,#059669)", icon:<Check size={28} color="#fff"/>,   title:"System Verified ✓",           desc:"Your system is secure. You may now begin the final assessment. Good luck! 🎓", btn:"Start Exam",          act:onComplete, red:true },
+    welcome: { bg:"linear-gradient(135deg,#6366f1,#8b5cf6)", icon:<Shield size={28} color="#fff"/>, title:"Exam Ready", desc:"You may begin the final assessment. Camera monitoring is not required.", btn:"Continue", act:skipProctoringCheck, red:false },
+    ready:   { bg:"linear-gradient(135deg,#10b981,#059669)", icon:<Check size={28} color="#fff"/>, title:"Ready to Start", desc:"You may now begin the final assessment.", btn:"Start Exam", act:onComplete, red:true },
   };
   const c = cfg[step];
 
@@ -375,11 +372,12 @@ const SystemCheck = ({ onComplete }: { onComplete: () => void }) => {
           <div className="sc-ico" style={{background:c.bg}}>{c.icon}</div>
           <h2 className="sc-title">{c.title}</h2>
           <p className="sc-desc">{c.desc}</p>
+          {/* Proctoring webcam preview disabled.
           {step==="webcam" && (
             <div className="sc-webcam">
               <video ref={vidRef} autoPlay playsInline muted style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
             </div>
-          )}
+          )} */}
           {c.denied && <div className="sc-denied"><AlertTriangle size={14}/>Permission denied — check browser settings.</div>}
           {step!=="ready" && !c.denied && <button className={`sc-btn ${c.red?"sc-red":"sc-ind"}`} onClick={c.act}>{c.btn}</button>}
           {step==="ready"              && <button className="sc-btn sc-red"                       onClick={onComplete}>{c.btn}</button>}
@@ -411,13 +409,15 @@ const MainExamPage = () => {
   const [answers,   setAnswers]   = useState<Record<number, string|number>>({});
   const [statuses,  setStatuses]  = useState<Record<number, "answered"|"review">>({});
   const [timeLeft,  setTimeLeft]  = useState(INIT_TIME);
+  const [submitted, setSubmitted] = useState(false);
   const [camStream, setCamStream] = useState<MediaStream|null>(null);
   const mediaRef                  = useRef<MediaStream|null>(null);
+  /*
   const [alert,     setAlert]     = useState<string|null>(null);
   const [cooldown,  setCooldown]  = useState(false);
-  const [submitted, setSubmitted] = useState(false);
   const [isBanned,  setIsBanned]  = useState(false);
   const [strikes,   setStrikes]   = useState(0);
+  */
 
   // Speech recognition — native Web Speech API
   const [listening,  setListening]  = useState(false);
@@ -428,10 +428,11 @@ const MainExamPage = () => {
   const { theme, setTheme } = useTheme();
   const isDesktop = useMediaQuery("(min-width: 900px)");
 
-  /* streams */
-  const stopStreams = () => {
+  /* camera preview only */
+  const stopCamera = () => {
     mediaRef.current?.getTracks().forEach(t => t.stop());
-    mediaRef.current = null; setCamStream(null);
+    mediaRef.current = null;
+    setCamStream(null);
   };
 
   /* init */
@@ -528,16 +529,18 @@ const MainExamPage = () => {
     setListening(false);
   };
 
-  /* streams after system check */
+  /* webcam preview after system check: video only, no proctoring */
   useEffect(() => {
     if (sysOk && !submitted) {
-      navigator.mediaDevices.getUserMedia({ video:true, audio:true })
+      navigator.mediaDevices.getUserMedia({ video:true })
         .then(s => { mediaRef.current = s; setCamStream(s); })
-        .catch(() => {});
-    } else { stopStreams(); }
+        .catch(() => setCamStream(null));
+    } else {
+      stopCamera();
+    }
   }, [sysOk, submitted]);
 
-  useEffect(() => () => stopStreams(), []);
+  useEffect(() => () => stopCamera(), []);
 
   /* timer */
   useEffect(() => {
@@ -547,13 +550,14 @@ const MainExamPage = () => {
   }, [loading, submitted, sysOk]);
 
   /* handlers */
-  const handleSubmit = () => { setSubmitted(true); stopStreams(); };
+  const handleSubmit = () => { setSubmitted(true); stopCamera(); };
 
   const handleSysOk = () => {
     setSysOk(true); setLoading(true);
     setTimeout(() => setLoading(false), 2200);
   };
 
+  /*
   const handleMotion = () => {
     if (alert || cooldown) return;
     setAlert("Potential misconduct detected: Unusual movement. A warning has been logged.");
@@ -565,6 +569,7 @@ const MainExamPage = () => {
     if (s >= 3) { setIsBanned(true); return; }
     setCooldown(true); setTimeout(() => setCooldown(false), 30_000);
   };
+  */
 
   const handleAnswer = (qId: number, val: string|number) => {
     setAnswers(p  => ({ ...p,  [qId]: val }));
@@ -644,9 +649,11 @@ const MainExamPage = () => {
     <>
       <style>{S}</style>
       <div className="ep">
-        {camStream && <MotionDetector stream={camStream} onMotion={handleMotion}/>}
+        {/* Proctoring motion detector disabled. */}
+        {/* {camStream && <MotionDetector stream={camStream} onMotion={handleMotion}/>} */}
 
         {/* ── PROCTORING ALERT ── */}
+        {/* Proctoring alert / strike dialog disabled.
         <AlertDialog open={!!alert}>
           <AlertDialogContent className="rounded-2xl max-w-sm p-6">
             <AlertDialogHeader style={{alignItems:"center",textAlign:"center",gap:10}}>
@@ -667,6 +674,7 @@ const MainExamPage = () => {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+        */}
 
         {/* ── TOP BAR ── */}
         <div className="ep-top">
@@ -674,17 +682,19 @@ const MainExamPage = () => {
             <div className="ep-top-ico"><BookOpen size={16} color="#fff"/></div>
             <div>
               <div className="ep-top-title">Final Assessment</div>
-              <div className="ep-top-sub">Q{idx+1}/{questions.length} · Secure proctored exam</div>
+              <div className="ep-top-sub">Q{idx+1}/{questions.length} · Exam mode</div>
             </div>
           </div>
           <div className="ep-top-r">
             {/* Strike indicator */}
+            {/* Strike indicator disabled.
             {strikes > 0 && (
               <div style={{display:"flex",alignItems:"center",gap:4,padding:"4px 10px",borderRadius:20,background:"rgba(239,68,68,.2)",border:"1px solid rgba(239,68,68,.3)"}}>
                 <AlertTriangle size={12} color="#fca5a5"/>
                 <span style={{fontSize:11,fontWeight:700,color:"#fca5a5"}}>{strikes}/3 strikes</span>
               </div>
             )}
+            */}
             <div className={`ep-timer${timeWarn?" warn":""}`}>
               <TimerIcon size={14} color={timeWarn?"#fca5a5":"rgba(255,255,255,.8)"}/>
               <span className="ep-timer-val">{fmt(timeLeft)}</span>
@@ -811,14 +821,14 @@ const MainExamPage = () => {
           {/* ── RIGHT: desktop/laptop only ── */}
           <div className="ep-right">
 
-            {/* Compact proctoring webcam */}
+            {/* Camera preview only. No motion detector, audio monitor, or strike logic. */}
             <div className="ep-rc">
               <div className="ep-ph">
-                <div className="ep-pt"><Shield size={12} style={{color:"#6366f1"}}/>System Status</div>
-                <div className="ep-ps"><div className="ep-pd"/>AI Active <Eye size={9}/><Mic size={9}/></div>
+                <div className="ep-pt"><Shield size={12} style={{color:"#6366f1"}}/>Camera Preview</div>
+                <div className="ep-ps"><div className="ep-pd"/>Video Only</div>
               </div>
               <div className="ep-wc"><Webcam stream={camStream}/></div>
-              <div className="ep-pf">AI Proctoring Enabled · Monitored</div>
+              <div className="ep-pf">Camera view only - no proctoring</div>
             </div>
 
             {/* Palette — up to 30 shown, scrolls above 30 */}
@@ -895,7 +905,7 @@ const MainExamPage = () => {
               </Drawer>
             </div>
 
-            {/* Draggable mini proctoring cam */}
+            {/* Draggable mini camera preview. No proctoring. */}
             <motion.div drag dragMomentum={false}
               style={{
                 position:"fixed",top:64,right:12,zIndex:50,cursor:"grab",
@@ -904,10 +914,8 @@ const MainExamPage = () => {
               }}>
               <div style={{padding:"4px 8px",display:"flex",alignItems:"center",gap:4,background:"linear-gradient(135deg,rgba(99,102,241,.07),rgba(139,92,246,.04))"}}>
                 <GripVertical size={11} style={{color:"#94a3b8"}}/>
-                <span style={{fontSize:9.5,fontWeight:700,color:"#374151"}}>Proctoring</span>
-                <div style={{marginLeft:"auto",display:"flex",gap:3}}>
-                  <Eye size={9} style={{color:"#10b981"}}/><Mic size={9} style={{color:"#10b981"}}/>
-                </div>
+                <span style={{fontSize:9.5,fontWeight:700,color:"#374151"}}>Camera</span>
+                <span style={{marginLeft:"auto",fontSize:9,fontWeight:700,color:"#10b981"}}>Video</span>
               </div>
               <div style={{height:70,background:"#0f172a"}}><Webcam stream={camStream}/></div>
             </motion.div>
@@ -915,6 +923,7 @@ const MainExamPage = () => {
         )}
 
         {/* ── BAN OVERLAY ── */}
+        {/* Ban overlay disabled with proctoring strikes.
         {isBanned && (
           <div className="ep-ban">
             <motion.div initial={{scale:.85,opacity:0}} animate={{scale:1,opacity:1}} transition={{type:"spring",delay:.1}}
@@ -932,6 +941,7 @@ const MainExamPage = () => {
             </motion.div>
           </div>
         )}
+        */}
 
       </div>
     </>

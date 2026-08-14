@@ -371,21 +371,21 @@ const STUDENT_MENU: MenuItem[] = [
   { label:"AI Tutor",      href:"/ai-tutor",        icon:"bot",      color:"ce" },
   { label:"Book Library",  href:"/bookExpanded",    icon:"book",     color:"cc" },
   { label:"Homework",      href:"/homework",         icon:"file",     color:"ca" },
-  // { label:"Homework Helper",  href:"/homework-helper",  icon:"lightbulb",  color:"cv" },
+  { label:"Homework Helper",  href:"/homework-helper",  icon:"lightbulb",  color:"cv" },
   { label:"Community",     href:"/community",        icon:"msg",      color:"cp" },
  { label:"Group Chat", href:"/communityNew", icon:"users", color:"cp" },
   // { label:"Achievements",  href:"/achievements",     icon:"trophy",   color:"co" },
   // { label:"Seminar",       href:"/seminar-tool",     icon:"users",    color:"ct" },
   // { label:"Debate",        href:"/debate-tool",      icon:"debate",   color:"cs" },
   { label:"Debate",        href:"/debatePage",      icon:"debateNew",   color:"ca" },
-  { label: "Meeting", href: "/meetingPage", icon: "video", color: "cs" },
+  // { label: "Meeting", href: "/meetingPage", icon: "video", color: "cs" },
 { label: "Seminar", href: "/seminarPage", icon: "presentation", color: "ct" },
   { label:"Exams", href:"/exam-preparation", icon:"examNew", color:"ci", children:[
     { label:"Prep",      href:"/exam-preparation" },
     { label:"Main Exam", href:"/main-exam" },
   ]},
-  { label:"Extras",     href:"/bookGuide",        icon:"grad",     color:"cl" },
-  { label: "Calendar",    href: "/calendar",    icon: "calendar", color:"cc"  }
+  { label:"Exam Prep Pro",     href:"/bookGuide",        icon:"grad",     color:"cl" },
+  // { label: "Calendar",    href: "/calendar",    icon: "calendar", color:"cc"  }
 ];
 
 const TEACHER_MENU: MenuItem[] = [
