@@ -3429,8 +3429,8 @@ function buildTextLayoutFromString(value: string) {
   return blocks;
 }
 
-const MARKDOWN_IMAGE_PATTERN =
-  /!\[([^\]]*)\]\((<[^>]+>|[^\s)]+)(?:\s+["'][^"']*["'])?\)/g;
+const INLINE_IMAGE_PATTERN =
+  /!\[([^\]]*)\]\((<[^>]+>|[^\s)]+)(?:\s+["'][^"']*["'])?\)|\[Image:\s*([^\]]+?)\s*\]/g;
 
 function normalizeImageUrlKey(value: any) {
   return String(value || "")
@@ -3438,27 +3438,38 @@ function normalizeImageUrlKey(value: any) {
     .replace(/^<|>$/g, "");
 }
 
+function getImageFileName(value: any) {
+  const normalized = normalizeImageUrlKey(value);
+  if (!normalized) return "";
+  const cleanPath = normalized.split(/[?#]/)[0];
+  return cleanPath.substring(cleanPath.lastIndexOf("/") + 1).toLowerCase();
+}
+
 function buildReaderBlocksFromMarkdownText(
   value: string,
   seenImageUrls?: Set<string>,
+  resolveImageRef?: (fileName: string) => string | null,
 ) {
   const text = String(value || "");
   const blocks: any[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
-  let foundMarkdownImage = false;
+  let foundInlineImage = false;
 
-  MARKDOWN_IMAGE_PATTERN.lastIndex = 0;
+  INLINE_IMAGE_PATTERN.lastIndex = 0;
 
-  while ((match = MARKDOWN_IMAGE_PATTERN.exec(text)) !== null) {
-    foundMarkdownImage = true;
+  while ((match = INLINE_IMAGE_PATTERN.exec(text)) !== null) {
+    foundInlineImage = true;
     const before = text.slice(lastIndex, match.index);
     if (before.trim()) {
       blocks.push(...buildTextLayoutFromString(before));
     }
 
-    const caption = String(match[1] || "").trim();
-    const imageUrl = normalizeImageUrlKey(match[2]);
+    const placeholderName = String(match[3] || "").trim();
+    const caption = placeholderName ? "" : String(match[1] || "").trim();
+    const imageUrl = normalizeImageUrlKey(
+      placeholderName ? resolveImageRef?.(placeholderName) : match[2],
+    );
     if (imageUrl && !seenImageUrls?.has(imageUrl)) {
       seenImageUrls?.add(imageUrl);
       blocks.push({
@@ -3466,6 +3477,8 @@ function buildReaderBlocksFromMarkdownText(
         imageUrl,
         caption: caption || null,
       });
+    } else if (!imageUrl) {
+      blocks.push(...buildTextLayoutFromString(match[0]));
     }
 
     lastIndex = match.index + match[0].length;
@@ -3476,7 +3489,7 @@ function buildReaderBlocksFromMarkdownText(
     blocks.push(...buildTextLayoutFromString(after));
   }
 
-  return blocks.length || foundMarkdownImage ? blocks : buildTextLayoutFromString(text);
+  return blocks.length || foundInlineImage ? blocks : buildTextLayoutFromString(text);
 }
 
 function extractSectionTopicsFromContent(
@@ -3605,6 +3618,7 @@ function buildStructuredLayout(
 ) {
   const blocks: any[] = [];
   const seenImageUrls = new Set<string>();
+  const mediaImageMap = new Map<string, string>();
   const metadataKeys = new Set([
     "id",
     "_id",
@@ -3632,6 +3646,76 @@ function buildStructuredLayout(
     "image_urls",
   ]);
 
+  const addMediaImage = (fileName: any, imageValue: any) => {
+    const url = normalizeImageUrlKey(
+      typeof imageValue === "string"
+        ? imageValue
+        : imageValue?.url ||
+            imageValue?.imageUrl ||
+            imageValue?.src ||
+            normalizeArrayField(imageValue?.image_urls)[0],
+    );
+    if (!url) return;
+
+    const explicitFileName = getImageFileName(fileName);
+    const urlFileName = getImageFileName(url);
+    [explicitFileName, urlFileName]
+      .filter(Boolean)
+      .forEach((key) => {
+        if (!mediaImageMap.has(key)) {
+          mediaImageMap.set(key, url);
+        }
+      });
+  };
+
+  const collectMediaImages = (value: any) => {
+    if (!value) return;
+    if (typeof value === "string") {
+      addMediaImage(value, value);
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach(collectMediaImages);
+      return;
+    }
+    if (typeof value !== "object") return;
+
+    normalizeArrayField(value.image_urls).forEach((url: string) => {
+      addMediaImage(url, url);
+    });
+
+    const mediaImages = value.media?.images || value.images;
+    if (mediaImages && typeof mediaImages === "object") {
+      if (Array.isArray(mediaImages)) {
+        mediaImages.forEach((image: any) => {
+          addMediaImage(
+            image?.fileName || image?.filename || image?.name || image?.url,
+            image,
+          );
+        });
+      } else {
+        Object.entries(mediaImages).forEach(([fileName, imageValue]) => {
+          if (fileName === "image_urls") return;
+          addMediaImage(fileName, imageValue);
+        });
+      }
+    }
+
+    [
+      value.units,
+      value.sections,
+      value.sub_sections,
+      value.children,
+      value.items,
+      value.topics,
+    ].forEach(collectMediaImages);
+  };
+
+  collectMediaImages(content);
+
+  const resolveImageRef = (fileName: string) =>
+    mediaImageMap.get(getImageFileName(fileName)) || null;
+
   const pushImageBlock = (imageUrl: any, caption?: any, targetBlocks = blocks) => {
     const normalizedUrl = normalizeImageUrlKey(imageUrl);
     if (!normalizedUrl || seenImageUrls.has(normalizedUrl)) return;
@@ -3647,7 +3731,9 @@ function buildStructuredLayout(
     const text = flattenContentToText(value).trim();
     if (!text) return;
     const destination = Array.isArray(targetBlocks) ? targetBlocks : blocks;
-    destination.push(...buildReaderBlocksFromMarkdownText(text, seenImageUrls));
+    destination.push(
+      ...buildReaderBlocksFromMarkdownText(text, seenImageUrls, resolveImageRef),
+    );
   };
 
   const pushListField = (value: any) => {
@@ -4261,6 +4347,15 @@ function paginateReaderBlocks(items: any[], pageCapacity: number) {
     return units;
   };
 
+  const findNextContentBlock = (startIndex: number) => {
+    for (let index = startIndex; index < items.length; index += 1) {
+      const nextItem = items[index];
+      if (!nextItem || nextItem.type === "pageBreak") return null;
+      return nextItem;
+    }
+    return null;
+  };
+
   for (let index = 0; index < items.length; index += 1) {
     const item = items[index];
 
@@ -4276,6 +4371,22 @@ function paginateReaderBlocks(items: any[], pageCapacity: number) {
       currentPage.length &&
       isTinySectionTail &&
       currentUnits + remainingSectionUnits <= pageCapacity + 3;
+    const isKeepWithNextHeading =
+      item.type === "heading2" || item.type === "heading3";
+    const nextContentBlock = isKeepWithNextHeading
+      ? findNextContentBlock(index + 1)
+      : null;
+    const keepWithNextUnits =
+      itemUnits + (nextContentBlock ? estimateReaderBlockUnits(nextContentBlock) : 0);
+
+    if (
+      currentPage.length &&
+      isKeepWithNextHeading &&
+      nextContentBlock &&
+      currentUnits + keepWithNextUnits > pageCapacity
+    ) {
+      pushPage();
+    }
 
     if (
       currentPage.length &&
