@@ -3552,6 +3552,52 @@ function extractSectionTopicsFromContent(
   return topics;
 }
 
+function extractTopLevelSectionTopics(
+  content: any,
+  chapterId: string | number,
+) {
+  const unitContent = Array.isArray(content?.units)
+    ? content.units[0]
+    : Array.isArray(content)
+      ? content[0]
+      : content;
+  const sections = Array.isArray(unitContent?.sections)
+    ? unitContent.sections
+    : [];
+
+  return sections
+    .filter((section: any) => {
+      const sectionType = normalizeReaderLabel(
+        section?.type || section?.kind || section?.section_type,
+      ).toLowerCase();
+      return sectionType === "section";
+    })
+    .map((section: any, index: number) => {
+      const title = normalizeReaderLabel(
+        section.title || section.section_title || section.sectionTitle,
+      );
+      const number = normalizeReaderLabel(
+        section.id ||
+          section.section_id ||
+          section.sectionId ||
+          section.section_number ||
+          section.sectionNumber,
+      );
+      const label = number ? `${number} ${title}`.trim() : title;
+      const anchor = makeAnchorId(chapterId, number || title || index + 1);
+
+      return {
+        id: String(section.id || section.section_id || section.sectionId || anchor),
+        label,
+        title: title || `Section ${index + 1}`,
+        number: number || null,
+        anchor,
+        sectionType: "section",
+      };
+    })
+    .filter((topic: any) => topic.title);
+}
+
 function buildStructuredLayout(
   content: any,
   chapterId: string | number,
@@ -3739,24 +3785,40 @@ function buildStructuredLayout(
     }
 
     if (value.sections && Array.isArray(value.sections)) {
-      value.sections.forEach((section: any) => {
+      value.sections.forEach((section: any, sectionIndex: number) => {
         const title = normalizeReaderLabel(
           section.section_title || section.sectionTitle || section.title,
         );
         const number = normalizeReaderLabel(
-          section.section_number || section.sectionNumber || section.number,
+          section.id ||
+            section.section_id ||
+            section.sectionId ||
+            section.section_number ||
+            section.sectionNumber ||
+            section.number,
         );
         const sectionType = (section.type || "section").toLowerCase();
 
-        // Only push heading if it's not introduction type (introduction comes separately)
-        if (title && isReaderTopic(title) && sectionType !== "introduction") {
-          const label = number ? `${number} ${title}`.trim() : title;
+        if (sectionIndex > 0 && blocks.length) {
+          blocks.push({
+            type: "pageBreak",
+            content: "",
+            sectionBreak: true,
+          });
+        }
+
+        if (title && isReaderTopic(title)) {
+          const label =
+            sectionType === "section" && number
+              ? `${number} ${title}`.trim()
+              : title;
           const anchor =
             topicMap.get(label) || makeAnchorId(chapterId, number || title);
           blocks.push({
             type: "heading2",
             content: label,
             anchor,
+            sectionType,
           });
         }
 
@@ -4069,12 +4131,18 @@ function buildChapterFromUnit(unit: any, contentPayload: any, index: number) {
   const structuredContent = contentPayload?.structured || null; // ← For reader
   const enrichedContent = contentPayload?.enriched || null; // ← For genius
 
+  const topLevelSectionTopics = extractTopLevelSectionTopics(
+    structuredContent || contentPayload,
+    unit.id,
+  );
   const sectionTopics = (
-    contentPayload?.sectionTopics ||
-    extractSectionTopicsFromContent(
-      structuredContent || contentPayload,
-      unit.id,
-    )
+    topLevelSectionTopics.length
+      ? topLevelSectionTopics
+      : contentPayload?.sectionTopics ||
+        extractSectionTopicsFromContent(
+          structuredContent || contentPayload,
+          unit.id,
+        )
   ).map((topic: any) => ({
     id: String(topic.id || `${unit.id}:${topic.label}`),
     label: topic.label,
@@ -4123,7 +4191,7 @@ function getContentSectionTopics(sectionTopics: any[] = []) {
     const sectionType = normalizeReaderLabel(
       topic?.sectionType || topic?.type || topic?.kind || topic?.section_type,
     ).toLowerCase();
-    return sectionType === "introduction" || sectionType === "section";
+    return sectionType === "section";
   });
 }
 
@@ -4183,16 +4251,42 @@ function paginateReaderBlocks(items: any[], pageCapacity: number) {
     currentUnits = 0;
   };
 
+  const estimateRemainingSectionUnits = (startIndex: number) => {
+    let units = 0;
+    for (let index = startIndex; index < items.length; index += 1) {
+      const nextItem = items[index];
+      if (nextItem?.type === "pageBreak") break;
+      units += estimateReaderBlockUnits(nextItem);
+    }
+    return units;
+  };
+
   for (let index = 0; index < items.length; index += 1) {
     const item = items[index];
 
-    // Force page break when encounter pageBreak block
     if (item?.type === "pageBreak") {
       pushPage();
-      continue; // Skip the pageBreak block itself so it's not rendered
+      continue;
+    }
+
+    const itemUnits = estimateReaderBlockUnits(item);
+    const remainingSectionUnits = estimateRemainingSectionUnits(index);
+    const isTinySectionTail = remainingSectionUnits <= 3;
+    const canAbsorbTinyTail =
+      currentPage.length &&
+      isTinySectionTail &&
+      currentUnits + remainingSectionUnits <= pageCapacity + 3;
+
+    if (
+      currentPage.length &&
+      currentUnits + itemUnits > pageCapacity &&
+      !canAbsorbTinyTail
+    ) {
+      pushPage();
     }
 
     currentPage.push(item);
+    currentUnits += itemUnits;
   }
 
   pushPage();
@@ -4434,7 +4528,13 @@ const BookContentWindowDemo = () => {
       enrichedContent = enrichedContent.units[0];
     }
 
-    const sectionTopics = enriched?.sectionTopics || unit.sectionTopics || [];
+    const structuredSectionTopics = extractTopLevelSectionTopics(
+      structuredContent,
+      unit.id,
+    );
+    const sectionTopics = structuredSectionTopics.length
+      ? structuredSectionTopics
+      : enriched?.sectionTopics || unit.sectionTopics || [];
 
     return {
       structured: structuredContent || null, // NEW: For reader view
@@ -4804,20 +4904,7 @@ const BookContentWindowDemo = () => {
       }
     }
 
-    // Inject page breaks BEFORE heading2 (sections) to ensure one section per page
-    const layoutWithPageBreaks: any[] = [];
-    layout.forEach((block, idx) => {
-      // Add page break before heading2 (section headings) UNLESS it's the very first item
-      if (block.type === "heading2" && idx > 0) {
-        layoutWithPageBreaks.push({
-          type: "pageBreak",
-          content: "",
-        });
-      }
-      layoutWithPageBreaks.push(block);
-    });
-
-    allPageContent = layoutWithPageBreaks;
+    allPageContent = layout;
   }
 
   const { pages: readerPages, anchorToPage } = paginateReaderBlocks(
