@@ -3743,12 +3743,29 @@ function buildStructuredLayout(
     });
   };
 
-  const pushTextField = (value: any, targetBlocks = blocks) => {
+  const isExerciseOnlyHeading = (block: any) =>
+    (block?.type === "heading1" ||
+      block?.type === "heading2" ||
+      block?.type === "heading3") &&
+    /^exercises?$/i.test(normalizeReaderLabel(block?.content));
+
+  const pushTextField = (
+    value: any,
+    targetBlocks = blocks,
+    options: { hideExerciseHeading?: boolean } = {},
+  ) => {
     const text = flattenContentToText(value).trim();
     if (!text) return;
     const destination = Array.isArray(targetBlocks) ? targetBlocks : blocks;
+    const nextBlocks = buildReaderBlocksFromMarkdownText(
+      text,
+      seenImageUrls,
+      resolveImageRef,
+    ).filter(
+      (block) => !options.hideExerciseHeading || !isExerciseOnlyHeading(block),
+    );
     destination.push(
-      ...buildReaderBlocksFromMarkdownText(text, seenImageUrls, resolveImageRef),
+      ...nextBlocks,
     );
   };
 
@@ -3927,6 +3944,7 @@ function buildStructuredLayout(
         const beforeCount = blocks.length;
 
         // Push main section content FIRST
+        const isExerciseSection = sectionType === "exercise";
         [
           section.content,
           section.content_context,
@@ -3937,7 +3955,11 @@ function buildStructuredLayout(
           section.description,
           section.markdown,
           section.html,
-        ].forEach(pushTextField);
+        ].forEach((field) =>
+          pushTextField(field, blocks, {
+            hideExerciseHeading: isExerciseSection,
+          }),
+        );
 
         // NEW: Handle sub_sections with logical block grouping
         if (Array.isArray(section.sub_sections)) {
@@ -4018,7 +4040,9 @@ function buildStructuredLayout(
               );
             } else if (subType === "exercise") {
               if (subsection.content) {
-                pushTextField(subsection.content, subsectionBlock.children);
+                pushTextField(subsection.content, subsectionBlock.children, {
+                  hideExerciseHeading: true,
+                });
               }
               if (
                 Array.isArray(subsection.sub_items) &&
