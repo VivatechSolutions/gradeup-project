@@ -3536,6 +3536,9 @@ function TeamDebateRoom({
   const [speechRecording, setSpeechRecording] = useState(false);
   const [speechProcessing, setSpeechProcessing] = useState(false);
   const [aiIsSpeaking, setAiIsSpeaking] = useState(false);
+  const [aiSpeakingSpeakerId, setAiSpeakingSpeakerId] = useState<string | null>(
+    null,
+  );
   const [userIsSpeaking, setUserIsSpeaking] = useState(false);
   const [meetingReady, setMeetingReady] = useState(false);
 
@@ -3656,7 +3659,11 @@ function TeamDebateRoom({
   // ▼ CRITICAL: Use server's currentSpeakerId only ▼
   const isCurrentUserSpeaker = String(currentSpeakerId) === String(candidateId);
   const isCurrentUserTurn = isCurrentUserSpeaker; // Server decides, not team logic
+  const aiSpeakingOwnerId = aiSpeakingSpeakerId || String(currentSpeakerId || "");
   const isAiParticipantSpeaking = String(currentSpeakerId) === "__ai_student__";
+  const isAiStudentTtsSpeaking =
+    aiIsSpeaking && aiSpeakingOwnerId === "__ai_student__";
+  const isModeratorSpeaking = aiIsSpeaking && !isAiStudentTtsSpeaking;
   const canSpeak =
     liveSession?.status === "active" &&
     currentPhase !== "ai_opening" &&
@@ -3800,6 +3807,7 @@ function TeamDebateRoom({
       isCurrentUserTurn,
       canSpeak,
       aiIsSpeaking,
+      aiSpeakingOwnerId,
       speechRecording,
       speechProcessing,
     });
@@ -3807,6 +3815,7 @@ function TeamDebateRoom({
   }, [
     activeTeam,
     aiIsSpeaking,
+    aiSpeakingOwnerId,
     canSpeak,
     currentPhase,
     currentSpeakerId,
@@ -3815,6 +3824,41 @@ function TeamDebateRoom({
     speechProcessing,
     speechRecording,
     config.sessionId,
+  ]);
+
+  useEffect(() => {
+    console.log("[TURN-TRACE] observed turn state", {
+      sessionId: config.sessionId,
+      currentSpeakerId: currentSpeakerId || null,
+      currentSpeakerName: currentSpeaker?.name || null,
+      currentSpeakerTeam: currentSpeaker?.team || null,
+      nextSpeakerAfterAi:
+        currentRound?.aiStudentPendingNextSpeakerId || null,
+      phase: currentPhase,
+      activeTeam,
+      isAiParticipantSpeaking,
+      aiIsSpeaking,
+      aiSpeakingSpeakerId: aiSpeakingSpeakerId || null,
+      aiSpeakingOwnerId: aiSpeakingOwnerId || null,
+      isAiStudentTtsSpeaking,
+      isModeratorSpeaking,
+      turnCount: liveSession?.turns?.length || 0,
+    });
+  }, [
+    activeTeam,
+    aiIsSpeaking,
+    aiSpeakingOwnerId,
+    aiSpeakingSpeakerId,
+    config.sessionId,
+    currentPhase,
+    currentRound?.aiStudentPendingNextSpeakerId,
+    currentSpeaker?.name,
+    currentSpeaker?.team,
+    currentSpeakerId,
+    isAiParticipantSpeaking,
+    isAiStudentTtsSpeaking,
+    isModeratorSpeaking,
+    liveSession?.turns?.length,
   ]);
 
   useEffect(() => {
@@ -3960,6 +4004,7 @@ function TeamDebateRoom({
 
     // ✓ FIX 4A: Mark greeting as in progress
     setGreetingPending(true);
+    setAiSpeakingSpeakerId("moderator");
     setAiIsSpeaking(true);
 
     console.log("[GREETING] flags set, ready for synthesis", {
@@ -4148,6 +4193,7 @@ function TeamDebateRoom({
             setOpeningCompletionPending(false);
             setGreetingPending(false);
             setAiIsSpeaking(false);
+            setAiSpeakingSpeakerId(null);
           }
         };
 
@@ -4160,6 +4206,7 @@ function TeamDebateRoom({
             document.body.removeChild(greetingAudio);
           } catch {}
           setAiIsSpeaking(false);
+          setAiSpeakingSpeakerId(null);
           setGreetingPending(false);
           setOpeningCompletionPending(false);
           activeAudioRef.current = null;
@@ -4217,6 +4264,7 @@ function TeamDebateRoom({
             } catch {}
             // clearTimeout(greetingTimeoutId);
             setAiIsSpeaking(false);
+            setAiSpeakingSpeakerId(null);
             setGreetingPending(false);
             setOpeningCompletionPending(false);
             activeAudioRef.current = null;
@@ -4224,6 +4272,7 @@ function TeamDebateRoom({
       } catch (error) {
         setMeetingReady(true);
         setAiIsSpeaking(false);
+        setAiSpeakingSpeakerId(null);
         setGreetingPending(false);
         console.error("[TTS] play error", {
           sessionId: config.sessionId,
@@ -4340,6 +4389,7 @@ useEffect(() => {
         },
       );
       setAiIsSpeaking(false);
+      setAiSpeakingSpeakerId(null);
     }
   }, [liveSession?.turns, aiIsSpeaking, config.sessionId]);
   const configLiveSessionRef = useRef(config.liveSession);
@@ -4536,6 +4586,8 @@ useEffect(() => {
 
     console.log("[TURN] submit turn", {
       sessionId: config.sessionId,
+      currentSpeakerIdBeforeSubmit: currentSpeakerId || null,
+      currentSpeakerNameBeforeSubmit: currentSpeaker?.name || null,
       candidateId,
       team: currentParticipant?.team || null,
       textLength: message.trim().length,
@@ -4563,6 +4615,8 @@ useEffect(() => {
 
       console.log("[TURN] submit response received - TURN FROM SERVER ONLY", {
         sessionId: config.sessionId,
+        currentSpeakerIdBeforeSubmit: currentSpeakerId || null,
+        submittedByCandidateId: candidateId,
         serverNextSpeakerId: serverNextSpeakerId,
         serverAiIndicator: serverAiIndicator,
         isNextTurnAiParticipant: isNextTurnAiParticipant,
@@ -4572,6 +4626,15 @@ useEffect(() => {
         moderatorTurns: (data?.liveSession?.turns || []).filter(
           (t: any) => t.role === "moderator",
         ).length,
+      });
+      console.log("[TURN-TRACE] submit result", {
+        sessionId: config.sessionId,
+        currentSpeakerIdBeforeSubmit: currentSpeakerId || null,
+        submittedByCandidateId: candidateId,
+        nextSpeakerIdFromLiveSession: serverNextSpeakerId || null,
+        nextSpeakerIdFromPython: data?.current_turn_candidate_id || null,
+        nextSpeakerAfterAi,
+        isNextTurnAiParticipant,
       });
 
       // ▼ CRITICAL: DO NOT ALLOW CLIENT-SIDE TURN OVERRIDE ▼
@@ -4649,6 +4712,7 @@ useEffect(() => {
         });
         
         // Set AI speaking flag to prevent other users from interrupting
+        setAiSpeakingSpeakerId("__ai_student__");
         setAiIsSpeaking(true);
         
         try {
@@ -4663,6 +4727,16 @@ useEffect(() => {
             nextSpeakerId: nextSpeakerAfterAi,
           });
 
+          console.log("[TURN-TRACE] AI student completed", {
+            sessionId: config.sessionId,
+            aiSpeakerId: "__ai_student__",
+            nextSpeakerAfterAi,
+            completedCurrentSpeakerId:
+              completed?.liveSession?.currentRound?.currentSpeakerId || null,
+            completedActiveTeam:
+              completed?.liveSession?.currentRound?.activeTeam || null,
+          });
+
           setRoomSnapshot({
             ...data,
             liveSession: completed?.liveSession || data?.liveSession || liveSession,
@@ -4674,6 +4748,7 @@ useEffect(() => {
           toast$("AI student audio failed. The turn is still held for AI.", "error");
         } finally {
           setAiIsSpeaking(false);
+          setAiSpeakingSpeakerId(null);
         }
       } else if (isNextTurnAiParticipant && !data?.aiResponse) {
         console.warn("[AI-RESPONSE] AI participant turn but NO response received", {
@@ -5248,6 +5323,7 @@ useEffect(() => {
     activeAudioRef.current = null;
     // moderatorSpeechTokenRef.current += 1;
     setAiIsSpeaking(false);
+    setAiSpeakingSpeakerId(null);
     setUserIsSpeaking(false);
     try {
       autoEndedRef.current = true;
@@ -5300,7 +5376,7 @@ useEffect(() => {
     isStudent: false,
     micMuted: false,
     camOn: false,
-    isSpeaking: aiIsSpeaking,
+    isSpeaking: isModeratorSpeaking,
     handRaised: false,
     avatarColor: "#38bdf8",
     energy: 100,
@@ -5332,9 +5408,11 @@ useEffect(() => {
             (activeTeam && participant.team !== activeTeam),
           camOn: false,
           isSpeaking:
-            !aiIsSpeaking &&
-            String(participant.id) === String(candidateId) &&
-            userIsSpeaking,
+            String(participant.id) === "__ai_student__"
+              ? isAiStudentTtsSpeaking
+              : !aiIsSpeaking &&
+                String(participant.id) === String(candidateId) &&
+                userIsSpeaking,
           handRaised: false,
           isMyTurn: String(participant.id) === String(candidateId) && canSpeak,
           avatarColor: participant.team
@@ -5587,7 +5665,9 @@ useEffect(() => {
                     >
                       <span className="cbtn-ico">🔊</span>
                       <span>
-                        {aiIsSpeaking
+                        {isAiStudentTtsSpeaking
+                          ? "AI Student speaking..."
+                          : isModeratorSpeaking
                           ? "AI Moderator speaking..."
                           : liveSession?.status === "waiting_for_ai"
                             ? "Waiting for AI"
@@ -5626,7 +5706,9 @@ useEffect(() => {
                     <div className="room-info-card live">
                       <div className="room-info-label">Current Turn</div>
                       <div className="room-info-title">
-                        {aiIsSpeaking
+                        {isAiStudentTtsSpeaking
+                          ? `AI Student Â· Team ${currentSpeaker?.team || "-"}`
+                          : isModeratorSpeaking
                           ? "AI Moderator"
                           : isAiParticipantSpeaking
                             ? `AI Student · Team ${currentSpeaker?.team || "-"}`
@@ -5635,7 +5717,9 @@ useEffect(() => {
                               : "Preparing next speaker"}
                       </div>
                       <div className="room-info-sub">
-                        {aiIsSpeaking
+                        {isAiStudentTtsSpeaking
+                          ? "AI Student is speaking. Everyone is muted."
+                          : isModeratorSpeaking
                           ? "Moderator response in progress. Everyone is muted."
                           : isAiParticipantSpeaking
                             ? "AI Student is speaking. Everyone is muted."
@@ -5713,7 +5797,9 @@ useEffect(() => {
                               color: "#c4b5fd",
                             }}
                           >
-                            AI Moderator is speaking…
+                            {isAiStudentTtsSpeaking
+                              ? "AI Student is speaking..."
+                              : "AI Moderator is speaking..."}
                           </div>
                           <div
                             style={{
@@ -5722,7 +5808,9 @@ useEffect(() => {
                               marginTop: 2,
                             }}
                           >
-                            Preparing the opening greeting
+                            {isAiStudentTtsSpeaking
+                              ? "Playing AI student turn"
+                              : "Preparing the opening greeting"}
                           </div>
                         </div>
                       </div>

@@ -135,6 +135,7 @@ function createTopicRecord({
   sectionId,
   sectionNumber,
   sectionTitle,
+  sectionType,
 }) {
   const cleanTitle = normalizeTopicLabel(sectionTitle);
   if (!isEligibleSectionTopic(cleanTitle)) {
@@ -142,6 +143,7 @@ function createTopicRecord({
   }
 
   const normalizedSectionNumber = normalizeTopicLabel(sectionNumber);
+  const normalizedSectionType = normalizeTopicLabel(sectionType).toLowerCase() || null;
   const displayLabel = normalizedSectionNumber
     ? `${normalizedSectionNumber} ${cleanTitle}`.trim()
     : cleanTitle;
@@ -157,6 +159,7 @@ function createTopicRecord({
     sectionId: sectionId || null,
     sectionNumber: normalizedSectionNumber || null,
     sectionTitle: cleanTitle,
+    sectionType: normalizedSectionType,
     label: displayLabel,
   };
 }
@@ -421,6 +424,7 @@ function extractTopicsFromValue(value, unit, collected, seen) {
       sectionId: value.section_id || value.sectionId || value.id,
       sectionNumber: directNumber,
       sectionTitle: directTitle,
+      sectionType: value.type || value.kind || value.section_type || value.sectionType,
     });
 
     if (topicRecord) {

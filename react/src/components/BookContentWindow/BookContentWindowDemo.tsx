@@ -63,6 +63,7 @@ interface Chapter {
     title: string;
     number?: string | null;
     anchor: string;
+    sectionType?: string | null;
   }>;
   sourceContent?: any;
   hasEnrichedContent?: boolean;
@@ -3361,22 +3362,71 @@ function makeAnchorId(...parts: Array<string | number | null | undefined>) {
   return source || `section-${Date.now()}`;
 }
 
+function parseMarkdownTableRow(line: string) {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("|") || !trimmed.endsWith("|")) return null;
+  return trimmed
+    .slice(1, -1)
+    .split("|")
+    .map((cell) => cell.trim());
+}
+
+function isMarkdownTableDivider(line: string) {
+  const cells = parseMarkdownTableRow(line);
+  return Boolean(
+    cells?.length &&
+      cells.every((cell) => /^:?-{3,}:?$/.test(cell.replace(/\s+/g, ""))),
+  );
+}
+
 function buildTextLayoutFromString(value: string) {
-  return String(value || "")
-    .split(/\n+/)
-    .filter((line) => line.trim())
-    .map((line) => {
-      if (line.startsWith("### ")) {
-        return { type: "heading3", content: line.replace(/^###\s*/, "") };
+  const lines = String(value || "").split(/\n+/);
+  const blocks: any[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index].trim();
+    if (!line) continue;
+
+    const currentRow = parseMarkdownTableRow(line);
+    const nextLine = lines[index + 1]?.trim() || "";
+    if (currentRow && isMarkdownTableDivider(nextLine)) {
+      const rows: string[][] = [];
+      index += 2;
+
+      while (index < lines.length) {
+        const row = parseMarkdownTableRow(lines[index]);
+        if (!row) {
+          index -= 1;
+          break;
+        }
+        rows.push(row);
+        index += 1;
       }
-      if (line.startsWith("## ")) {
-        return { type: "heading2", content: line.replace(/^##\s*/, "") };
-      }
-      if (line.startsWith("# ")) {
-        return { type: "heading1", content: line.replace(/^#\s*/, "") };
-      }
-      return { type: "text", content: line };
-    });
+
+      blocks.push({
+        type: "table",
+        headers: currentRow,
+        rows,
+      });
+      continue;
+    }
+
+    if (line.startsWith("### ")) {
+      blocks.push({ type: "heading3", content: line.replace(/^###\s*/, "") });
+      continue;
+    }
+    if (line.startsWith("## ")) {
+      blocks.push({ type: "heading2", content: line.replace(/^##\s*/, "") });
+      continue;
+    }
+    if (line.startsWith("# ")) {
+      blocks.push({ type: "heading1", content: line.replace(/^#\s*/, "") });
+      continue;
+    }
+    blocks.push({ type: "text", content: line });
+  }
+
+  return blocks;
 }
 
 const MARKDOWN_IMAGE_PATTERN =
@@ -3439,6 +3489,7 @@ function extractSectionTopicsFromContent(
     title: string;
     number?: string | null;
     anchor: string;
+    sectionType?: string | null;
   }> = [];
   const seen = new Set<string>();
 
@@ -3479,6 +3530,10 @@ function extractSectionTopicsFromContent(
           title: cleanTitle,
           number: cleanNumber || null,
           anchor: makeAnchorId(chapterId, cleanNumber || cleanTitle),
+          sectionType:
+            normalizeReaderLabel(
+              value.type || value.kind || value.section_type || value.sectionType,
+            ).toLowerCase() || null,
         });
       }
     }
@@ -3787,10 +3842,6 @@ function buildStructuredLayout(
                 },
               );
             } else if (subType === "exercise") {
-              subsectionBlock.children.push({
-                type: "heading3",
-                content: subTitle || subsection.id || "Exercise",
-              });
               if (subsection.content) {
                 pushTextField(subsection.content, subsectionBlock.children);
               }
@@ -4035,6 +4086,10 @@ function buildChapterFromUnit(unit: any, contentPayload: any, index: number) {
         unit.id,
         topic.sectionNumber || topic.sectionTitle || topic.label,
       ),
+    sectionType:
+      normalizeReaderLabel(
+        topic.sectionType || topic.type || topic.kind || topic.section_type,
+      ).toLowerCase() || null,
   }));
 
   const topicAnchorMap = new Map(
@@ -4062,6 +4117,16 @@ function buildChapterFromUnit(unit: any, contentPayload: any, index: number) {
     unit: unit.unitNumber || index + 1,
   };
 }
+
+function getContentSectionTopics(sectionTopics: any[] = []) {
+  return sectionTopics.filter((topic) => {
+    const sectionType = normalizeReaderLabel(
+      topic?.sectionType || topic?.type || topic?.kind || topic?.section_type,
+    ).toLowerCase();
+    return sectionType === "introduction" || sectionType === "section";
+  });
+}
+
 function estimateReaderBlockUnits(item: any): number {
   if (!item) return 0;
   const type = item.type || "text";
@@ -6370,7 +6435,9 @@ const BookContentWindowDemo = () => {
                 (ch) => ch.unit === unitNumber,
               );
               const firstChapter = unitChapters[0];
-              const sectionTopics = firstChapter?.sectionTopics || [];
+              const sectionTopics = getContentSectionTopics(
+                firstChapter?.sectionTopics || [],
+              );
               return (
                 <div
                   key={unitNumber}
@@ -6520,7 +6587,9 @@ const BookContentWindowDemo = () => {
                   const unitChapters = selectedBook.chapters.filter(
                     (ch: any) => ch.unit === unitNumber,
                   );
-                  const sectionTopics = unitChapters[0]?.sectionTopics || [];
+                  const sectionTopics = getContentSectionTopics(
+                    unitChapters[0]?.sectionTopics || [],
+                  );
                   const isExpanded = expandedUnit === unitNumber;
                   const hasActive = unitChapters.some(
                     (ch: any) => ch.id === activeChapter?.id,
@@ -9406,29 +9475,6 @@ mark.reader-highlight:hover { filter: brightness(1.15); }
   font-style: italic;
   margin-top: 0.5rem;
 }
-.reader-table-wrap {
-  width: 100%;
-  overflow-x: auto;
-  margin: 1.5rem 0;
-}
-.reader-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.95rem;
-}
-.reader-table th, .reader-table td {
-  border: 1px solid var(--border);
-  padding: 0.75rem 1rem;
-  text-align: left;
-}
-.reader-table th {
-  background-color: var(--bg-hover);
-  font-weight: 600;
-  color: var(--text-main);
-}
-  border-left: 3px solid var(--accent); padding-left: 11px;
-}
-
 .reader-list {
   margin: 0 0 1rem 1.2rem;
   padding: 0;
@@ -9452,21 +9498,41 @@ mark.reader-highlight:hover { filter: brightness(1.15); }
 }
 .reader-table-wrap {
   overflow-x: auto;
-  margin: 1rem 0;
+  margin: 1.2rem 0 1.35rem;
   break-inside: avoid-column;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255,255,255,.78);
+  box-shadow: 0 8px 22px rgba(15,23,42,.08);
 }
 .reader-table {
   width: 100%;
+  min-width: 360px;
   border-collapse: collapse;
   font-size: .86rem;
-  background: rgba(255,255,255,.68);
+  background: transparent;
 }
 .reader-table th,
 .reader-table td {
-  border: 1px solid var(--border);
-  padding: 8px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  padding: 9px 11px;
   text-align: left;
   vertical-align: top;
+  line-height: 1.55;
+}
+.reader-table th {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--text-main);
+  font-weight: 700;
+  font-size: .78rem;
+  text-transform: uppercase;
+}
+.reader-table tbody tr:nth-child(even) {
+  background: rgba(15,23,42,.035);
+}
+.reader-table tbody tr:last-child td {
+  border-bottom: 0;
 }
 .reader-html-block {
   break-inside: avoid-column;

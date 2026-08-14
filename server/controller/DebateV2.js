@@ -224,6 +224,43 @@ function pickNextSpeaker(liveSession, team) {
   return teamParticipants[0] || null;
 }
 
+function resolveRoomParticipant(participants = [], participantId, fallback = {}) {
+  if (!participantId) {
+    return null;
+  }
+
+  const id = String(participantId);
+  const participant = (participants || []).find(
+    (item) =>
+      String(item.id || item.participantId || item.candidateId || "") === id,
+  );
+
+  if (participant) {
+    return {
+      id,
+      name: participant.name || participant.candidateName || fallback.name || "Participant",
+      team: normalizeTeamKey(participant.team) || participant.team || fallback.team || null,
+      isAi: Boolean(participant.isAi || id === "__ai_student__"),
+    };
+  }
+
+  if (id === "__ai_student__") {
+    return {
+      id,
+      name: fallback.name || "AI Student",
+      team: fallback.team || null,
+      isAi: true,
+    };
+  }
+
+  return {
+    id,
+    name: fallback.name || "Unknown participant",
+    team: fallback.team || null,
+    isAi: Boolean(fallback.isAi),
+  };
+}
+
 function buildRoomSnapshot(pythonRoom, liveSession) {
   const participantCount =
     liveSession?.participants?.filter((participant) => !participant.isAi)
@@ -703,11 +740,33 @@ console.log
         pythonRespond?.current_turn_candidate_id || "";
       const isNextTurnAiParticipant =
         String(nextTurnCandidateId).startsWith("__ai_student__");
-
-      console.log("[TURN-DECISION] Python responded with:", {
+      const roomParticipants = liveSession?.participants || [];
+      const submittedSpeaker = resolveRoomParticipant(
+        roomParticipants,
+        currentSpeakerId || submittingUserId,
+        {
+          name: candidate.candidate_name,
+          team,
+        },
+      );
+      const pythonNextSpeaker = resolveRoomParticipant(
+        roomParticipants,
         nextTurnCandidateId,
+      );
+
+      console.log("[TURN-TRACE][BACKEND] Python submit response", {
+        sessionId,
+        submittedById: submittingUserId,
+        submittedByName: candidate.candidate_name,
+        currentSpeakerId: submittedSpeaker?.id || currentSpeakerId || null,
+        currentSpeakerName: submittedSpeaker?.name || null,
+        currentSpeakerTeam: submittedSpeaker?.team || team || null,
+        nextSpeakerIdFromPython: nextTurnCandidateId || null,
+        nextSpeakerNameFromPython: pythonNextSpeaker?.name || null,
+        nextSpeakerTeamFromPython: pythonNextSpeaker?.team || null,
         isAiParticipant: isNextTurnAiParticipant,
-        indicator: nextTurnCandidateId.substring(0, 20),
+        responseCurrentTurnCandidateId:
+          pythonRespond?.current_turn_candidate_id || null,
       });
       const pythonRoom = await callPython({
         path: `/debate/room/${encodeURIComponent(sessionId)}`,
@@ -750,6 +809,25 @@ console.log
       const fallbackSpeaker = pickNextSpeaker(updatedAfterTurn, fallbackTeam);
       const fallbackSpeakerId = fallbackSpeaker?.id || null;
       const resolvedNextSpeakerId = nextTurnCandidateId || fallbackSpeakerId;
+      const resolvedNextSpeaker = resolveRoomParticipant(
+        updatedAfterTurn?.participants || roomParticipants,
+        resolvedNextSpeakerId,
+        {
+          name: fallbackSpeaker?.name,
+          team: fallbackSpeaker?.team || fallbackTeam,
+        },
+      );
+
+      console.log("[TURN-TRACE][BACKEND] Resolved next speaker", {
+        sessionId,
+        currentSpeakerId: submittedSpeaker?.id || currentSpeakerId || null,
+        currentSpeakerName: submittedSpeaker?.name || null,
+        nextSpeakerId: resolvedNextSpeakerId || null,
+        nextSpeakerName: resolvedNextSpeaker?.name || null,
+        nextSpeakerTeam: resolvedNextSpeaker?.team || null,
+        source: nextTurnCandidateId ? "python" : "fallback",
+        isAiParticipant: isNextTurnAiParticipant,
+      });
 
       if (isNextTurnAiParticipant) {
         let aiPayload = null;
@@ -777,6 +855,33 @@ console.log
           "AI student response unavailable.";
         const nextSpeakerAfterAi =
           aiPayload?.current_turn_candidate_id || fallbackSpeakerId;
+        const aiStudentSpeaker = resolveRoomParticipant(
+          updatedAfterTurn?.participants || roomParticipants,
+          "__ai_student__",
+          { name: aiPayload?.ai_student_name || "AI Student" },
+        );
+        const nextSpeakerAfterAiParticipant = resolveRoomParticipant(
+          updatedAfterTurn?.participants || roomParticipants,
+          nextSpeakerAfterAi,
+          {
+            name: fallbackSpeaker?.name,
+            team: fallbackSpeaker?.team || fallbackTeam,
+          },
+        );
+
+        console.log("[TURN-TRACE][BACKEND] AI student API response", {
+          sessionId,
+          aiSpeakerId: aiStudentSpeaker?.id || "__ai_student__",
+          aiSpeakerName: aiStudentSpeaker?.name || "AI Student",
+          aiSpeakerTeam:
+            aiStudentSpeaker?.team || aiPayload?.ai_student_team || null,
+          nextSpeakerIdAfterAi: nextSpeakerAfterAi || null,
+          nextSpeakerNameAfterAi: nextSpeakerAfterAiParticipant?.name || null,
+          nextSpeakerTeamAfterAi: nextSpeakerAfterAiParticipant?.team || null,
+          aiResponseLength: String(aiResponse || "").length,
+          aiPayloadCurrentTurnCandidateId:
+            aiPayload?.current_turn_candidate_id || null,
+        });
 
         const finalSession = await saveRoomAiStudentResponse({
           sessionId,
@@ -795,12 +900,16 @@ console.log
             warnings,
             pythonWarning: pythonRespondWarning || saveWarning || aiStudentWarning || null,
             current_turn_candidate_id: nextTurnCandidateId,
+            currentSpeakerId: submittedSpeaker?.id || currentSpeakerId || null,
+            currentSpeakerName: submittedSpeaker?.name || null,
             nextSpeakerId: "__ai_student__",
+            nextSpeakerName: aiStudentSpeaker?.name || "AI Student",
             next_speaker_is_ai: true,
             aiResponse,
             ai_speaking_id: "__ai_student__",
             aiStudent: aiPayload,
             nextSpeakerAfterAi,
+            nextSpeakerAfterAiName: nextSpeakerAfterAiParticipant?.name || null,
             waitingForAi: false,
             liveSession: finalSession,
           },
@@ -835,7 +944,10 @@ console.log
           warnings,
           pythonWarning: pythonRespondWarning || saveWarning || null,
           current_turn_candidate_id: resolvedNextSpeakerId,
+          currentSpeakerId: submittedSpeaker?.id || currentSpeakerId || null,
+          currentSpeakerName: submittedSpeaker?.name || null,
           nextSpeakerId: resolvedNextSpeakerId,
+          nextSpeakerName: resolvedNextSpeaker?.name || null,
           next_speaker_is_ai: false,
           aiResponse: null,
           ai_speaking_id: null,
@@ -936,6 +1048,16 @@ console.log
 
       const currentRound = liveSession.currentRound || {};
       if (String(currentRound.currentSpeakerId || "") !== "__ai_student__") {
+        const currentParticipant = resolveRoomParticipant(
+          liveSession.participants || [],
+          currentRound.currentSpeakerId,
+        );
+        console.log("[TURN-TRACE][BACKEND] AI student complete skipped", {
+          sessionId,
+          currentSpeakerId: currentParticipant?.id || currentRound.currentSpeakerId || null,
+          currentSpeakerName: currentParticipant?.name || null,
+          requestedNextSpeakerId: requestedNextSpeakerId || null,
+        });
         return res.status(200).json({
           status: true,
           data: { liveSession },
@@ -944,13 +1066,34 @@ console.log
 
       const nextSpeakerId =
         requestedNextSpeakerId || currentRound.aiStudentPendingNextSpeakerId || null;
+      const aiStudentSpeaker = resolveRoomParticipant(
+        liveSession.participants || [],
+        "__ai_student__",
+        { name: "AI Student", team: currentRound.activeTeam },
+      );
       const nextParticipant = (liveSession.participants || []).find(
         (participant) => String(participant.id) === String(nextSpeakerId),
+      );
+      const nextSpeaker = resolveRoomParticipant(
+        liveSession.participants || [],
+        nextSpeakerId,
       );
       const nextTeam =
         normalizeTeamKey(nextParticipant?.team) ||
         normalizeTeamKey(currentRound.activeTeam) ||
         "A";
+
+      console.log("[TURN-TRACE][BACKEND] AI student complete", {
+        sessionId,
+        currentSpeakerId: aiStudentSpeaker?.id || "__ai_student__",
+        currentSpeakerName: aiStudentSpeaker?.name || "AI Student",
+        currentSpeakerTeam: aiStudentSpeaker?.team || currentRound.activeTeam || null,
+        nextSpeakerId: nextSpeakerId || null,
+        nextSpeakerName: nextSpeaker?.name || null,
+        nextSpeakerTeam: nextSpeaker?.team || nextTeam,
+        requestedNextSpeakerId: requestedNextSpeakerId || null,
+        pendingNextSpeakerId: currentRound.aiStudentPendingNextSpeakerId || null,
+      });
 
       const updatedSession = await updateRoomState(sessionId, {
         status: "active",
@@ -968,6 +1111,7 @@ console.log
         data: {
           liveSession: updatedSession,
           nextSpeakerId,
+          nextSpeakerName: nextSpeaker?.name || null,
         },
       });
     } catch (error) {

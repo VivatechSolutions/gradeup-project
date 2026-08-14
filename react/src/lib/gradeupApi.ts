@@ -24,6 +24,7 @@ export type LibraryUnit = {
     sectionId?: string | null;
     sectionNumber?: string | null;
     sectionTitle: string;
+    sectionType?: string | null;
     label: string;
   }>;
   hasStructuredData: boolean;
