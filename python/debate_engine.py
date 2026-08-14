@@ -363,7 +363,6 @@ Briefly set up the debate — explain your stance (you take the opposing side) a
 Keep it engaging and under 5 sentences."""
 
 
-
         ai_greeting = self._call_llm([
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": greeting_prompt},

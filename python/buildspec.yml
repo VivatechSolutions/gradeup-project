@@ -43,6 +43,12 @@ phases:
   pre_build:
     commands:
       - echo "Dependencies and file check..."
+      - test -f Dockerfile
+      - test -f docker-compose.yml
+      - test -f appspec.yml
+      - test -f scripts/start_application.sh
+      - test -f scripts/stop_application.sh
+      - test -f searxng/settings.yml
       - pip --version
       - ls -l # List files to verify location
       - pip install -r requirements.txt
@@ -64,4 +70,6 @@ artifacts:
     - scripts/**/*
     - Dockerfile
     - requirements.txt
+    - docker-compose.yml
+    - searxng/**/*
   discard-paths: no

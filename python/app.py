@@ -582,7 +582,7 @@ from pdf_unit_splitter import split_pdf_by_units
 
 
 @app.post("/upload_pdf")
-async def split_pdf_endpoint(
+async def split_pdf_endpoint( 
     file: UploadFile = File(...),
     subject: str = Form(..., description="Subject name"),
     part: Optional[str] = Form(None, description="Book/part name (e.g. 'History', 'Fundamentals of Physical Geography')"),

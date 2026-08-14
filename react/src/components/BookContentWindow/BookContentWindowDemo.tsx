@@ -3918,6 +3918,10 @@ function buildStructuredLayout(
         );
         const sectionType = (section.type || "section").toLowerCase();
 
+        if (sectionType === "exercise") {
+          return;
+        }
+
         if (sectionIndex > 0 && blocks.length) {
           blocks.push({
             type: "pageBreak",
@@ -3965,6 +3969,9 @@ function buildStructuredLayout(
         if (Array.isArray(section.sub_sections)) {
           section.sub_sections.forEach((subsection: any) => {
             const subType = (subsection.type || "unknown").toLowerCase();
+            if (subType === "exercise") {
+              return;
+            }
             const subTitle = normalizeReaderLabel(
               subsection.title || subsection.id || "",
             );
@@ -4038,37 +4045,6 @@ function buildStructuredLayout(
                   );
                 },
               );
-            } else if (subType === "exercise") {
-              if (subsection.content) {
-                pushTextField(subsection.content, subsectionBlock.children, {
-                  hideExerciseHeading: true,
-                });
-              }
-              if (
-                Array.isArray(subsection.sub_items) &&
-                subsection.sub_items.length > 0
-              ) {
-                const exerciseItems = subsection.sub_items
-                  .map((item: any) => {
-                    let itemContent = "";
-                    if (item.number) itemContent += `${item.number}. `;
-                    if (item.content) itemContent += item.content;
-                    if (
-                      Array.isArray(item.options) &&
-                      item.options.length > 0
-                    ) {
-                      itemContent += "\n" + item.options.join("\n");
-                    }
-                    return itemContent;
-                  })
-                  .filter(Boolean);
-                if (exerciseItems.length > 0) {
-                  subsectionBlock.children.push({
-                    type: "list",
-                    items: exerciseItems,
-                  });
-                }
-              }
             } else {
               if (subHeadingLabel) {
                 subsectionBlock.children.push({
