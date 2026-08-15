@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { Button } from "./ui/button";
-import { X, ChevronLeft, ChevronRight, BookOpen } from "lucide-react";
-import { getLibrarySubjects, type LibrarySubject } from "../lib/gradeupApi";
+import { X, ChevronLeft, ChevronRight } from "lucide-react";
+import { getStudentBooks, recordStudentProgress } from "../lib/gradeupApi";
 import { buildApiUrl } from "../lib/apiBase";
 import { useToast } from "../hooks/use-toast";
 
@@ -15,129 +15,10 @@ interface Book {
   icon: string;
   coverImageUrl?: string | null;
   imageCandidates?: string[];
+  progressPercent?: number;
+  subjectGroupKey?: string;
 }
 
-const FALLBACK_BOOKS: Book[] = [
-  // --- SCIENCE (Biology & Chemistry) ---
-  {
-    id: "sci-101",
-    title: "Cellular Biology",
-    subject: "Science",
-    icon: "🧬",
-    color: "linear-gradient(135deg, #6366f1 0%, #a855f7 100%)",
-  },
-  {
-    id: "sci-102",
-    title: "Human Anatomy",
-    subject: "Science",
-    icon: "🫁",
-    color: "linear-gradient(135deg, #ec4899 0%, #f43f5e 100%)",
-  },
-  {
-    id: "sci-103",
-    title: "Organic Chemistry",
-    subject: "Science",
-    icon: "🧪",
-    color: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-  },
-  {
-    id: "sci-104",
-    title: "Genetics & Heredity",
-    subject: "Science",
-    icon: "🧬",
-    color: "linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)",
-  },
-
-  // --- PHYSICS ---
-  {
-    id: "phy-201",
-    title: "Quantum Mechanics",
-    subject: "Physics",
-    icon: "⚛️",
-    color: "linear-gradient(135deg, #0ea5e9 0%, #22d3ee 100%)",
-  },
-  {
-    id: "phy-202",
-    title: "Thermodynamics",
-    subject: "Physics",
-    icon: "🔥",
-    color: "linear-gradient(135deg, #f97316 0%, #ea580c 100%)",
-  },
-  {
-    id: "phy-203",
-    title: "Electromagnetism",
-    subject: "Physics",
-    icon: "⚡",
-    color: "linear-gradient(135deg, #fbbf24 0%, #d97706 100%)",
-  },
-  {
-    id: "phy-204",
-    title: "Astrophysics",
-    subject: "Physics",
-    icon: "🚀",
-    color: "linear-gradient(135deg, #1e293b 0%, #334155 100%)",
-  },
-
-  // --- MATHEMATICS ---
-  {
-    id: "mat-301",
-    title: "Advanced Calculus",
-    subject: "Mathematics",
-    icon: "♾️",
-    color: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)",
-  },
-  {
-    id: "mat-302",
-    title: "Linear Algebra",
-    subject: "Mathematics",
-    icon: "📊",
-    color: "linear-gradient(135deg, #6366f1 0%, #4338ca 100%)",
-  },
-  {
-    id: "mat-303",
-    title: "Statistics & Prob",
-    subject: "Mathematics",
-    icon: "🎲",
-    color: "linear-gradient(135deg, #2dd4bf 0%, #0d9488 100%)",
-  },
-  {
-    id: "mat-304",
-    title: "Differential Eq",
-    subject: "Mathematics",
-    icon: "📉",
-    color: "linear-gradient(135deg, #f43f5e 0%, #e11d48 100%)",
-  },
-
-  // --- HISTORY ---
-  {
-    id: "his-401",
-    title: "Ancient Civilizations",
-    subject: "History",
-    icon: "🏺",
-    color: "linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)",
-  },
-  {
-    id: "his-402",
-    title: "The Renaissance",
-    subject: "History",
-    icon: "🎨",
-    color: "linear-gradient(135deg, #fb923c 0%, #f97316 100%)",
-  },
-  {
-    id: "his-403",
-    title: "World War II",
-    subject: "History",
-    icon: "🪖",
-    color: "linear-gradient(135deg, #475569 0%, #1e293b 100%)",
-  },
-  {
-    id: "his-404",
-    title: "The Space Race",
-    subject: "History",
-    icon: "👨‍🚀",
-    color: "linear-gradient(135deg, #38bdf8 0%, #0284c7 100%)",
-  },
-];
 
 const BookGallery: React.FC = () => {
   const [, setLocation] = useLocation();
@@ -163,6 +44,30 @@ const BookGallery: React.FC = () => {
   const totalPages = Math.ceil(filteredBooks.length / booksPerPage);
   const currentBooks = filteredBooks.slice((currentPage - 1) * booksPerPage, currentPage * booksPerPage);
 
+  const openBook = async (book: Book) => {
+    try {
+      await recordStudentProgress({
+        activityType: "book_view",
+        bookId: book.id,
+        subjectGroupKey: book.subjectGroupKey,
+        status: "in_progress",
+        progressPercent: Math.max(book.progressPercent || 0, 10),
+        metadata: {
+          title: book.title,
+          subject: book.subject,
+        },
+      });
+    } catch (error) {
+      toast({
+        title: "Progress not saved",
+        description: error instanceof Error ? error.message : "Could not save your book progress.",
+        variant: "destructive",
+      });
+    } finally {
+      setLocation(`/bookExpanded?book=${encodeURIComponent(book.id)}`);
+    }
+  };
+
   // Close reader on escape key
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => { if (e.key === "Escape") setSelectedBook(null); };
@@ -175,10 +80,10 @@ const BookGallery: React.FC = () => {
 
     async function loadBooks() {
       try {
-        const data = await getLibrarySubjects();
+        const data = await getStudentBooks();
         if (ignore) return;
 
-        const mappedBooks = data.map((item: LibrarySubject, index: number) => {
+        const mappedBooks = data.map((item: any, index: number) => {
           const palette = [
             "linear-gradient(135deg, #6366f1 0%, #a855f7 100%)",
             "linear-gradient(135deg, #0ea5e9 0%, #22d3ee 100%)",
@@ -196,13 +101,15 @@ const BookGallery: React.FC = () => {
           };
 
           return {
-            id: item.subjectGroupKey,
+            id: item.id || item._id || item.subjectGroupKey,
             title: item.title,
             subject: item.subject,
             icon: icons[item.visual?.iconKey || "book-open"] || "📘",
             color: palette[index % palette.length],
             coverImageUrl: item.coverImageUrl || null,
             imageCandidates: item.imageCandidates || [],
+            progressPercent: Number(item.progressPercent || 0),
+            subjectGroupKey: item.subjectGroupKey,
           };
         });
 
@@ -226,7 +133,7 @@ const BookGallery: React.FC = () => {
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [toast]);
 
   return (
     <div className="gallery-root" data-theme={isDark ? "dark" : "light"}>
@@ -275,7 +182,7 @@ const BookGallery: React.FC = () => {
             key={book.id}
             className="book-container"
             style={{ "--idx": index } as React.CSSProperties}
-            onClick={() => setLocation(`/bookExpanded?book=${encodeURIComponent(book.id)}`)}
+            onClick={() => openBook(book)}
           >
             <div className="book-3d-card">
               <div className="book-pages"></div>
@@ -297,6 +204,7 @@ const BookGallery: React.FC = () => {
             </div>
             <div className="book-footer">
               <span className="subject-tag">{book.subject}</span>
+              <span className="subject-tag">{book.progressPercent || 0}% complete</span>
             </div>
           </div>
         ))}

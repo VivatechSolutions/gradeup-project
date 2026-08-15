@@ -478,7 +478,7 @@ export default function AuthPage() {
   const [regGrade, setRegGrade]       = useState("");
   const [regSubjects, setRegSubjects] = useState<string[]>([]);
   const [regForm, setRegForm]         = useState({
-    firstName:"", lastName:"", username:"", email:"", password:"", confirmPassword:"",
+    firstName:"", lastName:"", username:"", email:"", schoolName:"", password:"", confirmPassword:"",
   });
   const [showRegPw,   setShowRegPw]   = useState(false);
   const [showRegConf, setShowRegConf] = useState(false);
@@ -525,8 +525,8 @@ export default function AuthPage() {
       }
       if (!loginForm.password) {
         errs.password = "Password is required";
-      } else if (loginForm.password.length < 6) {
-        errs.password = "Password must be at least 6 characters";
+      } else if (loginForm.password.length < 8) {
+        errs.password = "Password must be at least 8 characters";
       }
     } else if (loginStep === 3 && requiresCaptcha) {
       if (!loginForm.captchaAnswer.trim()) errs.captcha = "Please complete the security verification";
@@ -586,6 +586,7 @@ export default function AuthPage() {
       if (!regForm.username.trim())  errs.username  = "Username is required";
       if (!regForm.email.trim())     errs.email     = "Email is required";
       else if (!/\S+@\S+\.\S+/.test(regForm.email)) errs.email = "Invalid email address";
+      if (regRole === "student" && !regForm.schoolName.trim()) errs.schoolName = "School name is required";
     }
 
     if (step === 3) {
@@ -598,7 +599,7 @@ export default function AuthPage() {
 
     if (step === 4) {
       if (!regForm.password)                errs.password        = "Password is required";
-      else if (regForm.password.length < 6) errs.password        = "Password must be at least 6 characters";
+      else if (regForm.password.length < 8) errs.password        = "Password must be at least 8 characters";
       if (!regForm.confirmPassword)         errs.confirmPassword = "Please confirm your password";
       else if (regForm.password !== regForm.confirmPassword) errs.confirmPassword = "Passwords don't match";
     }
@@ -617,6 +618,10 @@ export default function AuthPage() {
       firstName: regForm.firstName,
       lastName:  regForm.lastName,
       role:      regRole,
+      schoolName: regForm.schoolName,
+      board: regBoard,
+      classNumber: regGrade,
+      subjects: regSubjects,
       grade:     regRole === "student" && regGrade
         ? parseInt(regGrade.replace(/\D/g, ""))
         : undefined,
@@ -1006,6 +1011,18 @@ export default function AuthPage() {
                                 />
                                 {regErrors.username && <div className="ap-field-error"><AlertTriangle size={11}/>{regErrors.username}</div>}
                               </div>
+                              {regRole==="student" && (
+                                <div className="ap-field">
+                                  <label className="ap-field-label">School Name</label>
+                                  <input
+                                    className={`ap-input${regErrors.schoolName?" is-error":""}`}
+                                    placeholder="Enter your school name"
+                                    value={regForm.schoolName}
+                                    onChange={e => setRegForm(f=>({...f,schoolName:e.target.value}))}
+                                  />
+                                  {regErrors.schoolName && <div className="ap-field-error"><AlertTriangle size={11}/>{regErrors.schoolName}</div>}
+                                </div>
+                              )}
                               <div className="ap-field">
                                 <label className="ap-field-label">Email Address</label>
                                 <div className="ap-input-wrap">

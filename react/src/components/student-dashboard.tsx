@@ -4,10 +4,11 @@ import { useAuth } from "../hooks/use-auth";
 import { Link, useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
-  AreaChart, Area, RadialBarChart, RadialBar,
+  LineChart, Line, PieChart, Pie, Cell,
+  AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
+import { getStudentDashboard } from "../lib/gradeupApi";
 
 interface StudentDashboardProps { onStartQuiz: () => void; }
 interface StudentStats { lessonsCompleted?:number; averageScore?:number; totalTimeSpent?:number; badgesEarned?:number; }
@@ -510,48 +511,6 @@ function AnimNum({ target, suffix = "" }: { target: number; suffix?: string }) {
   return <>{v}{suffix}</>;
 }
 
-const WEEKLY_ACTIVITY = [
-  { day:"Mon", pts:50, minutes:45 }, { day:"Tue", pts:80, minutes:60 },
-  { day:"Wed", pts:65, minutes:35 }, { day:"Thu", pts:110, minutes:80 },
-  { day:"Fri", pts:90, minutes:70 }, { day:"Sat", pts:140, minutes:110 },
-  { day:"Sun", pts:120, minutes:90 },
-];
-
-const DAILY_HOURS = [
-  { label:"6am", val:10 }, { label:"9am", val:40 }, { label:"12pm", val:25 },
-  { label:"3pm", val:70 }, { label:"6pm", val:85 }, { label:"9pm", val:60 },
-];
-
-const SUBJECT_DIST = [
-  { name:"Math",    value:32, color:"#6366f1" },
-  { name:"Biology", value:24, color:"#10b981" },
-  { name:"History", value:20, color:"#8b5cf6" },
-  { name:"Physics", value:14, color:"#ec4899" },
-  { name:"English", value:10, color:"#f59e0b" },
-];
-
-const SCORE_TREND = [
-  { week:"W1", score:72 }, { week:"W2", score:75 }, { week:"W3", score:70 },
-  { week:"W4", score:82 }, { week:"W5", score:79 }, { week:"W6", score:88 },
-  { week:"W7", score:84 }, { week:"W8", score:91 },
-];
-
-const LEADERBOARD = [
-  { id:1, name:"Alex Chen",   pts:2450, level:8, streak:12, rank:1, avatar:"AC", bg:"linear-gradient(135deg,#f59e0b,#f97316)" },
-  { id:2, name:"Maria L.",    pts:2100, level:7, streak:5,  rank:2, avatar:"ML", bg:"linear-gradient(135deg,#8b5cf6,#6366f1)" },
-  { id:3, name:"You",         pts:1250, level:5, streak:7,  rank:3, avatar:"U",  bg:"linear-gradient(135deg,#6366f1,#ec4899)" },
-  { id:4, name:"John S.",     pts:1100, level:5, streak:3,  rank:4, avatar:"JS", bg:"linear-gradient(135deg,#10b981,#0ea5e9)" },
-  { id:5, name:"Emma B.",     pts:980,  level:4, streak:8,  rank:5, avatar:"EB", bg:"linear-gradient(135deg,#ec4899,#f59e0b)" },
-];
-
-const RECS = [
-  { id:1, icon:"🧮", iconColor:"blue",   title:"Revise Quadratic Equations",   desc:"You scored 58% on your last quiz. Focus on factorisation and discriminant topics.",      tag:"Math",    tagColor:"blue",   time:"~20 min", priority:"high", cat:"weak" },
-  { id:2, icon:"⚡", iconColor:"purple", title:"Complete Physics: Wave Motion", desc:"This topic is due in 2 days. You haven't started — now is the right time.",              tag:"Physics",  tagColor:"purple", time:"~35 min", priority:"high", cat:"urgent" },
-  { id:3, icon:"📖", iconColor:"green",  title:"Continue: Photosynthesis",      desc:"You're 42% through. Pick up from the light-dependent reactions section.",                tag:"Biology",  tagColor:"green",  time:"~15 min", priority:"med",  cat:"continue" },
-  { id:4, icon:"🌍", iconColor:"amber",  title:"World War II: Revision Quiz",   desc:"You completed this chapter. Take the quiz to solidify your knowledge and earn XP.",     tag:"History",  tagColor:"amber",  time:"~10 min", priority:"low",  cat:"quiz" },
-  { id:5, icon:"✍️", iconColor:"rose",   title:"English: Essay Writing Skills", desc:"AI recommends improving essay structure based on your recent assignment feedback.",     tag:"English",  tagColor:"rose",   time:"~30 min", priority:"med",  cat:"improve" },
-];
-
 const REC_FILTERS = ["All", "Urgent", "Continue", "Quiz", "Improve"];
 
 export default function StudentDashboard({ onStartQuiz }: StudentDashboardProps) {
@@ -561,9 +520,57 @@ export default function StudentDashboard({ onStartQuiz }: StudentDashboardProps)
   const [recFilter, setRecFilter] = useState("All");
   const [actTab, setActTab] = useState<"pts"|"minutes">("pts");
 
-  const { data: stats, isLoading } = useQuery<StudentStats>({ queryKey: ["/api/student/stats"] });
-  const { data: streak }           = useQuery<StreakData>({ queryKey: ["/api/student/streak"] });
-  const recentActivity = (stats as any)?.recentActivity || [];
+  const { data: dashboard, isLoading } = useQuery<any>({
+    queryKey: ["/api/v1/student/dashboard"],
+    queryFn: getStudentDashboard,
+  });
+  const stats: StudentStats = dashboard?.stats || {};
+  const streak: StreakData = dashboard?.stats || {};
+  const recentActivity = dashboard?.recentActivity || [];
+  const progressRows = dashboard?.progress || [];
+  const subjectPalette = ["#6366f1", "#10b981", "#8b5cf6", "#ec4899", "#f59e0b", "#0ea5e9"];
+  const subjectDist = (dashboard?.subjectDistribution || []).map((item: any, index: number) => ({
+    ...item,
+    color: subjectPalette[index % subjectPalette.length],
+  }));
+  const overallProgress = Number(stats?.completionRate || 0);
+  const weeklyActivity = Array.from({ length: 7 }, (_, offset) => {
+    const date = new Date();
+    date.setDate(date.getDate() - (6 - offset));
+    const key = date.toISOString().slice(0, 10);
+    const dayRows = progressRows.filter((row: any) => {
+      const rawDate = row.lastActivityAt || row.updatedAt || row.createdAt;
+      return rawDate && new Date(rawDate).toISOString().slice(0, 10) === key;
+    });
+    return {
+      day: date.toLocaleDateString(undefined, { weekday: "short" }),
+      pts: dayRows.reduce((sum: number, row: any) => sum + Number(row.pointsEarned || 0), 0),
+      minutes: dayRows.reduce((sum: number, row: any) => sum + Number(row.timeSpentMinutes || 0), 0),
+    };
+  });
+  const scoreTrend = progressRows
+    .filter((row: any) => typeof row.score === "number")
+    .slice(-8)
+    .map((row: any, index: number) => ({ week: `#${index + 1}`, score: row.score }));
+  const syllabusProgress = subjectDist.map((item: any, index: number) => ({
+    name: item.name,
+    pct: item.value,
+    emoji: "📘",
+    cls: ["math", "bio", "hist", "phys", "eng"][index % 5],
+    color: item.color,
+    chapters: progressRows.filter((row: any) => (row.metadata?.subject || row.subjectGroupKey) === item.name && row.status === "completed").length,
+    total: progressRows.filter((row: any) => (row.metadata?.subject || row.subjectGroupKey) === item.name).length || 1,
+  }));
+  const leaderboardRows = [{
+    id: 1,
+    rank: Number(stats?.rank || 1),
+    name: "You",
+    level: Number(stats?.currentLevel || 1),
+    streak: Number(stats?.streakDays || 0),
+    pts: Number(stats?.totalPoints || 0),
+    avatar: (user?.firstName?.[0] || "Y").toUpperCase(),
+    bg: "linear-gradient(135deg,#6366f1,#8b5cf6)",
+  }];
 
   const filteredRecs = recentActivity.map((item: any, index: number) => ({
     id: index + 1,
@@ -578,35 +585,27 @@ export default function StudentDashboard({ onStartQuiz }: StudentDashboardProps)
     cat: "continue",
   }));
 
-  const courses = [
-    { id:1, name:"Quadratic Equations", subject:"Mathematics · Grade 10", pct:65, icon:"🧮", color:"blue",   bar:"linear-gradient(90deg,#6366f1,#8b5cf6)" },
-    { id:2, name:"Photosynthesis",       subject:"Biology · Grade 9",      pct:42, icon:"🌿", color:"green",  bar:"linear-gradient(90deg,#10b981,#34d399)" },
-    { id:3, name:"World War II",          subject:"History · Grade 11",     pct:80, icon:"🌍", color:"purple", bar:"linear-gradient(90deg,#8b5cf6,#ec4899)" },
-  ];
-
-  const tests = [
-    { id:1, title:"Physics Quiz",  desc:"Motion & Force · 20 questions", due:"Tomorrow",  urgency:"urgent" as const, action:"🔥 Study Now",  href:"/courses" },
-    { id:2, title:"Math Test",     desc:"Algebra · 15 questions",        due:"In 3 days", urgency:"medium" as const, action:"📚 Prepare",    href:"/studio/quiz?questions=15" },
-  ];
-
-  const achs = [
-    { id:1, title:"Perfect Score",  desc:"Math Quiz · 100%",   emoji:"⭐", ai:"ai-yellow", c:"yellow" },
-    { id:2, title:"Streak Master",  desc:"10 days in a row",   emoji:"🔥", ai:"ai-green",  c:"green" },
-    { id:3, title:"Chapter Master", desc:"Biology Ch. 3",      emoji:"🎓", ai:"ai-purple", c:"purple" },
-    { id:4, title:"Fast Learner",   desc:"Record completion",  emoji:"🚀", ai:"ai-blue",   c:"blue" },
-  ];
-
   const liveCourses = recentActivity.map((item: any, index: number) => ({
     id: index + 1,
     name: item.title || "Continue learning",
     subject: `${item.subject || "Subject"}${item.unit ? ` · ${item.unit}` : ""}`,
-    pct: 0,
+    pct: Number(item.progressPercent || 0),
     icon: "📘",
     color: "blue",
     bar: "linear-gradient(90deg,#6366f1,#8b5cf6)",
   }));
-  const liveTests: typeof tests = [];
-  const liveAchievements: typeof achs = [];
+  const liveTests: Array<any> = [];
+  const liveAchievements = (dashboard?.achievements || [])
+    .filter((item: any) => item.unlocked)
+    .slice(0, 4)
+    .map((item: any, index: number) => ({
+      id: item.id || index + 1,
+      title: item.title,
+      desc: item.description,
+      emoji: index % 2 === 0 ? "🏆" : "⭐",
+      ai: ["ai-yellow", "ai-green", "ai-purple", "ai-blue"][index % 4],
+      c: ["yellow", "green", "purple", "blue"][index % 4],
+    }));
 
   // read dark/light from the document element's data-theme attribute
   const isDark = document.documentElement.getAttribute("data-theme") === "dark";
@@ -626,16 +625,16 @@ export default function StudentDashboard({ onStartQuiz }: StudentDashboardProps)
               <div className="sd-hero-avatar">{(user?.firstName?.[0] ?? "A").toUpperCase()}</div>
               <div className="sd-hero-text">
                 <div className="sd-hero-pill">🎓 Student Dashboard</div>
-                <div className="sd-hero-title">Welcome back, {user?.firstName ?? "Alex"}! 👋</div>
-                <div className="sd-hero-sub">{streak?.currentStreak ?? 7}-day streak · Level 5 · Keep it going!</div>
+                <div className="sd-hero-title">Welcome back, {user?.firstName ?? "Student"}! 👋</div>
+                <div className="sd-hero-sub">{streak?.currentStreak ?? 0}-day streak · Level {stats?.currentLevel ?? 1}</div>
               </div>
             </div>
             <div className="sd-hero-right">
               {[
-                { n: streak?.currentStreak ?? 7, l:"Streak 🔥" },
-                { n: stats?.lessonsCompleted ?? 12, l:"Lessons" },
-                { n: "#3", l:"Rank" },
-                { n: "Lvl 5", l:"Level" },
+                { n: streak?.currentStreak ?? 0, l:"Streak 🔥" },
+                { n: stats?.lessonsCompleted ?? 0, l:"Lessons" },
+                { n: `#${stats?.rank ?? 1}`, l:"Rank" },
+                { n: `Lvl ${stats?.currentLevel ?? 1}`, l:"Level" },
               ].map((s,i)=>(
                 <div className="sd-hstat" key={i}>
                   <div className="sd-hstat-n">{s.n}</div>
@@ -650,10 +649,10 @@ export default function StudentDashboard({ onStartQuiz }: StudentDashboardProps)
         {/* Stat cards */}
         <div className="sd-stats">
           {[
-            { label:"Lessons Done", value:stats?.lessonsCompleted??12, cls:"blue",   icon:"📚", sub:"↑ 3 from last week",  suffix:"" },
-            { label:"Avg Score",    value:stats?.averageScore??84,      cls:"green",  icon:"🏆", sub:"↑ 5% improvement",    suffix:"%" },
-            { label:"Study Hours",  value:stats?.totalTimeSpent??6,     cls:"purple", icon:"⏱️", sub:"↑ 1h from last week", suffix:"h" },
-            { label:"Badges",       value:stats?.badgesEarned??7,       cls:"amber",  icon:"🏅", sub:"2 new this week",     suffix:"" },
+            { label:"Lessons Done", value:stats?.lessonsCompleted??0, cls:"blue",   icon:"📚", sub:"From saved progress",  suffix:"" },
+            { label:"Avg Score",    value:stats?.averageScore??0,      cls:"green",  icon:"🏆", sub:"From completed sessions",    suffix:"%" },
+            { label:"Study Hours",  value:stats?.totalTimeSpent??0,     cls:"purple", icon:"⏱️", sub:"From study activity", suffix:"h" },
+            { label:"Badges",       value:stats?.badgesEarned??0,       cls:"amber",  icon:"🏅", sub:"Unlocked achievements",     suffix:"" },
           ].map((s,i)=>(
             <motion.div key={i} className={`sd-scard ${s.cls}`} style={{animationDelay:`${0.05+i*0.07}s`}}>
               <div className="sd-scard-icon">{s.icon}</div>
@@ -684,7 +683,7 @@ export default function StudentDashboard({ onStartQuiz }: StudentDashboardProps)
               </div>
               <div className="sd-panel-body">
                 <ResponsiveContainer width="100%" height={200}>
-                  <AreaChart data={WEEKLY_ACTIVITY}>
+                  <AreaChart data={weeklyActivity}>
                     <defs>
                       <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%"  stopColor="#6366f1" stopOpacity={areaGradStop1}/>
@@ -714,10 +713,10 @@ export default function StudentDashboard({ onStartQuiz }: StudentDashboardProps)
               </div>
               <div className="sd-panel-body">
                 <ResponsiveContainer width="100%" height={200}>
-                  <LineChart data={SCORE_TREND}>
+                  <LineChart data={scoreTrend}>
                     <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor}/>
                     <XAxis dataKey="week" tick={{fontSize:11,fill:chartAxisColor}} axisLine={false} tickLine={false}/>
-                    <YAxis tick={{fontSize:11,fill:chartAxisColor}} axisLine={false} tickLine={false} domain={[60,100]}/>
+                    <YAxis tick={{fontSize:11,fill:chartAxisColor}} axisLine={false} tickLine={false} domain={[0,100]}/>
                     <Tooltip content={<ChartTip/>}/>
                     <Line type="monotone" dataKey="score" stroke="#10b981" strokeWidth={3}
                       dot={{fill:"#10b981",r:4,strokeWidth:2,stroke: isDark ? "#141f35" : "#fff"}} activeDot={{r:7}}/>
@@ -733,12 +732,12 @@ export default function StudentDashboard({ onStartQuiz }: StudentDashboardProps)
               <div className="sd-panel-head"><div className="sd-panel-title">🎯 Overall Progress</div></div>
               <div className="sd-panel-body">
                 <div className="sd-op-big-num">
-                  <span className="sd-op-big-n">72</span>
+                  <span className="sd-op-big-n">{overallProgress}</span>
                   <span className="sd-op-big-suffix">%</span>
                 </div>
                 <div className="sd-op-big-label">Curriculum covered overall</div>
                 <div className="sd-op-stack">
-                  {SUBJECT_DIST.map((s,i)=>(
+                  {subjectDist.map((s,i)=>(
                     <motion.div key={i} className="sd-op-stack-seg"
                       style={{background:s.color, flex:0}}
                       animate={{flex:s.value}}
@@ -746,7 +745,7 @@ export default function StudentDashboard({ onStartQuiz }: StudentDashboardProps)
                   ))}
                 </div>
                 <div className="sd-op-legend">
-                  {SUBJECT_DIST.map((s,i)=>(
+                  {subjectDist.map((s,i)=>(
                     <div key={i} className="sd-op-legend-item">
                       <div className="sd-op-legend-dot" style={{background:s.color}}/>
                       {s.name} <span style={{color:"var(--sd-text-main)",fontWeight:700,marginLeft:2}}>{s.value}%</span>
@@ -754,7 +753,11 @@ export default function StudentDashboard({ onStartQuiz }: StudentDashboardProps)
                   ))}
                 </div>
                 <div className="sd-op-mini-row">
-                  {[{n:"84%",l:"Avg Score",c:"green"},{n:"12",l:"Lessons",c:"blue"},{n:"6h",l:"Study",c:"amber"}].map((m,i)=>(
+                  {[
+                    {n:`${stats?.averageScore ?? 0}%`,l:"Avg Score",c:"green"},
+                    {n:String(stats?.lessonsCompleted ?? 0),l:"Lessons",c:"blue"},
+                    {n:`${stats?.totalTimeSpent ?? 0}h`,l:"Study",c:"amber"},
+                  ].map((m,i)=>(
                     <div key={i} className={`sd-op-mini ${m.c}`}>
                       <div className="sd-op-mini-n">{m.n}</div>
                       <div className="sd-op-mini-l">{m.l}</div>
@@ -771,22 +774,22 @@ export default function StudentDashboard({ onStartQuiz }: StudentDashboardProps)
               </div>
               <div className="sd-panel-body">
                 <div className="sd-dp-time">
-                  {DAILY_HOURS.map((h,i)=>(
+                  {weeklyActivity.map((h,i)=>(
                     <div key={i} className="sd-dp-row">
-                      <span className="sd-dp-label">{h.label}</span>
+                      <span className="sd-dp-label">{h.day}</span>
                       <div className="sd-dp-bar-bg">
                         <motion.div className="sd-dp-bar-fill"
                           style={{background:`linear-gradient(90deg,#6366f1,#8b5cf6)`,width:0}}
-                          animate={{width:`${h.val}%`}}
+                          animate={{width:`${Math.min(Number(h.minutes || 0) * 10, 100)}%`}}
                           transition={{duration:.9,delay:i*.08,ease:[.4,0,.2,1]}}/>
                       </div>
-                      <span className="sd-dp-val">{h.val}%</span>
+                      <span className="sd-dp-val">{h.minutes}m</span>
                     </div>
                   ))}
                 </div>
                 <div className="sd-dp-goal-row">
-                  <span style={{fontSize:12,color:"var(--sd-text-sub)",fontWeight:600}}>Daily goal: 2 hrs</span>
-                  <span className="sd-dp-goal-pill good">✓ 2.5h today</span>
+                  <span style={{fontSize:12,color:"var(--sd-text-sub)",fontWeight:600}}>Total study time</span>
+                  <span className="sd-dp-goal-pill good">{stats?.studyTimeMinutes ?? 0}m saved</span>
                 </div>
               </div>
             </div>
@@ -799,15 +802,15 @@ export default function StudentDashboard({ onStartQuiz }: StudentDashboardProps)
               <div className="sd-panel-body">
                 <ResponsiveContainer width="100%" height={140}>
                   <PieChart>
-                    <Pie data={SUBJECT_DIST} cx="50%" cy="50%" outerRadius={60} innerRadius={35}
+                    <Pie data={subjectDist} cx="50%" cy="50%" outerRadius={60} innerRadius={35}
                       dataKey="value" paddingAngle={2}>
-                      {SUBJECT_DIST.map((d,i)=><Cell key={i} fill={d.color}/>)}
+                      {subjectDist.map((d,i)=><Cell key={i} fill={d.color}/>)}
                     </Pie>
                     <Tooltip formatter={(v:any)=>[`${v}%`]}/>
                   </PieChart>
                 </ResponsiveContainer>
                 <div style={{display:"flex",flexWrap:"wrap",gap:"6px 14px",marginTop:4}}>
-                  {SUBJECT_DIST.map((d,i)=>(
+                  {subjectDist.map((d,i)=>(
                     <div key={i} style={{display:"flex",alignItems:"center",gap:5,fontSize:11.5,fontWeight:600,color:"var(--sd-text-sub)"}}>
                       <div style={{width:8,height:8,borderRadius:"50%",background:d.color,flexShrink:0}}/>
                       {d.name} <span style={{color:"var(--sd-text-main)",fontWeight:700}}>{d.value}%</span>
@@ -829,13 +832,7 @@ export default function StudentDashboard({ onStartQuiz }: StudentDashboardProps)
             </div>
             <div className="sd-panel-body">
               <div className="sd-syl-grid">
-                {[
-                  { name:"Mathematics", pct:65, emoji:"🧮", cls:"math",  color:"#6366f1", chapters:7, total:10 },
-                  { name:"Biology",     pct:42, emoji:"🌿", cls:"bio",   color:"#10b981", chapters:5, total:12 },
-                  { name:"History",     pct:80, emoji:"🌍", cls:"hist",  color:"#8b5cf6", chapters:8, total:10 },
-                  { name:"Physics",     pct:28, emoji:"⚡", cls:"phys",  color:"#ec4899", chapters:3, total:11 },
-                  { name:"English",     pct:55, emoji:"✍️", cls:"eng",   color:"#f59e0b", chapters:6, total:11 },
-                ].map((s,i)=>{
+                {syllabusProgress.map((s,i)=>{
                   const r = 25; const circ = 2 * Math.PI * r;
                   const offset = circ - (s.pct / 100) * circ;
                   return (
@@ -950,7 +947,7 @@ export default function StudentDashboard({ onStartQuiz }: StudentDashboardProps)
                 </div>
               </div>
               <div className="sd-panel-body">
-                {LEADERBOARD.map((e,i)=>{
+                {leaderboardRows.map((e,i)=>{
                   const isMe = e.name==="You";
                   const rankCls = i===0?"gold":i===1?"silver":i===2?"bronze":"other";
                   return (

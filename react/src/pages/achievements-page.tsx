@@ -2,14 +2,16 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../hooks/use-theme';
-import { mockAchievements, Achievement } from '../lib/mock-achievements';
+import { Achievement } from '../lib/mock-achievements';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
-import { ArrowLeft, Moon, Sun, Lock, X } from 'lucide-react';
+import { Moon, Sun, Lock, X, Trophy, Star, Medal, Crown, BookOpen } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useLocation } from 'wouter';
 import { useAuth } from '../hooks/use-auth';
 import Navigation from '../components/navigation';
+import { useQuery } from '@tanstack/react-query';
+import { getStudentAchievements } from '../lib/gradeupApi';
 // Loader
 const AchievementsLoader = () => (
     <div className="flex items-center justify-center min-h-screen bg-gray-100 dark:bg-gray-900">
@@ -114,6 +116,10 @@ const AchievementsPage = () => {
     const { theme, setTheme } = useTheme();
     const [, setLocation] = useLocation();
  const { userHeader } = useAuth();
+    const { data: realAchievements = [] } = useQuery<any[]>({
+        queryKey: ['/api/v1/student/achievements'],
+        queryFn: getStudentAchievements,
+    });
   
     const [currentRole, setCurrentRole] = useState("student");
   
@@ -131,8 +137,18 @@ const AchievementsPage = () => {
         return () => clearTimeout(timer);
     }, []);
 
-    const unlockedCount = mockAchievements.filter(a => a.unlocked).length;
-    const totalCount = mockAchievements.length;
+    const iconMap: Record<string, any> = { Trophy, Star, Medal, Crown, BookOpen };
+    const achievements: Achievement[] = realAchievements.map((item: any) => ({
+        id: item.id,
+        title: item.title,
+        description: item.description,
+        icon: iconMap[item.icon] || Trophy,
+        tier: item.tier === 'gold' ? 'gold' : item.tier === 'silver' ? 'silver' : 'bronze',
+        unlocked: Boolean(item.unlocked),
+        date: item.date || undefined,
+    }));
+    const unlockedCount = achievements.filter(a => a.unlocked).length;
+    const totalCount = achievements.length;
 
     if (loading) {
         return <AchievementsLoader />;
@@ -185,14 +201,14 @@ const AchievementsPage = () => {
                         <motion.div
                             className="bg-gradient-to-r from-green-400 to-blue-500 h-2.5 rounded-full"
                             initial={{ width: 0 }}
-                            animate={{ width: `${(unlockedCount / totalCount) * 100}%` }}
+                            animate={{ width: `${totalCount ? (unlockedCount / totalCount) * 100 : 0}%` }}
                             transition={{ duration: 1, delay: 0.5 }}
                         />
                     </div>
                 </motion.div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                    {mockAchievements.map((ach, index) => (
+                    {achievements.map((ach, index) => (
                         <AchievementCard 
                             key={ach.id} 
                             achievement={ach} 

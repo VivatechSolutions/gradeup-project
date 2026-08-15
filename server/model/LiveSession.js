@@ -50,6 +50,8 @@ const liveSessionSchema = new mongoose.Schema(
       index: true,
     },
     candidateId: { type: String, required: true, trim: true, index: true },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null, index: true },
+    studentProfileId: { type: mongoose.Schema.Types.ObjectId, ref: "StudentProfile", default: null, index: true },
     candidateName: { type: String, default: "GradeUp Learner", trim: true },
     unitId: {
       type: mongoose.Schema.Types.ObjectId,

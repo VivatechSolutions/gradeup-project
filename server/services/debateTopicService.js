@@ -27,9 +27,10 @@ function normalizeTopicId(subjectKey, unitNumber, sectionTitle, topicTitle, inde
 }
 
 function normalizeSourcePayload(rawPayload = {}) {
-  const subject = String(rawPayload.subject || "").trim();
+  const payload = rawPayload.debateTopics || rawPayload;
+  const subject = String(payload.subject || "").trim();
   const subjectKey = normalizeKey(subject);
-  const units = Array.isArray(rawPayload.units) ? rawPayload.units : [];
+  const units = Array.isArray(payload.units) ? payload.units : [];
 
   const normalizedUnits = units.map((unit) => {
     const unitNumber = Number(unit.unit_number ?? unit.unitNumber ?? 0) || null;
@@ -38,6 +39,7 @@ function normalizeSourcePayload(rawPayload = {}) {
 
     const normalizedSections = sections.map((section) => {
       const sectionTitle = String(section.section_title || section.sectionTitle || "").trim();
+      const sectionId = String(section.section_id || section.sectionId || "").trim();
       const topics = Array.isArray(section.debate_topics) ? section.debate_topics : [];
 
       const normalizedTopics = topics.map((topic, index) => {
@@ -45,7 +47,7 @@ function normalizeSourcePayload(rawPayload = {}) {
         return {
           topic_id:
             String(topic.topic_id || topic.topicId || "").trim() ||
-            normalizeTopicId(subjectKey, unitNumber, sectionTitle, topicTitle, index),
+            normalizeTopicId(subjectKey, unitNumber, sectionId || sectionTitle, topicTitle, index),
           topic_title: topicTitle,
           topic_description: String(topic.topic_description || topic.topicDescription || "").trim() || null,
           key_concepts: Array.isArray(topic.key_concepts) ? topic.key_concepts.map((value) => String(value).trim()).filter(Boolean) : [],
@@ -55,12 +57,14 @@ function normalizeSourcePayload(rawPayload = {}) {
           subject_key: subjectKey || null,
           unit_number: unitNumber,
           unit_title: unitTitle || null,
+          section_id: String(topic.section_id || topic.sectionId || sectionId || "").trim() || null,
           section_title: sectionTitle || null,
           topic_path: [subject, unitTitle, sectionTitle, topicTitle].filter(Boolean),
         };
       });
 
       return {
+        section_id: sectionId || null,
         section_title: sectionTitle,
         topics_count: Number(section.topics_count || normalizedTopics.length || 0),
         debate_topics: normalizedTopics,
@@ -77,9 +81,9 @@ function normalizeSourcePayload(rawPayload = {}) {
   return {
     subject,
     subject_key: subjectKey,
-    generated_at: rawPayload.generated_at ? new Date(rawPayload.generated_at) : null,
-    total_topics: Number(rawPayload.total_topics || 0),
-    total_sections: Number(rawPayload.total_sections || 0),
+    generated_at: payload.generated_at ? new Date(payload.generated_at) : null,
+    total_topics: Number(payload.total_topics || 0),
+    total_sections: Number(payload.total_sections || 0),
     units: normalizedUnits,
     source_payload: rawPayload,
     source_file: "debate_topics.json",

@@ -2695,7 +2695,7 @@ function IntegratedDebateSetup({
                   (item: any, index: number) => ({
                     id: String(
                       item.topic_id ||
-                        `${unit.unit_number || "topic"}-${section.section_title || "section"}-${index}`,
+                        `${unit.unit_number || "topic"}-${section.section_id || section.section_title || "section"}-${index}`,
                     ),
                     title:
                       item.topic_title ||
@@ -2711,6 +2711,7 @@ function IntegratedDebateSetup({
                       item.name,
                     unitNumber: unit.unit_number ?? null,
                     unitTitle: unit.unit_title || "",
+                    sectionId: section.section_id || item.section_id || null,
                     sectionTitle: section.section_title || "",
                     topicDescription: item.topic_description || "",
                     keyConcepts: Array.isArray(item.key_concepts)

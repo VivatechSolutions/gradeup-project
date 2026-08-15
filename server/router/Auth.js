@@ -1,8 +1,14 @@
 const express = require("express");
 const router = express.Router();
 const authController = require("../controller/Auth.js");
+const { requireStudentAuth } = require("../middleware/studentAuth");
 
 
-// router.post("/googleLogin", authController.googleLogin);
+router.post("/student/register", authController.StudentRegister);
+router.post("/register", authController.StudentRegister);
+router.post("/login", authController.StudentLogin);
+router.get("/me", requireStudentAuth, authController.me);
+router.post("/refresh", authController.refresh);
+router.post("/logout", authController.logout);
 
 module.exports = router;

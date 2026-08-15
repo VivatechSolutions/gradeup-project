@@ -1,7 +1,11 @@
 const express = require("express");
 const controller = require("../controller/DebateV2");
+const { requireStudentAuth } = require("../middleware/studentAuth");
+const { injectStudentIdentity } = require("../middleware/injectStudentIdentity");
 
 const router = express.Router();
+
+router.use(requireStudentAuth, injectStudentIdentity);
 
 router.post("/start", controller.start);
 router.post("/room/create", controller.createRoom);

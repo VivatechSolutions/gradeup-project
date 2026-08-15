@@ -110,6 +110,41 @@ function getPasswordResetEmail({ name, resetUrl, appUrl }) {
   };
 }
 
+function getStudentWelcomeEmail({ name, appUrl, board, classNumber }) {
+  const content = `
+    <p style="margin:0 0 18px;font-size:15px;line-height:1.7;">Hello ${name || "there"},</p>
+    <p style="margin:0 0 18px;font-size:15px;line-height:1.7;">
+      Your GradeUp student account is ready. We have set up your independent learning space so you can start exploring books, debates, seminars, and progress tracking.
+    </p>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #dbe6f2;border-radius:18px;background:#f8fbfe;margin:20px 0;">
+      <tr>
+        <td style="padding:20px;">
+          <p style="margin:0 0 8px;font-size:13px;color:#5f738c;">Board</p>
+          <p style="margin:0 0 16px;font-size:16px;font-weight:700;color:#102033;">${board || "Selected during signup"}</p>
+          <p style="margin:0 0 8px;font-size:13px;color:#5f738c;">Class</p>
+          <p style="margin:0;font-size:16px;font-weight:700;color:#102033;">${classNumber || "Selected during signup"}</p>
+        </td>
+      </tr>
+    </table>
+    <p style="margin:0;font-size:15px;line-height:1.7;">
+      School access is not activated automatically from signup. If your school later invites you, it will link to this same account safely.
+    </p>
+  `;
+
+  return {
+    subject: "Welcome to GradeUp",
+    text: `Welcome to GradeUp, ${name || "student"}.\nBoard: ${board || ""}\nClass: ${classNumber || ""}\nOpen GradeUp: ${appUrl || ""}`,
+    html: layoutTemplate({
+      title: "Welcome to GradeUp",
+      intro: "Your student learning space is ready.",
+      content,
+      actionLabel: appUrl ? "Open GradeUp" : null,
+      actionUrl: appUrl,
+      footerNote: "If you did not create this account, please contact GradeUp support.",
+    }),
+  };
+}
+
 function getDebateInviteEmail({ senderName, debateTopic, debateType, joinUrl, appName = "GradeUp" }) {
   const content = `
     <p style="margin:0 0 18px;font-size:15px;line-height:1.7;">Hello,</p>
@@ -150,4 +185,5 @@ module.exports = {
   getAdminWelcomeEmail,
   getDebateInviteEmail,
   getPasswordResetEmail,
+  getStudentWelcomeEmail,
 };

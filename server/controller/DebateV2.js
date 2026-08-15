@@ -22,6 +22,7 @@ const {
   normalizeTeamKey,
   normalizeTeams,
 } = require("../services/liveSessionService");
+const { recordProgress } = require("../services/studentDataService");
 
 function getCandidate(source = {}) {
   return {
@@ -69,7 +70,7 @@ function flattenTopicHierarchy(hierarchy = {}) {
         return {
           id:
             topic.topic_id ||
-            `${unit.unit_number || "unit"}-${section.section_title || "section"}-${index}`,
+            `${unit.unit_number || "unit"}-${section.section_id || section.section_title || "section"}-${index}`,
           label: topicTitle,
           topic: topicTitle,
           title: topicTitle,
@@ -79,6 +80,7 @@ function flattenTopicHierarchy(hierarchy = {}) {
           subject: hierarchy.subject || topic.subject || null,
           unitNumber: unit.unit_number ?? null,
           unitTitle: unit.unit_title || null,
+          sectionId: section.section_id || topic.section_id || null,
           sectionTitle: section.section_title || null,
           topicPath: topic.topic_path || [],
         };
@@ -1202,6 +1204,24 @@ console.log
 
       await saveFeedback(sessionId, data, data);
       const updatedSession = await completeSession(sessionId);
+      if (req.studentUser?._id) {
+        await recordProgress({
+          userId: req.studentUser._id,
+          activityType: "debate",
+          subjectGroupKey: liveSession?.subjectGroupKey || null,
+          unitId: liveSession?.unitId || null,
+          status: "completed",
+          progressPercent: 100,
+          score: updatedSession?.scores?.overall || updatedSession?.scores?.student || null,
+          timeSpentMinutes: 15,
+          metadata: {
+            title: liveSession?.topic || "Debate",
+            subject: liveSession?.subject,
+            sessionId,
+            result: data,
+          },
+        }).catch(() => null);
+      }
       return res
         .status(200)
         .json({ status: true, data: { ...data, liveSession: updatedSession } });
@@ -1228,6 +1248,25 @@ console.log
         results: data,
         teams: normalizeTeams(data.teams || {}),
       });
+      const liveSession = await getSession(sessionId);
+      if (req.studentUser?._id) {
+        await recordProgress({
+          userId: req.studentUser._id,
+          activityType: "debate",
+          subjectGroupKey: liveSession?.subjectGroupKey || null,
+          unitId: liveSession?.unitId || null,
+          status: "completed",
+          progressPercent: 100,
+          score: updatedSession?.scores?.overall || updatedSession?.scores?.student || null,
+          timeSpentMinutes: 20,
+          metadata: {
+            title: liveSession?.topic || "Team debate",
+            subject: liveSession?.subject,
+            sessionId,
+            result: data,
+          },
+        }).catch(() => null);
+      }
       return res.status(200).json({
         status: true,
         data: {

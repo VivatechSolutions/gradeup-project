@@ -23,6 +23,7 @@ const AdminAuthRouter = require("./router/AdminAuth");
 const AdminSubjectRouter = require("./router/AdminSubject");
 const AdminUsersRouter = require("./router/AdminUsers");
 const realtimeRouter = require("./router/realtime"); 
+const StudentRouter = require("./router/Student");
 
 // const { logRoutes } = require("./utils/routeLogger");
 const  secureRequestLogger  = require("./utils/logger");
@@ -44,6 +45,7 @@ app.use(
 );
 //App routes
 app.use("/api/v1/auth", AuthRouter);
+app.use("/api/v1/student", StudentRouter);
 app.use("/api/v1/units", UnitRouter);
 app.use("/api/v1/unit-contents", UnitContentRouter);
 app.use("/api/v1/library", LearningLibraryRouter);

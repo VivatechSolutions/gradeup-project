@@ -1,7 +1,11 @@
 const express = require("express");
 const controller = require("../controller/Tutor");
+const { requireStudentAuth } = require("../middleware/studentAuth");
+const { injectStudentIdentity } = require("../middleware/injectStudentIdentity");
 
 const router = express.Router();
+
+router.use(requireStudentAuth, injectStudentIdentity);
 
 router.post("/ask", controller.askTutor);
 router.get("/history", controller.getTutorHistory);

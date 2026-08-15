@@ -28,6 +28,8 @@ const tutorConversationSchema = new mongoose.Schema(
       trim: true,
       index: true,
     },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null, index: true },
+    studentProfileId: { type: mongoose.Schema.Types.ObjectId, ref: "StudentProfile", default: null, index: true },
     candidateName: {
       type: String,
       default: "GradeUp Learner",

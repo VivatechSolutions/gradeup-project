@@ -13,6 +13,7 @@ import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line,
 } from "recharts";
+import { getStudentProgressSummary } from "../lib/gradeupApi";
 
 // ── Dashboard design tokens (exact match) ─────────────────────────────────────
 // Hero:    linear-gradient(135deg, #6366f1, #8b5cf6 50%, #ec4899)
@@ -341,43 +342,6 @@ interface LeaderboardEntry {
 }
 
 // ── Mock data ─────────────────────────────────────────────────────────────────
-const MOCK_STATS: ProgressStats = {
-  totalPoints:1250, currentLevel:5, pointsToNextLevel:500,
-  totalLessonsCompleted:24, streakDays:7, longestStreak:14,
-  weeklyProgress:180, monthlyGoal:300, completionRate:87,
-  studyTimeMinutes:1840, rank:3, totalUsers:50,
-};
-const MOCK_ACHIEVEMENTS: Achievement[] = [
-  {id:1,title:"First Steps",   description:"Complete your first lesson",  icon:"👶",category:"Beginner",   pointsRequired:10,  unlocked:true, rarity:"common"},
-  {id:2,title:"Week Warrior",  description:"Maintain a 7-day streak",     icon:"🔥",category:"Consistency",pointsRequired:50,  unlocked:true, rarity:"rare"},
-  {id:3,title:"Knowledge Seeker",description:"Complete 25 lessons",       icon:"📚",category:"Progress",  pointsRequired:100, unlocked:false,rarity:"epic"},
-  {id:4,title:"Master Student",description:"Reach level 10",              icon:"👑",category:"Mastery",   pointsRequired:1000,unlocked:false,rarity:"legendary"},
-  {id:5,title:"Speed Reader",  description:"Finish 3 lessons in one day", icon:"⚡",category:"Speed",     pointsRequired:75,  unlocked:true, rarity:"rare"},
-  {id:6,title:"Top of Class",  description:"Reach rank #1 on leaderboard",icon:"🏆",category:"Mastery",  pointsRequired:500, unlocked:false,rarity:"legendary"},
-  {id:7,title:"Night Owl",     description:"Study after 10 PM",           icon:"🦉",category:"Habits",   pointsRequired:20,  unlocked:true, rarity:"common"},
-  {id:8,title:"Perfect Score", description:"Get 100% on any quiz",        icon:"💯",category:"Excellence",pointsRequired:200, unlocked:false,rarity:"epic"},
-];
-const MOCK_LB: LeaderboardEntry[] = [
-  {id:1,username:"alex_star",   points:2450,level:8,streak:12,rank:1},
-  {id:2,username:"maria_learn", points:2100,level:7,streak:5, rank:2},
-  {id:3,username:"You",         points:1250,level:5,streak:7, rank:3},
-  {id:4,username:"john_study",  points:1100,level:5,streak:3, rank:4},
-  {id:5,username:"emma_bright", points:980, level:4,streak:8, rank:5},
-];
-const MOCK_HISTORY = [
-  {date:"Mon",points:50},{date:"Tue",points:75},{date:"Wed",points:120},
-  {date:"Thu",points:150},{date:"Fri",points:200},{date:"Sat",points:240},{date:"Sun",points:280},
-];
-const MOCK_WEEKLY = [
-  {day:"Mon",minutes:45},{day:"Tue",minutes:60},{day:"Wed",minutes:30},
-  {day:"Thu",minutes:75},{day:"Fri",minutes:90},{day:"Sat",minutes:120},{day:"Sun",minutes:85},
-];
-const SUBJECT_DATA = [
-  {name:"Science",value:40,color:"#8b5cf6"},
-  {name:"Math",   value:30,color:"#6366f1"},
-  {name:"English",value:20,color:"#ec4899"},
-  {name:"History",value:10,color:"#f59e0b"},
-];
 
 // ── Chart tooltip ─────────────────────────────────────────────────────────────
 const ChartTip = ({active,payload,label}:any) => {
@@ -399,13 +363,69 @@ export default function ProgressPage() {
   const [period, setPeriod] = useState("week");
   const [lvlUp,  setLvlUp]  = useState(false);
   const [role,   setRole]   = useState("student");
+  const { data: progressSummary } = useQuery<any>({
+    queryKey: ["/api/v1/student/progress/summary"],
+    queryFn: getStudentProgressSummary,
+  });
 
   useEffect(()=>{ if(user?.role) setRole(user.role); },[user]);
 
-  const stats = MOCK_STATS;
-  const achievements = MOCK_ACHIEVEMENTS;
-  const leaderboard  = MOCK_LB;
-  const history      = MOCK_HISTORY;
+  const stats: ProgressStats = {
+    totalPoints: 0,
+    currentLevel: 1,
+    pointsToNextLevel: 500,
+    totalLessonsCompleted: 0,
+    streakDays: 0,
+    longestStreak: 0,
+    weeklyProgress: 0,
+    monthlyGoal: 300,
+    completionRate: 0,
+    studyTimeMinutes: 0,
+    rank: 1,
+    totalUsers: 1,
+    ...(progressSummary?.stats || {}),
+  };
+  const iconMap: Record<string, any> = { Trophy, Star, Flame, Crown, Medal, Sparkles, BookOpen, Award };
+  const achievements = progressSummary?.achievements?.length
+    ? progressSummary.achievements.map((item: any) => ({
+        id: item.id,
+        title: item.title,
+        description: item.description,
+        icon: iconMap[item.icon] || Trophy,
+        category: "Learning",
+        pointsRequired: 0,
+        unlocked: Boolean(item.unlocked),
+        unlockedAt: item.date || undefined,
+        rarity: item.tier === "gold" ? "legendary" : item.tier === "silver" ? "rare" : "common",
+      }))
+    : [];
+  const progressRows = progressSummary?.progress || [];
+  const history = progressRows
+    .slice()
+    .reverse()
+    .map((item: any) => ({
+      date: item.lastActivityAt ? new Date(item.lastActivityAt).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "Saved",
+      points: Number(item.pointsEarned || 0),
+    }));
+  const subjectPalette = ["#6366f1", "#10b981", "#f59e0b", "#ec4899", "#8b5cf6", "#0ea5e9"];
+  const subjectData = (progressSummary?.subjectDistribution || []).map((item: any, index: number) => ({
+    ...item,
+    color: subjectPalette[index % subjectPalette.length],
+  }));
+  const weeklyActivity = Array.from({ length: 7 }, (_, offset) => {
+    const date = new Date();
+    date.setDate(date.getDate() - (6 - offset));
+    const key = date.toISOString().slice(0, 10);
+    const rows = progressRows.filter((row: any) => {
+      const rawDate = row.lastActivityAt || row.updatedAt || row.createdAt;
+      return rawDate && new Date(rawDate).toISOString().slice(0, 10) === key;
+    });
+    return {
+      day: date.toLocaleDateString(undefined, { weekday: "short" }),
+      minutes: rows.reduce((sum: number, row: any) => sum + Number(row.timeSpentMinutes || 0), 0),
+    };
+  });
+  const leaderboard  = [{ id: 1, username: "You", points: stats.totalPoints, level: stats.currentLevel, streak: stats.streakDays, rank: stats.rank }];
 
   const levelPct = Math.min(((stats.totalPoints % 500) / 500)*100, 100);
 
@@ -498,7 +518,7 @@ export default function ProgressPage() {
             <div className="pg-scard-icon"><Medal size={20} color="#8b5cf6"/></div>
             <div className="pg-scard-n">#{stats.rank}</div>
             <div className="pg-scard-l">Global Rank</div>
-            <div className="pg-scard-sub"><Users size={13} color="#94a3b8"/>Top {Math.round(stats.rank/stats.totalUsers*100)}% of {stats.totalUsers}</div>
+            <div className="pg-scard-sub"><Users size={13} color="#94a3b8"/>Ranked against {Math.max(stats.totalUsers, 1)} learner(s)</div>
           </motion.div>
         </div>
 
@@ -549,10 +569,10 @@ export default function ProgressPage() {
                       <div className="pg-panel-body">
                         <ResponsiveContainer width="100%" height={220}>
                           <PieChart>
-                            <Pie data={SUBJECT_DATA} cx="50%" cy="50%" outerRadius={80} dataKey="value"
+                            <Pie data={subjectData} cx="50%" cy="50%" outerRadius={80} dataKey="value"
                               label={({name,percent})=>`${name} ${(percent*100).toFixed(0)}%`}
                               labelLine={false}>
-                              {SUBJECT_DATA.map((d,i)=><Cell key={i} fill={d.color}/>)}
+                              {subjectData.map((d,i)=><Cell key={i} fill={d.color}/>)}
                             </Pie>
                             <Tooltip/>
                           </PieChart>
@@ -667,7 +687,7 @@ export default function ProgressPage() {
                     </div>
                     <div className="pg-panel-body">
                       <ResponsiveContainer width="100%" height={220}>
-                        <BarChart data={MOCK_WEEKLY}>
+                        <BarChart data={weeklyActivity}>
                           <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,.06)"/>
                           <XAxis dataKey="day" tick={{fontSize:11,fill:"#94a3b8"}} axisLine={false} tickLine={false}/>
                           <YAxis tick={{fontSize:11,fill:"#94a3b8"}} axisLine={false} tickLine={false}/>
@@ -685,9 +705,9 @@ export default function ProgressPage() {
                     </div>
                     <div className="pg-panel-body">
                       {[
-                        {label:"Lessons Completed",current:stats.totalLessonsCompleted,target:50,  color:"#6366f1"},
-                        {label:"Study Hours",       current:Math.floor(stats.studyTimeMinutes/60),target:40,color:"#10b981"},
-                        {label:"XP Earned",         current:stats.totalPoints, target:2000, color:"#f59e0b"},
+                        {label:"Lessons Completed",current:stats.totalLessonsCompleted,target:Math.max(stats.totalLessonsCompleted, 1),  color:"#6366f1"},
+                        {label:"Study Hours",       current:Math.floor(stats.studyTimeMinutes/60),target:Math.max(Math.floor(stats.studyTimeMinutes/60), 1),color:"#10b981"},
+                        {label:"XP Earned",         current:stats.totalPoints, target:Math.max(stats.totalPoints, 1), color:"#f59e0b"},
                         {label:"Completion Rate",   current:stats.completionRate,target:100, color:"#8b5cf6"},
                       ].map((g,i)=>(
                         <div key={i} className="pg-goal-row">

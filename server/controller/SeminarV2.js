@@ -16,6 +16,7 @@ const {
   listSessionTopics,
   saveFeedback,
 } = require("../services/liveSessionService");
+const { recordProgress } = require("../services/studentDataService");
 
 function ensureSeminarStartPayload(context = {}) {
   const missing = [];
@@ -507,6 +508,24 @@ const controller = {
         },
         results: data,
       });
+      if (req.studentUser?._id) {
+        await recordProgress({
+          userId: req.studentUser._id,
+          activityType: "seminar",
+          subjectGroupKey: liveSession?.subjectGroupKey || null,
+          unitId: liveSession?.unitId || null,
+          status: "completed",
+          progressPercent: 100,
+          score: updatedLiveSession?.scores?.overall || updatedLiveSession?.scores?.student || null,
+          timeSpentMinutes: 20,
+          metadata: {
+            title: liveSession?.topic || "Seminar",
+            subject: liveSession?.subject,
+            sessionId: liveSession?.sessionId || sessionId,
+            result: data,
+          },
+        }).catch(() => null);
+      }
       return res.status(200).json({ status: true, data: { ...data, liveSession: updatedLiveSession } });
     } catch (error) {
       return res.status(error.statusCode || 500).json({

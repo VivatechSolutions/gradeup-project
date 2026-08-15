@@ -195,7 +195,7 @@ function normalizeStoredDebateTopicItem(topic = {}, unit = {}, section = {}, ind
   return {
     topic_id:
       normalizeDebateText(topic.topic_id || topic.topicId) ||
-      `${unit.documentId}:${unitNumber ?? "unit"}:${sectionTitle || "section"}:${index}`,
+      `${unit.documentId}:${unitNumber ?? "unit"}:${section.section_id || section.sectionId || sectionTitle || "section"}:${index}`,
     topic_title: topicTitle,
     topic_description:
       normalizeDebateText(topic.topic_description || topic.topicDescription) || null,
@@ -208,6 +208,7 @@ function normalizeStoredDebateTopicItem(topic = {}, unit = {}, section = {}, ind
     subject_key: getSubjectGroupLookup(unit),
     unit_number: unitNumber,
     unit_title: unitTitle || null,
+    section_id: normalizeDebateText(topic.section_id || topic.sectionId || section.section_id || section.sectionId) || null,
     section_title: sectionTitle || null,
     topic_path: topicPath,
   };
@@ -229,6 +230,7 @@ function normalizeStoredDebateSections(unit, sections = []) {
       }
 
       return {
+        section_id: normalizeDebateText(section.section_id || section.sectionId) || null,
         section_title: sectionTitle,
         topics_count: Number(section.topics_count || normalizedTopics.length || 0),
         debate_topics: normalizedTopics,
@@ -239,7 +241,8 @@ function normalizeStoredDebateSections(unit, sections = []) {
 }
 
 function buildStoredDebateHierarchy(unit, debateTopicsData, filters = {}) {
-  const rawUnits = Array.isArray(debateTopicsData?.units) ? debateTopicsData.units : [];
+  const payload = debateTopicsData?.debateTopics || debateTopicsData;
+  const rawUnits = Array.isArray(payload?.units) ? payload.units : [];
   if (!rawUnits.length) {
     return null;
   }
@@ -285,8 +288,8 @@ function buildStoredDebateHierarchy(unit, debateTopicsData, filters = {}) {
 
   return {
     success: true,
-    generated_at: debateTopicsData?.generated_at || null,
-    subject: debateTopicsData?.subject || unit.subject || null,
+    generated_at: payload?.generated_at || null,
+    subject: payload?.subject || unit.subject || null,
     total_topics: normalizedUnits.reduce(
       (count, currentUnit) =>
         count +

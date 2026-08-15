@@ -12,6 +12,7 @@ const debateTopicItemSchema = new mongoose.Schema(
     subject_key: { type: String, default: null, trim: true, index: true },
     unit_number: { type: Number, default: null },
     unit_title: { type: String, default: null, trim: true },
+    section_id: { type: String, default: null, trim: true },
     section_title: { type: String, default: null, trim: true },
     topic_path: { type: [String], default: [] },
   },
@@ -20,6 +21,7 @@ const debateTopicItemSchema = new mongoose.Schema(
 
 const debateSectionSchema = new mongoose.Schema(
   {
+    section_id: { type: String, default: null, trim: true },
     section_title: { type: String, required: true, trim: true },
     topics_count: { type: Number, default: 0 },
     debate_topics: { type: [debateTopicItemSchema], default: [] },
@@ -52,6 +54,7 @@ const debateTopicCatalogSchema = new mongoose.Schema(
 );
 
 debateTopicCatalogSchema.index({ subject_key: 1, "units.unit_number": 1 });
+debateTopicCatalogSchema.index({ subject_key: 1, "units.sections.section_id": 1 });
 debateTopicCatalogSchema.index({ subject_key: 1, "units.sections.section_title": 1 });
 
 module.exports = mongoose.model("DebateTopicCatalog", debateTopicCatalogSchema);

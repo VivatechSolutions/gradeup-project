@@ -7,26 +7,19 @@ function getEmailTransporter() {
     return transporter;
   }
 
-  const host = process.env.SMTP_HOST;
+  const host = process.env.SMTP_HOST || "smtp.zoho.com";
   const port = Number(process.env.SMTP_PORT || 587);
-  // const user = process.env.SMTP_USER;
-  // const pass = process.env.SMTP_PASS;
-  const user = "info@gradeup.ai";
-  const pass = "trku ncns opba vlfu";
+  const user = process.env.SMTP_USER || process.env.ZOHO_MAIL_USER;
+  const pass = process.env.SMTP_PASS || process.env.ZOHO_MAIL_PASS;
   if (!host || !user || !pass) {
     return null;
   }
 
   transporter = nodemailer.createTransport({
-    // host,
-
-    // port,
-    // secure: port === 465,
-    service: "gmail",
-        auth: {
-          user: "support@skillstreamjobs.ca",
-          pass: "yzsz ockc eiql oyqj",
-        },
+    host,
+    port,
+    secure: port === 465,
+    auth: { user, pass },
   });
 
   return transporter;
@@ -34,7 +27,10 @@ function getEmailTransporter() {
 
 async function sendEmail({ to, subject, html, text }) {
   const emailTransporter = getEmailTransporter();
-  const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+  const from =
+    process.env.SMTP_FROM ||
+    process.env.SMTP_USER ||
+    process.env.ZOHO_MAIL_USER;
 
   if (!emailTransporter || !from) {
     console.log("Email skipped: SMTP is not configured", { to, subject });

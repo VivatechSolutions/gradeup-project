@@ -94,7 +94,7 @@ async function apiFetchRaw(url: string, init?: RequestInit) {
 
 export function getCandidateContext(user: any) {
   return {
-    candidateId: String(user?.id || user?._id || user?.email || "guest-user"),
+    candidateId: String(user?.id || user?._id || ""),
     candidateName:
       [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim() ||
       user?.username ||
@@ -110,8 +110,41 @@ export async function getLibrarySubjects(search = "") {
   }
 
   return apiFetch<LibrarySubject[]>(
-    `/api/v1/library/subjects${params.toString() ? `?${params.toString()}` : ""}`,
+    `/api/v1/student/library/subjects${params.toString() ? `?${params.toString()}` : ""}`,
   );
+}
+
+export async function getStudentBooks() {
+  return apiFetch<any[]>("/api/v1/student/library/books");
+}
+
+export async function getStudentDashboard() {
+  return apiFetch<any>("/api/v1/student/dashboard");
+}
+
+export async function getStudentProgressSummary() {
+  return apiFetch<any>("/api/v1/student/progress/summary");
+}
+
+export async function getStudentAchievements() {
+  return apiFetch<any[]>("/api/v1/student/achievements");
+}
+
+export async function recordStudentProgress(payload: {
+  activityType: string;
+  subjectGroupKey?: string;
+  bookId?: string;
+  unitId?: string;
+  status?: string;
+  progressPercent?: number;
+  score?: number;
+  timeSpentMinutes?: number;
+  metadata?: any;
+}) {
+  return apiFetch<any>("/api/v1/student/progress/content", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function getLibrarySubjectDetail(subjectGroupKey: string) {
