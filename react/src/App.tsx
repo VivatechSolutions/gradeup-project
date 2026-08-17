@@ -1,4 +1,4 @@
-import { Switch, Route, useLocation } from "wouter";
+import { Switch, Route, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "./components/ui/toaster";
@@ -87,7 +87,6 @@ const withTeacherLayout = (
 
 function AppWithAuth() {
   const { user, logoutMutation, isLoading } = useAuth();
-  const [location] = useLocation();
   const { warningVisible, secondsLeft, extendSession } = useAutoLogout({
     onLogout:       () => logoutMutation.mutate(),
     idleMinutes:    10,
@@ -122,7 +121,7 @@ function AppWithAuth() {
         <ProtectedRoute path="/voice-study-companion" component={VoiceStudyCompanionV3} />
         <ProtectedRoute path="/voice-study-companion-v2" component={VoiceStudyCompanionV2} />
         <ProtectedRoute path="/voice-study-companion-v3" component={VoiceStudyCompanionV3} />
-        <Route path="/studio/question-bank" component={QuestionBank} />
+        <ProtectedRoute path="/studio/question-bank" component={QuestionBank} />
         <ProtectedRoute path="/quiz" component={QuizPage} />
         <ProtectedRoute path="/homework" component={HomeworkPage} />
         <ProtectedRoute path="/homework-helper" component={HomeworkHelperPage} />
@@ -154,8 +153,12 @@ function AppWithAuth() {
         <ProtectedRoute path="/profile" component={ProfilePage} />
         <ProtectedRoute path="/settings" component={SettingsPage} />
         <ProtectedRoute path="/notifications" component={NotificationPage} />
-        <Route path="/" component={Landing} />
-        <Route path="/auth" component={AuthPage} />
+        <Route path="/">
+          {user ? <Redirect to="/dashboard" /> : <Landing />}
+        </Route>
+        <Route path="/auth">
+          {user ? <Redirect to="/dashboard" /> : <AuthPage />}
+        </Route>
         <Route path="/forgot-password" component={ForgotPasswordPage} />
         <ProtectedRoute path="/enhanced-view" component={EnhancedView} />
         <ProtectedRoute path="/avatar-genius" component={AvatarGeniusView} />
@@ -165,12 +168,12 @@ function AppWithAuth() {
         <ProtectedRoute path="/bookGallery" component={BookGallery} />
         <ProtectedRoute path="/seminar-tool" component={SeminarToolPage} />
         <ProtectedRoute path="/debate-tool" component={DebateToolPage} />
-        <Route path="/debatePage" component={DebatePage} />
-        <Route path="/debatePage/join" component={DebatePage} />
-        <Route path="/debate/join" component={DebatePage} />
-        <Route path="/seminarPage" component={SeminarPage} />
-        <Route path="/seminarPage/join" component={SeminarPage} />
-        <Route path="/seminar/join" component={SeminarPage} />
+        <ProtectedRoute path="/debatePage" component={DebatePage} />
+        <ProtectedRoute path="/debatePage/join" component={DebatePage} />
+        <ProtectedRoute path="/debate/join" component={DebatePage} />
+        <ProtectedRoute path="/seminarPage" component={SeminarPage} />
+        <ProtectedRoute path="/seminarPage/join" component={SeminarPage} />
+        <ProtectedRoute path="/seminar/join" component={SeminarPage} />
         <ProtectedRoute path="/meetingPage" component={MeetingPage} />
         <ProtectedRoute path="/studio/quiz/:id?" component={(params) => <StudioQuizPage id={params.id} />} />
         <ProtectedRoute path="/bookGuide" component={QuizBankLanding} />

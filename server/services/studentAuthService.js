@@ -11,7 +11,7 @@ const { getStudentWelcomeEmail } = require("../config/EmailTemplate");
 
 const ACCESS_COOKIE = "gradeup_access";
 const REFRESH_COOKIE = "gradeup_refresh";
-const DEFAULT_ACCESS_TTL_SECONDS = 15 * 60;
+const DEFAULT_ACCESS_TTL_SECONDS = 24 * 60 * 60;
 const DEFAULT_REFRESH_TTL_DAYS = 30;
 const DEFAULT_REFRESH_ABSOLUTE_DAYS = 90;
 

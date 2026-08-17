@@ -5,6 +5,7 @@ import { getQueryFn, apiRequest, queryClient } from "../lib/queryClient";
 import { useToast } from "../hooks/use-toast";
 
 const POST_AUTH_REDIRECT_KEY = "gradeup_post_auth_redirect";
+const AUTH_ACTIVITY_KEY = "gradeup_last_active";
 
 export type SelectUser = {
   id: string;
@@ -84,6 +85,10 @@ function unwrapUser(payload: any): SelectUser {
   return (payload?.data || payload) as SelectUser;
 }
 
+function resetAuthActivity() {
+  localStorage.setItem(AUTH_ACTIVITY_KEY, Date.now().toString());
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
@@ -102,6 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return unwrapUser(await res.json());
     },
     onSuccess: (user: SelectUser) => {
+      resetAuthActivity();
       queryClient.setQueryData(["/api/v1/auth/me"], user);
       toast({ title: "Welcome back!", description: "You have successfully logged in." });
       setLocation(consumePostAuthRedirect() || "/dashboard");
@@ -120,6 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return unwrapUser(await res.json());
     },
     onSuccess: (user: SelectUser) => {
+      resetAuthActivity();
       queryClient.setQueryData(["/api/v1/auth/me"], user);
       toast({ title: "Welcome to GradeUp!", description: "Your student account is ready." });
       setLocation(consumePostAuthRedirect() || "/dashboard");
@@ -139,6 +146,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return unwrapUser(await res.json());
     },
     onSuccess: (user: SelectUser) => {
+      resetAuthActivity();
       queryClient.setQueryData(["/api/v1/auth/me"], user);
       toast({ title: "Welcome to GradeUp!", description: "You are signed in." });
       setLocation(consumePostAuthRedirect() || "/dashboard");
@@ -153,6 +161,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await apiRequest("POST", "/api/v1/auth/logout");
     },
     onSuccess: () => {
+      localStorage.removeItem(AUTH_ACTIVITY_KEY);
       queryClient.setQueryData(["/api/v1/auth/me"], null);
       queryClient.clear();
       toast({ title: "Logged out", description: "You have been successfully logged out." });
