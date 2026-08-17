@@ -14,7 +14,6 @@ import {
 } from "lucide-react";
 import {
   endAvatarSession,
-  generateAvatarFlashcard,
   raiseAvatarHand,
   resumeAvatarSession,
   startAvatarSession,
@@ -26,6 +25,10 @@ type GeniusContext = {
   subject?: string;
   unitTitle?: string;
   bookTitle?: string;
+  board?: string | null;
+  class_number?: string | null;
+  unit_number?: number | string | null;
+  unit_name?: string | null;
   term?: string | null;
   theme?: "light" | "dark";
   avatarTeacher?: "man" | "woman";
@@ -56,10 +59,11 @@ type AvatarSegment = {
   };
 };
 
-type AvatarFlashcard = AvatarSegment & {
-  flashcard_id?: string;
-  segment_id?: string;
-  flashcard_type?: string;
+type RaiseHandMessage = {
+  id: string;
+  role: "student" | "ai";
+  text: string;
+  emotion?: string;
 };
 
 const CONTEXT_KEY = "gradeup-avatar-genius-context";
@@ -95,9 +99,21 @@ function getAudioUrl(segment: AvatarSegment | null, teacher: "man" | "woman") {
 function segmentText(segment: AvatarSegment | null) {
   if (!segment) return "";
   if (String(segment.type || "").toLowerCase() === "flashcard") {
-    return segment.avatar_line || segment.front || "Let's pause for a quick check.";
+    return segment.avatar_line || segment.front || segment.question || "Let's pause for a quick check.";
   }
   return segment.text || "";
+}
+
+function flashcardSpeechText(segment: AvatarSegment | null) {
+  if (!segment) return "";
+  const question = String(segment.question || "").trim();
+  if (question) {
+    const options = Object.entries(segment.options || {})
+      .map(([option, text]) => `Option ${option}. ${text}`)
+      .join(". ");
+    return [segment.avatar_line, question, options].filter(Boolean).join(". ");
+  }
+  return segment.front || segment.avatar_line || "";
 }
 
 function emotionClass(value = "") {
@@ -174,22 +190,26 @@ export default function AvatarGeniusView() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [teacher, setTeacher] = useState<"man" | "woman">("man");
-  const [flashcards, setFlashcards] = useState<Record<string, AvatarFlashcard>>({});
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [feedback, setFeedback] = useState<Record<string, { correct: boolean; message: string }>>({});
   const [doubtOpen, setDoubtOpen] = useState(false);
   const [doubtText, setDoubtText] = useState("");
-  const [clarifications, setClarifications] = useState<Array<{ text: string; emotion?: string }>>([]);
+  const [raiseHandChat, setRaiseHandChat] = useState<RaiseHandMessage[]>([]);
   const [isRaisingHand, setIsRaisingHand] = useState(false);
   const [isResuming, setIsResuming] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioKeyRef = useRef("");
+  const speechKeyRef = useRef("");
+  const speechUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const fallbackTimerRef = useRef<number | null>(null);
+  const wasPlayingBeforeDoubtRef = useRef(false);
   const endedRef = useRef(false);
   const contentRef = useRef<HTMLDivElement | null>(null);
+  const doubtMessagesRef = useRef<HTMLDivElement | null>(null);
 
   const current = segments[index] || null;
   const currentKey = String(current?.segment_id || `segment-${index}`);
-  const card = current ? flashcards[currentKey] || flashcards[String(current.segment_id || "")] : null;
-  const display = card ? { ...current, ...card } : current;
+  const display = current;
   const displayType = String(display?.type || "").toLowerCase();
   const flashcardType = String(
     display?.flashcard_type || (display?.question || display?.options ? "mcq" : "informative"),
@@ -237,8 +257,13 @@ export default function AvatarGeniusView() {
         const response = await startAvatarSession({
           unitId: context.unitId,
           sectionTitle: context.sectionTitle,
+          section_title: context.sectionTitle,
+          board: context.board || null,
+          class_number: context.class_number || null,
+          subject: context.subject || null,
+          unit_number: context.unit_number || null,
+          unit_name: context.unit_name || context.unitTitle || null,
           term: context.term || null,
-          segments: Array.isArray(context.segments) ? context.segments : null,
         });
         if (cancelled) return;
         const nextSegments = getSegments(response);
@@ -249,36 +274,8 @@ export default function AvatarGeniusView() {
         setSessionId(String(nextSessionId));
         setSegments(nextSegments);
         setIndex(0);
+        setRaiseHandChat([]);
         setStatus("playing");
-
-        const flashcardSegments = nextSegments.filter(
-          (segment) => String(segment.type || "").toLowerCase() === "flashcard",
-        );
-        if (flashcardSegments.length) {
-          generateAvatarFlashcard({
-            sessionId: String(nextSessionId),
-            flashCards: flashcardSegments.map((segment) => {
-              const segmentId = String(segment.segment_id || "");
-              return {
-                flashcardId: segmentId,
-                flashcardType: segment.flashcard_type || (segment.question || segment.options ? "mcq" : "informative"),
-                segmentId,
-              };
-            }),
-          })
-            .then((cardResponse) => {
-              const cards = Array.isArray(cardResponse?.flash_cards) ? cardResponse.flash_cards : [];
-              setFlashcards((prev) => {
-                const next = { ...prev };
-                cards.forEach((item: AvatarFlashcard) => {
-                  const key = String(item.flashcard_id || item.segment_id || "");
-                  if (key) next[key] = item;
-                });
-                return next;
-              });
-            })
-            .catch((err) => setError(err?.message || "Some flashcards could not be generated."));
-        }
       } catch (err: any) {
         if (!cancelled) {
           setError(err?.message || "Unable to start Genius Mode.");
@@ -295,25 +292,47 @@ export default function AvatarGeniusView() {
 
   useEffect(() => {
     return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
+      stopCurrentMedia();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (status !== "playing" || !display) return;
     const playingSegment = display;
-    const audioUrl = getAudioUrl(playingSegment, teacher);
-    if (!audioUrl) {
-      const t = window.setTimeout(() => handleAudioEnded(playingSegment), 900);
-      return () => window.clearTimeout(t);
+    const isFlashcardSegment = String(playingSegment.type || "").toLowerCase() === "flashcard";
+    if (isFlashcardSegment) {
+      playFlashcardSpeech(playingSegment);
+      return;
     }
 
+    const audioUrl = getAudioUrl(playingSegment, teacher);
+    if (!audioUrl) {
+      clearFallbackTimer();
+      fallbackTimerRef.current = window.setTimeout(() => handleAudioEnded(playingSegment), 900);
+      return;
+    }
+
+    clearFallbackTimer();
+    window.speechSynthesis?.cancel();
+    speechKeyRef.current = "";
+    speechUtteranceRef.current = null;
+
+    const nextAudioKey = `${currentKey}:${teacher}:${audioUrl}`;
+    if (audioRef.current && audioKeyRef.current === nextAudioKey) {
+      audioRef.current.playbackRate = speed;
+      audioRef.current.play().catch(() => {
+        setError("Tap Play if your browser blocked autoplay.");
+        setStatus("paused");
+      });
+      return;
+    }
+
+    if (audioRef.current) audioRef.current.pause();
     const audio = new Audio(audioUrl);
     audio.playbackRate = speed;
     audioRef.current = audio;
+    audioKeyRef.current = nextAudioKey;
     audio.onended = () => handleAudioEnded(playingSegment);
     audio.onerror = () => {
       setError("Audio could not be played for this segment.");
@@ -323,21 +342,111 @@ export default function AvatarGeniusView() {
       setError("Tap Play if your browser blocked autoplay.");
       setStatus("paused");
     });
-
-    return () => {
-      audio.pause();
-      audio.onended = null;
-      audio.onerror = null;
-      if (audioRef.current === audio) audioRef.current = null;
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, index, segments, speed, teacher, card]);
+  }, [status, index, segments, speed, teacher, display, currentKey]);
+
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.playbackRate = speed;
+  }, [speed]);
 
   useEffect(() => {
     if (contentRef.current) {
       contentRef.current.scrollTo({ top: contentRef.current.scrollHeight, behavior: "smooth" });
     }
   }, [index, segments.length]);
+
+  useEffect(() => {
+    if (doubtOpen && doubtMessagesRef.current) {
+      doubtMessagesRef.current.scrollTo({ top: doubtMessagesRef.current.scrollHeight, behavior: "smooth" });
+    }
+  }, [doubtOpen, raiseHandChat.length, isRaisingHand]);
+
+  function clearFallbackTimer() {
+    if (fallbackTimerRef.current !== null) {
+      window.clearTimeout(fallbackTimerRef.current);
+      fallbackTimerRef.current = null;
+    }
+  }
+
+  function stopCurrentMedia() {
+    clearFallbackTimer();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.onended = null;
+      audioRef.current.onerror = null;
+      audioRef.current = null;
+    }
+    audioKeyRef.current = "";
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+    speechKeyRef.current = "";
+    speechUtteranceRef.current = null;
+  }
+
+  function pauseCurrentMedia() {
+    clearFallbackTimer();
+    audioRef.current?.pause();
+    if ("speechSynthesis" in window && window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
+      window.speechSynthesis.pause();
+    }
+    if (status === "playing") setStatus("paused");
+  }
+
+  function resumeCurrentMedia() {
+    if (status === "completed" || status === "error" || status === "loading") return;
+    setStatus("playing");
+    if (displayType === "flashcard" && "speechSynthesis" in window && window.speechSynthesis.paused) {
+      window.speechSynthesis.resume();
+    }
+  }
+
+  function playFlashcardSpeech(segment: AvatarSegment) {
+    if (!("speechSynthesis" in window)) {
+      handleAudioEnded(segment);
+      return;
+    }
+
+    clearFallbackTimer();
+    if (audioRef.current) audioRef.current.pause();
+    audioRef.current = null;
+    audioKeyRef.current = "";
+
+    const speechText = flashcardSpeechText(segment);
+    if (!speechText.trim()) {
+      handleAudioEnded(segment);
+      return;
+    }
+
+    if (speechKeyRef.current === currentKey && window.speechSynthesis.paused) {
+      window.speechSynthesis.resume();
+      return;
+    }
+    if (speechKeyRef.current === currentKey && window.speechSynthesis.speaking) return;
+
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(speechText);
+    utterance.rate = speed;
+    utterance.pitch = teacher === "woman" ? 1.08 : 0.95;
+    utterance.onend = () => handleAudioEnded(segment);
+    utterance.onerror = () => {
+      setError("Flashcard speech could not be played.");
+      handleAudioEnded(segment);
+    };
+    speechKeyRef.current = currentKey;
+    speechUtteranceRef.current = utterance;
+    window.speechSynthesis.speak(utterance);
+  }
+
+  function openDoubtModal() {
+    wasPlayingBeforeDoubtRef.current = status === "playing";
+    pauseCurrentMedia();
+    setDoubtOpen(true);
+  }
+
+  function closeDoubtModal({ resume = true } = {}) {
+    setDoubtOpen(false);
+    if (resume && wasPlayingBeforeDoubtRef.current) resumeCurrentMedia();
+    wasPlayingBeforeDoubtRef.current = false;
+  }
 
   function handleAudioEnded(segment: AvatarSegment | null) {
     if (String(segment?.type || "").toLowerCase() === "flashcard") {
@@ -348,6 +457,7 @@ export default function AvatarGeniusView() {
   }
 
   function advance() {
+    stopCurrentMedia();
     setIndex((currentIndex) => {
       const next = currentIndex + 1;
       if (next >= segments.length) {
@@ -360,7 +470,9 @@ export default function AvatarGeniusView() {
   }
 
   async function complete() {
+    stopCurrentMedia();
     setStatus("completed");
+    setRaiseHandChat([]);
     if (!sessionId || endedRef.current) return;
     endedRef.current = true;
     try {
@@ -370,18 +482,17 @@ export default function AvatarGeniusView() {
 
   function togglePlay() {
     if (status === "playing") {
-      audioRef.current?.pause();
-      setStatus("paused");
+      pauseCurrentMedia();
       return;
     }
     if (status === "paused" || status === "waiting_flashcard") {
       if (displayType === "flashcard" && status === "waiting_flashcard") return;
-      setStatus("playing");
+      resumeCurrentMedia();
     }
   }
 
   async function closePage() {
-    if (audioRef.current) audioRef.current.pause();
+    stopCurrentMedia();
     if (sessionId && status !== "completed" && !endedRef.current) {
       endedRef.current = true;
       try {
@@ -393,19 +504,43 @@ export default function AvatarGeniusView() {
 
   async function submitDoubt() {
     if (!sessionId || !doubtText.trim() || isRaisingHand) return;
-    audioRef.current?.pause();
-    setStatus("paused");
+    pauseCurrentMedia();
+    const studentText = doubtText.trim();
+    const messageSeed = Date.now();
+    setRaiseHandChat((prev) => [
+      ...prev,
+      { id: `student-${messageSeed}`, role: "student", text: studentText },
+    ]);
+    setDoubtText("");
     setIsRaisingHand(true);
     try {
       const response = await raiseAvatarHand({
         sessionId,
-        studentDoubt: doubtText.trim(),
+        studentDoubt: studentText,
       });
       const nextClarifications = response?.clarification?.segments;
-      setClarifications(Array.isArray(nextClarifications) ? nextClarifications : []);
-      setDoubtText("");
+      const aiMessages = Array.isArray(nextClarifications)
+        ? nextClarifications
+            .map((item: { text?: string; emotion?: string }, itemIndex: number) => ({
+              id: `ai-${messageSeed}-${itemIndex}`,
+              role: "ai" as const,
+              text: String(item?.text || "").trim(),
+              emotion: item?.emotion,
+            }))
+            .filter((item) => item.text)
+        : [];
+      setRaiseHandChat((prev) => [
+        ...prev,
+        ...(aiMessages.length
+          ? aiMessages
+          : [{ id: `ai-${messageSeed}-empty`, role: "ai" as const, text: "I could not get a clear clarification for that yet." }]),
+      ]);
     } catch (err: any) {
       setError(err?.message || "Unable to clear this doubt right now.");
+      setRaiseHandChat((prev) => [
+        ...prev,
+        { id: `ai-${messageSeed}-error`, role: "ai", text: err?.message || "Unable to clear this doubt right now." },
+      ]);
     } finally {
       setIsRaisingHand(false);
     }
@@ -415,20 +550,20 @@ export default function AvatarGeniusView() {
     if (!sessionId || isResuming) return;
     setIsResuming(true);
     try {
-      const response = await resumeAvatarSession({ sessionId });
-      const remaining = getSegments(response);
-      if (remaining.length) {
-        setSegments(remaining);
-        setIndex(0);
-      }
-      setClarifications([]);
-      setDoubtOpen(false);
-      setStatus("playing");
+      await resumeAvatarSession({ sessionId });
+      closeDoubtModal();
     } catch (err: any) {
       setError(err?.message || "Unable to resume the avatar session.");
+      closeDoubtModal();
     } finally {
       setIsResuming(false);
     }
+  }
+
+  function goToPreviousSegment() {
+    stopCurrentMedia();
+    setIndex((value) => Math.max(0, value - 1));
+    setStatus("playing");
   }
 
   function submitMcq() {
@@ -533,7 +668,7 @@ export default function AvatarGeniusView() {
             {segments.slice(0, Math.min(index + 1, segments.length)).map((segment, segmentIndex) => {
               const isActive = segmentIndex === index;
               const key = String(segment.segment_id || segmentIndex);
-              const merged = flashcards[key] ? { ...segment, ...flashcards[key] } : segment;
+              const merged = segment;
               const type = String(merged.type || "").toLowerCase();
               if (type === "flashcard") {
                 return (
@@ -619,7 +754,7 @@ export default function AvatarGeniusView() {
               <span className="status-dot" />
               {status === "playing" ? "Speaking" : status === "waiting_flashcard" ? "Waiting for you" : status}
             </div>
-            <button id="raise-btn" onClick={() => setDoubtOpen(true)}>
+            <button id="raise-btn" onClick={openDoubtModal}>
               <Hand size={16} />
               Raise hand
             </button>
@@ -640,7 +775,7 @@ export default function AvatarGeniusView() {
 
       <div id="voice-bar" className="show">
         <button className="vb-btn play" onClick={togglePlay}>{status === "playing" ? <Pause size={16} /> : <Play size={16} />}</button>
-        <button className="vb-btn segment" onClick={() => setIndex((value) => Math.max(0, value - 1))}><ChevronLeft size={16} /></button>
+        <button className="vb-btn segment" onClick={goToPreviousSegment}><ChevronLeft size={16} /></button>
         <div className="vb-track">
           <div className="vb-label">
             <span>{display?.segment_id || "Segment"}</span>
@@ -663,17 +798,22 @@ export default function AvatarGeniusView() {
               <div className="db-title">Ask {teacherName}</div>
               <div className="db-sub">Ask a doubt and the avatar will pause to clarify.</div>
             </div>
-            <button className="db-close" onClick={() => setDoubtOpen(false)}>×</button>
+            <button className="db-close" onClick={() => closeDoubtModal()}>×</button>
           </div>
-          <div className="db-msgs">
-            {clarifications.length ? (
-              clarifications.map((item, itemIndex) => (
-                <div className="db-msg ai" key={`${item.text}-${itemIndex}`}>
+          <div className="db-msgs" ref={doubtMessagesRef}>
+            {raiseHandChat.length ? (
+              raiseHandChat.map((item) => (
+                <div className={`db-msg ${item.role}`} key={item.id}>
                   <div className="db-bubble">{item.text}</div>
                 </div>
               ))
             ) : (
               <div className="db-msg ai"><div className="db-bubble">What would you like me to explain differently?</div></div>
+            )}
+            {isRaisingHand && (
+              <div className="db-msg ai">
+                <div className="db-bubble db-thinking">Thinking...</div>
+              </div>
             )}
           </div>
           <div className="db-input-row open">
@@ -688,7 +828,7 @@ export default function AvatarGeniusView() {
             />
             <button className="db-send" onClick={submitDoubt} disabled={isRaisingHand}><Send size={16} /></button>
           </div>
-          {clarifications.length > 0 && (
+          {raiseHandChat.length > 0 && (
             <div className="db-voice-actions">
               <button className="db-small-btn primary" onClick={resumeLesson} disabled={isResuming}>
                 {isResuming ? "Resuming..." : "Resume lesson"}
@@ -784,14 +924,14 @@ body{overflow:hidden;}
 .teacher-woman .av-name-badge{background:linear-gradient(135deg,#ec4899,#8b5cf6);}
 .teacher-woman .av-arm.l{transform:rotate(-32deg);}
 .teacher-woman .av-arm.r{transform:rotate(22deg);}
-.emo-talking .av-mouth-shape{animation:tlk .22s ease-in-out infinite alternate;}@keyframes tlk{from{width:26px;height:7px;border-radius:7px 7px 12px 12px}to{width:30px;height:20px;border-radius:10px 10px 18px 18px}}.emo-enthusiastic .av-arm.l,.emo-excited .av-arm.l,.emo-playful .av-arm.l{transform:rotate(-52deg)!important;}.emo-curious .av-brow.l,.emo-thinking .av-brow.l,.emo-thoughtful .av-brow.l{top:37px;transform:rotate(15deg) translateY(-1px);}.emo-curious .av-mouth-shape,.emo-thinking .av-mouth-shape,.emo-thoughtful .av-mouth-shape{width:18px;height:6px;border-radius:10px;border-top:2px solid #8e3b38;}.emo-empathetic .av-brow.l{top:40px;transform:rotate(10deg) translateY(2px);}.emo-empathetic .av-brow.r{top:40px;transform:rotate(-10deg) translateY(2px);}
+.emo-talking .av-mouth-shape{animation:tlk .22s ease-in-out infinite alternate;}@keyframes tlk{from{width:26px;height:7px;border-radius:7px 7px 12px 12px}to{width:30px;height:20px;border-radius:10px 10px 18px 18px}}.emo-enthusiastic .av-arm.l,.emo-excited .av-arm.l,.emo-playful .av-arm.l,.emo-inspiring .av-arm.l{transform:rotate(-52deg)!important;}.emo-enthusiastic .av-r,.emo-inspiring .av-r{animation:avatarLift 1.4s ease-in-out infinite;}@keyframes avatarLift{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}.emo-curious .av-brow.l,.emo-thinking .av-brow.l,.emo-thoughtful .av-brow.l{top:37px;transform:rotate(15deg) translateY(-1px);}.emo-curious .av-mouth-shape,.emo-thinking .av-mouth-shape,.emo-thoughtful .av-mouth-shape{width:18px;height:6px;border-radius:10px;border-top:2px solid #8e3b38;}.emo-empathetic .av-brow.l,.emo-warm .av-brow.l,.emo-encouraging .av-brow.l{top:40px;transform:rotate(10deg) translateY(2px);}.emo-empathetic .av-brow.r,.emo-warm .av-brow.r,.emo-encouraging .av-brow.r{top:40px;transform:rotate(-10deg) translateY(2px);}.emo-warm .av-cheek,.emo-encouraging .av-cheek{background:rgba(236,72,153,.34);}.emo-confident .av-torso{transform:translateY(-2px) scale(1.02);}.emo-confident .av-brow.l{transform:rotate(-10deg);}.emo-confident .av-brow.r{transform:rotate(10deg);}.emo-surprised .av-eye{height:27px;}.emo-surprised .av-mouth-shape{width:22px;height:22px;border-radius:50%;border:3px solid #8e3b38;background:#5b151c;}.emo-playful .av-head{transform:rotate(-5deg);}.emo-playful .av-r{transform:rotate(-1.5deg);}
 .av-status{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);}.status-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pdot 2s infinite;}@keyframes pdot{0%,100%{box-shadow:0 0 0 0 rgba(16,185,129,.4)}50%{box-shadow:0 0 0 5px rgba(16,185,129,0)}}
 #raise-btn{position:relative;z-index:4;display:flex;align-items:center;gap:8px;padding:10px 20px;border-radius:20px;background:linear-gradient(135deg,var(--amber),#f97316);color:#fff;border:none;cursor:pointer;font-family:inherit;font-size:13px;font-weight:700;box-shadow:0 6px 20px rgba(245,158,11,.4);transition:all .2s;animation:btnPulse 2.5s ease-in-out infinite;margin:10px 0 16px;}#raise-btn:hover{transform:translateY(-3px);box-shadow:0 10px 28px rgba(245,158,11,.5);}@keyframes btnPulse{0%,100%{box-shadow:0 6px 20px rgba(245,158,11,.4)}50%{box-shadow:0 6px 30px rgba(245,158,11,.65)}}
 #topics-area{display:none;}.topic-label{font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:4px 6px 2px;}.topic-item{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:11px;cursor:pointer;transition:all .18s;border:1px solid transparent;}.topic-item.done{opacity:.6;}.ti-num{width:24px;height:24px;border-radius:7px;background:var(--surface2);font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;color:var(--accent);flex-shrink:0;}.ti-body{flex:1;min-width:0;}.ti-name{font-size:12px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 #voice-bar{position:fixed;bottom:0;left:0;width:calc(100% - 320px);background:var(--surface);border-top:1px solid var(--border);padding:8px 16px;display:flex;align-items:center;gap:10px;box-shadow:0 -4px 20px rgba(0,0,0,.06);z-index:50;}.vb-btn{width:32px;height:32px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--sub);transition:all .18s;flex-shrink:0;}.vb-btn:hover{border-color:var(--accent);color:var(--accent);}.vb-btn.play{background:var(--accent)!important;color:#fff!important;border-color:var(--accent)!important;box-shadow:0 3px 10px rgba(91,94,247,.3);}.vb-track{flex:1;min-width:120px;}.vb-label{font-size:10px;color:var(--muted);font-weight:600;display:flex;justify-content:space-between;margin-bottom:3px;}.vb-bg{height:8px;background:var(--surface2);border-radius:8px;overflow:hidden;position:relative;}.vb-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:4px;transition:width .25s linear;width:0%;}.vb-btn.segment{font-size:16px;font-weight:800;}.vb-spd{padding:4px 9px;border-radius:20px;font-size:10px;font-weight:700;border:1px solid var(--border);background:var(--surface2);color:var(--muted);flex-shrink:0;}.wave{display:flex;align-items:center;gap:3px;height:20px;}.wb{width:3px;border-radius:2px;background:var(--accent);height:4px;opacity:.2;animation:wavb 1.2s ease-in-out infinite;}.wb.on{opacity:1;}@keyframes wavb{0%,100%{height:4px}50%{height:18px}}
 #doubt-overlay{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.48);display:none;align-items:flex-end;justify-content:flex-start;padding:0 0 60px 0;}#doubt-overlay.open{display:flex;}#doubt-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);box-shadow:var(--sh2);width:min(520px,calc(100vw - 32px));max-height:70vh;display:flex;flex-direction:column;margin:0 0 0 16px;animation:dSlide .32s cubic-bezier(.34,1.3,.64,1);}@keyframes dSlide{from{opacity:0;transform:translateY(20px) scale(.97)}to{opacity:1;transform:none}}
 .db-head{padding:14px 18px 12px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border);}.db-avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;}.db-title{font-size:13px;font-weight:700;color:var(--text);}.db-sub{font-size:11px;color:var(--muted);}.db-close{margin-left:auto;width:28px;height:28px;border-radius:8px;border:1px solid var(--border);background:none;cursor:pointer;font-size:14px;color:var(--muted);display:flex;align-items:center;justify-content:center;transition:all .15s;}.db-close:hover{background:rgba(239,68,68,.1);border-color:var(--red);color:var(--red);}
-.db-msgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;min-height:120px;max-height:calc(70vh - 140px);}.db-msg{display:flex;gap:8px;max-width:92%;}.db-bubble{padding:9px 13px;border-radius:14px;font-size:13px;line-height:1.6;color:var(--text);background:var(--surface2);border:1px solid var(--border);border-radius:14px 14px 14px 4px;}.db-input-row{display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--border);}.db-send{width:36px;height:36px;border-radius:10px;background:var(--accent);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;color:#fff;transition:all .18s;flex-shrink:0;}.db-voice-actions{display:flex;gap:8px;padding:0 14px 14px;}.db-small-btn{border:1px solid var(--border);background:var(--surface2);color:var(--sub);border-radius:10px;padding:8px 11px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;}.db-small-btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;}
+.db-msgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;min-height:120px;max-height:calc(70vh - 140px);}.db-msg{display:flex;gap:8px;max-width:92%;}.db-msg.student{align-self:flex-end;}.db-msg.ai{align-self:flex-start;}.db-bubble{padding:9px 13px;border-radius:14px;font-size:13px;line-height:1.6;color:var(--text);background:var(--surface2);border:1px solid var(--border);border-radius:14px 14px 14px 4px;}.db-msg.student .db-bubble{background:linear-gradient(135deg,var(--accent),var(--accent2));border-color:transparent;color:#fff;border-radius:14px 14px 4px 14px;}.db-thinking{color:var(--muted);font-weight:700;}.db-input-row{display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--border);}.db-send{width:36px;height:36px;border-radius:10px;background:var(--accent);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;color:#fff;transition:all .18s;flex-shrink:0;}.db-send:disabled{opacity:.58;cursor:not-allowed;}.db-voice-actions{display:flex;gap:8px;padding:0 14px 14px;}.db-small-btn{border:1px solid var(--border);background:var(--surface2);color:var(--sub);border-radius:10px;padding:8px 11px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;}.db-small-btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;}
 #complete-screen{position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center;}#complete-screen.open{display:flex;}.cs-card{background:var(--surface);border:1px solid rgba(91,94,247,.25);border-radius:28px;padding:40px;max-width:420px;width:90%;text-align:center;box-shadow:var(--sh2);animation:dSlide .4s cubic-bezier(.34,1.3,.64,1);position:relative;}.cs-close{position:absolute;top:16px;right:16px;width:34px;height:34px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--muted);font-size:18px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;}.cs-emoji{font-size:52px;margin-bottom:12px;}.cs-title{font-size:26px;font-weight:800;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:8px;}.cs-sub{font-size:14px;color:var(--muted);line-height:1.6;margin-bottom:24px;}.cs-btn{display:inline-flex;align-items:center;gap:8px;padding:12px 28px;border-radius:14px;border:none;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 6px 20px rgba(91,94,247,.35);}
 .genius-empty{min-height:100vh;background:var(--bg);color:var(--text);display:grid;place-items:center;align-content:center;gap:10px;font-family:Sora,system-ui,sans-serif;text-align:center;padding:24px;}.genius-empty h1{font-size:22px;}
 @media(max-width:900px){#app{grid-template-columns:1fr;}#avatar-panel{display:none;}#voice-bar{width:100%;}#raise-btn{bottom:72px;}}

@@ -1,18 +1,180 @@
 const { callPython } = require("../services/pythonGateway");
+const SubjectUnit = require("../model/SubjectUnit");
 const {
   resolveSubjectUnit,
   getPythonLearningContext,
 } = require("../services/learningContextService");
+const { normalizeTerm } = require("../utils/subjectIdentity");
 
-async function resolveAvatarContext(source = {}) {
-  const unit = await resolveSubjectUnit({
+function escapeRegExp(value = "") {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function cleanText(value) {
+  return String(value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function exactText(value) {
+  const text = cleanText(value);
+  return text ? new RegExp(`^${escapeRegExp(text)}$`, "i") : null;
+}
+
+function normalizeSectionValue(value) {
+  return cleanText(value)
+    .toLowerCase()
+    .replace(/^[\s.:#-]*\d+(?:\.\d+)*[\s.:#-]+/, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function classNumberVariants(value) {
+  const raw = cleanText(value);
+  if (!raw) return [];
+  const number = raw.match(/\d+/)?.[0] || raw;
+  const padded = /^\d$/.test(number) ? `0${number}` : number;
+  return [...new Set([raw, number, padded, `Class ${Number(number) || number}`, `Class ${padded}`])].filter(Boolean);
+}
+
+function getSegments(payload) {
+  const segments =
+    payload?.avatar_explanation?.segments ||
+    payload?.remaining_segments ||
+    payload?.segments ||
+    [];
+  return Array.isArray(segments) ? segments : [];
+}
+
+function findAvatarExplanationForSection(enrichedData, sectionTitle) {
+  const target = normalizeSectionValue(sectionTitle);
+  if (!enrichedData || !target) return null;
+
+  const units = Array.isArray(enrichedData?.units)
+    ? enrichedData.units
+    : Array.isArray(enrichedData)
+      ? enrichedData
+      : [enrichedData];
+
+  for (const unit of units) {
+    const sections = Array.isArray(unit?.sections) ? unit.sections : [];
+    for (const section of sections) {
+      const sectionType = normalizeSectionValue(section?.type || section?.kind || section?.section_type);
+      if (sectionType && sectionType !== "section") continue;
+
+      const candidates = [
+        section?.section_title,
+        section?.sectionTitle,
+        section?.title,
+        section?.heading,
+        section?.label,
+      ].map(normalizeSectionValue).filter(Boolean);
+      const matched = candidates.some(
+        (candidate) => candidate === target || candidate.includes(target) || target.includes(candidate),
+      );
+      if (!matched) continue;
+
+      const enrichment = section?.section_enrichment || section?.enrichment || section;
+      const explanation = enrichment?.avatar_explanation;
+      if (Array.isArray(explanation?.segments) && explanation.segments.length) {
+        return explanation;
+      }
+    }
+  }
+
+  return null;
+}
+
+async function resolveAvatarUnitFromBody(source = {}) {
+  const query = { "processing.status": { $ne: "failed" } };
+  const board = exactText(source.board);
+  const subject = exactText(source.subject);
+  const unitNumber = source.unit_number ?? source.unitNumber;
+  const unitName = cleanText(source.unit_name || source.unitName);
+  const term = Object.prototype.hasOwnProperty.call(source, "term")
+    ? normalizeTerm(source.term)
+    : undefined;
+  const classNumber = source.class_number || source.classNumber || source.standard || source.class;
+  const standardVariants = classNumberVariants(classNumber);
+
+  if (board) query.board = board;
+  if (subject) query.subject = subject;
+  if (standardVariants.length) {
+    query.standard = { $in: standardVariants.map((item) => new RegExp(`^${escapeRegExp(item)}$`, "i")) };
+  }
+  if (term !== undefined) {
+    query.term = term ? new RegExp(`^${escapeRegExp(term)}$`, "i") : null;
+  }
+  if (unitNumber !== undefined && unitNumber !== null && unitNumber !== "") {
+    query.unitNumber = Number(unitNumber);
+  }
+  if (unitName) {
+    query.$or = [
+      { unitTitle: new RegExp(`^${escapeRegExp(unitName)}$`, "i") },
+      { chapterName: new RegExp(`^${escapeRegExp(unitName)}$`, "i") },
+      { unitLabel: new RegExp(`^${escapeRegExp(unitName)}$`, "i") },
+    ];
+  }
+
+  const hasBodyLookup =
+    board || subject || standardVariants.length || term !== undefined || query.unitNumber !== undefined || unitName;
+  if (hasBodyLookup) {
+    const unit = await SubjectUnit.findOne(query).sort({ updatedAt: -1 });
+    if (unit) return unit;
+  }
+
+  return resolveSubjectUnit({
     unitId: source.unitId || source.subjectUnitId,
     documentId: source.documentId,
     subjectGroupKey: source.subjectGroupKey,
     unitNumber: source.unitNumber || source.unit_number,
     subject: source.subject,
-    unitTitle: source.unitTitle || source.unitName,
+    unitTitle: source.unitTitle || source.unitName || source.unit_name,
   });
+}
+
+function buildFlashcardRequests(segments = []) {
+  return segments
+    .filter((segment) => String(segment?.type || "").toLowerCase() === "flashcard")
+    .map((segment) => {
+      const flashcardId = cleanText(segment.flashcard_id || segment.flashcardId || segment.segment_id);
+      const segmentId = cleanText(segment.segment_id || segment.segmentId || flashcardId);
+      return {
+        flashcard_id: flashcardId,
+        flashcard_type:
+          segment.flashcard_type ||
+          segment.flashcardType ||
+          (segment.question || segment.options ? "mcq" : "informative"),
+        segment_id: segmentId,
+      };
+    })
+    .filter((card) => card.flashcard_id && card.segment_id);
+}
+
+function mergeGeneratedFlashcards(segments = [], flashcardResponse = {}) {
+  const cards = Array.isArray(flashcardResponse?.flash_cards)
+    ? flashcardResponse.flash_cards
+    : [];
+  if (!cards.length) return segments;
+
+  const byFlashcardId = new Map();
+  const bySegmentId = new Map();
+  cards.forEach((card) => {
+    const flashcardId = cleanText(card.flashcard_id || card.flashcardId);
+    const segmentId = cleanText(card.segment_id || card.segmentId);
+    if (flashcardId) byFlashcardId.set(flashcardId, card);
+    if (segmentId) bySegmentId.set(segmentId, card);
+  });
+
+  return segments.map((segment) => {
+    if (String(segment?.type || "").toLowerCase() !== "flashcard") return segment;
+    const flashcardId = cleanText(segment.flashcard_id || segment.flashcardId || segment.segment_id);
+    const segmentId = cleanText(segment.segment_id || segment.segmentId);
+    const generated = byFlashcardId.get(flashcardId) || bySegmentId.get(segmentId);
+    return generated ? { ...segment, ...generated, type: "flashcard" } : segment;
+  });
+}
+
+async function resolveAvatarContext(source = {}) {
+  const unit = await resolveAvatarUnitFromBody(source);
 
   return {
     unit,
@@ -27,7 +189,7 @@ function normalizeSessionId(source = {}) {
 const controller = {
   async start(req, res) {
     try {
-      const { context } = await resolveAvatarContext(req.body);
+      const { unit, context } = await resolveAvatarContext(req.body);
       const sectionTitle = String(
         req.body.sectionTitle || req.body.section_title || "",
       ).trim();
@@ -39,27 +201,117 @@ const controller = {
         });
       }
 
+      const avatarExplanation = findAvatarExplanationForSection(
+        unit.enrichedData,
+        sectionTitle,
+      );
+      const dbFilteredSegments = Array.isArray(avatarExplanation?.segments)
+        ? avatarExplanation.segments
+        : [];
+      const pythonStartRequestBody = {
+        candidate_id: req.body.candidate_id || req.body.candidateId,
+        candidate_name:
+          req.body.candidate_name ||
+          req.body.candidateName ||
+          "GradeUp Learner",
+        board: req.body.board || context.board,
+        class_number:
+          req.body.class_number ||
+          req.body.classNumber ||
+          context.classNumber,
+        subject: req.body.subject || context.subject,
+        unit_number:
+          req.body.unit_number ||
+          req.body.unitNumber ||
+          context.unitNumber,
+        unit_name:
+          req.body.unit_name ||
+          req.body.unitName ||
+          context.unitName,
+        section_title: sectionTitle,
+        segments: dbFilteredSegments.length ? dbFilteredSegments : null,
+        term: req.body.term ?? unit.term ?? null,
+      };
+
       const data = await callPython({
         method: "post",
         path: "/avatar/start",
-        data: {
-          candidate_id: req.body.candidate_id || req.body.candidateId,
-          candidate_name:
-            req.body.candidate_name ||
-            req.body.candidateName ||
-            "GradeUp Learner",
-          board: context.board,
-          class_number: context.classNumber,
-          subject: context.subject,
-          unit_number: context.unitNumber,
-          unit_name: context.unitName,
-          section_title: sectionTitle,
-          segments: req.body.segments ?? null,
-          term: req.body.term ?? null,
-        },
+        data: pythonStartRequestBody,
       });
 
-      return res.status(200).json({ status: true, data });
+      const pythonResponseSegments = getSegments(data);
+      const sessionId = normalizeSessionId(data);
+      const flashCards = buildFlashcardRequests(pythonResponseSegments);
+      let flashcardGenerateRequestBody = null;
+      let flashcardGenerateResponse = null;
+      let flashcardGenerateError = null;
+      let mergedSegments = pythonResponseSegments;
+
+      if (sessionId && flashCards.length) {
+        flashcardGenerateRequestBody = {
+          session_id: sessionId,
+          flash_cards: flashCards,
+        };
+        try {
+          flashcardGenerateResponse = await callPython({
+            method: "post",
+            path: "/avatar/flashcard/generate",
+            data: flashcardGenerateRequestBody,
+          });
+          mergedSegments = mergeGeneratedFlashcards(
+            pythonResponseSegments,
+            flashcardGenerateResponse,
+          );
+        } catch (flashcardError) {
+          flashcardGenerateError = {
+            message:
+              flashcardError.message ||
+              "Failed to generate avatar flashcards after start.",
+            details: flashcardError.details || null,
+          };
+        }
+      }
+
+      const finalData = {
+        ...data,
+        avatar_explanation: {
+          ...(data?.avatar_explanation || {}),
+          ...(avatarExplanation?.teaching_style && !data?.avatar_explanation?.teaching_style
+            ? { teaching_style: avatarExplanation.teaching_style }
+            : {}),
+          ...(avatarExplanation?.total_duration_estimate &&
+          !data?.avatar_explanation?.total_duration_estimate
+            ? {
+                total_duration_estimate:
+                  avatarExplanation.total_duration_estimate,
+              }
+            : {}),
+          segments: mergedSegments,
+        },
+        avatar_debug: {
+          frontend_request_body: req.body,
+          db_lookup: {
+            unit_id: String(unit._id),
+            document_id: unit.documentId,
+            board: unit.board,
+            class_number: unit.standard,
+            subject: unit.subject,
+            term: unit.term || null,
+            unit_number: unit.unitNumber || null,
+            unit_name: unit.unitTitle || unit.chapterName || unit.unitLabel,
+            section_title: sectionTitle,
+          },
+          db_filtered_segments: dbFilteredSegments,
+          python_start_request_body: pythonStartRequestBody,
+          python_response_segments: pythonResponseSegments,
+          flashcard_generate_request_body: flashcardGenerateRequestBody,
+          flashcard_generate_response: flashcardGenerateResponse,
+          flashcard_generate_error: flashcardGenerateError,
+          merged_segments: mergedSegments,
+        },
+      };
+
+      return res.status(200).json({ status: true, data: finalData });
     } catch (error) {
       return res.status(error.statusCode || 500).json({
         status: false,

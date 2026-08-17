@@ -942,7 +942,12 @@ export type AvatarFlashcardRequest = {
 export async function startAvatarSession(payload: {
   unitId: string;
   sectionTitle: string;
-  segments?: any[] | null;
+  section_title?: string;
+  board?: string | null;
+  class_number?: string | null;
+  subject?: string | null;
+  unit_number?: number | string | null;
+  unit_name?: string | null;
   term?: string | null;
 }) {
   return apiFetch<any>("/api/v1/avatar/start", {

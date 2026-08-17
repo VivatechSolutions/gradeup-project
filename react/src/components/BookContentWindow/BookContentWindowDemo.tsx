@@ -62,8 +62,11 @@ interface Chapter {
   content: string;
   unit: number;
   unitTitle?: string;
-    part?: string;   // ADD
-  term?: string;   // ADD
+  board?: string | null;
+  standard?: string | null;
+  subject?: string | null;
+  part?: string;
+  term?: string;
   enhancedContent?: string;
   layout?: any;
   sectionTopics?: Array<{
@@ -90,6 +93,7 @@ interface Book {
   title: string;
   subject: string;
   subjectFilterLabel?: string;
+  board?: string | null;
   standard?: string;
   term?: string | null;
   part?: string | null;
@@ -516,83 +520,6 @@ function serializeEnrichedForGenius(
   });
 
   return lines.filter(Boolean).join("\n\n").trim();
-}
-
-function normalizeGeniusMatchValue(value: any) {
-  return normalizeReaderLabel(value)
-    .toLowerCase()
-    .replace(/^[\s.:#-]*\d+(?:\.\d+)*[\s.:#-]+/, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-
-function collectSectionMatchValues(section: any) {
-  return [
-    section?.title,
-    section?.section_title,
-    section?.sectionTitle,
-    section?.heading,
-    section?.label,
-    section?.id,
-    section?.section_id,
-    section?.sectionId,
-    section?.section_number,
-    section?.sectionNumber,
-    section?.number,
-  ]
-    .map(normalizeGeniusMatchValue)
-    .filter(Boolean);
-}
-
-function findEnrichedAvatarExplanationForSection(
-  enrichedContent: any,
-  geniusSection: any,
-) {
-  if (!enrichedContent || !geniusSection) return null;
-
-  const units = Array.isArray(enrichedContent?.units)
-    ? enrichedContent.units
-    : Array.isArray(enrichedContent)
-      ? enrichedContent
-      : [enrichedContent];
-  const targetValues = [
-    geniusSection.title,
-    geniusSection.label,
-    geniusSection.number,
-    geniusSection.id,
-    geniusSection.anchor,
-  ]
-    .map(normalizeGeniusMatchValue)
-    .filter(Boolean);
-
-  for (const unit of units) {
-    const sections = Array.isArray(unit?.sections) ? unit.sections : [];
-    for (const section of sections) {
-      const sectionType = normalizeReaderLabel(
-        section?.type || section?.kind || section?.section_type,
-      ).toLowerCase();
-      if (sectionType && sectionType !== "section") continue;
-
-      const sectionValues = collectSectionMatchValues(section);
-      const isMatch = targetValues.some(
-        (target) =>
-          sectionValues.includes(target) ||
-          sectionValues.some(
-            (value) => value && target && (value === target || value.includes(target) || target.includes(value)),
-          ),
-      );
-      if (!isMatch) continue;
-
-      const enrichment =
-        section?.section_enrichment || section?.enrichment || section;
-      const explanation = enrichment?.avatar_explanation;
-      if (Array.isArray(explanation?.segments) && explanation.segments.length) {
-        return explanation;
-      }
-    }
-  }
-
-  return null;
 }
 
 // ─── sessionStorage helpers ───────────────────────────────────────────────────
@@ -4399,7 +4326,10 @@ function buildChapterFromUnit(unit: any, contentPayload: any, index: number) {
     title: fallbackTitle,
     unitTitle: fallbackTitle,
       part: unit.part,   // ADD
-  term: unit.term, 
+    term: unit.term, 
+    board: unit.board || null,
+    standard: unit.standard || null,
+    subject: unit.subject || null,
     content: text || `${fallbackTitle} content is available for reading.`,
     enhancedContent: "",
     layout: layout.length ? layout : undefined,
@@ -4745,6 +4675,7 @@ const BookContentWindowDemo = () => {
       | "id"
       | "title"
       | "subject"
+      | "board"
       | "standard"
       | "part"
       | "term"
@@ -4760,6 +4691,7 @@ const BookContentWindowDemo = () => {
       id: subjectGroup.subjectGroupKey || subjectGroup.id,
       title: subjectGroup.title,
       subject: subjectGroup.subject,
+      board: subjectGroup.board || null,
       subjectFilterLabel: subjectGroup.part
         ? `${subjectGroup.subject} - ${subjectGroup.part}`
         : subjectGroup.subject,
@@ -4773,6 +4705,9 @@ const BookContentWindowDemo = () => {
       chapters: (subjectGroup.units || []).map((unit, unitIndex) => ({
         id: unit.id,
         title: unit.unitTitle || unit.unitLabel || `Unit ${unitIndex + 1}`,
+        board: unit.board || subjectGroup.board || null,
+        standard: unit.standard || subjectGroup.standard || null,
+        subject: unit.subject || subjectGroup.subject || null,
         part: unit.part || subjectGroup.part || undefined,
         term: unit.term || subjectGroup.term || undefined,
         content: `${unit.unitTitle || unit.unitLabel || `Unit ${unitIndex + 1}`} content is available for reading.`,
@@ -5733,31 +5668,24 @@ const BookContentWindowDemo = () => {
     }
 
     try {
-      const avatarExplanation = findEnrichedAvatarExplanationForSection(
-        activeChapter.enrichedDataFull || activeChapter.sourceContent,
-        currentGeniusSection,
-      );
       const geniusContext = JSON.stringify({
           unitId: String(activeChapter.id),
           sectionTitle: String(
             currentGeniusSection.title || currentGeniusSection.label,
           ),
-          subject: selectedBook?.subject || "",
+          section_title: String(
+            currentGeniusSection.title || currentGeniusSection.label,
+          ),
+          board: activeChapter.board || selectedBook?.board || null,
+          class_number: activeChapter.standard || selectedBook?.standard || null,
+          subject: activeChapter.subject || selectedBook?.subject || "",
+          unit_number: activeChapter.unit || null,
+          unit_name: activeChapter.unitTitle || activeChapter.title || "",
           unitTitle: activeChapter.unitTitle || activeChapter.title || "",
           bookTitle: selectedBook?.title || "",
           term: activeChapter.term || null,
           theme: isDark ? "dark" : "light",
           avatarTeacher: "man",
-          segments: Array.isArray(avatarExplanation?.segments)
-            ? avatarExplanation.segments
-            : null,
-          avatarExplanationMeta: avatarExplanation
-            ? {
-                teachingStyle: avatarExplanation.teaching_style || null,
-                totalDurationEstimate:
-                  avatarExplanation.total_duration_estimate || null,
-              }
-            : null,
         });
       sessionStorage.setItem("gradeup-avatar-genius-context", geniusContext);
       localStorage.setItem("gradeup-avatar-genius-context", geniusContext);

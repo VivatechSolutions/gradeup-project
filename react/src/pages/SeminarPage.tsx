@@ -17,6 +17,7 @@ import {
   getSeminarAiDocument,
   getSeminarSession,
   getSeminarTopics,
+  getUnitContent,
   guideSeminar,
   joinSeminarSession,
   removeSeminarParticipant,
@@ -2723,6 +2724,8 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
   const [unit, setUnit] = useState("");
   const [selectedUnitId, setSelectedUnitId] = useState("");
   const [seminarTopicCatalog, setSeminarTopicCatalog] = useState([]);
+  const [structuredSectionTopics, setStructuredSectionTopics] = useState([]);
+  const [structuredSectionsLoading, setStructuredSectionsLoading] = useState(false);
   const [topic, setTopic] = useState("");
   const [custom, setCustom] = useState("");
   const [seminarType, setSeminarType] = useState("instant");
@@ -2787,8 +2790,8 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
       })
       .map((item) => item.topic || item.title || item.name || item.label)
       .filter(Boolean);
-    return Array.from(new Set([...sectionTopics, ...fallbackTopics]));
-  }, [availableUnits, selectedUnitId, seminarTopicCatalog, unit]);
+    return Array.from(new Set([...structuredSectionTopics, ...sectionTopics, ...fallbackTopics]));
+  }, [availableUnits, selectedUnitId, seminarTopicCatalog, structuredSectionTopics, unit]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -2854,6 +2857,37 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
       ignore = true;
     };
   }, [subject]);
+
+  useEffect(() => {
+    let ignore = false;
+    async function loadStructuredSections() {
+      setStructuredSectionTopics([]);
+      if (!selectedUnitId) {
+        setStructuredSectionsLoading(false);
+        return;
+      }
+      setStructuredSectionsLoading(true);
+      try {
+        const structured = await getUnitContent(selectedUnitId, "structured");
+        const sectionLabels = extractStructuredSectionLabels(structured?.content);
+        if (!ignore) {
+          setStructuredSectionTopics(sectionLabels);
+        }
+      } catch {
+        if (!ignore) {
+          setStructuredSectionTopics([]);
+        }
+      } finally {
+        if (!ignore) {
+          setStructuredSectionsLoading(false);
+        }
+      }
+    }
+    loadStructuredSections();
+    return () => {
+      ignore = true;
+    };
+  }, [selectedUnitId]);
 
   useEffect(() => {
     if (topic && topic !== "__custom__" && !topicOptions.includes(topic)) {
@@ -3378,8 +3412,9 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
                 <div className="fi">
                   <select className="finput" value={topic} onChange={(event) => setTopic(event.target.value)} disabled={!selectedUnitId}>
                     <option value="">{selectedUnitId ? "Select a topic…" : "Select unit first"}</option>
+                    {structuredSectionsLoading && <option value="" disabled>Loading book sections…</option>}
                     {topicOptions.map((item) => <option key={item} value={item}>{item}</option>)}
-                    {!topicOptions.length && subject && <option value="" disabled>No data available</option>}
+                    {!structuredSectionsLoading && !topicOptions.length && subject && <option value="" disabled>No data available</option>}
                     <option value="__custom__">✏️ Custom topic…</option>
                   </select>
                 </div>
@@ -6904,6 +6939,45 @@ function CreateWithAIWorkspace({ config, onCancel }) {
 const POST_AUTH_REDIRECT_KEY = "gradeup_post_auth_redirect";
 const SEMINAR_GUEST_NAME_KEY = "gradeup_seminar_guest_name";
 const SEMINAR_GUEST_ID_KEY = "gradeup_seminar_guest_id";
+
+function normalizeStructuredLabel(value) {
+  return String(value ?? "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractStructuredSectionLabels(content) {
+  const unitContent = Array.isArray(content?.units)
+    ? content.units[0]
+    : Array.isArray(content)
+      ? content[0]
+      : content;
+  const sections = Array.isArray(unitContent?.sections) ? unitContent.sections : [];
+
+  return sections
+    .filter((section) => {
+      const sectionType = normalizeStructuredLabel(
+        section?.type || section?.kind || section?.section_type || section?.sectionType,
+      ).toLowerCase();
+      return sectionType === "section";
+    })
+    .map((section, index) => {
+      const title = normalizeStructuredLabel(
+        section?.title || section?.section_title || section?.sectionTitle,
+      );
+      const number = normalizeStructuredLabel(
+        section?.id ||
+          section?.section_id ||
+          section?.sectionId ||
+          section?.section_number ||
+          section?.sectionNumber,
+      );
+      const label = number ? `${number} ${title}`.trim() : title;
+      return label || title || `Section ${index + 1}`;
+    })
+    .filter(Boolean);
+}
 
 function navigateAfterSeminarExit(isGuest){
   window.location.href = isGuest ? "/auth" : "/dashboard";
