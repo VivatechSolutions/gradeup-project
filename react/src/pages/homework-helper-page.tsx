@@ -15,12 +15,16 @@ import { useAuth } from "../hooks/use-auth";
 import { useTheme } from "../hooks/use-theme";
 import Navigation from "../components/navigation";
 import {
+  getLibrarySubjects,
   getHomeworkChatHistory,
   getHomeworkChatSession,
   sendHomeworkChat,
+  type LibrarySubject,
+  type LibraryUnit,
   type HomeworkChatSession,
   type HomeworkChatSessionSummary,
 } from "../lib/gradeupApi";
+import { useLocation } from "wouter";
 import {
   useCallback,
   useEffect,
@@ -68,6 +72,7 @@ import {
 
 type Role = "user" | "assistant";
 type SubjectKey = "general" | "math" | "science" | "english" | "history" | "coding";
+type SubjectValue = SubjectKey | string;
 type ModeKey = "guided" | "full" | "check";
 type View = "chat" | "history";
 
@@ -75,7 +80,7 @@ interface AttachmentItem {
   id: string;
   name: string;
   size: number;
-  kind: "image" | "document" | "other";
+  kind: "image";
   previewUrl?: string;
   base64?: string;
 }
@@ -93,7 +98,7 @@ interface ChatSession {
   id: string;
   homeworkId?: string;
   title: string;
-  subject: SubjectKey;
+  subject: SubjectValue;
   mode: ModeKey;
   messages: Message[];
   updatedAt: string;
@@ -101,10 +106,15 @@ interface ChatSession {
   currentQuestion?: string;
   currentQuestionIndex?: number;
   totalQuestions?: number;
+  subjectGroupKey?: string | null;
+  unitId?: string | null;
+  unitTitle?: string | null;
   board?: string | null;
   classNumber?: string | null;
   unitNumber?: number | null;
   term?: string | null;
+  topicId?: string | null;
+  topicLabel?: string | null;
 }
 
 interface AppState {
@@ -208,14 +218,6 @@ const STARTERS: Record<SubjectKey, string[]> = {
   coding: ["Debug my code", "Explain this error", "Write pseudocode"],
 };
 
-const DEFAULT_HOMEWORK_CONTEXT = {
-  subject: "science" as SubjectKey,
-  board: "State Board",
-  classNumber: "10",
-  unitNumber: 2,
-  term: null as string | null,
-};
-
 const SYSTEM_PROMPTS: Record<ModeKey, (subject: string) => string> = {
   guided: (subject) => `You are GradeUp, a brilliant and friendly academic tutor. The student is in TUTOR MODE.
 
@@ -277,47 +279,69 @@ const relTime = (iso: string): string => {
 const mkSession = (): ChatSession => ({
   id: uid(),
   title: "New chat",
-  subject: DEFAULT_HOMEWORK_CONTEXT.subject,
+  subject: "",
   mode: "guided",
   messages: [],
   updatedAt: new Date().toISOString(),
-  board: DEFAULT_HOMEWORK_CONTEXT.board,
-  classNumber: DEFAULT_HOMEWORK_CONTEXT.classNumber,
-  unitNumber: DEFAULT_HOMEWORK_CONTEXT.unitNumber,
-  term: DEFAULT_HOMEWORK_CONTEXT.term,
+  subjectGroupKey: null,
+  unitId: null,
+  unitTitle: null,
+  board: null,
+  classNumber: null,
+  unitNumber: null,
+  term: null,
+  topicId: null,
+  topicLabel: null,
 });
 
 const normalizeSubject = (value?: string | null): SubjectKey => {
-  const key = (value || DEFAULT_HOMEWORK_CONTEXT.subject).toLowerCase();
-  return key in SUBJECTS ? (key as SubjectKey) : DEFAULT_HOMEWORK_CONTEXT.subject;
+  const key = (value || "general").toLowerCase();
+  if (key in SUBJECTS) return key as SubjectKey;
+  if (key.includes("math")) return "math";
+  if (key.includes("science") || key.includes("physics") || key.includes("chem") || key.includes("bio")) return "science";
+  if (key.includes("english")) return "english";
+  if (key.includes("history")) return "history";
+  return "general";
 };
+
+const getSubjectConfig = (value?: string | null) => SUBJECTS[normalizeSubject(value)];
 
 const sessionSummaryToChat = (item: HomeworkChatSessionSummary): ChatSession => ({
   id: item.homework_id,
   homeworkId: item.homework_id,
   title: item.title || "Homework chat",
-  subject: normalizeSubject(item.subject),
+  subject: item.subject || "",
   mode: "guided",
   messages: [],
   updatedAt: item.updated_at || item.assigned_at || new Date().toISOString(),
   status: item.status || undefined,
   currentQuestionIndex: item.current_question_index,
   totalQuestions: item.total_questions,
-  board: item.board || DEFAULT_HOMEWORK_CONTEXT.board,
-  classNumber: item.class_number || DEFAULT_HOMEWORK_CONTEXT.classNumber,
-  unitNumber: item.unit_number || DEFAULT_HOMEWORK_CONTEXT.unitNumber,
-  term: item.term || DEFAULT_HOMEWORK_CONTEXT.term,
+  subjectGroupKey: item.subject_group_key || null,
+  unitId: item.unit_id || null,
+  unitTitle: item.unit_title || null,
+  board: item.board || null,
+  classNumber: item.class_number || null,
+  unitNumber: item.unit_number || null,
+  term: item.term || null,
+  topicId: item.topic_id || null,
+  topicLabel: item.topic_label || null,
 });
 
 const sessionDetailToChat = (session: HomeworkChatSession): ChatSession => ({
   ...sessionSummaryToChat({
     homework_id: session.homework_id,
     title: session.title || "Homework chat",
+    subject_group_key: session.subject_group_key,
+    unit_id: session.unit_id,
+    unit_title: session.unit_title,
     subject: session.subject,
     unit_number: session.unit_number,
     board: session.board,
     class_number: session.class_number,
     term: session.term,
+    topic_id: session.topic_id,
+    topic_label: session.topic_label,
     status: session.status,
     message_count: session.chat_history?.length || 0,
     current_question_index: session.current_question_index,
@@ -346,7 +370,7 @@ const fileToBase64 = (file: File): Promise<string | undefined> =>
     reader.readAsDataURL(file);
   });
 
-const STORAGE_KEY = "gradeup-v3";
+const STORAGE_KEY = "gradeup-homework-helper-v4";
 
 function loadState(): AppState {
   try {
@@ -636,9 +660,38 @@ interface FileChipProps {
   removable?: boolean;
   onRemove?: () => void;
   dark?: boolean;
+  large?: boolean;
 }
 
-function FileChip({ file, removable, onRemove, dark }: FileChipProps) {
+function FileChip({ file, removable, onRemove, dark, large }: FileChipProps) {
+  if (large && file.previewUrl) {
+    return (
+      <div style={{
+        width: "100%",
+        maxWidth: 360,
+        borderRadius: 12,
+        overflow: "hidden",
+        border: `1px solid ${dark ? "rgba(255,255,255,.24)" : T.border}`,
+        background: dark ? "rgba(255,255,255,.12)" : T.panel2,
+      }}>
+        <img
+          src={file.previewUrl}
+          alt={file.name}
+          style={{ display: "block", width: "100%", maxHeight: 260, objectFit: "contain", background: "rgba(0,0,0,.08)" }}
+        />
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+          padding: "7px 9px", color: dark ? "#fff" : T.text, fontFamily: T.font,
+        }}>
+          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11, fontWeight: 700 }}>
+            {file.name}
+          </span>
+          <small style={{ fontSize: 10, opacity: 0.72, flexShrink: 0 }}>{fmtBytes(file.size)}</small>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
@@ -650,7 +703,7 @@ function FileChip({ file, removable, onRemove, dark }: FileChipProps) {
         flexShrink: 0, fontFamily: T.font,
       }}
     >
-      {file.kind === "image" && file.previewUrl ? (
+      {file.previewUrl ? (
         <img src={file.previewUrl} alt={file.name}
           style={{ width: 28, height: 28, borderRadius: 5, objectFit: "cover" }} />
       ) : (
@@ -828,7 +881,7 @@ function HistoryView({ sessions, activeId, onOpen, onDelete, onNew, onBack, bp }
           overflowY: "auto", flex: 1,
         }}>
           {sessions.map((s) => {
-            const sub = SUBJECTS[s.subject];
+            const sub = getSubjectConfig(s.subject);
             const mode = MODES[s.mode];
             const last = s.messages[s.messages.length - 1];
             const isActive = s.id === activeId;
@@ -900,12 +953,16 @@ function HistoryView({ sessions, activeId, onOpen, onDelete, onNew, onBack, bp }
 export default function HomeworkHelper() {
   useGlobalStyle();
   const bp = useBreakpoint();
+  const [location] = useLocation();
   const { user } = useAuth();
   const { isDark } = useTheme();
   T = isDark ? DARK_T : LIGHT_T;
 
   // ── App State ────────────────────────────────────────────
   const [appState, setAppState] = useState<AppState>(loadState);
+  const [subjectCatalog, setSubjectCatalog] = useState<LibrarySubject[]>([]);
+  const [subjectsLoading, setSubjectsLoading] = useState(false);
+  const [contextHydrated, setContextHydrated] = useState(false);
   const [view, setView] = useState<View>("chat");
   const [input, setInput] = useState("");
   const [pendingFiles, setPendingFiles] = useState<AttachmentItem[]>([]);
@@ -928,8 +985,19 @@ export default function HomeworkHelper() {
     () => appState.sessions.find((s) => s.id === appState.activeId) || appState.sessions[0],
     [appState]
   );
-  const subj = SUBJECTS[active?.subject ?? "general"];
+  const activeSubjectGroup = useMemo(
+    () => subjectCatalog.find((subject) => subject.subjectGroupKey === active?.subjectGroupKey) || null,
+    [subjectCatalog, active?.subjectGroupKey],
+  );
+  const availableUnits = activeSubjectGroup?.units || [];
+  const activeUnit = useMemo(
+    () => availableUnits.find((unit) => unit.id === active?.unitId) || null,
+    [availableUnits, active?.unitId],
+  );
+  const availableTopics = activeUnit?.sectionTopics || [];
+  const subj = getSubjectConfig(active?.subject);
   const modeConf = MODES[active?.mode ?? "guided"];
+  const hasRequiredContext = Boolean(active?.subjectGroupKey && active?.unitId);
 
   // ── Persist ───────────────────────────────────────────────
   useEffect(() => { saveState(appState); }, [appState]);
@@ -956,11 +1024,76 @@ export default function HomeworkHelper() {
 
   useEffect(() => {
     let cancelled = false;
+    async function loadSubjects() {
+      setSubjectsLoading(true);
+      try {
+        const data = await getLibrarySubjects();
+        if (!cancelled) setSubjectCatalog(data || []);
+      } catch (error) {
+        console.warn("Failed to load homework helper subjects", error);
+        if (!cancelled) setSubjectCatalog([]);
+      } finally {
+        if (!cancelled) setSubjectsLoading(false);
+      }
+    }
+    void loadSubjects();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (contextHydrated || !subjectCatalog.length) return;
+    const queryString = location.includes("?") ? location.split("?")[1] : "";
+    const params = new URLSearchParams(queryString);
+    const subjectGroupKey = params.get("subjectGroupKey");
+    const unitId = params.get("unitId");
+    if (!subjectGroupKey && !unitId) {
+      setContextHydrated(true);
+      return;
+    }
+
+    const subjectGroup =
+      subjectCatalog.find((item) => item.subjectGroupKey === subjectGroupKey) ||
+      subjectCatalog.find((item) => item.units.some((unit) => unit.id === unitId));
+    const unit =
+      subjectGroup?.units.find((item) => item.id === unitId) ||
+      subjectGroup?.units.find((item) => String(item.unitNumber || "") === String(params.get("unitNumber") || "")) ||
+      null;
+
+    if (subjectGroup && unit) {
+      setAppState((prev) => ({
+        ...prev,
+        sessions: prev.sessions.map((session) =>
+          session.id !== prev.activeId
+            ? session
+            : {
+                ...session,
+                subjectGroupKey: subjectGroup.subjectGroupKey,
+                subject: unit.subject || subjectGroup.subject,
+                unitId: unit.id,
+                unitTitle: unit.unitTitle || unit.unitLabel,
+                unitNumber: unit.unitNumber ?? null,
+                board: unit.board || subjectGroup.board,
+                classNumber: unit.standard || subjectGroup.standard,
+                term: unit.term || subjectGroup.term || null,
+                topicId: params.get("topicId"),
+                topicLabel: params.get("topic") || params.get("topicLabel"),
+              },
+        ),
+      }));
+    }
+    setContextHydrated(true);
+  }, [contextHydrated, location, subjectCatalog]);
+
+  useEffect(() => {
+    let cancelled = false;
     async function loadHomeworkHistory() {
       try {
         const history = await getHomeworkChatHistory();
         if (cancelled || !history.sessions?.length) return;
         const sessions = history.sessions.map(sessionSummaryToChat);
+        const hasUrlContext = location.includes("subjectGroupKey=") || location.includes("unitId=");
         const activeId = sessions[0].id;
         const activeDetail = await getHomeworkChatSession(activeId).catch(() => null);
         const hydratedSessions = activeDetail
@@ -970,10 +1103,19 @@ export default function HomeworkHelper() {
           : sessions;
         if (cancelled) return;
         setAppState((prev) => ({
-          sessions: hydratedSessions,
-          activeId: hydratedSessions.some((s) => s.id === prev.activeId)
+          sessions: hasUrlContext
+            ? [
+                ...prev.sessions,
+                ...hydratedSessions.filter(
+                  (session) => !prev.sessions.some((existing) => existing.id === session.id),
+                ),
+              ]
+            : hydratedSessions,
+          activeId: hasUrlContext
             ? prev.activeId
-            : activeId,
+            : hydratedSessions.some((s) => s.id === prev.activeId)
+              ? prev.activeId
+              : activeId,
         }));
       } catch (error) {
         console.warn("Failed to load homework chat history", error);
@@ -993,7 +1135,7 @@ export default function HomeworkHelper() {
     }));
   }, []);
 
-  const startNewChat = useCallback((overrides?: Partial<Pick<ChatSession, "subject" | "mode">>) => {
+  const startNewChat = useCallback((overrides?: Partial<ChatSession>) => {
     const s = mkSession();
     if (overrides) Object.assign(s, overrides);
     setAppState((prev) => ({ sessions: [s, ...prev.sessions], activeId: s.id }));
@@ -1059,24 +1201,88 @@ export default function HomeworkHelper() {
     setSidebarOpen(false);
   }, [patchActive]);
 
+  const selectSubjectGroup = useCallback((subjectGroupKey: string) => {
+    const subjectGroup = subjectCatalog.find((item) => item.subjectGroupKey === subjectGroupKey);
+    patchActive((session) => ({
+      ...session,
+      subjectGroupKey: subjectGroup?.subjectGroupKey || null,
+      subject: subjectGroup?.subject || "",
+      unitId: null,
+      unitTitle: null,
+      unitNumber: null,
+      board: subjectGroup?.board || null,
+      classNumber: subjectGroup?.standard || null,
+      term: subjectGroup?.term || null,
+      topicId: null,
+      topicLabel: null,
+      homeworkId: session.messages.length ? session.homeworkId : undefined,
+    }));
+  }, [patchActive, subjectCatalog]);
+
+  const selectUnit = useCallback((unitId: string) => {
+    const unit = availableUnits.find((item) => item.id === unitId);
+    patchActive((session) => ({
+      ...session,
+      subject: unit?.subject || activeSubjectGroup?.subject || session.subject,
+      unitId: unit?.id || null,
+      unitTitle: unit?.unitTitle || unit?.unitLabel || null,
+      unitNumber: unit?.unitNumber ?? null,
+      board: unit?.board || activeSubjectGroup?.board || session.board || null,
+      classNumber: unit?.standard || activeSubjectGroup?.standard || session.classNumber || null,
+      term: unit?.term || activeSubjectGroup?.term || null,
+      topicId: null,
+      topicLabel: null,
+    }));
+  }, [activeSubjectGroup, availableUnits, patchActive]);
+
+  const selectTopic = useCallback((topicId: string) => {
+    const topic = availableTopics.find((item) => item.id === topicId);
+    patchActive((session) => ({
+      ...session,
+      topicId: topic?.id || null,
+      topicLabel: topic?.label || topic?.sectionTitle || null,
+    }));
+  }, [availableTopics, patchActive]);
+
   // ── File Handling ─────────────────────────────────────────
   const handleFiles = useCallback(async (files: FileList | null) => {
     if (!files?.length) return;
-    const items = await Promise.all(
-      Array.from(files).map(async (f): Promise<AttachmentItem> => {
-        const kind: AttachmentItem["kind"] = f.type.startsWith("image/")
-          ? "image"
-          : f.type.includes("text") || /\.(txt|md|csv|json)$/i.test(f.name)
-          ? "document"
-          : "other";
-        const previewUrl = kind === "image" ? URL.createObjectURL(f) : undefined;
-        const base64 = kind === "image" ? await fileToBase64(f) : undefined;
-        return { id: uid(), name: f.name, size: f.size, kind, previewUrl, base64 };
-      })
-    );
-    setPendingFiles((prev) => [...prev, ...items]);
+    const imageFile = Array.from(files).find((file) => file.type.startsWith("image/"));
+    if (!imageFile) {
+      const aiMsg: Message = {
+        id: uid(),
+        role: "assistant",
+        content: "Only image attachments are supported right now.",
+        createdAt: new Date().toISOString(),
+        animate: true,
+      };
+      patchActive((session) => ({
+        ...session,
+        messages: [...session.messages, aiMsg],
+        updatedAt: new Date().toISOString(),
+      }));
+      if (fileRef.current) fileRef.current.value = "";
+      return;
+    }
+
+    const previewUrl = URL.createObjectURL(imageFile);
+    const base64 = await fileToBase64(imageFile);
+    const item: AttachmentItem = {
+      id: uid(),
+      name: imageFile.name,
+      size: imageFile.size,
+      kind: "image",
+      previewUrl,
+      base64,
+    };
+    setPendingFiles((prev) => {
+      prev.forEach((file) => {
+        if (file.previewUrl) URL.revokeObjectURL(file.previewUrl);
+      });
+      return [item];
+    });
     if (fileRef.current) fileRef.current.value = "";
-  }, []);
+  }, [patchActive]);
 
   const removeFile = useCallback((id: string) => {
     setPendingFiles((prev) => {
@@ -1101,11 +1307,26 @@ export default function HomeworkHelper() {
     const content = overrideText ?? input.trim();
     const attachments = overrideFiles ?? pendingFiles;
     if (!content && !attachments.length) return;
+    if (!active.homeworkId && !hasRequiredContext) {
+      const aiMsg: Message = {
+        id: uid(),
+        role: "assistant",
+        content: "Select a subject and unit first, then send your homework question.",
+        createdAt: new Date().toISOString(),
+        animate: true,
+      };
+      patchActive((session) => ({
+        ...session,
+        messages: [...session.messages, aiMsg],
+        updatedAt: new Date().toISOString(),
+      }));
+      return;
+    }
 
     const userMsg: Message = {
       id: uid(),
       role: "user",
-      content: content + (attachments.length ? `\n[Attached: ${attachments.map((a) => a.name).join(", ")}]` : ""),
+      content,
       createdAt: new Date().toISOString(),
       attachments,
       animate: false,
@@ -1129,16 +1350,20 @@ export default function HomeworkHelper() {
     }));
 
     try {
-      const imageBase64 = attachments.find((item) => item.kind === "image" && item.base64)?.base64 || null;
+      const imageBase64 = attachments[0]?.base64 || null;
       const result = await sendHomeworkChat({
         homeworkId: active.homeworkId || "new",
         message: content,
         imageBase64,
-        subject: active.subject || DEFAULT_HOMEWORK_CONTEXT.subject,
-        unitNumber: active.unitNumber || DEFAULT_HOMEWORK_CONTEXT.unitNumber,
-        board: active.board || DEFAULT_HOMEWORK_CONTEXT.board,
-        classNumber: active.classNumber || DEFAULT_HOMEWORK_CONTEXT.classNumber,
-        term: active.term || DEFAULT_HOMEWORK_CONTEXT.term,
+        subjectGroupKey: active.subjectGroupKey || null,
+        unitId: active.unitId || null,
+        unitTitle: active.unitTitle || null,
+        subject: active.subject || null,
+        unitNumber: active.unitNumber || null,
+        board: active.board || null,
+        classNumber: active.classNumber || null,
+        term: active.term || null,
+        // topicId/topicLabel disabled until reliable section topics are available.
       });
       const aiMsg: Message = {
         id: uid(),
@@ -1184,7 +1409,7 @@ export default function HomeworkHelper() {
     } finally {
       setLoading(false);
     }
-  }, [active, loading, input, pendingFiles]);
+  }, [active, hasRequiredContext, input, loading, patchActive, pendingFiles]);
 
   // ── Regenerate ────────────────────────────────────────────
   const regen = useCallback(() => {
@@ -1522,6 +1747,84 @@ export default function HomeworkHelper() {
           {/* ── Thin divider ── */}
           <div style={{ height: 1, background: T.border, margin: "0 12px 8px" }} />
 
+          {/* ── Real homework context selectors ── */}
+          <div style={{ padding: "0 12px 12px", display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
+            <div style={{
+              fontSize: 10, fontWeight: 700, textTransform: "uppercase",
+              letterSpacing: ".08em", color: T.muted,
+            }}>
+              Homework Context
+            </div>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: T.sub }}>Subject</span>
+              <select
+                value={active?.subjectGroupKey || ""}
+                onChange={(event) => selectSubjectGroup(event.target.value)}
+                disabled={subjectsLoading || loading}
+                style={{
+                  width: "100%", height: 34, borderRadius: 8,
+                  border: `1px solid ${T.border}`, background: T.panel2,
+                  color: T.text, font: `600 12px ${T.font}`, padding: "0 8px",
+                }}
+              >
+                <option value="">{subjectsLoading ? "Loading subjects..." : "Select subject"}</option>
+                {subjectCatalog.map((subject) => (
+                  <option key={subject.subjectGroupKey} value={subject.subjectGroupKey}>
+                    {subject.title || subject.subject}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: T.sub }}>Unit</span>
+              <select
+                value={active?.unitId || ""}
+                onChange={(event) => selectUnit(event.target.value)}
+                disabled={!active?.subjectGroupKey || loading}
+                style={{
+                  width: "100%", height: 34, borderRadius: 8,
+                  border: `1px solid ${T.border}`, background: T.panel2,
+                  color: T.text, font: `600 12px ${T.font}`, padding: "0 8px",
+                }}
+              >
+                <option value="">{active?.subjectGroupKey ? "Select unit" : "Select subject first"}</option>
+                {availableUnits.map((unit) => (
+                  <option key={unit.id} value={unit.id}>
+                    {unit.unitNumber ? `${unit.unitNumber}. ` : ""}{unit.unitTitle || unit.unitLabel}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {/* Topic selector is disabled for now until reliable unit topics are available. */}
+            {/* <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: T.sub }}>Topic</span>
+              <select
+                value={active?.topicId || ""}
+                onChange={(event) => selectTopic(event.target.value)}
+                disabled={!active?.unitId || !availableTopics.length || loading}
+                style={{
+                  width: "100%", height: 34, borderRadius: 8,
+                  border: `1px solid ${T.border}`, background: T.panel2,
+                  color: T.text, font: `600 12px ${T.font}`, padding: "0 8px",
+                }}
+              >
+                <option value="">{!active?.unitId ? "Select unit first" : availableTopics.length ? "Optional topic" : "No topics found"}</option>
+                {availableTopics.map((topic) => (
+                  <option key={topic.id} value={topic.id}>
+                    {topic.label}
+                  </option>
+                ))}
+              </select>
+            </label> */}
+            {!hasRequiredContext && (
+              <div style={{ fontSize: 11, lineHeight: 1.45, color: "#ef4444", background: "rgba(239,68,68,.08)", border: "1px solid rgba(239,68,68,.18)", borderRadius: 8, padding: "7px 8px" }}>
+                Select a subject and unit before starting.
+              </div>
+            )}
+          </div>
+
+          <div style={{ height: 1, background: T.border, margin: "0 12px 8px" }} />
+
           {/* ── Section label ── */}
           <div style={{
             fontSize: 10, fontWeight: 700, textTransform: "uppercase",
@@ -1540,7 +1843,7 @@ export default function HomeworkHelper() {
               </div>
             ) : (
               appState.sessions.map((s) => {
-                const sub = SUBJECTS[s.subject];
+                const sub = getSubjectConfig(s.subject);
                 const isA = s.id === appState.activeId;
                 return (
                   <button
@@ -1653,7 +1956,7 @@ export default function HomeworkHelper() {
                   Ask any question, upload files, or pick a starter below.
                 </p>
                 <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 8, marginTop: 8 }}>
-                  {STARTERS[active?.subject ?? "general"].map((s) => (
+                  {STARTERS[normalizeSubject(active?.subject)].map((s) => (
                     <button key={s} onClick={() => setInput(s)} style={{
                       padding: "9px 16px", borderRadius: 10,
                       border: `1px solid ${T.border}`, background: T.panel,
@@ -1691,8 +1994,8 @@ export default function HomeworkHelper() {
                       whiteSpace: "pre-wrap", overflowWrap: "anywhere",
                     }}>
                       {m.attachments?.length ? (
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
-                          {m.attachments.map((f) => <FileChip key={f.id} file={f} dark />)}
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: m.content ? 8 : 0 }}>
+                          {m.attachments.map((f) => <FileChip key={f.id} file={f} dark large />)}
                         </div>
                       ) : null}
                       {m.content}
@@ -1747,9 +2050,8 @@ export default function HomeworkHelper() {
               <input
                 ref={fileRef}
                 type="file"
-                multiple
                 style={{ display: "none" }}
-                accept="image/*,.pdf,.doc,.docx,.txt,.md,.csv,.json,.ppt,.pptx,.xls,.xlsx"
+                accept="image/*"
                 onChange={(e) => void handleFiles(e.target.files)}
               />
 
@@ -1812,14 +2114,15 @@ export default function HomeworkHelper() {
                   width: 36, height: 36, borderRadius: 10,
                   border: "none",
                   background: loading || (!input.trim() && !pendingFiles.length)
+                    || (!active?.homeworkId && !hasRequiredContext)
                     ? T.muted
                     : `linear-gradient(135deg, ${T.accent}, ${T.accent2})`,
                   color: "#fff", display: "grid", placeItems: "center",
-                  cursor: loading || (!input.trim() && !pendingFiles.length) ? "not-allowed" : "pointer",
+                  cursor: loading || (!input.trim() && !pendingFiles.length) || (!active?.homeworkId && !hasRequiredContext) ? "not-allowed" : "pointer",
                   flexShrink: 0,
                 }}
                 onClick={() => void send()}
-                disabled={loading || (!input.trim() && !pendingFiles.length)}
+                disabled={loading || (!input.trim() && !pendingFiles.length) || (!active?.homeworkId && !hasRequiredContext)}
               >
                 {loading
                   ? <Loader2 size={16} className="gu-spin" />
@@ -1834,7 +2137,7 @@ export default function HomeworkHelper() {
               maxWidth: bp.wide ? 1000 : "100%",
               margin: "7px auto 0",
             }}>
-              Supports images, PDFs, documents · Enter to send · Shift+Enter for new line
+              Supports one image attachment · Enter to send · Shift+Enter for new line
             </p>
           </div>
         </main>

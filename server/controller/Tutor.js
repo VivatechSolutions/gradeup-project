@@ -471,26 +471,63 @@ const controller = {
   async homeworkChat(req, res) {
     try {
       const candidate = getCandidatePayload(req.body);
+      const homeworkId = req.body.homeworkId || req.body.homework_id || "new";
+      const isNewHomework = homeworkId === "new" || homeworkId === "school";
+      let context = null;
+      if (
+        req.body.unitId ||
+        req.body.subjectUnitId ||
+        req.body.subjectGroupKey ||
+        req.body.unitNumber ||
+        req.body.unit_number
+      ) {
+        context = (await resolveLearningPayload(req.body)).context;
+      }
+
+      if (isNewHomework && !context) {
+        return res.status(400).json({
+          status: false,
+          message: "Select a subject and unit before starting homework helper.",
+        });
+      }
+
       const pythonPayload = {
         candidate_id: candidate.candidate_id,
-        homework_id: req.body.homeworkId || req.body.homework_id || "new",
+        homework_id: homeworkId,
         message: req.body.message || "",
         image_base64: req.body.imageBase64 || req.body.image_base64 || null,
-        subject: req.body.subject || null,
+        subject: context?.subject || req.body.subject || null,
         unit_number:
-          req.body.unitNumber !== undefined
+          context?.unitNumber !== undefined
+            ? Number(context.unitNumber)
+            : req.body.unitNumber !== undefined
             ? Number(req.body.unitNumber)
             : req.body.unit_number !== undefined
               ? Number(req.body.unit_number)
               : null,
-        board: req.body.board || null,
-        class_number: req.body.classNumber || req.body.class_number || null,
+        board: context?.board || req.body.board || null,
+        class_number: context?.classNumber || req.body.classNumber || req.body.class_number || null,
         term: req.body.term || null,
+        subject_group_key: req.body.subjectGroupKey || req.body.subject_group_key || null,
+        unit_id: req.body.unitId || req.body.unit_id || null,
+        unit_title: context?.unitName || req.body.unitTitle || req.body.unit_title || null,
+        topic_id: req.body.topicId || req.body.topic_id || null,
+        topic_label: req.body.topicLabel || req.body.topic_label || null,
       };
       const data = await callPython({
         method: "post",
         path: "/tutor/homework/chat",
-        data: pythonPayload,
+        data: {
+          candidate_id: pythonPayload.candidate_id,
+          homework_id: pythonPayload.homework_id,
+          message: pythonPayload.message,
+          image_base64: pythonPayload.image_base64,
+          subject: pythonPayload.subject,
+          unit_number: pythonPayload.unit_number,
+          board: pythonPayload.board,
+          class_number: pythonPayload.class_number,
+          term: pythonPayload.term,
+        },
       });
 
       await recordHomeworkChatTurn({

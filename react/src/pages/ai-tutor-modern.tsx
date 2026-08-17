@@ -1432,7 +1432,17 @@ export default function AITutorModern() {
 
   const [selectedSubject, setSelectedSubject] = useState<number>(0);
   const [availableUnits, setAvailableUnits] = useState<
-    { id: number; name: string; unitId?: string; subjectGroupKey?: string }[]
+    {
+      id: number;
+      name: string;
+      unitId?: string;
+      subjectGroupKey?: string;
+      unitNumber?: number | null;
+      board?: string;
+      classNumber?: string;
+      subject?: string;
+      term?: string | null;
+    }[]
   >([]);
   const [subjectCatalog, setSubjectCatalog] = useState<LibrarySubject[]>([]);
   const [subjectsLoading, setSubjectsLoading] = useState(true);
@@ -1845,6 +1855,11 @@ export default function AITutorModern() {
           name: unit.unitTitle || unit.unitLabel,
           unitId: unit.id,
           subjectGroupKey: unit.subjectGroupKey,
+          unitNumber: unit.unitNumber,
+          board: unit.board,
+          classNumber: unit.standard,
+          subject: unit.subject,
+          term: unit.term,
         })),
       );
     } else {
@@ -3267,7 +3282,25 @@ export default function AITutorModern() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.15 }}
-                // onClick={() => setRightPanelView("faq")}
+                onClick={() => {
+                  const unitMatch = availableUnits.find((unit) => unit.unitId === selectedUnitId || unit.name === selectedUnit);
+                  const p = new URLSearchParams();
+                  if (selectedSubjectData?.value && selectedSubjectData.value !== "all") {
+                    p.append("subjectGroupKey", selectedSubjectData.value);
+                  }
+                  if (selectedSubjectData?.label) p.append("subject", selectedSubjectData.label);
+                  if (selectedSubjectData?.board) p.append("board", selectedSubjectData.board);
+                  if (selectedSubjectData?.standard) p.append("classNumber", selectedSubjectData.standard);
+                  if (selectedUnit) p.append("unit", selectedUnit);
+                  if (selectedUnitId) p.append("unitId", selectedUnitId);
+                  if (unitMatch?.unitNumber !== undefined && unitMatch?.unitNumber !== null) {
+                    p.append("unitNumber", String(unitMatch.unitNumber));
+                  }
+                  if (unitMatch?.term) p.append("term", unitMatch.term);
+                  p.append("from", "/ai-tutor");
+                  setLocation(`/homework-helper?${p.toString()}`);
+                  if (isMobile) setIsRightPanelOpen(false);
+                }}
               >
                 <span className="at-ml-icon">💡</span>
                 <div className="at-ml-name">Homework Helper</div>

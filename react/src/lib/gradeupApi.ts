@@ -316,11 +316,16 @@ export type HomeworkChatResponse = {
 export type HomeworkChatSessionSummary = {
   homework_id: string;
   title: string;
+  subject_group_key?: string | null;
+  unit_id?: string | null;
+  unit_title?: string | null;
   subject?: string | null;
   unit_number?: number | null;
   board?: string | null;
   class_number?: string | null;
   term?: string | null;
+  topic_id?: string | null;
+  topic_label?: string | null;
   status?: string | null;
   message_count?: number;
   current_question_index?: number;
@@ -344,11 +349,16 @@ export async function sendHomeworkChat(payload: {
   homeworkId: string;
   message?: string;
   imageBase64?: string | null;
+  subjectGroupKey?: string | null;
+  unitId?: string | null;
+  unitTitle?: string | null;
   subject?: string | null;
   unitNumber?: number | null;
   board?: string | null;
   classNumber?: string | null;
   term?: string | null;
+  topicId?: string | null;
+  topicLabel?: string | null;
 }) {
   return apiFetch<HomeworkChatResponse>("/api/v1/tutor/homework/chat", {
     method: "POST",

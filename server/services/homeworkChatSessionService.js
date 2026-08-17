@@ -9,11 +9,16 @@ function normalizeSession(session) {
   return {
     homework_id: session.homeworkId,
     title: session.title,
+    subject_group_key: session.subjectGroupKey,
+    unit_id: session.unitId ? String(session.unitId) : null,
+    unit_title: session.unitTitle,
     subject: session.subject,
     unit_number: session.unitNumber,
     board: session.board,
     class_number: session.classNumber,
     term: session.term,
+    topic_id: session.topicId,
+    topic_label: session.topicLabel,
     status: session.status,
     action: session.action,
     message_count: session.messages?.length || 0,
@@ -61,6 +66,9 @@ async function recordHomeworkChatTurn({
     $set: {
       candidateName,
       title,
+      subjectGroupKey: request.subject_group_key || existing?.subjectGroupKey || null,
+      unitId: request.unit_id || existing?.unitId || null,
+      unitTitle: request.unit_title || existing?.unitTitle || null,
       subject: request.subject || existing?.subject || null,
       unitNumber:
         request.unit_number !== undefined && request.unit_number !== null
@@ -69,6 +77,8 @@ async function recordHomeworkChatTurn({
       board: request.board || existing?.board || null,
       classNumber: request.class_number || existing?.classNumber || null,
       term: request.term || existing?.term || null,
+      topicId: request.topic_id || existing?.topicId || null,
+      topicLabel: request.topic_label || existing?.topicLabel || null,
       status: response.status || existing?.status || "pending",
       action: response.action || existing?.action || null,
       currentQuestion: response.current_question || existing?.currentQuestion || null,
