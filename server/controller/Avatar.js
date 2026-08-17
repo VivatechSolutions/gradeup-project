@@ -44,9 +44,54 @@ function getSegments(payload) {
   return Array.isArray(segments) ? segments : [];
 }
 
-function findAvatarExplanationForSection(enrichedData, sectionTitle) {
+function sectionIdCandidates(section = {}) {
+  return [
+    section?.id,
+    section?.section_id,
+    section?.sectionId,
+    section?.number,
+    section?.sectionNumber,
+  ].map(cleanText).filter(Boolean);
+}
+
+function sectionTitleCandidates(section = {}) {
+  return [
+    section?.section_title,
+    section?.sectionTitle,
+    section?.title,
+    section?.heading,
+    section?.label,
+  ].map(cleanText).filter(Boolean);
+}
+
+function getSectionAvatarExplanation(section = {}) {
+  const enrichment = section?.section_enrichment || section?.enrichment || section;
+  const explanation = enrichment?.avatar_explanation;
+  return Array.isArray(explanation?.segments) && explanation.segments.length
+    ? explanation
+    : null;
+}
+
+function describeMatchedSection(section = {}, matchType = "") {
+  return {
+    match_type: matchType,
+    id: cleanText(section?.id || section?.section_id || section?.sectionId) || null,
+    type: cleanText(section?.type || section?.kind || section?.section_type) || null,
+    title:
+      cleanText(
+        section?.section_title ||
+          section?.sectionTitle ||
+          section?.title ||
+          section?.heading ||
+          section?.label,
+      ) || null,
+  };
+}
+
+function findAvatarExplanationForSection(enrichedData, sectionTitle, sectionId = "") {
   const target = normalizeSectionValue(sectionTitle);
-  if (!enrichedData || !target) return null;
+  const targetId = cleanText(sectionId);
+  if (!enrichedData || (!target && !targetId)) return null;
 
   const units = Array.isArray(enrichedData?.units)
     ? enrichedData.units
@@ -54,33 +99,66 @@ function findAvatarExplanationForSection(enrichedData, sectionTitle) {
       ? enrichedData
       : [enrichedData];
 
+  const sectionMatches = [];
   for (const unit of units) {
     const sections = Array.isArray(unit?.sections) ? unit.sections : [];
     for (const section of sections) {
       const sectionType = normalizeSectionValue(section?.type || section?.kind || section?.section_type);
       if (sectionType && sectionType !== "section") continue;
 
-      const candidates = [
-        section?.section_title,
-        section?.sectionTitle,
-        section?.title,
-        section?.heading,
-        section?.label,
-      ].map(normalizeSectionValue).filter(Boolean);
-      const matched = candidates.some(
-        (candidate) => candidate === target || candidate.includes(target) || target.includes(candidate),
-      );
-      if (!matched) continue;
+      const explanation = getSectionAvatarExplanation(section);
+      if (!explanation) continue;
 
-      const enrichment = section?.section_enrichment || section?.enrichment || section;
-      const explanation = enrichment?.avatar_explanation;
-      if (Array.isArray(explanation?.segments) && explanation.segments.length) {
-        return explanation;
-      }
+      const ids = sectionIdCandidates(section);
+      const titles = sectionTitleCandidates(section);
+      const normalizedTitles = titles.map(normalizeSectionValue).filter(Boolean);
+      sectionMatches.push({ section, explanation, ids, titles, normalizedTitles });
     }
   }
 
-  return null;
+  if (targetId) {
+    const idMatch = sectionMatches.find(({ ids }) =>
+      ids.some((candidate) => candidate.toLowerCase() === targetId.toLowerCase()),
+    );
+    if (idMatch) {
+      return {
+        explanation: idMatch.explanation,
+        matched_section: describeMatchedSection(idMatch.section, "exact_id"),
+      };
+    }
+  }
+
+  if (target) {
+    const exactMatch = sectionMatches.find(({ normalizedTitles }) =>
+      normalizedTitles.some((candidate) => candidate === target),
+    );
+    if (exactMatch) {
+      return {
+        explanation: exactMatch.explanation,
+        matched_section: describeMatchedSection(exactMatch.section, "exact_title"),
+      };
+    }
+
+    const fallbackMatches = sectionMatches
+      .filter(({ normalizedTitles }) =>
+        normalizedTitles.some((candidate) => candidate.includes(target)),
+      )
+      .sort((left, right) => {
+        const leftLength = Math.min(...left.normalizedTitles.map((title) => title.length));
+        const rightLength = Math.min(...right.normalizedTitles.map((title) => title.length));
+        return leftLength - rightLength;
+      });
+
+    if (fallbackMatches.length) {
+      const fallbackMatch = fallbackMatches[0];
+      return {
+        explanation: fallbackMatch.explanation,
+        matched_section: describeMatchedSection(fallbackMatch.section, "fallback_contains_requested_title"),
+      };
+    }
+  }
+
+  return { explanation: null, matched_section: null };
 }
 
 async function resolveAvatarUnitFromBody(source = {}) {
@@ -201,10 +279,13 @@ const controller = {
         });
       }
 
-      const avatarExplanation = findAvatarExplanationForSection(
+      const avatarSectionMatch = findAvatarExplanationForSection(
         unit.enrichedData,
         sectionTitle,
+        req.body.sectionId || req.body.section_id,
       );
+      const avatarExplanation = avatarSectionMatch?.explanation;
+      const matchedSection = avatarSectionMatch?.matched_section || null;
       const dbFilteredSegments = Array.isArray(avatarExplanation?.segments)
         ? avatarExplanation.segments
         : [];
@@ -300,7 +381,9 @@ const controller = {
             unit_number: unit.unitNumber || null,
             unit_name: unit.unitTitle || unit.chapterName || unit.unitLabel,
             section_title: sectionTitle,
+            matched_section: matchedSection,
           },
+          db_matched_section: matchedSection,
           db_filtered_segments: dbFilteredSegments,
           python_start_request_body: pythonStartRequestBody,
           python_response_segments: pythonResponseSegments,
@@ -310,7 +393,24 @@ const controller = {
           merged_segments: mergedSegments,
         },
       };
+      console.log(
+        "Avatar Start frontend_request_body:",
+        JSON.stringify(finalData.avatar_debug.frontend_request_body, null, 2),
+      );
 
+      console.log(
+        "Avatar Start db_lookup:",
+        JSON.stringify(finalData.avatar_debug.db_lookup, null, 2),
+      );
+      console.log(
+        "Avatar Start db_filtered_segments:",
+        JSON.stringify(finalData.avatar_debug.db_filtered_segments, null, 2),
+      );
+
+    console.log(
+        "Avatar Start python_response_segments:",
+        JSON.stringify(finalData.avatar_debug.python_response_segments, null, 2),
+      );
       return res.status(200).json({ status: true, data: finalData });
     } catch (error) {
       return res.status(error.statusCode || 500).json({
@@ -361,7 +461,7 @@ const controller = {
         return res.status(400).json({
           status: false,
           message: "Session id is required.",
-        });
+        }); 
       }
 
       const data = await callPython({

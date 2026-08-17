@@ -17,6 +17,7 @@ import {
   raiseAvatarHand,
   resumeAvatarSession,
   startAvatarSession,
+  synthesizeDebateSpeech,
 } from "../../lib/gradeupApi";
 
 type GeniusContext = {
@@ -111,9 +112,9 @@ function flashcardSpeechText(segment: AvatarSegment | null) {
     const options = Object.entries(segment.options || {})
       .map(([option, text]) => `Option ${option}. ${text}`)
       .join(". ");
-    return [segment.avatar_line, question, options].filter(Boolean).join(". ");
+    return [question, options].filter(Boolean).join(". ");
   }
-  return segment.front || segment.avatar_line || "";
+  return [segment.avatar_line, segment.front].filter(Boolean).join(". ");
 }
 
 function emotionClass(value = "") {
@@ -199,8 +200,9 @@ export default function AvatarGeniusView() {
   const [isResuming, setIsResuming] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioKeyRef = useRef("");
-  const speechKeyRef = useRef("");
-  const speechUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const flashcardAudioCacheRef = useRef<Record<string, string>>({});
+  const mediaRequestTokenRef = useRef(0);
+  const statusRef = useRef(status);
   const fallbackTimerRef = useRef<number | null>(null);
   const wasPlayingBeforeDoubtRef = useRef(false);
   const endedRef = useRef(false);
@@ -223,6 +225,10 @@ export default function AvatarGeniusView() {
     [segments],
   );
   const teacherName = teacher === "woman" ? "Prof. Maya" : "Prof. Nova";
+
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
 
   useEffect(() => {
     const ctx = readContext();
@@ -275,6 +281,7 @@ export default function AvatarGeniusView() {
         setSegments(nextSegments);
         setIndex(0);
         setRaiseHandChat([]);
+        flashcardAudioCacheRef.current = {};
         setStatus("playing");
       } catch (err: any) {
         if (!cancelled) {
@@ -314,9 +321,6 @@ export default function AvatarGeniusView() {
     }
 
     clearFallbackTimer();
-    window.speechSynthesis?.cancel();
-    speechKeyRef.current = "";
-    speechUtteranceRef.current = null;
 
     const nextAudioKey = `${currentKey}:${teacher}:${audioUrl}`;
     if (audioRef.current && audioKeyRef.current === nextAudioKey) {
@@ -370,6 +374,8 @@ export default function AvatarGeniusView() {
 
   function stopCurrentMedia() {
     clearFallbackTimer();
+    mediaRequestTokenRef.current += 1;
+    statusRef.current = status === "completed" || status === "error" ? status : "paused";
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.onended = null;
@@ -377,38 +383,25 @@ export default function AvatarGeniusView() {
       audioRef.current = null;
     }
     audioKeyRef.current = "";
-    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
-    speechKeyRef.current = "";
-    speechUtteranceRef.current = null;
   }
 
   function pauseCurrentMedia() {
     clearFallbackTimer();
     audioRef.current?.pause();
-    if ("speechSynthesis" in window && window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
-      window.speechSynthesis.pause();
+    if (status === "playing") {
+      statusRef.current = "paused";
+      setStatus("paused");
     }
-    if (status === "playing") setStatus("paused");
   }
 
   function resumeCurrentMedia() {
     if (status === "completed" || status === "error" || status === "loading") return;
+    statusRef.current = "playing";
     setStatus("playing");
-    if (displayType === "flashcard" && "speechSynthesis" in window && window.speechSynthesis.paused) {
-      window.speechSynthesis.resume();
-    }
   }
 
-  function playFlashcardSpeech(segment: AvatarSegment) {
-    if (!("speechSynthesis" in window)) {
-      handleAudioEnded(segment);
-      return;
-    }
-
+  async function playFlashcardSpeech(segment: AvatarSegment) {
     clearFallbackTimer();
-    if (audioRef.current) audioRef.current.pause();
-    audioRef.current = null;
-    audioKeyRef.current = "";
 
     const speechText = flashcardSpeechText(segment);
     if (!speechText.trim()) {
@@ -416,24 +409,58 @@ export default function AvatarGeniusView() {
       return;
     }
 
-    if (speechKeyRef.current === currentKey && window.speechSynthesis.paused) {
-      window.speechSynthesis.resume();
+    const flashcardKey = `${currentKey}:${teacher}:${speechText}`;
+    const cachedAudioUrl = flashcardAudioCacheRef.current[flashcardKey];
+    const nextAudioKey = `flashcard:${flashcardKey}`;
+
+    if (audioRef.current && audioKeyRef.current === nextAudioKey) {
+      audioRef.current.playbackRate = speed;
+      audioRef.current.play().catch(() => {
+        setError("Tap Play if your browser blocked autoplay.");
+        setStatus("paused");
+      });
       return;
     }
-    if (speechKeyRef.current === currentKey && window.speechSynthesis.speaking) return;
 
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(speechText);
-    utterance.rate = speed;
-    utterance.pitch = teacher === "woman" ? 1.08 : 0.95;
-    utterance.onend = () => handleAudioEnded(segment);
-    utterance.onerror = () => {
-      setError("Flashcard speech could not be played.");
+    const requestToken = mediaRequestTokenRef.current;
+    let audioUrl = cachedAudioUrl;
+    if (!audioUrl) {
+      try {
+        const response = await synthesizeDebateSpeech({
+          text: speechText,
+          voice: teacher === "woman" ? "shimmer" : "echo",
+          format: "mp3",
+        });
+        audioUrl = response?.dataUrl || "";
+        if (audioUrl) flashcardAudioCacheRef.current[flashcardKey] = audioUrl;
+      } catch (err: any) {
+        setError(err?.message || "Flashcard audio could not be generated.");
+        handleAudioEnded(segment);
+        return;
+      }
+    }
+
+    if (!audioUrl) {
+      handleAudioEnded(segment);
+      return;
+    }
+
+    if (requestToken !== mediaRequestTokenRef.current || statusRef.current !== "playing") return;
+
+    if (audioRef.current) audioRef.current.pause();
+    const audio = new Audio(audioUrl);
+    audio.playbackRate = speed;
+    audioRef.current = audio;
+    audioKeyRef.current = nextAudioKey;
+    audio.onended = () => handleAudioEnded(segment);
+    audio.onerror = () => {
+      setError("Flashcard audio could not be played.");
       handleAudioEnded(segment);
     };
-    speechKeyRef.current = currentKey;
-    speechUtteranceRef.current = utterance;
-    window.speechSynthesis.speak(utterance);
+    audio.play().catch(() => {
+      setError("Tap Play if your browser blocked autoplay.");
+      setStatus("paused");
+    });
   }
 
   function openDoubtModal() {
@@ -567,6 +594,7 @@ export default function AvatarGeniusView() {
   }
 
   function submitMcq() {
+    stopCurrentMedia();
     const answer = String(answers[currentKey] || "").trim().toUpperCase();
     const correctAnswer = String(display?.answer || "").trim().toUpperCase();
     if (!answer || !correctAnswer) return;

@@ -101,6 +101,18 @@ function summarizePptResponse(data = {}) {
   };
 }
 
+function normalizePptSessionStartPayload(payload = {}) {
+  const next = { ...payload };
+  const classNumber = String(next.class_number ?? next.classNumber ?? "").trim();
+  if (/^0+[1-9]$/.test(classNumber)) {
+    next.class_number = String(Number(classNumber));
+  } else if (classNumber) {
+    next.class_number = classNumber;
+  }
+  delete next.classNumber;
+  return next;
+}
+
 async function proxyPptRequest(req, res, { pythonPath, label, logResponse = false }) {
   if (!addonRequestAllowed(req)) {
     return res.status(401).json({ status: false, message: "Invalid add-on API key" });
@@ -282,7 +294,7 @@ async function resolveLiveSessionAndPythonSessionId(sessionId) {
 
 const controller = {
   async pptSessionStart(req, res) {
-    const requestPayload = req.body || {};
+    const requestPayload = normalizePptSessionStartPayload(req.body || {});
     const startedAt = Date.now();
     console.log("[seminar:ppt:session-start] request", summarizePptPayload(requestPayload));
 
