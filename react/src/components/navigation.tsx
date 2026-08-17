@@ -325,6 +325,7 @@ const PAGE_LABELS: Record<string, string> = {
   "/meetingPage":              "Meeting",
   "/exam-preparation":         "Exam Prep",
   "/main-exam":                "Main Exam",
+  "/studio/question-bank":     "Question Bank",
   "/studio/quiz-bank":         "Quiz Bank",
   "/studio/quiz":              "Quiz",
   "/students":                 "My Students",
@@ -357,6 +358,10 @@ const DASHBOARD_ROOTS = new Set(["/", "/dashboard"]);
 const MAX_HISTORY = 50;
 const NAV_HISTORY_KEY = "gradeup_nav_history_v1";
 const stripQuery = (path: string) => path.split("?")[0];
+const getQueryParam = (path: string, key: string) => {
+  const query = path.split("?")[1] || "";
+  return new URLSearchParams(query).get(key);
+};
 
 export default function Navigation({ currentRole }: NavigationProps) {
   const { user, logoutMutation } = useAuth();
@@ -401,6 +406,13 @@ export default function Navigation({ currentRole }: NavigationProps) {
   }, [location]);
 
   const goBack = useCallback(() => {
+    const explicitFrom = getQueryParam(location, "from");
+    if (explicitFrom) {
+      isNavigatingBack.current = true;
+      setLocation(explicitFrom);
+      return;
+    }
+
     const stack = historyStack.current;
     while (stack.length > 0 && stack[stack.length - 1] === location) stack.pop();
     while (
@@ -433,6 +445,13 @@ export default function Navigation({ currentRole }: NavigationProps) {
   })();
 
   const prevLabel = (() => {
+    const explicitFrom = getQueryParam(location, "from");
+    if (explicitFrom) {
+      return Object.entries(PAGE_LABELS)
+        .sort((a, b) => b[0].length - a[0].length)
+        .find(([k]) => explicitFrom.startsWith(k))?.[1] ?? "Back";
+    }
+
     const stack = historyStack.current;
     const candidates = stack.slice(0, -1);
     while (

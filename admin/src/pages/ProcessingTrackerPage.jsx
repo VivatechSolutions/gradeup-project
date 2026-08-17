@@ -313,7 +313,10 @@ export default function ProcessingTrackerPage() {
                     {selectedUpload.units.map((unit) => (
                       <tr key={unit.id}>
                         <td>{unit.documentId}</td>
-                        <td>{unit.unitTitle}</td>
+                        <td>
+                          {unit.unitLabel || unit.unitTitle}
+                          {unit.chapterName ? ` - ${unit.chapterName}` : ""}
+                        </td>
                         <td>
                           <span className="status-pill success">Done</span>
                         </td>

@@ -14,6 +14,7 @@ const {
   normalizeTerm,
   subjectIdentityKey,
 } = require("../utils/subjectIdentity");
+const { normalizeUnitMetadata } = require("../utils/unitMetadata");
 
 function formatTimestamp(date = new Date()) {
   const pad = (value) => String(value).padStart(2, "0");
@@ -251,11 +252,7 @@ function buildSubjectGroupKeyWithPartTerm(unit) {
 }
 
 function buildUnitLabel(unitNumber, fallbackTitle) {
-  if (typeof unitNumber === "number" && !Number.isNaN(unitNumber)) {
-    return `Unit ${unitNumber}`;
-  }
-
-  return fallbackTitle || "Unit";
+  return normalizeUnitMetadata({ unitNumber, fallbackTitle }).unitLabel;
 }
 
 function getReaderIndex(structuredData) {
@@ -443,10 +440,16 @@ async function createOrUpdateSubjectUnit({
   const structuredUnit =
     normalizedStructuredData?.units?.[0] || normalizedStructuredData || {};
   const enrichedUnit = normalizedEnrichedData?.units?.[0] || {};
-  const resolvedUnitNumber =
-    structuredUnit?.unit_number ?? enrichedUnit?.unit_number ?? null;
-  const resolvedUnitTitle =
-    structuredUnit?.title || enrichedUnit?.title || requestedTitle;
+  const unitMetadata = normalizeUnitMetadata({
+    unitNumber: pythonResponse?.unit_number,
+    unitTitle: pythonResponse?.unit_title,
+    chapterName: pythonResponse?.chapter_name,
+    fallbackTitle: requestedTitle,
+    structuredUnit,
+    enrichedUnit,
+    debateTopicsData: normalizedDebateTopicsData,
+  });
+  const resolvedUnitNumber = unitMetadata.unitNumber;
   const resolvedPart = parsePart(structuredUnit?.part || pythonResponse?.part || part);
   const resolvedTerm = parseTerm(structuredUnit?.term || pythonResponse?.term || term);
   const pythonDocumentId = pythonResponse.document_id;
@@ -472,9 +475,9 @@ async function createOrUpdateSubjectUnit({
     partSequence: getPartSequence(resolvedPart),
     termSequence: getTermSequence(resolvedTerm),
     unitNumber: resolvedUnitNumber,
-    unitTitle: resolvedUnitTitle,
-    unitLabel: buildUnitLabel(resolvedUnitNumber, requestedTitle),
-    chapterName: requestedTitle,
+    unitTitle: unitMetadata.unitTitle,
+    unitLabel: unitMetadata.unitLabel,
+    chapterName: unitMetadata.chapterName,
     processing: {
       status: "completed",
       message: pythonResponse?.message || "Processed successfully",
@@ -526,6 +529,12 @@ async function processSingleUnitUpload(upload) {
     for (let fileIndex = 0; fileIndex < filePaths.length; fileIndex++) {
       const filePath = filePaths[fileIndex];
       const metadata = fileMetadata[fileIndex] || {};
+      const requestedUnitMetadata = normalizeUnitMetadata({
+        unitNumber: metadata.unitNumber,
+        chapterName: metadata.chapterName,
+        unitTitle: metadata.unitTitle,
+        fallbackTitle: upload.unitOrChapterName,
+      });
 
       try {
         if (!fs.existsSync(filePath)) {
@@ -563,8 +572,8 @@ async function processSingleUnitUpload(upload) {
             skip_enrichment: upload.skipEnrichment,
             skip_qdrant: upload.skipQdrant,
             skip_llm_refinement: upload.skipLlmRefinement,
-            unit_title: metadata.unitTitle || upload.unitOrChapterName,
-            unit_number: metadata.unitNumber || null,
+            unit_title: requestedUnitMetadata.chapterName,
+            unit_number: requestedUnitMetadata.unitNumber,
             part: metadata.part || upload.part || null,
             term: metadata.term || upload.term || null,
           },
@@ -603,12 +612,22 @@ async function processSingleUnitUpload(upload) {
               `${pythonBaseUrl}/debate-topics/${pythonDocId}`,
             )
           : null;
+        const normalizedStructured = appendImageUrlsLast(structuredData);
+        const normalizedEnriched = appendImageUrlsLast(enrichedData);
+        const structuredUnit = normalizedStructured?.units?.[0] || {};
+        const enrichedUnit = normalizedEnriched?.units?.[0] || {};
+        const storedUnitMetadata = normalizeUnitMetadata({
+          ...requestedUnitMetadata,
+          structuredUnit,
+          enrichedUnit,
+          debateTopicsData,
+        });
 
         const documentId = await resolveSubjectUnitDocumentId({
           pythonDocumentId: pythonDocId,
           uploadId: upload._id,
           subjectGroupKey: upload.subjectGroupKey,
-          unitNumber: null,
+          unitNumber: storedUnitMetadata.unitNumber,
         });
 
         const parsedPart =
@@ -619,8 +638,6 @@ async function processSingleUnitUpload(upload) {
           metadata.term || upload.term
             ? parseTerm(metadata.term || upload.term)
             : null;
-
-        const normalizedStructured = appendImageUrlsLast(structuredData);
 
         const subjectUnit = new SubjectUnit({
           uploadId: upload._id,
@@ -634,13 +651,10 @@ async function processSingleUnitUpload(upload) {
           term: parsedTerm,
           partSequence: getPartSequence(parsedPart),
           termSequence: getTermSequence(parsedTerm),
-          unitNumber: null,
-          unitTitle: metadata.unitTitle || upload.unitOrChapterName || "Unit",
-          unitLabel: buildUnitLabel(
-            null,
-            metadata.unitTitle || upload.unitOrChapterName,
-          ),
-          chapterName: metadata.unitTitle || upload.unitOrChapterName || null,
+          unitNumber: storedUnitMetadata.unitNumber,
+          unitTitle: storedUnitMetadata.unitTitle,
+          unitLabel: storedUnitMetadata.unitLabel,
+          chapterName: storedUnitMetadata.chapterName,
           originalFileName: path.basename(filePath),
           uploadedBy: upload.uploadedBy,
           processing: {
@@ -650,7 +664,7 @@ async function processSingleUnitUpload(upload) {
             processedAt: new Date(),
           },
           structuredData: normalizedStructured,
-          enrichedData: appendImageUrlsLast(enrichedData),
+          enrichedData: normalizedEnriched,
           debateTopics: debateTopicsData || null,
           readerIndex: getReaderIndex(normalizedStructured),
         });
@@ -1104,6 +1118,8 @@ async function handleAdminSubjectUpload(req) {
   let part = parsePart(pickField(fields, "part"));
   let term = parseTerm(pickField(fields, "term"));
   const unitOrChapterName = pickField(fields, "unitOrChapterName");
+  const unitNumber = pickField(fields, "unitNumber");
+  const chapterName = pickField(fields, "chapterName") || unitOrChapterName;
   const processingMode = normalizeProcessingMode(
     pickField(fields, "processingMode"),
   );
@@ -1152,12 +1168,12 @@ async function handleAdminSubjectUpload(req) {
 
       subjectGroupKey = createSubjectGroupKey({ board, standard, subject, part, term });
     } else {
-      subjectGroupKey = existingGroup.subjectGroupKey;
       board = existingGroup.board;
       standard = existingGroup.standard;
       subject = existingGroup.subject;
-      part = existingGroup.part || null;
-      term = existingGroup.term || null;
+      part = part || existingGroup.part || null;
+      term = term || existingGroup.term || null;
+      subjectGroupKey = createSubjectGroupKey({ board, standard, subject, part, term });
     }
   } else {
     subjectGroupKey = createSubjectGroupKey({ board, standard, subject, part, term });
@@ -1169,9 +1185,9 @@ async function handleAdminSubjectUpload(req) {
     throw error;
   }
 
-  if (requiresUnitTitle && !unitOrChapterName) {
+  if (requiresUnitTitle && !chapterName) {
     const error = new Error(
-      "unitOrChapterName is required for single unit processing",
+      "chapterName is required for single unit processing",
     );
     error.statusCode = 400;
     throw error;
@@ -1210,8 +1226,9 @@ async function handleAdminSubjectUpload(req) {
     const metadata = fileMetadataField
       ? JSON.parse(fileMetadataField)
       : {
-          unitTitle: isMultiFile ? `Unit ${i + 1}` : unitOrChapterName,
-          unitNumber: isMultiFile ? i + 1 : null,
+          chapterName: isMultiFile ? "" : chapterName,
+          unitTitle: isMultiFile ? `Unit ${i + 1}` : chapterName,
+          unitNumber: isMultiFile ? i + 1 : unitNumber,
           part: part || null,
           term: term || null,
         };
@@ -1234,8 +1251,8 @@ async function handleAdminSubjectUpload(req) {
     standard,
     subject,
     subjectGroupKey,
-    uploadTitle: unitOrChapterName || subject,
-    unitOrChapterName: unitOrChapterName || null,
+    uploadTitle: chapterName || subject,
+    unitOrChapterName: chapterName || null,
     part: parsedPart,
     term: parsedTerm,
     originalFileName: filesToProcess

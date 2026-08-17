@@ -756,20 +756,28 @@ export default function QuestionBank() {
       try {
         const queryString = `board=${encodeURIComponent(board)}&classNumber=${encodeURIComponent(classNumber)}&subject=${encodeURIComponent(subject)}&subjectGroupKey=${encodeURIComponent(subjectGroupKey)}`;
         const response = await fetch(
-          `${process.env.REACT_APP_API_BASE_URL}/api/v1/tutor/tutor/question-bank?${queryString}`
+          `${process.env.REACT_APP_API_BASE_URL}/api/v1/tutor/tutor/question-bank?${queryString}`,
+          { credentials: "include" },
         );
+        const data: QuestionBankResponse & { message?: string } = await response
+          .json()
+          .catch(() => ({ status: false }));
 
         if (!response.ok) {
-          throw new Error(`API Error: ${response.statusText}`);
+          if (response.status === 401 || response.status === 403 || response.status === 410) {
+            throw new Error("Your session has expired. Please sign in again.");
+          }
+          if (response.status === 404) {
+            throw new Error("Question bank not added");
+          }
+          throw new Error(data?.message || `API Error: ${response.statusText}`);
         }
-
-        const data: QuestionBankResponse = await response.json();
 
         if (data.status && data.data) {
         const bankData = Array.isArray(data.data) ? data.data : [data.data];
           setApiDataList(bankData);
         } else {
-          setError("Invalid response format");
+          setError(data?.message || "Question bank not added");
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to fetch data");

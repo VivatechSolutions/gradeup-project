@@ -32,7 +32,7 @@ import ProfilePage from "./pages/profile-page";
 import SettingsPage from "./pages/settings-page";
 import NotificationPage from "./pages/notification-page";
 import ForgotPasswordPage from "./pages/forgot-password-page";
-import GroupChatPage from "./pages/group-chat-page";
+import CommunityNewPage from "./pages/CommunityPage";
 import GroupChatJoinPage from "./pages/group-chat-join-page";
 import Landing from "./pages/landing";
 import NotFound from "./pages/not-found";
@@ -143,7 +143,7 @@ function AppWithAuth() {
         <ProtectedRoute path="/enhanced-content-manager" component={withTeacherLayout(EnhancedContentManager, { showSidebar: false })} />
         <ProtectedRoute path="/analytics" component={withTeacherLayout(AnalyticsPage, { showSidebar: false })} />
         <ProtectedRoute path="/community" component={CommunityPage} />
-        <ProtectedRoute path="/communityNew" component={GroupChatPage} />
+        <ProtectedRoute path="/communityNew" component={CommunityNewPage} />
         <ProtectedRoute path="/group-chat/join/:token" component={(params) => <GroupChatJoinPage token={params.token} />} />
         <ProtectedRoute path="/preparation-exam" component={PreparationExamPage} />
         <ProtectedRoute path="/main-exam" component={MainExamPage} />

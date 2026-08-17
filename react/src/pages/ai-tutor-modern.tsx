@@ -4328,7 +4328,7 @@ export default function AITutorModern() {
                       className="at-ml-card indigo"
                       onClick={() => {
                         setLocation(
-                          `/studio/question-bank?subjectId=${selectedSubject !== 0 ? selectedSubject : ""}&from=/ai-tutor`,
+                          `/studio/question-bank?subjectGroupKey=${selectedSubjectData?.value}&classNumber=${selectedSubjectData?.standard}&board=${selectedSubjectData?.board}&subject=${selectedSubjectData?.label}&from=/ai-tutor`,
                         );
                         setIsRightPanelOpen(false);
                       }}

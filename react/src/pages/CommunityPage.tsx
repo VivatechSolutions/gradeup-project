@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { io, Socket } from "socket.io-client";
 import { Button } from "../components/ui/button";
 import { ScrollArea } from "../components/ui/scroll-area";
 import {
@@ -92,6 +93,7 @@ import { useAuth } from "../hooks/use-auth";
 import Navigation from "../components/navigation";
 import { useMeetingSystem } from "./MeetingModalSystem";
 import FunnyLoader from "../components/ui/FunnyLoader";
+import { API_BASE_URL, buildApiUrl } from "../lib/apiBase";
 /* ─────────────────────────────────────────────────────────────
    CSS — matches dashboard design tokens exactly
    #6366f1 accent · #8b5cf6 purple · #ec4899 pink
@@ -1040,10 +1042,16 @@ const MsgBubble = ({
             >
               {msg.fileName}
             </span>
-            <Download
-              size={13}
-              style={{ color: "#94a3b8", cursor: "pointer", flexShrink: 0 }}
-            />
+            {msg.downloadUrl ? (
+              <a href={buildApiUrl(msg.downloadUrl)} target="_blank" rel="noreferrer" style={{ color: "#94a3b8", display: "flex", flexShrink: 0 }}>
+                <Download size={13} />
+              </a>
+            ) : (
+              <Download
+                size={13}
+                style={{ color: "#94a3b8", cursor: "pointer", flexShrink: 0 }}
+              />
+            )}
           </div>
         ) : (
           <div
@@ -1184,15 +1192,166 @@ const PageLoader = () => (
   </div>
 );
 
+const DEFAULT_CHANNEL_ID = "general";
+const liveMsgKey = (groupId: string) => `${groupId}_${DEFAULT_CHANNEL_ID}`;
+const EMPTY_LIVE_DATA = {
+  ...INIT,
+  servers: [],
+  channels: {} as Record<string, any[]>,
+  messages: {} as Record<string, any[]>,
+  members: {} as Record<string, any[]>,
+  pinnedMessageId: null,
+};
+
+async function groupChatApi<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const isForm = options.body instanceof FormData;
+  const res = await fetch(buildApiUrl(path), {
+    credentials: "include",
+    ...options,
+    headers: {
+      ...(isForm ? {} : { "Content-Type": "application/json" }),
+      ...(options.headers || {}),
+    },
+  });
+  const payload = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(payload?.message || "Request failed");
+  return payload?.data ?? payload;
+}
+
+function mapLiveGroup(group: any) {
+  return {
+    id: group.id,
+    name: group.name,
+    icon: group.icon || "🎓",
+    description: group.description || "",
+    category: group.category || "Community",
+    memberCount: group.memberCount || group.members?.length || 0,
+    isPrivate: false,
+    adminId: group.adminId,
+    adminRole: group.adminRole,
+  };
+}
+
+function mapLiveMember(member: any) {
+  return {
+    id: `${member.userRole || "student"}:${member.id}`,
+    userId: member.id,
+    userRole: member.userRole || "student",
+    name: member.name || member.email || "Member",
+    status: member.status || "Away",
+    role: member.role || "Member",
+    grade: member.classNumber ? `Class ${member.classNumber}` : member.tag || "",
+    email: member.email,
+    joined: member.joined,
+    lastSeenAt: member.lastSeenAt,
+  };
+}
+
+function formatMessageTime(value: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function mapLiveMessage(message: any, currentUserId?: string) {
+  return {
+    id: message.id,
+    groupId: message.groupId,
+    senderId: message.senderId,
+    senderRole: message.senderRole,
+    user: message.senderId === currentUserId ? "You" : message.user || "Member",
+    text: message.text || "",
+    timestamp: formatMessageTime(message.timestamp || message.createdAt),
+    createdAt: message.createdAt || message.timestamp,
+    role: message.role || "Member",
+    isAI: message.type === "system",
+    isFile: Boolean(message.isFile || message.type === "attachment"),
+    fileName: message.fileName || message.attachment?.fileName,
+    attachment: message.attachment,
+    downloadUrl: message.attachment?.downloadUrl,
+  };
+}
+
+function withLiveGroups(previous: any, groups: any[]) {
+  const nextMessages = { ...previous.messages };
+  const channels: Record<string, any[]> = {};
+  const members: Record<string, any[]> = {};
+  groups.forEach((group) => {
+    const key = liveMsgKey(group.id);
+    channels[group.id] = [
+      {
+        id: DEFAULT_CHANNEL_ID,
+        name: "general",
+        icon: "#",
+        topic: group.description || "Group discussion",
+      },
+    ];
+    members[key] = (group.members || []).map(mapLiveMember);
+    if (!nextMessages[key]) nextMessages[key] = [];
+  });
+  return {
+    ...previous,
+    isAdmin: true,
+    servers: groups.map(mapLiveGroup),
+    channels,
+    members,
+    messages: nextMessages,
+  };
+}
+
+function appendLiveMessage(previous: any, message: any, currentUserId?: string) {
+  const key = liveMsgKey(message.groupId);
+  const existing = previous.messages[key] || [];
+  if (existing.some((item: any) => item.id === message.id)) return previous;
+  return {
+    ...previous,
+    messages: {
+      ...previous.messages,
+      [key]: [...existing, mapLiveMessage(message, currentUserId)],
+    },
+  };
+}
+
+function upsertLiveGroup(previous: any, group: any) {
+  const key = liveMsgKey(group.id);
+  const exists = previous.servers.some((server: any) => server.id === group.id);
+  return {
+    ...previous,
+    servers: exists
+      ? previous.servers.map((server: any) => (server.id === group.id ? mapLiveGroup(group) : server))
+      : [mapLiveGroup(group), ...previous.servers],
+    channels: {
+      ...previous.channels,
+      [group.id]: previous.channels[group.id] || [
+        {
+          id: DEFAULT_CHANNEL_ID,
+          name: "general",
+          icon: "#",
+          topic: group.description || "Group discussion",
+        },
+      ],
+    },
+    members: {
+      ...previous.members,
+      [key]: (group.members || []).map(mapLiveMember),
+    },
+    messages: {
+      ...previous.messages,
+      [key]: previous.messages[key] || [],
+    },
+  };
+}
+
 /* ─── Main Component ─── */
 const CommunityNewPage = () => {
   const { theme, setTheme } = useTheme();
-  const { userHeader } = useAuth();
+  const { user, userHeader } = useAuth();
   const [currentRole, setCurrentRole] = useState("student");
   const [isLoading, setIsLoading] = useState(true);
-  const [data, setData] = useState(INIT);
-  const [activeServerId, setActiveServerId] = useState("s1");
-  const [activeChannelId, setActiveChannelId] = useState("c1");
+  const [data, setData] = useState(EMPTY_LIVE_DATA);
+  const [activeServerId, setActiveServerId] = useState("");
+  const [activeChannelId, setActiveChannelId] = useState(DEFAULT_CHANNEL_ID);
   const [typing, setTyping] = useState("");
   const [isTypingInd, setIsTypingInd] = useState(false);
   const [strikes, setStrikes] = useState(0);
@@ -1241,6 +1400,7 @@ const CommunityNewPage = () => {
   const scrollRef = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const socketRef = useRef<Socket | null>(null);
 
   const isMobile = useMediaQuery("(max-width: 768px)");
   const isTablet = useMediaQuery("(max-width: 1024px)");
@@ -1249,9 +1409,86 @@ const CommunityNewPage = () => {
   useEffect(() => {
     if (userHeader?.role) setCurrentRole(userHeader.role);
   }, [userHeader]);
+
+  async function refreshGroups(preferredGroupId = activeServerId) {
+    const groups = await groupChatApi<any[]>("/api/v1/group-chat/groups");
+    setData((previous) => withLiveGroups(previous, groups));
+    const hasPreferred = groups.some((group) => group.id === preferredGroupId);
+    const nextGroupId = hasPreferred ? preferredGroupId : groups[0]?.id || "";
+    setActiveServerId(nextGroupId);
+    setActiveChannelId(DEFAULT_CHANNEL_ID);
+    return nextGroupId;
+  }
+
+  async function refreshMessages(groupId = activeServerId) {
+    if (!groupId) return;
+    const liveMessages = await groupChatApi<any[]>(`/api/v1/group-chat/groups/${groupId}/messages`);
+    const key = liveMsgKey(groupId);
+    setData((previous) => ({
+      ...previous,
+      messages: {
+        ...previous.messages,
+        [key]: liveMessages.map((message) => mapLiveMessage(message, user?.id)),
+      },
+    }));
+  }
+
   useEffect(() => {
-    const t = setTimeout(() => setIsLoading(false), 1400);
-    return () => clearTimeout(t);
+    let cancelled = false;
+    refreshGroups()
+      .then((groupId) => {
+        if (!cancelled && groupId) return refreshMessages(groupId);
+        return null;
+      })
+      .catch((error) => console.error("Failed to load group chat", error))
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!activeServerId) return;
+    refreshMessages(activeServerId).catch((error) => console.error("Failed to load messages", error));
+  }, [activeServerId, user?.id]);
+
+  useEffect(() => {
+    if (!activeServerId) return;
+    if (!socketRef.current) {
+      socketRef.current = io(API_BASE_URL || undefined, {
+        withCredentials: true,
+        transports: ["websocket", "polling"],
+      });
+      socketRef.current.on("group:message", (message: any) => {
+        setData((previous) => appendLiveMessage(previous, message, user?.id));
+      });
+      socketRef.current.on("group:members", (group: any) => {
+        setData((previous) => upsertLiveGroup(previous, group));
+      });
+      socketRef.current.on("group:updated", (group: any) => {
+        setData((previous) => upsertLiveGroup(previous, group));
+      });
+      socketRef.current.on("group:deleted", ({ groupId }: any) => {
+        setData((previous) => ({
+          ...previous,
+          servers: previous.servers.filter((server: any) => server.id !== groupId),
+        }));
+        setActiveServerId((current) => (current === groupId ? "" : current));
+      });
+    }
+    socketRef.current.emit("group:join", { groupId: activeServerId });
+    return () => {
+      socketRef.current?.emit("group:leave-room", { groupId: activeServerId });
+    };
+  }, [activeServerId, user?.id]);
+
+  useEffect(() => {
+    return () => {
+      socketRef.current?.disconnect();
+      socketRef.current = null;
+    };
   }, []);
   useEffect(() => {
     const loadSessions = () => {
@@ -1319,8 +1556,9 @@ const CommunityNewPage = () => {
     else setShowWarning(true);
   };
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (isBanned || !typing.trim() || !data.isAdmin) return;
+    if (!activeServerId) return;
     if (FORBIDDEN.some((w) => typing.toLowerCase().includes(w))) {
       setTyping("");
       triggerStrike();
@@ -1339,90 +1577,67 @@ const CommunityNewPage = () => {
       setEditingMsgId(null);
     } else {
       setIsTypingInd(true);
-      setTimeout(() => setIsTypingInd(false), 600);
-      const nm = {
-        id: Date.now().toString(),
-        user: "You",
-        text: typing,
-        timestamp: new Date().toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-        role: "Admin",
-      };
-      setData((p) => ({
-        ...p,
-        messages: {
-          ...p.messages,
-          [msgKey]: [...(p.messages[msgKey] || []), nm],
-        },
-      }));
-      setStudyPoints((p) => p + 10);
+      try {
+        const message = await groupChatApi<any>(`/api/v1/group-chat/groups/${activeServerId}/messages`, {
+          method: "POST",
+          body: JSON.stringify({ text: typing }),
+        });
+        setData((p) => appendLiveMessage(p, message, user?.id));
+        setStudyPoints((p) => p + 10);
+      } catch (error) {
+        console.error("Failed to send message", error);
+      } finally {
+        setIsTypingInd(false);
+      }
     }
     setTyping("");
     inputRef.current?.focus();
   };
 
-  const handleFileUpload = (e: any) => {
+  const handleFileUpload = async (e: any) => {
     const file = e.target.files?.[0];
-    if (!file || !data.isAdmin) return;
-    const nm = {
-      id: Date.now().toString(),
-      user: "You",
-      isFile: true,
-      fileName: file.name,
-      timestamp: new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-      role: "Admin",
-    };
-    setData((p) => ({
-      ...p,
-      messages: {
-        ...p.messages,
-        [msgKey]: [...(p.messages[msgKey] || []), nm],
-      },
-    }));
-    setStudyPoints((p) => p + 20);
+    if (!file || !data.isAdmin || !activeServerId) return;
+    const form = new FormData();
+    form.append("file", file);
+    try {
+      const message = await groupChatApi<any>(`/api/v1/group-chat/groups/${activeServerId}/attachments`, {
+        method: "POST",
+        body: form,
+      });
+      setData((p) => appendLiveMessage(p, message, user?.id));
+      setStudyPoints((p) => p + 20);
+    } catch (error) {
+      console.error("Failed to upload attachment", error);
+    }
     e.target.value = "";
   };
 
-  const handleCreateServer = () => {
+  const handleCreateServer = async () => {
     if (!serverForm.name.trim()) return;
-    const nid = `s${Date.now()}`;
-    const cid = `c${Date.now()}`;
-    setData((p) => ({
-      ...p,
-      servers: [
-        ...p.servers,
-        {
-          id: nid,
+    try {
+      const group = await groupChatApi<any>("/api/v1/group-chat/groups", {
+        method: "POST",
+        body: JSON.stringify({
           name: serverForm.name,
-          icon: serverForm.icon,
           description: serverForm.description,
-          category: serverForm.category,
-          memberCount: 1,
-          isPrivate: serverForm.isPrivate,
-        },
-      ],
-      channels: {
-        ...p.channels,
-        [nid]: [
-          { id: cid, name: "general", icon: "#", topic: "General discussion" },
-        ],
-      },
-      messages: { ...p.messages, [`${nid}_${cid}`]: [] },
-      members: { ...p.members, [`${nid}_${cid}`]: [] },
-    }));
-    setServerForm({
-      name: "",
-      description: "",
-      category: "",
-      icon: "🎓",
-      isPrivate: false,
-    });
-    setServerModal(false);
+          category: serverForm.category || "Community",
+          icon: serverForm.icon || "🎓",
+        }),
+      });
+      setData((p) => upsertLiveGroup(p, group));
+      setActiveServerId(group.id);
+      setActiveChannelId(DEFAULT_CHANNEL_ID);
+      setServerForm({
+        name: "",
+        description: "",
+        category: "",
+        icon: "🎓",
+        isPrivate: false,
+      });
+      setServerModal(false);
+    } catch (error) {
+      console.error("Failed to create group", error);
+    }
   };
 
   const handleCreateChannel = () => {
@@ -3790,6 +4005,9 @@ const { meetingUI, openMeeting, renderMeetingCard } = useMeetingSystem({
                               key={f.id}
                               initial={{ opacity: 0, y: 5 }}
                               animate={{ opacity: 1, y: 0 }}
+                              onClick={() => {
+                                if (f.downloadUrl) window.open(buildApiUrl(f.downloadUrl), "_blank", "noopener,noreferrer");
+                              }}
                               style={{
                                 display: "flex",
                                 alignItems: "center",

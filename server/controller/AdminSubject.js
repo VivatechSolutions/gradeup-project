@@ -530,7 +530,7 @@ const controller = {
       const units = await SubjectUnit.find({ uploadId: upload._id })
         .sort({ unitNumber: 1, createdAt: 1 })
         .select(
-          "_id documentId board standard subject part term unitNumber unitLabel unitTitle processing debateTopics createdAt subjectGroupKey",
+          "_id documentId board standard subject part term unitNumber unitLabel unitTitle chapterName processing debateTopics createdAt subjectGroupKey",
         );
 
       return res.status(200).json({
@@ -567,6 +567,7 @@ const controller = {
             unitNumber: unit.unitNumber,
             unitLabel: unit.unitLabel,
             unitTitle: unit.unitTitle,
+            chapterName: unit.chapterName,
             processingStatus: unit.processing.status,
             debateTopics: unit.debateTopics || null,
             createdAt: unit.createdAt,
@@ -709,6 +710,7 @@ const controller = {
               id: unit._id,
               unitTitle: unit.unitTitle,
               unitLabel: unit.unitLabel,
+              chapterName: unit.chapterName,
               unitNumber: unit.unitNumber,
               part: unit.part,
               term: unit.term,

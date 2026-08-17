@@ -611,8 +611,8 @@ function SubjectManageModal({
                 {group.units.map((unit) => (
                   <div style={styles.manageUnitItem} key={unit.id}>
                     <div>
-                      <strong style={styles.manageUnitItemStrong}>{unit.unitTitle}</strong>
-                      <p style={styles.manageUnitItemMuted}>{unit.unitLabel}</p>
+                      <strong style={styles.manageUnitItemStrong}>{unit.unitLabel || unit.unitTitle}</strong>
+                      <p style={styles.manageUnitItemMuted}>{unit.chapterName || unit.unitTitle}</p>
                     </div>
                     <div style={styles.tableActions}>
                       <Link
@@ -693,6 +693,7 @@ function UploadQuestionBankModal({
     part: groupData?.part || "",
     term: groupData?.term || "",
     unitOrChapterName: "",
+    chapterName: "",
     processingMode: "single_unit",
     skipEnrichment: false,
     skipQdrant: false,
@@ -723,8 +724,12 @@ async function handleUpload(event) {
     }
 
     if (uploadMode === "single") {
-      if (!form.unitOrChapterName.trim()) {
-        setError("Unit/Chapter name is required for single unit upload");
+      if (!String(form.unitNumber || "").trim()) {
+        setError("Unit number is required for single unit upload");
+        return;
+      }
+      if (!form.chapterName.trim()) {
+        setError("Chapter name is required for single unit upload");
         return;
       }
       if (files.length !== 1) {
@@ -738,8 +743,12 @@ async function handleUpload(event) {
       }
       // Validate metadata for each file
       for (let i = 0; i < files.length; i++) {
-        if (!fileMetadata[i]?.unitTitle || !fileMetadata[i]?.unitTitle.trim()) {
-          setError(`Unit title is required for file ${i + 1}`);
+        if (!String(fileMetadata[i]?.unitNumber || "").trim()) {
+          setError(`Unit number is required for file ${i + 1}`);
+          return;
+        }
+        if (!fileMetadata[i]?.chapterName || !fileMetadata[i]?.chapterName.trim()) {
+          setError(`Chapter name is required for file ${i + 1}`);
           return;
         }
       }
@@ -753,7 +762,9 @@ async function handleUpload(event) {
       if (uploadMode === "single") {
         formData.append("file", files[0]);
         formData.append("processingMode", "single_unit");
-        formData.append("unitOrChapterName", form.unitOrChapterName);
+        formData.append("unitNumber", form.unitNumber);
+        formData.append("chapterName", form.chapterName);
+        formData.append("unitOrChapterName", form.chapterName);
       } else {
         // Multiple files upload
         files.forEach((file, index) => {
@@ -821,8 +832,9 @@ async function handleUpload(event) {
     // Initialize metadata for new files
     if (uploadMode === "multiple") {
       const newMetadata = selectedFiles.map((file, index) => ({
-        unitTitle: `Unit ${index + 1}`,
         unitNumber: index + 1,
+        chapterName: "",
+        unitTitle: `Unit ${index + 1}`,
         part: form.part || null,
         term: form.term || null,
       }));
@@ -933,6 +945,23 @@ async function handleUpload(event) {
                 disabled={isUploading}
               />
             </label>
+
+            <label style={styles.formLabel}>
+              Part
+              <input
+                type="text"
+                style={styles.formInput}
+                placeholder="History, Geography, Civics"
+                value={form.part}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    part: event.target.value,
+                  }))
+                }
+                disabled={isUploading}
+              />
+            </label>
           </div>
   <div style={{ marginBottom: "1.5rem", padding: "1rem", backgroundColor: "#f5f5f5", borderRadius: "4px" }}>
             <p style={{ margin: "0 0 0.75rem", fontSize: "0.875rem", fontWeight: 500, color: "#333" }}>
@@ -975,22 +1004,42 @@ async function handleUpload(event) {
           </div>
 
           {uploadMode === "single" && (
-            <label style={styles.formLabel}>
-              Unit/Chapter Name *
-              <input
-                type="text"
-                style={styles.formInput}
-                placeholder="e.g., Introduction to Biology"
-                value={form.unitOrChapterName}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    unitOrChapterName: event.target.value,
-                  }))
-                }
-                disabled={isUploading}
-              />
-            </label>
+            <>
+              <label style={styles.formLabel}>
+                Unit Number *
+                <input
+                  type="number"
+                  min="1"
+                  style={styles.formInput}
+                  placeholder="1"
+                  value={form.unitNumber}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      unitNumber: event.target.value,
+                    }))
+                  }
+                  disabled={isUploading}
+                />
+              </label>
+              <label style={styles.formLabel}>
+                Chapter Name *
+                <input
+                  type="text"
+                  style={styles.formInput}
+                  placeholder="Heat And Temperature"
+                  value={form.chapterName}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      chapterName: event.target.value,
+                      unitOrChapterName: event.target.value,
+                    }))
+                  }
+                  disabled={isUploading}
+                />
+              </label>
+            </>
           )}
           <label style={styles.fileUploadLabel}>
             PDF File{uploadMode === "multiple" ? "s" : ""} *
@@ -1034,19 +1083,27 @@ async function handleUpload(event) {
                   </p>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
                     <input
-                      type="text"
-                      style={styles.formInput}
-                      placeholder="Unit Title"
-                      value={fileMetadata[index]?.unitTitle || ""}
-                      onChange={(e) => updateFileMetadata(index, "unitTitle", e.target.value)}
-                      disabled={isUploading}
-                    />
-                    <input
                       type="number"
                       style={styles.formInput}
                       placeholder="Unit Number"
                       value={fileMetadata[index]?.unitNumber || ""}
                       onChange={(e) => updateFileMetadata(index, "unitNumber", e.target.value)}
+                      disabled={isUploading}
+                    />
+                    <input
+                      type="text"
+                      style={styles.formInput}
+                      placeholder="Chapter Name"
+                      value={fileMetadata[index]?.chapterName || ""}
+                      onChange={(e) => {
+                        const newMetadata = [...fileMetadata];
+                        newMetadata[index] = {
+                          ...newMetadata[index],
+                          chapterName: e.target.value,
+                          unitTitle: e.target.value,
+                        };
+                        setFileMetadata(newMetadata);
+                      }}
                       disabled={isUploading}
                     />
                   </div>

@@ -2687,8 +2687,73 @@ function IntegratedDebateSetup({
           selectedUnitRecord?.unitNumber,
         );
         if (!ignore) {
-          const liveUnits = Array.isArray(topics?.units) ? topics.units : [];
-          const liveTopics = liveUnits
+          const mapTopicHierarchy = (hierarchy: any) => {
+            const liveUnits = Array.isArray(hierarchy?.units)
+              ? hierarchy.units
+              : [];
+            return liveUnits
+              .flatMap((unit: any) =>
+                (unit.sections || []).flatMap((section: any) =>
+                  (section.debate_topics || []).map(
+                    (item: any, index: number) => ({
+                      id: String(
+                        item.topic_id ||
+                          `${unit.unit_number || "topic"}-${section.section_id || section.section_title || "section"}-${index}`,
+                      ),
+                      title:
+                        item.topic_title ||
+                        item.label ||
+                        item.topic ||
+                        item.title ||
+                        item.name,
+                      label:
+                        item.topic_title ||
+                        item.label ||
+                        item.topic ||
+                        item.title ||
+                        item.name,
+                      unitNumber: unit.unit_number ?? null,
+                      unitTitle: unit.unit_title || "",
+                      sectionId: section.section_id || item.section_id || null,
+                      sectionTitle: section.section_title || "",
+                      topicDescription: item.topic_description || "",
+                      keyConcepts: Array.isArray(item.key_concepts)
+                        ? item.key_concepts
+                        : [],
+                      topicPath: [
+                        selectedSubjectLabel,
+                        unit.unit_title || "",
+                        section.section_title || "",
+                        item.topic_title ||
+                          item.label ||
+                          item.topic ||
+                          item.title ||
+                          item.name,
+                      ].filter(Boolean),
+                    }),
+                  ),
+                ),
+              )
+              .filter((item: any) => item.label);
+          };
+          const liveTopics = mapTopicHierarchy(topics);
+          const storedTopics = liveTopics.length
+            ? []
+            : mapTopicHierarchy(
+                selectedUnitRecord?.debateTopics?.debateTopics ||
+                  selectedUnitRecord?.debateTopics,
+              );
+          setTopicOptions(liveTopics.length ? liveTopics : storedTopics);
+        }
+      } catch {
+        if (!ignore) {
+          const storedPayload =
+            selectedUnitRecord?.debateTopics?.debateTopics ||
+            selectedUnitRecord?.debateTopics;
+          const storedUnits = Array.isArray(storedPayload?.units)
+            ? storedPayload.units
+            : [];
+          const storedTopics = storedUnits
             .flatMap((unit: any) =>
               (unit.sections || []).flatMap((section: any) =>
                 (section.debate_topics || []).map(
@@ -2697,13 +2762,13 @@ function IntegratedDebateSetup({
                       item.topic_id ||
                         `${unit.unit_number || "topic"}-${section.section_id || section.section_title || "section"}-${index}`,
                     ),
-                    title:
+                    label:
                       item.topic_title ||
                       item.label ||
                       item.topic ||
                       item.title ||
                       item.name,
-                    label:
+                    title:
                       item.topic_title ||
                       item.label ||
                       item.topic ||
@@ -2732,11 +2797,7 @@ function IntegratedDebateSetup({
               ),
             )
             .filter((item: any) => item.label);
-          setTopicOptions(liveTopics);
-        }
-      } catch {
-        if (!ignore) {
-          setTopicOptions([]);
+          setTopicOptions(storedTopics);
           toastRef.current(
             "Unable to load debate topics from the server.",
             "warn",

@@ -340,12 +340,13 @@ export default function SubjectDetailPage() {
                 onClick={() => navigate(`/subjects/${unit.id}`)}
               >
                 {unit.unitLabel || unit.unitTitle}
+                {unit.chapterName ? ` - ${unit.chapterName}` : ""}
               </button>
             ))
           ) : (
             <div className="single-unit-pill">
               <strong>{record.unitLabel}</strong>
-              <span>{record.unitTitle}</span>
+              <span>{record.chapterName || record.unitTitle}</span>
             </div>
           )}
         </div>

@@ -37,6 +37,8 @@ export default function UploadSubjectPage() {
     standard: "",
     subject: "",
     unitOrChapterName: "",
+    unitNumber: "",
+    chapterName: "",
     part: "",
     term: "",
     files: [],
@@ -258,8 +260,13 @@ export default function UploadSubjectPage() {
       }
 
       if (uploadMode === "single") {
-        if (!form.unitOrChapterName?.trim()) {
-          setError("Unit/Chapter name is required for single unit upload");
+        if (!String(form.unitNumber || "").trim()) {
+          setError("Unit number is required for single unit upload");
+          setIsSubmitting(false);
+          return;
+        }
+        if (!form.chapterName?.trim()) {
+          setError("Chapter name is required for single unit upload");
           setIsSubmitting(false);
           return;
         }
@@ -276,8 +283,13 @@ export default function UploadSubjectPage() {
         }
         // Validate metadata for each file
         for (let i = 0; i < form.files.length; i++) {
-          if (!fileMetadata[i]?.unitTitle || !fileMetadata[i]?.unitTitle.trim()) {
-            setError(`Unit title is required for file ${i + 1}`);
+          if (!String(fileMetadata[i]?.unitNumber || "").trim()) {
+            setError(`Unit number is required for file ${i + 1}`);
+            setIsSubmitting(false);
+            return;
+          }
+          if (!fileMetadata[i]?.chapterName || !fileMetadata[i]?.chapterName.trim()) {
+            setError(`Chapter name is required for file ${i + 1}`);
             setIsSubmitting(false);
             return;
           }
@@ -307,7 +319,9 @@ export default function UploadSubjectPage() {
 
       if (uploadMode === "single") {
         formData.append("file", form.files[0]);
-        formData.append("unitOrChapterName", form.unitOrChapterName);
+        formData.append("unitNumber", form.unitNumber);
+        formData.append("chapterName", form.chapterName);
+        formData.append("unitOrChapterName", form.chapterName);
       } else {
         // Multiple files upload
         form.files.forEach((file) => {
@@ -392,6 +406,8 @@ export default function UploadSubjectPage() {
                       ...current,
                       files: [],
                       unitOrChapterName: current.unitOrChapterName,
+                      unitNumber: current.unitNumber,
+                      chapterName: current.chapterName,
                     }));
                     setFileMetadata([]);
                   }}
@@ -411,6 +427,8 @@ export default function UploadSubjectPage() {
                       ...current,
                       files: [],
                       unitOrChapterName: "",
+                      unitNumber: "",
+                      chapterName: "",
                     }));
                     setFileMetadata([]);
                   }}
@@ -513,6 +531,19 @@ export default function UploadSubjectPage() {
                   ))}
                 </select>
               </label>
+
+              <label>
+                Part
+                <input
+                  value={form.part}
+                  onChange={(event) => updateField("part", event.target.value)}
+                  placeholder="History, Geography, Civics"
+                  disabled={!form.existingSubjectKey}
+                />
+                <span className="muted small">
+                  Keep the selected part or enter a new part for this subject.
+                </span>
+              </label>
             </>
           ) : null}
 
@@ -559,17 +590,31 @@ export default function UploadSubjectPage() {
           {isUnitWise ? (
             <>
               {uploadMode === "single" && (
-                <label>
-                  Unit / Chapter name
-                  <input
-                    value={form.unitOrChapterName}
-                    onChange={(event) =>
-                      updateField("unitOrChapterName", event.target.value)
-                    }
-                    placeholder="Unit 7 / Chapter name"
-                    required={uploadMode === "single"}
-                  />
-                </label>
+                <>
+                  <label>
+                    Unit Number
+                    <input
+                      type="number"
+                      min="1"
+                      value={form.unitNumber}
+                      onChange={(event) => updateField("unitNumber", event.target.value)}
+                      placeholder="1"
+                      required={uploadMode === "single"}
+                    />
+                  </label>
+                  <label>
+                    Chapter Name
+                    <input
+                      value={form.chapterName}
+                      onChange={(event) => {
+                        updateField("chapterName", event.target.value);
+                        updateField("unitOrChapterName", event.target.value);
+                      }}
+                      placeholder="Heat And Temperature"
+                      required={uploadMode === "single"}
+                    />
+                  </label>
+                </>
               )}
 
               {!isExistingSubject ? (
@@ -631,8 +676,9 @@ export default function UploadSubjectPage() {
                 // Initialize metadata for multiple files
                 if (uploadMode === "multiple") {
                   const newMetadata = selectedFiles.map((file, index) => ({
-                    unitTitle: `Unit ${index + 1}`,
                     unitNumber: index + 1,
+                    chapterName: "",
+                    unitTitle: `Unit ${index + 1}`,
                     part: form.part || null,
                     term: form.term || null,
                   }));
@@ -657,21 +703,6 @@ export default function UploadSubjectPage() {
                   </p>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
                     <input
-                      type="text"
-                      placeholder="Unit Title"
-                      value={fileMetadata[index]?.unitTitle || ""}
-                      onChange={(e) => {
-                        const newMetadata = [...fileMetadata];
-                        newMetadata[index] = {
-                          ...newMetadata[index],
-                          unitTitle: e.target.value,
-                        };
-                        setFileMetadata(newMetadata);
-                      }}
-                      disabled={isSubmitting}
-                      style={{ padding: "0.5rem", border: "1px solid #ccc", borderRadius: "4px", fontSize: "0.875rem" }}
-                    />
-                    <input
                       type="number"
                       placeholder="Unit Number"
                       value={fileMetadata[index]?.unitNumber || ""}
@@ -680,6 +711,22 @@ export default function UploadSubjectPage() {
                         newMetadata[index] = {
                           ...newMetadata[index],
                           unitNumber: parseInt(e.target.value) || null,
+                        };
+                        setFileMetadata(newMetadata);
+                      }}
+                      disabled={isSubmitting}
+                      style={{ padding: "0.5rem", border: "1px solid #ccc", borderRadius: "4px", fontSize: "0.875rem" }}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Chapter Name"
+                      value={fileMetadata[index]?.chapterName || ""}
+                      onChange={(e) => {
+                        const newMetadata = [...fileMetadata];
+                        newMetadata[index] = {
+                          ...newMetadata[index],
+                          chapterName: e.target.value,
+                          unitTitle: e.target.value,
                         };
                         setFileMetadata(newMetadata);
                       }}

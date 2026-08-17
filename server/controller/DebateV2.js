@@ -1385,7 +1385,10 @@ console.log
 
       if (
         !hasCatalogTopics &&
-        (filters.unitNumber !== undefined || filters.sectionTitle)
+        (filters.subjectGroupKey ||
+          filters.subject ||
+          filters.unitNumber !== undefined ||
+          filters.sectionTitle)
       ) {
         try {
           const unit = await resolveSubjectUnit({
