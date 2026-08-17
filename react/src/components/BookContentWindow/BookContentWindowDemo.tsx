@@ -518,6 +518,83 @@ function serializeEnrichedForGenius(
   return lines.filter(Boolean).join("\n\n").trim();
 }
 
+function normalizeGeniusMatchValue(value: any) {
+  return normalizeReaderLabel(value)
+    .toLowerCase()
+    .replace(/^[\s.:#-]*\d+(?:\.\d+)*[\s.:#-]+/, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function collectSectionMatchValues(section: any) {
+  return [
+    section?.title,
+    section?.section_title,
+    section?.sectionTitle,
+    section?.heading,
+    section?.label,
+    section?.id,
+    section?.section_id,
+    section?.sectionId,
+    section?.section_number,
+    section?.sectionNumber,
+    section?.number,
+  ]
+    .map(normalizeGeniusMatchValue)
+    .filter(Boolean);
+}
+
+function findEnrichedAvatarExplanationForSection(
+  enrichedContent: any,
+  geniusSection: any,
+) {
+  if (!enrichedContent || !geniusSection) return null;
+
+  const units = Array.isArray(enrichedContent?.units)
+    ? enrichedContent.units
+    : Array.isArray(enrichedContent)
+      ? enrichedContent
+      : [enrichedContent];
+  const targetValues = [
+    geniusSection.title,
+    geniusSection.label,
+    geniusSection.number,
+    geniusSection.id,
+    geniusSection.anchor,
+  ]
+    .map(normalizeGeniusMatchValue)
+    .filter(Boolean);
+
+  for (const unit of units) {
+    const sections = Array.isArray(unit?.sections) ? unit.sections : [];
+    for (const section of sections) {
+      const sectionType = normalizeReaderLabel(
+        section?.type || section?.kind || section?.section_type,
+      ).toLowerCase();
+      if (sectionType && sectionType !== "section") continue;
+
+      const sectionValues = collectSectionMatchValues(section);
+      const isMatch = targetValues.some(
+        (target) =>
+          sectionValues.includes(target) ||
+          sectionValues.some(
+            (value) => value && target && (value === target || value.includes(target) || target.includes(value)),
+          ),
+      );
+      if (!isMatch) continue;
+
+      const enrichment =
+        section?.section_enrichment || section?.enrichment || section;
+      const explanation = enrichment?.avatar_explanation;
+      if (Array.isArray(explanation?.segments) && explanation.segments.length) {
+        return explanation;
+      }
+    }
+  }
+
+  return null;
+}
+
 // ─── sessionStorage helpers ───────────────────────────────────────────────────
 function aiChatKey(bookId: string, chapterId: any) {
   return `bcw-ai::${bookId}::${chapterId}`;
@@ -5656,6 +5733,10 @@ const BookContentWindowDemo = () => {
     }
 
     try {
+      const avatarExplanation = findEnrichedAvatarExplanationForSection(
+        activeChapter.enrichedDataFull || activeChapter.sourceContent,
+        currentGeniusSection,
+      );
       const geniusContext = JSON.stringify({
           unitId: String(activeChapter.id),
           sectionTitle: String(
@@ -5666,6 +5747,17 @@ const BookContentWindowDemo = () => {
           bookTitle: selectedBook?.title || "",
           term: activeChapter.term || null,
           theme: isDark ? "dark" : "light",
+          avatarTeacher: "man",
+          segments: Array.isArray(avatarExplanation?.segments)
+            ? avatarExplanation.segments
+            : null,
+          avatarExplanationMeta: avatarExplanation
+            ? {
+                teachingStyle: avatarExplanation.teaching_style || null,
+                totalDurationEstimate:
+                  avatarExplanation.total_duration_estimate || null,
+              }
+            : null,
         });
       sessionStorage.setItem("gradeup-avatar-genius-context", geniusContext);
       localStorage.setItem("gradeup-avatar-genius-context", geniusContext);

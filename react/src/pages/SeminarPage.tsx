@@ -27,6 +27,7 @@ import {
   saveSeminarAiDocument,
   startSeminar,
   startSeminarChat,
+  startSeminarPptSession,
   respondSeminarChat,
   sendSeminarAiDocumentChat,
   startSeminarRoom,
@@ -2990,26 +2991,70 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
     setCreateDocConfig(null);
     setShowCreateLinkModal(false);
     try {
-      const previewFileLink = CREATE_AI_DEFAULT_FILE_URL;
       for (let progress = 0; progress <= 100; progress += 20) {
         await new Promise((resolve) => setTimeout(resolve, 170));
         setJoinProgress(progress);
       }
       const selectedUnit = availableUnits.find((item) => item.id === selectedUnitId);
-      const createdDocument = await CREATE_AI_API.createDocument({
+      const candidate = getCandidateContext(user || { firstName: name, lastName: "" });
+      const pptPayload = {
+        student_id: String(candidate.candidateId || "student"),
+        board: String(selectedUnit?.board || "CBSE"),
+        class_number: String(selectedUnit?.standard || "10"),
+        chapter: Number(selectedUnit?.unitNumber || 1),
+        title: finalTopic,
+        subject: selectedUnit?.subject || selectedSubjectLabel || subject || null,
+        term: selectedUnit?.term || null,
+        deck_ref: null,
+        tool: "gslides" as const,
+      };
+
+      const startSlidesSession = () => startSeminarPptSession(pptPayload);
+      let pptSession = await startSlidesSession();
+
+      if (pptSession?.status === "needs_connection" && pptSession?.authorization_url) {
+        window.open(pptSession.authorization_url, "_blank", "noopener,noreferrer");
+        toast$("Google connection opened. Complete it in the new tab; we'll continue automatically.", "info");
+        for (let attempt = 0; attempt < 40; attempt += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+          pptSession = await startSlidesSession();
+          if (pptSession?.session_id && pptSession?.edit_url) break;
+        }
+      }
+
+      if (pptSession?.status === "needs_connection") {
+        throw new Error("Google connection is still pending. Complete the Google authorization tab, then try Create with AI again.");
+      }
+
+      if (!pptSession?.session_id || !pptSession?.edit_url) {
+        throw new Error("Slides session did not return an edit URL.");
+      }
+
+      const createdDocument = {
+        id: pptSession.session_id,
         name,
         subject: selectedSubjectLabel,
         unit,
         topic: finalTopic,
-        requirements: `Create a complete seminar file for "${finalTopic}" with an outline, speaker notes, examples, audience questions, and a strong conclusion.`,
-        fileUrl: previewFileLink,
-        unitId: selectedUnitId,
-        unitMeta: selectedUnit || null,
-      });
+        link: pptSession.edit_url,
+        editUrl: pptSession.edit_url,
+        edit_url: pptSession.edit_url,
+        embedUrl: pptSession.embed_url,
+        embed_url: pptSession.embed_url,
+        deckRef: pptSession.deck_ref,
+        deck_ref: pptSession.deck_ref,
+        sessionId: pptSession.session_id,
+        session_id: pptSession.session_id,
+        guidance: pptSession.guidance,
+        seminarMode: "create",
+        sessionSubMode: "create-ai",
+      };
+
       setCreateDocConfig(createdDocument);
-      setCreateDocLink(createdDocument.link || genCreateAILink(createdDocument.id));
+      setCreateDocLink(pptSession.edit_url);
       setShowCreateLinkModal(true);
-      toast$("AI seminar file link ready", "success");
+      window.open(pptSession.edit_url, "_blank", "noopener,noreferrer");
+      toast$("Google Slides deck is ready. Open the GradeUp Copilot add-on inside Slides.", "success");
     } catch (error) {
       toast$(getErrorMessage(error, "Unable to create the AI seminar file."), "error");
     } finally {
@@ -3021,6 +3066,11 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
   function openCreateDoc(event) {
     event?.preventDefault?.();
     if (!createDocConfig) return;
+    const externalEditUrl = createDocConfig.editUrl || createDocConfig.edit_url || createDocConfig.link;
+    if (externalEditUrl && /^https?:\/\//i.test(externalEditUrl) && /docs\.google\.com\/presentation/i.test(externalEditUrl)) {
+      window.open(externalEditUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
     window.history.pushState({}, "", genCreateAILink(createDocConfig.id));
     setShowCreateLinkModal(false);
     onLaunch(createDocConfig);
@@ -3438,7 +3488,7 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
             </div>
             <div className="mb" style={{ background: "#0c1422" }}>
               <div style={{ padding: "13px 14px", borderRadius: 13, background: "rgba(0,195,122,.08)", border: "1px solid rgba(0,195,122,.22)", color: "#5ee3b7", fontSize: 12.5, fontWeight: 800, marginBottom: 12 }}>
-                Your Create with AI workspace link has been generated.
+                Your Google Slides deck is ready. Open the GradeUp Copilot add-on inside Slides to chat and edit.
               </div>
               <div className="link-row" style={{ background: "rgba(255,255,255,.04)", borderColor: "rgba(255,255,255,.1)" }}>
                 <a className="link-val" href={createDocLink} onClick={openCreateDoc} style={{ color: "#5ee3b7", textDecoration: "none" }}>{createDocLink}</a>
@@ -3449,10 +3499,15 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
                   Attached file detected: {inferCreateArtifact(createDocConfig).label}. The next page will open it in the previewer.
                 </div>
               )}
+              {createDocConfig?.sessionId && (
+                <div style={{ marginTop: 10, fontSize: 11.5, lineHeight: 1.6, color: "rgba(255,255,255,.5)" }}>
+                  In Google Slides, use Extensions &gt; GradeUp Slides Copilot &gt; Open Copilot. The sidebar will detect this deck automatically after the Apps Script update.
+                </div>
+              )}
             </div>
             <div className="mf" style={{ borderColor: "rgba(255,255,255,.08)", background: "#0c1422" }}>
               <button className="btn-s" onClick={() => setShowCreateLinkModal(false)} style={{ background: "rgba(255,255,255,.04)", borderColor: "rgba(255,255,255,.1)", color: "rgba(255,255,255,.65)" }}>Stay here</button>
-              <a className="create-open-link" href={createDocLink} onClick={openCreateDoc} style={{ marginTop: 0, width: "auto", padding: "8px 14px" }}>Open workspace</a>
+              <a className="create-open-link" href={createDocLink} onClick={openCreateDoc} style={{ marginTop: 0, width: "auto", padding: "8px 14px" }}>Open Slides</a>
             </div>
           </div>
         </div>

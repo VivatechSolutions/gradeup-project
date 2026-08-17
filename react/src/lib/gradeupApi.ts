@@ -768,6 +768,26 @@ export async function deleteSeminarAiDocument(documentId: string) {
   );
 }
 
+export async function startSeminarPptSession(payload: {
+  student_id: string;
+  board: string;
+  class_number: string;
+  chapter: number;
+  title: string;
+  subject?: string | null;
+  term?: string | null;
+  deck_ref?: string | null;
+  tool?: "gslides";
+}) {
+  return apiFetch<any>("/api/v1/seminar/ppt/session/start", {
+    method: "POST",
+    body: JSON.stringify({
+      ...payload,
+      tool: payload.tool || "gslides",
+    }),
+  });
+}
+
 export async function joinSeminarSession(payload: {
   sessionId: string;
   candidateId: string;

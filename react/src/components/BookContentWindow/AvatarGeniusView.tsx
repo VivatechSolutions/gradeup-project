@@ -28,6 +28,12 @@ type GeniusContext = {
   bookTitle?: string;
   term?: string | null;
   theme?: "light" | "dark";
+  avatarTeacher?: "man" | "woman";
+  segments?: AvatarSegment[] | null;
+  avatarExplanationMeta?: {
+    teachingStyle?: string | null;
+    totalDurationEstimate?: string | null;
+  } | null;
 };
 
 type AvatarSegment = {
@@ -57,6 +63,7 @@ type AvatarFlashcard = AvatarSegment & {
 };
 
 const CONTEXT_KEY = "gradeup-avatar-genius-context";
+const TEACHER_KEY = "gradeup-avatar-teacher";
 
 function readContext(): GeniusContext | null {
   try {
@@ -78,9 +85,11 @@ function getSegments(payload: any): AvatarSegment[] {
   return Array.isArray(segments) ? segments : [];
 }
 
-function getAudioUrl(segment: AvatarSegment | null) {
+function getAudioUrl(segment: AvatarSegment | null, teacher: "man" | "woman") {
   if (!segment?.audio) return "";
-  return segment.audio.female || segment.audio.male || "";
+  return teacher === "woman"
+    ? segment.audio.female || segment.audio.male || ""
+    : segment.audio.male || segment.audio.female || "";
 }
 
 function segmentText(segment: AvatarSegment | null) {
@@ -99,12 +108,14 @@ function emotionClass(value = "") {
 function AvatarFigure({
   emotion,
   speaking,
+  teacher,
 }: {
   emotion?: string;
   speaking: boolean;
+  teacher: "man" | "woman";
 }) {
   return (
-    <div className={`avatar-wrap teacher-woman ${emotionClass(emotion)} ${speaking ? "emo-talking" : ""}`}>
+    <div className={`avatar-wrap ${teacher === "woman" ? "teacher-woman" : "teacher-man"} ${emotionClass(emotion)} ${speaking ? "emo-talking" : ""}`}>
       <div className="av-r action-open">
         <div className="av-shadow" />
         <div className="av-shoe l" />
@@ -162,6 +173,7 @@ export default function AvatarGeniusView() {
   const [error, setError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [speed, setSpeed] = useState(1);
+  const [teacher, setTeacher] = useState<"man" | "woman">("man");
   const [flashcards, setFlashcards] = useState<Record<string, AvatarFlashcard>>({});
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [feedback, setFeedback] = useState<Record<string, { correct: boolean; message: string }>>({});
@@ -190,6 +202,7 @@ export default function AvatarGeniusView() {
     () => segments.filter((segment) => String(segment.type || "").toLowerCase() !== "flashcard"),
     [segments],
   );
+  const teacherName = teacher === "woman" ? "Prof. Maya" : "Prof. Nova";
 
   useEffect(() => {
     const ctx = readContext();
@@ -197,7 +210,21 @@ export default function AvatarGeniusView() {
     const nextTheme = ctx?.theme === "dark" ? "dark" : "light";
     setTheme(nextTheme);
     document.documentElement.dataset.theme = nextTheme;
+    const storedTeacher =
+      localStorage.getItem(TEACHER_KEY) || sessionStorage.getItem(TEACHER_KEY);
+    const nextTeacher =
+      storedTeacher === "woman" || storedTeacher === "man"
+        ? storedTeacher
+        : ctx?.avatarTeacher === "woman"
+          ? "woman"
+          : "man";
+    setTeacher(nextTeacher);
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem(TEACHER_KEY, teacher);
+    sessionStorage.setItem(TEACHER_KEY, teacher);
+  }, [teacher]);
 
   useEffect(() => {
     if (!context?.unitId || !context.sectionTitle) return;
@@ -211,6 +238,7 @@ export default function AvatarGeniusView() {
           unitId: context.unitId,
           sectionTitle: context.sectionTitle,
           term: context.term || null,
+          segments: Array.isArray(context.segments) ? context.segments : null,
         });
         if (cancelled) return;
         const nextSegments = getSegments(response);
@@ -275,20 +303,21 @@ export default function AvatarGeniusView() {
   }, []);
 
   useEffect(() => {
-    if (status !== "playing" || !current) return;
-    const audioUrl = getAudioUrl(current);
+    if (status !== "playing" || !display) return;
+    const playingSegment = display;
+    const audioUrl = getAudioUrl(playingSegment, teacher);
     if (!audioUrl) {
-      const t = window.setTimeout(() => handleAudioEnded(current), 900);
+      const t = window.setTimeout(() => handleAudioEnded(playingSegment), 900);
       return () => window.clearTimeout(t);
     }
 
     const audio = new Audio(audioUrl);
     audio.playbackRate = speed;
     audioRef.current = audio;
-    audio.onended = () => handleAudioEnded(current);
+    audio.onended = () => handleAudioEnded(playingSegment);
     audio.onerror = () => {
       setError("Audio could not be played for this segment.");
-      handleAudioEnded(current);
+      handleAudioEnded(playingSegment);
     };
     audio.play().catch(() => {
       setError("Tap Play if your browser blocked autoplay.");
@@ -302,7 +331,7 @@ export default function AvatarGeniusView() {
       if (audioRef.current === audio) audioRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, index, segments, speed]);
+  }, [status, index, segments, speed, teacher, card]);
 
   useEffect(() => {
     if (contentRef.current) {
@@ -451,6 +480,17 @@ export default function AvatarGeniusView() {
             <div className="settings-menu">
               <div className="set-title">Tutor Settings</div>
               <div className="set-row">
+                <span className="set-label">Teacher</span>
+                <select
+                  className="set-select"
+                  value={teacher}
+                  onChange={(event) => setTeacher(event.target.value === "woman" ? "woman" : "man")}
+                >
+                  <option value="man">Man</option>
+                  <option value="woman">Woman</option>
+                </select>
+              </div>
+              <div className="set-row">
                 <span className="set-label">Speed</span>
                 <select className="set-select" value={speed} onChange={(event) => setSpeed(Number(event.target.value))}>
                   <option value={0.75}>0.75x</option>
@@ -484,7 +524,9 @@ export default function AvatarGeniusView() {
             <div className="ch-eyebrow">{context.unitTitle || context.bookTitle || "Avatar lesson"}</div>
             <h1 className="ch-title">{context.sectionTitle}</h1>
             <div className="ch-meta">
-              {status === "loading" ? "Preparing your lesson..." : `${segments.length || 1} guided segments`}
+              {status === "loading"
+                ? "Preparing your lesson..."
+                : context.avatarExplanationMeta?.totalDurationEstimate || `${segments.length || 1} guided segments`}
             </div>
             <div className="ch-divider" />
 
@@ -568,11 +610,11 @@ export default function AvatarGeniusView() {
           <div id="prog-bar"><div id="prog-fill" style={{ width: `${Math.min(100, progress)}%` }} /></div>
         </section>
 
-        <aside id="avatar-panel">
+        <aside id="avatar-panel" className={teacher === "woman" ? "teacher-woman" : "teacher-man"}>
           <div id="av-stage">
-            <div className="av-name-badge">AI Teacher</div>
+            <div className="av-name-badge">{teacherName}</div>
             <div className="speech-bub visible">{segmentText(display) || "Ready when you are."}</div>
-            <AvatarFigure emotion={display?.emotion || display?.avatar_emotion} speaking={status === "playing"} />
+            <AvatarFigure emotion={display?.emotion || display?.avatar_emotion} speaking={status === "playing"} teacher={teacher} />
             <div className="av-status">
               <span className="status-dot" />
               {status === "playing" ? "Speaking" : status === "waiting_flashcard" ? "Waiting for you" : status}
@@ -618,7 +660,7 @@ export default function AvatarGeniusView() {
           <div className="db-head">
             <div className="db-avatar">✋</div>
             <div>
-              <div className="db-title">Raise your hand</div>
+              <div className="db-title">Ask {teacherName}</div>
               <div className="db-sub">Ask a doubt and the avatar will pause to clarify.</div>
             </div>
             <button className="db-close" onClick={() => setDoubtOpen(false)}>×</button>
@@ -724,6 +766,24 @@ body{overflow:hidden;}
 .av-glasses{position:absolute;top:45px;left:22px;width:64px;height:35px;z-index:10;pointer-events:none;}.av-lens{position:absolute;top:0;width:31px;height:31px;border:4px solid #17120f;border-radius:50%;background:radial-gradient(circle at 35% 28%,rgba(255,255,255,.42),rgba(255,255,255,.1) 56%,rgba(99,102,241,.06));}.av-lens:first-child{left:0;}.av-lens:last-child{right:0;}.av-bridge{position:absolute;left:29px;top:13px;width:6px;height:5px;background:#17120f;border-radius:6px;}
 .av-brow{position:absolute;top:38px;height:5px;background:#050505;border-radius:5px;transition:transform .3s,top .3s;z-index:6;}.av-brow.l{left:23px;width:26px;transform:rotate(-5deg);}.av-brow.r{right:23px;width:26px;transform:rotate(5deg);}.av-eye{position:absolute;top:51px;width:21px;height:23px;background:#fff;border-radius:50%;overflow:hidden;box-shadow:inset 0 1px 3px rgba(0,0,0,.12);z-index:7;}.av-eye.l{left:28px;}.av-eye.r{right:28px;}.av-pupil{position:absolute;width:12px;height:12px;background:radial-gradient(circle at 35% 30%,#3f2a1a,#120b08 68%);border-radius:50%;top:6px;left:5px;box-shadow:0 0 0 3px #6b8da7,0 0 0 5px rgba(255,255,255,.24);}
 .av-nose{position:absolute;top:73px;left:49px;width:12px;height:16px;border-left:2px solid rgba(141,70,30,.32);border-bottom:2px solid rgba(141,70,30,.32);border-radius:0 0 9px 7px;}.av-mouth{position:absolute;bottom:17px;left:35px;width:38px;height:18px;display:flex;align-items:center;justify-content:center;}.av-mouth-shape{position:relative;width:33px;height:9px;border:3px solid #8e3b38;border-top:0;border-radius:0 0 18px 18px;background:#5b151c;overflow:hidden;transition:all .2s ease;}.av-teeth{position:absolute;left:5px;right:5px;top:0;height:4px;background:#fff7ed;border-radius:0 0 5px 5px;opacity:.85;}.av-cheek{position:absolute;bottom:31px;width:16px;height:9px;background:rgba(236,72,153,.22);border-radius:50%;}.av-cheek.l{left:14px;}.av-cheek.r{right:14px;}
+.teacher-man .av-name-badge{background:linear-gradient(135deg,#22c55e,#2563eb);}
+.teacher-man .av-shoe{background:linear-gradient(180deg,#7a3d13,#4a240c);}
+.teacher-man .av-leg{height:96px;background:linear-gradient(180deg,#1c78cd,#1260ad);border-radius:10px 10px 7px 7px;}
+.teacher-man .av-torso{bottom:118px;height:112px;background:linear-gradient(160deg,#2f8a43,#176a30);border-radius:32px 32px 18px 18px;}
+.teacher-man .av-torso::before{top:15px;left:37px;width:52px;height:25px;background:#f5f0e8;clip-path:polygon(0 0,100% 0,50% 100%);border-radius:4px;}
+.teacher-man .av-torso::after{content:none;}
+.teacher-man .av-shirt{display:block;position:absolute;top:10px;left:48px;width:30px;height:27px;background:#f8f3ec;clip-path:polygon(0 0,100% 0,50% 100%);}
+.teacher-man .av-tie{display:block;position:absolute;top:26px;left:56px;width:15px;height:36px;background:linear-gradient(180deg,#f97316,#dc3f16);clip-path:polygon(50% 0,100% 28%,74% 100%,50% 88%,26% 100%,0 28%);box-shadow:0 2px 5px rgba(0,0,0,.18);}
+.teacher-man .av-arm{background:linear-gradient(180deg,#338f49,#1d7435);}
+.teacher-man .av-arm.l{transform:rotate(24deg);}
+.teacher-man .av-arm.r{transform:rotate(-17deg);}
+.teacher-man .av-hair{top:-14px;left:-4px;width:116px;height:61px;border-radius:47px 55px 20px 20px;box-shadow:inset -10px -8px 10px rgba(0,0,0,.24);}
+.teacher-man .av-hair::before{left:-2px;top:12px;width:62px;height:34px;border-radius:42px 7px 32px 8px;transform:rotate(-11deg);}
+.teacher-man .av-ponytail{display:none;}
+.teacher-man .av-cheek{background:rgba(239,92,80,.16);}
+.teacher-woman .av-name-badge{background:linear-gradient(135deg,#ec4899,#8b5cf6);}
+.teacher-woman .av-arm.l{transform:rotate(-32deg);}
+.teacher-woman .av-arm.r{transform:rotate(22deg);}
 .emo-talking .av-mouth-shape{animation:tlk .22s ease-in-out infinite alternate;}@keyframes tlk{from{width:26px;height:7px;border-radius:7px 7px 12px 12px}to{width:30px;height:20px;border-radius:10px 10px 18px 18px}}.emo-enthusiastic .av-arm.l,.emo-excited .av-arm.l,.emo-playful .av-arm.l{transform:rotate(-52deg)!important;}.emo-curious .av-brow.l,.emo-thinking .av-brow.l,.emo-thoughtful .av-brow.l{top:37px;transform:rotate(15deg) translateY(-1px);}.emo-curious .av-mouth-shape,.emo-thinking .av-mouth-shape,.emo-thoughtful .av-mouth-shape{width:18px;height:6px;border-radius:10px;border-top:2px solid #8e3b38;}.emo-empathetic .av-brow.l{top:40px;transform:rotate(10deg) translateY(2px);}.emo-empathetic .av-brow.r{top:40px;transform:rotate(-10deg) translateY(2px);}
 .av-status{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);}.status-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pdot 2s infinite;}@keyframes pdot{0%,100%{box-shadow:0 0 0 0 rgba(16,185,129,.4)}50%{box-shadow:0 0 0 5px rgba(16,185,129,0)}}
 #raise-btn{position:relative;z-index:4;display:flex;align-items:center;gap:8px;padding:10px 20px;border-radius:20px;background:linear-gradient(135deg,var(--amber),#f97316);color:#fff;border:none;cursor:pointer;font-family:inherit;font-size:13px;font-weight:700;box-shadow:0 6px 20px rgba(245,158,11,.4);transition:all .2s;animation:btnPulse 2.5s ease-in-out infinite;margin:10px 0 16px;}#raise-btn:hover{transform:translateY(-3px);box-shadow:0 10px 28px rgba(245,158,11,.5);}@keyframes btnPulse{0%,100%{box-shadow:0 6px 20px rgba(245,158,11,.4)}50%{box-shadow:0 6px 30px rgba(245,158,11,.65)}}

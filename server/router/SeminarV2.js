@@ -8,9 +8,11 @@ const router = express.Router();
 router.post("/ppt/suggest", controller.pptSuggest);
 router.post("/ppt/decide", controller.pptDecide);
 router.post("/ppt/session/end", controller.pptSessionEnd);
+router.post("/ppt/session/by-deck", controller.pptSessionByDeck);
 
 router.use(requireStudentAuth, injectStudentIdentity);
 
+router.post("/ppt/session/start", controller.pptSessionStart);
 router.post("/start", controller.start);
 router.post("/create-room", controller.createRoom);
 router.post("/room/start", controller.startRoom);

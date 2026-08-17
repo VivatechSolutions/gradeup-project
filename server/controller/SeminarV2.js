@@ -17,6 +17,7 @@ const {
   saveFeedback,
 } = require("../services/liveSessionService");
 const { recordProgress } = require("../services/studentDataService");
+const LiveSessionModel = require("../model/LiveSession");
 
 function ensureSeminarStartPayload(context = {}) {
   const missing = [];
@@ -72,6 +73,12 @@ function addonRequestAllowed(req) {
 
 function summarizePptPayload(payload = {}) {
   return {
+    student_id: payload.student_id || payload.studentId || null,
+    board: payload.board || null,
+    class_number: payload.class_number || payload.classNumber || null,
+    chapter: payload.chapter ?? null,
+    title: payload.title || null,
+    subject: payload.subject || null,
     session_id: payload.session_id || payload.sessionId || null,
     slide_index: payload.slide_index ?? payload.slideIndex ?? null,
     query: payload.query ? String(payload.query).slice(0, 300) : null,
@@ -137,6 +144,91 @@ async function proxyPptRequest(req, res, { pythonPath, label, logResponse = fals
   }
 }
 
+function normalizeDeckRef(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  return raw.startsWith("gslides:") ? raw : `gslides:${raw}`;
+}
+
+function pptSessionPublicPayload(session) {
+  const metadata = session?.metadata || {};
+  return {
+    session_id: metadata.pythonSessionId || metadata.session_id || session?.sessionId || null,
+    sessionId: metadata.pythonSessionId || metadata.session_id || session?.sessionId || null,
+    deck_ref: metadata.deck_ref || metadata.deckRef || null,
+    edit_url: metadata.edit_url || metadata.editUrl || null,
+    embed_url: metadata.embed_url || metadata.embedUrl || null,
+    title: session?.topic || metadata.title || null,
+    student_id: metadata.student_id || session?.candidateId || null,
+    status: session?.status || "active",
+    deck_created: metadata.deck_created ?? null,
+    deck_mode: metadata.deck_mode || null,
+    guidance: metadata.guidance || null,
+  };
+}
+
+async function savePptSessionMapping(requestPayload = {}, pythonResponse = {}) {
+  if (!pythonResponse?.session_id || !pythonResponse?.deck_ref) return null;
+
+  const sessionId = `ppt-${pythonResponse.session_id}`;
+  const studentId = requestPayload.student_id || requestPayload.studentId || "gradeup-student";
+  const title = requestPayload.title || pythonResponse.title || "Seminar Slides";
+  const deckRef = normalizeDeckRef(pythonResponse.deck_ref);
+  const now = new Date();
+
+  const session = await LiveSessionModel.findOneAndUpdate(
+    { sessionId },
+    {
+      $set: {
+        sessionType: "seminar",
+        sessionId,
+        candidateId: String(studentId),
+        candidateName: requestPayload.candidateName || requestPayload.candidate_name || "GradeUp Learner",
+        subject: requestPayload.subject || null,
+        board: requestPayload.board || null,
+        standard: requestPayload.class_number || requestPayload.classNumber || null,
+        unitNumber: Number(requestPayload.chapter || requestPayload.unitNumber || 0) || null,
+        unitTitle: title,
+        topic: title,
+        status: "active",
+        hostCandidateId: String(studentId),
+        hostCandidateName: requestPayload.candidateName || requestPayload.candidate_name || "GradeUp Learner",
+        metadata: {
+          source: "ppt_create_with_ai",
+          pythonSessionId: pythonResponse.session_id,
+          session_id: pythonResponse.session_id,
+          student_id: String(studentId),
+          deck_ref: deckRef,
+          deckRef,
+          edit_url: pythonResponse.edit_url || null,
+          editUrl: pythonResponse.edit_url || null,
+          embed_url: pythonResponse.embed_url || null,
+          embedUrl: pythonResponse.embed_url || null,
+          deck_created: pythonResponse.deck_created ?? null,
+          deck_mode: pythonResponse.deck_mode || null,
+          theme_spec: pythonResponse.theme_spec || null,
+          guidance: pythonResponse.guidance || null,
+          title,
+          mappedAt: now.toISOString(),
+        },
+      },
+      $setOnInsert: {
+        startedAt: now,
+      },
+    },
+    { new: true, upsert: true },
+  );
+
+  console.log("[seminar:ppt:session-start] mapping.saved", {
+    nodeSessionId: sessionId,
+    session_id: pythonResponse.session_id,
+    deck_ref: deckRef,
+    edit_url: pythonResponse.edit_url || null,
+  });
+
+  return session;
+}
+
 function normalizeParsedFieldValue(value) {
   if (Array.isArray(value)) {
     return value[0];
@@ -189,6 +281,97 @@ async function resolveLiveSessionAndPythonSessionId(sessionId) {
 }
 
 const controller = {
+  async pptSessionStart(req, res) {
+    const requestPayload = req.body || {};
+    const startedAt = Date.now();
+    console.log("[seminar:ppt:session-start] request", summarizePptPayload(requestPayload));
+
+    try {
+      const data = await callPython({
+        method: "post",
+        path: "/ppt/session/start",
+        data: requestPayload,
+      });
+
+      console.log("[seminar:ppt:session-start] response", {
+        durationMs: Date.now() - startedAt,
+        status: data?.status || "ready",
+        session_id: data?.session_id || null,
+        deck_ref: data?.deck_ref || null,
+        edit_url: data?.edit_url || null,
+        has_authorization_url: Boolean(data?.authorization_url),
+      });
+
+      if (data?.session_id && data?.deck_ref) {
+        await savePptSessionMapping(requestPayload, data);
+      }
+
+      return res.status(200).json({ status: true, data });
+    } catch (error) {
+      console.error("[seminar:ppt:session-start] error", {
+        durationMs: Date.now() - startedAt,
+        message: error.message,
+        statusCode: error.statusCode || 500,
+        details: error.details || null,
+      });
+      return res.status(error.statusCode || 500).json({
+        status: false,
+        message: error.message || "Failed to start PPT session",
+        details: error.details || null,
+      });
+    }
+  },
+
+  async pptSessionByDeck(req, res) {
+    if (!addonRequestAllowed(req)) {
+      return res.status(401).json({ status: false, message: "Invalid add-on API key" });
+    }
+
+    const deckRef = normalizeDeckRef(req.body?.deck_ref || req.body?.deckRef || req.query?.deck_ref || req.query?.deckRef);
+    console.log("[seminar:ppt:session-by-deck] request", { deck_ref: deckRef });
+
+    if (!deckRef) {
+      return res.status(400).json({ status: false, message: "deck_ref is required" });
+    }
+
+    try {
+      const session = await LiveSessionModel.findOne({
+        sessionType: "seminar",
+        status: { $ne: "completed" },
+        $or: [
+          { "metadata.deck_ref": deckRef },
+          { "metadata.deckRef": deckRef },
+        ],
+      }).sort({ updatedAt: -1 });
+
+      if (!session) {
+        console.log("[seminar:ppt:session-by-deck] not_found", { deck_ref: deckRef });
+        return res.status(404).json({
+          status: false,
+          message: "No active GradeUp PPT session found for this deck",
+        });
+      }
+
+      const data = pptSessionPublicPayload(session);
+      console.log("[seminar:ppt:session-by-deck] response", {
+        deck_ref: deckRef,
+        session_id: data.session_id,
+        status: data.status,
+      });
+
+      return res.status(200).json({ status: true, data });
+    } catch (error) {
+      console.error("[seminar:ppt:session-by-deck] error", {
+        deck_ref: deckRef,
+        message: error.message,
+      });
+      return res.status(500).json({
+        status: false,
+        message: error.message || "Failed to find PPT session for deck",
+      });
+    }
+  },
+
   async pptSuggest(req, res) {
     return proxyPptRequest(req, res, {
       pythonPath: "/ppt/suggest",
