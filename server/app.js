@@ -18,19 +18,22 @@ const TutorRouter = require("./router/Tutor");
 const DebateRouter = require("./router/DebateV2");
 const DebateSpeechRouter = require("./router/DebateSpeech");
 const SeminarRouter = require("./router/SeminarV2");
+const AvatarRouter = require("./router/Avatar");
 const DashboardRouter = require("./router/Dashboard");
 const AdminAuthRouter = require("./router/AdminAuth");
 const AdminSubjectRouter = require("./router/AdminSubject");
 const AdminUsersRouter = require("./router/AdminUsers");
 const realtimeRouter = require("./router/realtime"); 
 const StudentRouter = require("./router/Student");
+const GroupChatRouter = require("./router/GroupChat");
+const CommunityRouter = require("./router/Community");
 
 // const { logRoutes } = require("./utils/routeLogger");
 const  secureRequestLogger  = require("./utils/logger");
 const { initializeSubjectUploadQueue } = require("./services/adminSubjectService");
 
 // Allowing only added origins (i.e client side access)
-const allowedOrigins = [process.env.FE_URL,process.env.VITE_API_BASE_URL,process.env.FE_URL_2,"http://192.168.1.35:3000","http://localhost:3000","https://main.d303utafz3zrke.amplifyapp.com"];
+const allowedOrigins = [process.env.FE_URL,process.env.VITE_API_BASE_URL,process.env.FE_URL_2,"http://192.168.1.35:3000","http://localhost:3000","https://main.d303utafz3zrke.amplifyapp.com"].filter(Boolean);
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
 app.use(bodyParser.json({ limit: '100mb' }));
@@ -53,10 +56,13 @@ app.use("/api/v1/tutor", TutorRouter);
 app.use("/api/v1/debate", DebateRouter);
 app.use("/api/v1/debate/speech", DebateSpeechRouter);
 app.use("/api/v1/seminar", SeminarRouter);
+app.use("/api/v1/avatar", AvatarRouter);
 app.use("/api", DashboardRouter);
 app.use("/api/v1/admin/auth", AdminAuthRouter);
 app.use("/api/v1/admin/users", AdminUsersRouter);
 app.use("/api/v1/admin/subjects", AdminSubjectRouter);
+app.use("/api/v1/group-chat", GroupChatRouter);
+app.use("/api/community", CommunityRouter);
 app.use('/api/realtime', realtimeRouter);
 //AI Router
 app.use("/api/v1/AI/higlight", AIFeaturesRouter);
@@ -80,6 +86,12 @@ mongoose
 const http = require("http");
 const PORT = process.env.PORT || 8000; 
 const server = http.createServer(app);
+try {
+  const { setupGroupChatSocket } = require("./services/groupChatRealtime");
+  setupGroupChatSocket(server, allowedOrigins);
+} catch (error) {
+  console.log(`Group chat realtime disabled: ${error.message}`);
+}
 server.listen(PORT, () => {
   console.log(`Server is Running at ${PORT}`);
 });

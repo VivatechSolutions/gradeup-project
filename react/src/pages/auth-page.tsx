@@ -423,8 +423,8 @@ const REGISTER_STEPS = [
   { id:4, label:"Password" },
 ];
 const BOARDS   = ["CBSE","ICSE","State Board","IB","Cambridge"];
-const GRADES   = ["Grade 6","Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"];
-const SUBJECTS = ["Mathematics","Science","English","History","Geography","Computer Science","Physics","Chemistry","Biology"];
+const GoogleIcon = FaGoogle as any;
+const MicrosoftIcon = FaMicrosoft as any;
 
 // ── Step indicator ────────────────────────────────────────────────────────────
 function StepIndicator({ current, steps }: { current:number; steps:typeof REGISTER_STEPS }) {
@@ -450,9 +450,99 @@ function StepIndicator({ current, steps }: { current:number; steps:typeof REGIST
   );
 }
 
+function loadScriptOnce(src: string) {
+  return new Promise<void>((resolve, reject) => {
+    const existing = document.querySelector(`script[src="${src}"]`);
+    if (existing) {
+      resolve();
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = true;
+    script.defer = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error(`Failed to load ${src}`));
+    document.head.appendChild(script);
+  });
+}
+
+async function getGoogleOAuthToken(): Promise<{ accessToken: string }> {
+  const clientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
+  if (!clientId) throw new Error("REACT_APP_GOOGLE_CLIENT_ID is not configured");
+  await loadScriptOnce("https://accounts.google.com/gsi/client");
+
+  return new Promise((resolve, reject) => {
+    const google = (window as any).google;
+    if (!google?.accounts?.oauth2) {
+      reject(new Error("Google OAuth is unavailable"));
+      return;
+    }
+    const client = google.accounts.oauth2.initTokenClient({
+      client_id: clientId,
+      scope: "openid email profile",
+      prompt: "select_account",
+      callback: (response: any) => {
+        if (response?.access_token) resolve({ accessToken: response.access_token });
+        else reject(new Error(response?.error_description || "Google did not return an access token"));
+      },
+    });
+    client.requestAccessToken();
+  });
+}
+
+function getMicrosoftIdToken(): Promise<string> {
+  const clientId = process.env.REACT_APP_MICROSOFT_CLIENT_ID;
+  if (!clientId) throw new Error("REACT_APP_MICROSOFT_CLIENT_ID is not configured");
+  const tenant = process.env.REACT_APP_MICROSOFT_TENANT_ID || "common";
+  const nonce = Math.random().toString(36).slice(2);
+  const params = new URLSearchParams({
+    client_id: clientId,
+    response_type: "id_token",
+    redirect_uri: window.location.origin,
+    response_mode: "fragment",
+    scope: "openid profile email",
+    nonce,
+    prompt: "select_account",
+  });
+  const popup = window.open(
+    `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/authorize?${params.toString()}`,
+    "gradeup_microsoft_oauth",
+    "width=520,height=680",
+  );
+  if (!popup) return Promise.reject(new Error("Popup blocked. Please allow popups and try again."));
+
+  return new Promise((resolve, reject) => {
+    const timer = window.setInterval(() => {
+      if (popup.closed) {
+        window.clearInterval(timer);
+        reject(new Error("Microsoft sign-in was cancelled"));
+        return;
+      }
+      try {
+        if (popup.location.origin !== window.location.origin) return;
+        const hash = new URLSearchParams(popup.location.hash.replace(/^#/, ""));
+        const error = hash.get("error_description") || hash.get("error");
+        const idToken = hash.get("id_token");
+        if (error) {
+          popup.close();
+          window.clearInterval(timer);
+          reject(new Error(error));
+        } else if (idToken) {
+          popup.close();
+          window.clearInterval(timer);
+          resolve(idToken);
+        }
+      } catch {
+        // Cross-origin until Microsoft redirects back.
+      }
+    }, 300);
+  });
+}
+
 // ── Main export ───────────────────────────────────────────────────────────────
 export default function AuthPage() {
-  const { loginMutation, registerMutation } = useAuth();
+  const { loginMutation, registerMutation, oauthMutation } = useAuth();
   const { toast } = useToast();
 
   // Theme
@@ -476,7 +566,6 @@ export default function AuthPage() {
   const [regRole, setRegRole]         = useState<"student"|"teacher">("student");
   const [regBoard, setRegBoard]       = useState("");
   const [regGrade, setRegGrade]       = useState("");
-  const [regSubjects, setRegSubjects] = useState<string[]>([]);
   const [regForm, setRegForm]         = useState({
     firstName:"", lastName:"", username:"", email:"", schoolName:"", password:"", confirmPassword:"",
   });
@@ -592,9 +681,8 @@ export default function AuthPage() {
     if (step === 3) {
       if (regRole === "student") {
         if (!regBoard) errs.board = "Please select a board";
-        if (!regGrade) errs.grade = "Please select a grade";
+        if (!regGrade.trim()) errs.grade = "Class is required";
       }
-      if (regSubjects.length === 0) errs.subjects = "Please select at least one subject";
     }
 
     if (step === 4) {
@@ -621,11 +709,52 @@ export default function AuthPage() {
       schoolName: regForm.schoolName,
       board: regBoard,
       classNumber: regGrade,
-      subjects: regSubjects,
+      subjects: [],
       grade:     regRole === "student" && regGrade
         ? parseInt(regGrade.replace(/\D/g, ""))
         : undefined,
     });
+  };
+
+  const validateOAuthSignupContext = () => {
+    const errs: Record<string,string> = {};
+    if (!regForm.firstName.trim()) errs.firstName = "First name is required";
+    if (!regForm.lastName.trim()) errs.lastName = "Last name is required";
+    if (regRole === "student" && !regForm.schoolName.trim()) errs.schoolName = "School name is required";
+    if (regRole === "student") {
+      if (!regBoard) errs.board = "Please select a board";
+      if (!regGrade.trim()) errs.grade = "Class is required";
+    }
+    setRegErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
+  const handleOAuth = async (provider: "google" | "microsoft", mode: "login" | "signup") => {
+    try {
+      if (mode === "signup" && !validateOAuthSignupContext()) return;
+      const googleToken = provider === "google" ? await getGoogleOAuthToken() : null;
+      const idToken = provider === "microsoft" ? await getMicrosoftIdToken() : undefined;
+      oauthMutation.mutate({
+        provider,
+        idToken,
+        accessToken: googleToken?.accessToken,
+        profileContext: mode === "signup"
+          ? {
+              firstName: regForm.firstName,
+              lastName: regForm.lastName,
+              schoolName: regForm.schoolName,
+              board: regBoard,
+              classNumber: regGrade,
+            }
+          : undefined,
+      });
+    } catch (error) {
+      toast({
+        title: "OAuth unavailable",
+        description: error instanceof Error ? error.message : "Unable to start OAuth sign-in.",
+        variant: "destructive",
+      });
+    }
   };
 
   const features = [
@@ -773,24 +902,20 @@ export default function AuthPage() {
                                 <button
                                   className="ap-oauth-btn"
                                   type="button"
-                                  disabled={loginMutation.isPending}
-                                  title="Quick login as Student"
-                                  onClick={() => loginMutation.mutate({
-                                    email:"student@gradeup.com", password:"password123", role:"student"
-                                  })}
+                                  disabled={oauthMutation.isPending}
+                                  title="Continue with Google"
+                                  onClick={() => handleOAuth("google", "login")}
                                 >
-                                  <FaGoogle style={{color:"#ea4335",fontSize:15}}/> Google
+                                  <GoogleIcon style={{color:"#ea4335",fontSize:15}}/> Google
                                 </button>
                                 <button
                                   className="ap-oauth-btn"
                                   type="button"
-                                  disabled={loginMutation.isPending}
-                                  title="Quick login as Teacher"
-                                  onClick={() => loginMutation.mutate({
-                                    email:"teacher@gradeup.com", password:"password123", role:"teacher"
-                                  })}
+                                  disabled={oauthMutation.isPending}
+                                  title="Continue with Microsoft"
+                                  onClick={() => handleOAuth("microsoft", "login")}
                                 >
-                                  <FaMicrosoft style={{color:"#00a4ef",fontSize:15}}/> Microsoft
+                                  <MicrosoftIcon style={{color:"#00a4ef",fontSize:15}}/> Microsoft
                                 </button>
                               </div>
 
@@ -929,7 +1054,7 @@ export default function AuthPage() {
                       <div className="ap-card-sub">
                         {step===1 && "Tell us who you are to personalise your experience"}
                         {step===2 && "Let's get to know you"}
-                        {step===3 && (regRole==="student" ? "Choose your board, grade & subjects" : "What subjects do you teach?")}
+                        {step===3 && (regRole==="student" ? "Choose your board and class" : "What subjects do you teach?")}
                         {step===4 && "Create a secure password for your account"}
                       </div>
                     </div>
@@ -1049,7 +1174,7 @@ export default function AuthPage() {
                             </div>
                           )}
 
-                          {/* Step 3 — Board / Grade / Subjects */}
+                          {/* Step 3 — Board / Class */}
                           {step===3 && (
                             <div>
                               {regRole==="student" && (
@@ -1068,38 +1193,20 @@ export default function AuthPage() {
                                     {regErrors.board && <div className="ap-field-error"><AlertTriangle size={11}/>{regErrors.board}</div>}
                                   </div>
                                   <div className="ap-field">
-                                    <label className="ap-field-label">🎓 Grade / Class</label>
-                                    <div className="ap-chips">
-                                      {GRADES.map(g => (
-                                        <button key={g} type="button"
-                                          className={`ap-chip${regGrade===g?" on":""}`}
-                                          onClick={() => { setRegGrade(g); setRegErrors(p=>({...p,grade:""})); }}>
-                                          {g}
-                                        </button>
-                                      ))}
-                                    </div>
+                                    <label className="ap-field-label">🎓 Class</label>
+                                    <input
+                                      className={`ap-input${regErrors.grade?" is-error":""}`}
+                                      placeholder="Example: 7"
+                                      value={regGrade}
+                                      onChange={e => {
+                                        setRegGrade(e.target.value);
+                                        setRegErrors(p=>({...p,grade:""}));
+                                      }}
+                                    />
                                     {regErrors.grade && <div className="ap-field-error"><AlertTriangle size={11}/>{regErrors.grade}</div>}
                                   </div>
                                 </>
                               )}
-                              <div className="ap-field">
-                                <label className="ap-field-label">
-                                  📚 {regRole==="student" ? "Subjects (select all that apply)" : "Subjects you teach"}
-                                </label>
-                                <div className="ap-chips">
-                                  {SUBJECTS.map(s => (
-                                    <button key={s} type="button"
-                                      className={`ap-chip${regSubjects.includes(s)?" on":""}`}
-                                      onClick={() => {
-                                        setRegSubjects(p => p.includes(s) ? p.filter(x=>x!==s) : [...p,s]);
-                                        setRegErrors(p=>({...p,subjects:""}));
-                                      }}>
-                                      {s}
-                                    </button>
-                                  ))}
-                                </div>
-                                {regErrors.subjects && <div className="ap-field-error"><AlertTriangle size={11}/>{regErrors.subjects}</div>}
-                              </div>
                               <div className="ap-step-nav">
                                 <button className="ap-btn ap-btn-outline" onClick={() => setStep(2)}>
                                   <ChevronLeft size={16}/> Back
@@ -1158,7 +1265,7 @@ export default function AuthPage() {
                                   ["Name",  `${regForm.firstName} ${regForm.lastName}`.trim()||"—"],
                                   ["Email", regForm.email||"—"],
                                   ...(regRole==="student"
-                                    ? [["Board",regBoard||"—"],["Grade",regGrade||"—"]]
+                                    ? [["Board",regBoard||"—"],["Class",regGrade||"—"]]
                                     : [] as any),
                                 ] as [string,string][]).map(([k,v]) => (
                                   <div key={k} className="ap-summary-row">
@@ -1167,6 +1274,34 @@ export default function AuthPage() {
                                   </div>
                                 ))}
                               </div>
+
+                              {regRole==="student" && (
+                                <>
+                                  <div className="ap-oauth">
+                                    <button
+                                      className="ap-oauth-btn"
+                                      type="button"
+                                      disabled={oauthMutation.isPending}
+                                      onClick={() => handleOAuth("google", "signup")}
+                                    >
+                                      <GoogleIcon style={{color:"#ea4335",fontSize:15}}/> Sign up with Google
+                                    </button>
+                                    <button
+                                      className="ap-oauth-btn"
+                                      type="button"
+                                      disabled={oauthMutation.isPending}
+                                      onClick={() => handleOAuth("microsoft", "signup")}
+                                    >
+                                      <MicrosoftIcon style={{color:"#00a4ef",fontSize:15}}/> Sign up with Microsoft
+                                    </button>
+                                  </div>
+                                  <div className="ap-divider">
+                                    <div className="ap-divider-line"/>
+                                    <span className="ap-divider-text">Or create with password</span>
+                                    <div className="ap-divider-line"/>
+                                  </div>
+                                </>
+                              )}
 
                               <div className="ap-step-nav">
                                 <button className="ap-btn ap-btn-outline" onClick={() => setStep(3)}>

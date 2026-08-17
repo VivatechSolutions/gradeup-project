@@ -11,6 +11,36 @@ function normalize(value = "") {
   return String(value || "").trim();
 }
 
+function escapeRegex(value = "") {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function exactText(value) {
+  const cleaned = normalize(value);
+  return cleaned ? new RegExp(`^${escapeRegex(cleaned)}$`, "i") : null;
+}
+
+function classVariants(value) {
+  const cleaned = normalize(value);
+  if (!cleaned) return [];
+  const numeric = cleaned.replace(/^(grade|class)\s*/i, "").trim();
+  const numberValue = Number.parseInt(numeric, 10);
+  const paddedNumeric = Number.isNaN(numberValue) ? "" : String(numberValue).padStart(2, "0");
+  return Array.from(new Set([
+    cleaned,
+    numeric,
+    paddedNumeric,
+    `Grade ${numeric}`,
+    paddedNumeric ? `Grade ${paddedNumeric}` : "",
+    `Class ${numeric}`,
+    paddedNumeric ? `Class ${paddedNumeric}` : "",
+    `grade ${numeric}`,
+    paddedNumeric ? `grade ${paddedNumeric}` : "",
+    `class ${numeric}`,
+    paddedNumeric ? `class ${paddedNumeric}` : "",
+  ].filter(Boolean)));
+}
+
 async function getStudentProfile(userId) {
   const profile = await StudentProfile.findOne({ userId });
   if (!profile) {
@@ -25,17 +55,19 @@ function studentContentFilter(profile) {
   const ctx = profile.independentLearningContext || {};
   const board = normalize(ctx.board);
   const classNumber = normalize(ctx.classNumber);
+  const boardMatcher = exactText(board);
+  const classMatchers = classVariants(classNumber).map(exactText).filter(Boolean);
   return {
     board,
     classNumber,
     unitQuery: {
-      ...(board ? { board } : {}),
-      ...(classNumber ? { standard: classNumber } : {}),
+      ...(boardMatcher ? { board: boardMatcher } : {}),
+      ...(classMatchers.length ? { standard: { $in: classMatchers } } : {}),
       "processing.status": { $ne: "failed" },
     },
     bookQuery: {
-      ...(board ? { board } : {}),
-      ...(classNumber ? { grade: classNumber } : {}),
+      ...(boardMatcher ? { board: boardMatcher } : {}),
+      ...(classMatchers.length ? { grade: { $in: classMatchers } } : {}),
       importStatus: { $ne: "failed" },
     },
   };

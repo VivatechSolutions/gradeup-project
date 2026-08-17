@@ -30,6 +30,7 @@ import { useTheme } from '../hooks/use-theme';
 import { useNotificationStore } from "../lib/notification-store";
 import FunnyLoader from "../components/ui/FunnyLoader";
 import { queryClient } from "../lib/queryClient";
+import { buildApiUrl } from "../lib/apiBase";
 import Navigation from "../components/navigation";
 import { useAuth } from "../hooks/use-auth";
 
@@ -442,6 +443,7 @@ export default function CommunityPage() {
   const [messageContent, setMessageContent] = useState("");
   const [postContent, setPostContent]       = useState("");
   const [postType, setPostType]             = useState("discussion");
+  const [postVisibility, setPostVisibility] = useState<"all" | "school">("all");
   const [contentFilter, setContentFilter]   = useState("all");
   const [searchTerm, setSearchTerm]         = useState("");
   const [showComments, setShowComments]     = useState<{[k:number]:boolean}>({});
@@ -478,7 +480,7 @@ export default function CommunityPage() {
 
   const createPostMutation = useMutation({
     mutationFn: async (data: any) => {
-      const r = await fetch("/api/community/posts", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data) });
+      const r = await fetch(buildApiUrl("/api/community/posts"), { method:"POST", credentials:"include", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data) });
       if (!r.ok) throw new Error('Failed'); return r.json();
     },
     onSuccess: (data) => { 
@@ -491,7 +493,7 @@ export default function CommunityPage() {
 
   const likePostMutation = useMutation({
     mutationFn: async (postId: number) => {
-      const r = await fetch(`/api/community/posts/${postId}/like`, { method:"POST", headers:{"Content-Type":"application/json"} });
+      const r = await fetch(buildApiUrl(`/api/community/posts/${postId}/like`), { method:"POST", credentials:"include", headers:{"Content-Type":"application/json"} });
       if (!r.ok) throw new Error('Failed'); return r.json();
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey:["/api/community/posts"] }),
@@ -499,7 +501,7 @@ export default function CommunityPage() {
 
   const commentPostMutation = useMutation({
     mutationFn: async ({ postId, content }: { postId: number; content: string }) => {
-      const r = await fetch(`/api/community/posts/${postId}/comments`, { method:"POST", body:JSON.stringify({ content }), headers:{"Content-Type":"application/json"} });
+      const r = await fetch(buildApiUrl(`/api/community/posts/${postId}/comments`), { method:"POST", credentials:"include", body:JSON.stringify({ content }), headers:{"Content-Type":"application/json"} });
       if (!r.ok) throw new Error('Failed'); return r.json();
     },
     onSuccess: (data, vars) => {
@@ -512,7 +514,7 @@ export default function CommunityPage() {
 
   const createPrivateMessageMutation = useMutation({
     mutationFn: async (data: any) => {
-      const r = await fetch("/api/community/messages", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data) });
+      const r = await fetch(buildApiUrl("/api/community/messages"), { method:"POST", credentials:"include", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data) });
       if (!r.ok) throw new Error('Failed'); return r.json();
     },
     onSuccess: (data) => { 
@@ -524,7 +526,7 @@ export default function CommunityPage() {
 
   const createGroupMessageMutation = useMutation({
     mutationFn: async (data: any) => {
-      const r = await fetch("/api/community/group-messages", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data) });
+      const r = await fetch(buildApiUrl("/api/community/group-messages"), { method:"POST", credentials:"include", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data) });
       if (!r.ok) throw new Error('Failed'); return r.json();
     },
     onSuccess: (data) => { 
@@ -548,7 +550,7 @@ export default function CommunityPage() {
 
   const createPost = () => {
     if (moderateContent(postContent)) { toast({ title:"Please keep posts appropriate." }); return; }
-    if (postContent.trim()) createPostMutation.mutate({ content:postContent.trim(), type:postType, courseId:27 });
+    if (postContent.trim()) createPostMutation.mutate({ content:postContent.trim(), type:postType, visibility:postVisibility, courseId:27 });
     else toast({ title:"Please enter post content" });
   };
 
@@ -583,7 +585,7 @@ export default function CommunityPage() {
     { id:"feed",        label:"Feed",       icon:<MessageSquare /> },
     // { id:"messaging",   label:"Messages",   icon:<Send /> },
     { id:"blogs",       label:"Blogs",      icon:<BookOpen /> },
-    { id:"leaderboard", label:"Leaderboard",icon:<Trophy /> },
+    // Leaderboard is intentionally hidden until the reward rules are finalized.
   ];
 
   const statCards = [
@@ -716,13 +718,20 @@ export default function CommunityPage() {
                       <div className="comm-card-title"><MessageSquare size={15} style={{color:"#6366f1"}}/> Share with your class</div>
                     </div>
                     <div className="comm-card-body">
-                      <select value={postType} onChange={e => setPostType(e.target.value)}
-                        className="w-full p-2 rounded-lg border bg-gray-50 dark:bg-gray-700 text-sm mb-2.5 font-sans outline-none text-gray-800 dark:text-gray-300 border-gray-200 dark:border-gray-600 focus:border-indigo-500 dark:focus:border-indigo-400">
-                        <option value="discussion">Discussion</option>
-                        <option value="question">Question</option>
-                        <option value="achievement">Achievement</option>
-                        <option value="study_tip">Study Tip</option>
-                      </select>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-2.5">
+                        <select value={postType} onChange={e => setPostType(e.target.value)}
+                          className="w-full p-2 rounded-lg border bg-gray-50 dark:bg-gray-700 text-sm font-sans outline-none text-gray-800 dark:text-gray-300 border-gray-200 dark:border-gray-600 focus:border-indigo-500 dark:focus:border-indigo-400">
+                          <option value="discussion">Discussion</option>
+                          <option value="question">Question</option>
+                          <option value="achievement">Achievement</option>
+                          <option value="study_tip">Study Tip</option>
+                        </select>
+                        <select value={postVisibility} onChange={e => setPostVisibility(e.target.value as "all" | "school")}
+                          className="w-full p-2 rounded-lg border bg-gray-50 dark:bg-gray-700 text-sm font-sans outline-none text-gray-800 dark:text-gray-300 border-gray-200 dark:border-gray-600 focus:border-indigo-500 dark:focus:border-indigo-400">
+                          <option value="all">Visible to all</option>
+                          <option value="school">Only inside my school</option>
+                        </select>
+                      </div>
                       <textarea className="comm-post-textarea" placeholder="What's on your mind?"
                         value={postContent} onChange={e => setPostContent(e.target.value)} rows={3} />
                       <div className="comm-post-actions">

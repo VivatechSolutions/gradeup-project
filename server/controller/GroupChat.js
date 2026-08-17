@@ -1,8 +1,14 @@
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const formidable = require("formidable");
 const GroupChat = require("../model/GroupChat");
+const GroupInvite = require("../model/GroupInvite");
 const GroupMessage = require("../model/GroupMessage");
+const User = require("../model/User");
+const StudentProfile = require("../model/StudentProfile");
+const { sendEmail } = require("../config/EmailTransporter");
+const { getGroupInviteEmail } = require("../config/EmailTemplate");
 const {
   displayName,
   findActiveMember,
@@ -61,6 +67,103 @@ function handleError(res, error) {
   return res.status(status).json({ status: false, message: error.message || "Internal Server Error" });
 }
 
+function hashInviteToken(token) {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+function normalizeEmail(email = "") {
+  return String(email).trim().toLowerCase();
+}
+
+function normalizeText(value = "") {
+  return String(value || "").trim();
+}
+
+function sameText(left, right) {
+  return normalizeText(left).toLowerCase() === normalizeText(right).toLowerCase();
+}
+
+async function getUserProfile(userId) {
+  return StudentProfile.findOne({ userId }).lean();
+}
+
+function getSchool(profile) {
+  return normalizeText(profile?.schoolContext?.name);
+}
+
+function getClassNumber(profile) {
+  return normalizeText(profile?.independentLearningContext?.classNumber);
+}
+
+function profileContext(profile) {
+  return {
+    schoolName: getSchool(profile),
+    classNumber: getClassNumber(profile),
+    board: normalizeText(profile?.independentLearningContext?.board),
+  };
+}
+
+function studentName(user) {
+  return displayName({
+    name: user?.name,
+    firstName: user?.firstName,
+    lastName: user?.lastName,
+    email: user?.email,
+  });
+}
+
+async function serializeStudentSearchResult(user, requesterProfile) {
+  const profile = await getUserProfile(user._id);
+  const requesterSchool = getSchool(requesterProfile);
+  const requesterClass = getClassNumber(requesterProfile);
+  const targetSchool = getSchool(profile);
+  const targetClass = getClassNumber(profile);
+  const isSameSchool = Boolean(requesterSchool && targetSchool && sameText(requesterSchool, targetSchool));
+  const isSameClass = Boolean(isSameSchool && requesterClass && targetClass && sameText(requesterClass, targetClass));
+  return {
+    id: user._id.toString(),
+    name: studentName(user),
+    email: user.email,
+    schoolName: targetSchool || null,
+    classNumber: targetClass || null,
+    isSameSchool,
+    isSameClass,
+    canDirectAdd: isSameSchool && isSameClass,
+    tag: !isSameSchool
+      ? [targetSchool, targetClass && `Class ${targetClass}`].filter(Boolean).join(" - ")
+      : !isSameClass
+        ? targetClass
+          ? `Class ${targetClass}`
+          : "Different class"
+        : null,
+  };
+}
+
+function addMemberToGroup(group, user, profile, role = "member") {
+  const existing = (group.members || []).find(
+    (member) => member.userId?.toString() === user._id.toString() && member.userRole === "student",
+  );
+  if (existing) {
+    existing.status = "active";
+    existing.leftAt = undefined;
+    existing.name = studentName(user);
+    existing.email = user.email;
+    return existing;
+  }
+  const member = {
+    userId: user._id,
+    userRole: "student",
+    name: studentName(user),
+    email: user.email,
+    role,
+    status: "active",
+    joinedAt: new Date(),
+    metadata: profileContext(profile),
+  };
+  group.members.push(member);
+  return member;
+}
+
 async function createSystemMessage(group, authUser, text, metadata = {}) {
   const message = await GroupMessage.create({
     groupId: group._id,
@@ -96,6 +199,7 @@ const controller = {
       const user = req.authUser.user;
       const name = String(req.body?.name || "").trim();
       if (!name) return res.status(400).json({ status: false, message: "Group name is required" });
+      const profile = await getUserProfile(req.authUser.id);
       const group = await GroupChat.create({
         name,
         description: req.body?.description || "",
@@ -112,11 +216,154 @@ const controller = {
             name: displayName(user),
             email: user.email,
             role: "admin",
+            metadata: profileContext(profile),
           },
         ],
         actionLog: [{ type: "created", actorId: req.authUser.id, actorRole: req.authUser.role }],
       });
       return res.status(201).json({ status: true, data: serializeGroup(group, getOnlineUserKeys()) });
+    } catch (error) {
+      return handleError(res, error);
+    }
+  },
+
+  async searchMembers(req, res) {
+    try {
+      const { group } = await requireGroupMember(req.params.groupId, req.authUser);
+      if (!isGroupAdmin(group, req.authUser)) return res.status(403).json({ status: false, message: "Admin access required" });
+      const query = normalizeText(req.query?.q);
+      if (query.length < 3) return res.status(400).json({ status: false, message: "Search at least 3 characters" });
+      const requesterProfile = await getUserProfile(req.authUser.id);
+      const users = await User.find({
+        role: "student",
+        status: "active",
+        deletedAt: null,
+        $or: [
+          { email: { $regex: query, $options: "i" } },
+          { firstName: { $regex: query, $options: "i" } },
+          { lastName: { $regex: query, $options: "i" } },
+        ],
+      })
+        .limit(12)
+        .lean();
+      const activeMemberIds = new Set((group.members || []).filter((m) => m.status === "active").map((m) => m.userId.toString()));
+      const results = await Promise.all(
+        users
+          .filter((user) => user._id.toString() !== req.authUser.id && !activeMemberIds.has(user._id.toString()))
+          .map((user) => serializeStudentSearchResult(user, requesterProfile)),
+      );
+      return res.status(200).json({ status: true, data: results });
+    } catch (error) {
+      return handleError(res, error);
+    }
+  },
+
+  async addMember(req, res) {
+    try {
+      const { group } = await requireGroupMember(req.params.groupId, req.authUser);
+      if (!isGroupAdmin(group, req.authUser)) return res.status(403).json({ status: false, message: "Admin access required" });
+      const user = await User.findOne({ _id: req.body?.userId, role: "student", status: "active", deletedAt: null });
+      if (!user) return res.status(404).json({ status: false, message: "Student not found" });
+      const [requesterProfile, targetProfile] = await Promise.all([getUserProfile(req.authUser.id), getUserProfile(user._id)]);
+      const canDirectAdd = sameText(getSchool(requesterProfile), getSchool(targetProfile)) && sameText(getClassNumber(requesterProfile), getClassNumber(targetProfile));
+      if (!canDirectAdd) {
+        return res.status(403).json({ status: false, message: "Only same school and same class students can be added directly. Send an invite instead." });
+      }
+      const member = addMemberToGroup(group, user, targetProfile);
+      group.actionLog.push({ type: "joined", actorId: req.authUser.id, actorRole: req.authUser.role, targetId: user._id, targetRole: "student" });
+      await group.save();
+      await createSystemMessage(group, req.authUser, `${member.name} joined the group.`, { action: "joined" });
+      emitToGroup(group._id.toString(), "group:updated", serializeGroup(group, getOnlineUserKeys()));
+      await emitGroupMembers(group._id.toString());
+      return res.status(200).json({ status: true, data: serializeGroup(group, getOnlineUserKeys()) });
+    } catch (error) {
+      return handleError(res, error);
+    }
+  },
+
+  async createInvite(req, res) {
+    try {
+      const { group } = await requireGroupMember(req.params.groupId, req.authUser);
+      if (!isGroupAdmin(group, req.authUser)) return res.status(403).json({ status: false, message: "Admin access required" });
+      const email = normalizeEmail(req.body?.email);
+      if (!email) return res.status(400).json({ status: false, message: "Email is required" });
+      const invitedUser = await User.findOne({ normalizedEmail: email, role: "student", status: "active", deletedAt: null });
+      if (!invitedUser) return res.status(404).json({ status: false, message: "No registered student found for this email" });
+      const existingMember = findActiveMember(group, { id: invitedUser._id.toString(), role: "student" });
+      if (existingMember) return res.status(409).json({ status: false, message: "Student is already in this group" });
+      const token = crypto.randomBytes(32).toString("base64url");
+      const invite = await GroupInvite.create({
+        groupId: group._id,
+        email,
+        invitedUserId: invitedUser._id,
+        invitedBy: req.authUser.id,
+        tokenHash: hashInviteToken(token),
+        expiresAt: new Date(Date.now() + Number(process.env.GROUP_INVITE_TTL_HOURS || 72) * 60 * 60 * 1000),
+      });
+      const appUrl = (process.env.FE_URL || process.env.APP_URL || process.env.FRONTEND_URL || "").replace(/\/+$/, "");
+      const joinUrl = `${appUrl || ""}/group-chat/join/${token}`;
+      const emailPayload = getGroupInviteEmail({
+        inviterName: displayName(req.authUser.user),
+        groupName: group.name,
+        joinUrl,
+      });
+      const emailResult = await sendEmail({ to: email, ...emailPayload }).catch((error) => ({ error: error.message }));
+      group.actionLog.push({ type: "joined", actorId: req.authUser.id, actorRole: req.authUser.role, targetId: invitedUser._id, targetRole: "student", metadata: { inviteId: invite._id } });
+      await group.save();
+      return res.status(201).json({
+        status: true,
+        data: {
+          id: invite._id.toString(),
+          email,
+          expiresAt: invite.expiresAt,
+          emailSkipped: Boolean(emailResult?.skipped),
+          joinUrl: emailResult?.skipped ? joinUrl : undefined,
+        },
+      });
+    } catch (error) {
+      return handleError(res, error);
+    }
+  },
+
+  async getInvite(req, res) {
+    try {
+      const invite = await GroupInvite.findOne({ tokenHash: hashInviteToken(req.params.token), status: "pending" });
+      if (!invite || invite.expiresAt < new Date()) return res.status(404).json({ status: false, message: "Invite is invalid or expired" });
+      const group = await GroupChat.findOne({ _id: invite.groupId, deletedAt: null });
+      if (!group) return res.status(404).json({ status: false, message: "Group not found" });
+      return res.status(200).json({
+        status: true,
+        data: {
+          email: invite.email,
+          group: serializeGroup(group, getOnlineUserKeys()),
+          expiresAt: invite.expiresAt,
+        },
+      });
+    } catch (error) {
+      return handleError(res, error);
+    }
+  },
+
+  async acceptInvite(req, res) {
+    try {
+      const invite = await GroupInvite.findOne({ tokenHash: hashInviteToken(req.params.token), status: "pending" });
+      if (!invite || invite.expiresAt < new Date()) return res.status(404).json({ status: false, message: "Invite is invalid or expired" });
+      if (invite.invitedUserId?.toString() !== req.authUser.id) {
+        return res.status(403).json({ status: false, message: "This invite belongs to another registered student" });
+      }
+      const group = await GroupChat.findOne({ _id: invite.groupId, deletedAt: null });
+      if (!group) return res.status(404).json({ status: false, message: "Group not found" });
+      const user = await User.findById(req.authUser.id);
+      const profile = await getUserProfile(req.authUser.id);
+      const member = addMemberToGroup(group, user, profile);
+      invite.status = "accepted";
+      invite.acceptedAt = new Date();
+      group.actionLog.push({ type: "joined", actorId: req.authUser.id, actorRole: req.authUser.role, metadata: { inviteId: invite._id } });
+      await Promise.all([group.save(), invite.save()]);
+      await createSystemMessage(group, req.authUser, `${member.name} joined the group.`, { action: "invite_accepted" });
+      emitToGroup(group._id.toString(), "group:updated", serializeGroup(group, getOnlineUserKeys()));
+      await emitGroupMembers(group._id.toString());
+      return res.status(200).json({ status: true, data: serializeGroup(group, getOnlineUserKeys()) });
     } catch (error) {
       return handleError(res, error);
     }

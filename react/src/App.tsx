@@ -32,11 +32,13 @@ import ProfilePage from "./pages/profile-page";
 import SettingsPage from "./pages/settings-page";
 import NotificationPage from "./pages/notification-page";
 import ForgotPasswordPage from "./pages/forgot-password-page";
-import CommunityNewPage from "./pages/CommunityPage";
+import GroupChatPage from "./pages/group-chat-page";
+import GroupChatJoinPage from "./pages/group-chat-join-page";
 import Landing from "./pages/landing";
 import NotFound from "./pages/not-found";
 import BookContentWindow from "./components/BookContentWindow/BookContentWindow";
 import BookContentWindowDemo from "./components/BookContentWindow/BookContentWindowDemo";
+import AvatarGeniusView from "./components/BookContentWindow/AvatarGeniusView";
 import BookGallery from "./components/BookGallery";
 import SeminarToolPage from "./pages/seminar-tool-page";
 import DebateToolPage from "./pages/debate-tool-page";
@@ -142,7 +144,8 @@ function AppWithAuth() {
         <ProtectedRoute path="/enhanced-content-manager" component={withTeacherLayout(EnhancedContentManager, { showSidebar: false })} />
         <ProtectedRoute path="/analytics" component={withTeacherLayout(AnalyticsPage, { showSidebar: false })} />
         <ProtectedRoute path="/community" component={CommunityPage} />
-        <ProtectedRoute path="/communityNew" component={CommunityNewPage} />
+        <ProtectedRoute path="/communityNew" component={GroupChatPage} />
+        <ProtectedRoute path="/group-chat/join/:token" component={(params) => <GroupChatJoinPage token={params.token} />} />
         <ProtectedRoute path="/preparation-exam" component={PreparationExamPage} />
         <ProtectedRoute path="/main-exam" component={MainExamPage} />
         <ProtectedRoute path="/students" component={withTeacherLayout(StudentsPage, { showSidebar: false })} />
@@ -155,6 +158,7 @@ function AppWithAuth() {
         <Route path="/auth" component={AuthPage} />
         <Route path="/forgot-password" component={ForgotPasswordPage} />
         <ProtectedRoute path="/enhanced-view" component={EnhancedView} />
+        <ProtectedRoute path="/avatar-genius" component={AvatarGeniusView} />
         {/* <ProtectedRoute path="/bookExpanded" component={BookContentWindow} /> */}
         <ProtectedRoute path="/bookExpanded" component={BookContentWindowDemo} />
         <ProtectedRoute path="/bookexpanded" component={BookContentWindow} />

@@ -27,6 +27,10 @@ import {
   Zap,
   Trash2,
   Edit3,
+  Hand,
+  Volume2,
+  CheckCircle2,
+  AlertCircle,
 } from "lucide-react";
 
 import Navigation from "../../components/navigation";
@@ -42,6 +46,11 @@ import {
   getLibrarySubjectDetail,
   getUnitContent,
   summarizeHighlight,
+  startAvatarSession,
+  raiseAvatarHand,
+  generateAvatarFlashcard,
+  resumeAvatarSession,
+  endAvatarSession,
   type LibrarySubject,
 } from "../../lib/gradeupApi";
 import { buildApiUrl } from "../../lib/apiBase";
@@ -158,6 +167,32 @@ interface AskAIMessage {
   selectedText?: string;
   actionLabel?: "Explain" | "Summarize" | "Ask AI";
 }
+
+type AvatarSegment = {
+  segment_id?: string;
+  type?: string;
+  text?: string;
+  emotion?: string;
+  card_title?: string;
+  front?: string;
+  avatar_line?: string;
+  avatar_emotion?: string;
+  flashcard_type?: string;
+  question?: string;
+  options?: Record<string, string>;
+  answer?: string;
+  option_explanations?: Record<string, string>;
+  audio?: {
+    male?: string;
+    female?: string;
+  };
+};
+
+type AvatarFlashcard = AvatarSegment & {
+  flashcard_id?: string;
+  segment_id?: string;
+  flashcard_type?: string;
+};
 
 function pickImageCandidate(...values: any[]): string | null {
   for (const value of values) {
@@ -4592,6 +4627,33 @@ const BookContentWindowDemo = () => {
   const persistentSelection = useRef("");
   const persistentHighlightPieces = useRef<string[]>([]);
   const menuRef = useRef<HTMLDivElement>(null);
+  const avatarAudioRef = useRef<HTMLAudioElement | null>(null);
+  const avatarEndCalledRef = useRef(false);
+  const [isAvatarOpen, setIsAvatarOpen] = useState(false);
+  const [isAvatarStarting, setIsAvatarStarting] = useState(false);
+  const [avatarSessionId, setAvatarSessionId] = useState<string | null>(null);
+  const [avatarSegments, setAvatarSegments] = useState<AvatarSegment[]>([]);
+  const [avatarIndex, setAvatarIndex] = useState(0);
+  const [avatarStatus, setAvatarStatus] = useState<
+    "idle" | "playing" | "waiting_flashcard" | "paused" | "completed"
+  >("idle");
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+  const [avatarFlashcards, setAvatarFlashcards] = useState<
+    Record<string, AvatarFlashcard>
+  >({});
+  const [avatarGeneratingCards, setAvatarGeneratingCards] = useState(false);
+  const [avatarMcqAnswers, setAvatarMcqAnswers] = useState<
+    Record<string, string>
+  >({});
+  const [avatarMcqFeedback, setAvatarMcqFeedback] = useState<
+    Record<string, { correct: boolean; message: string }>
+  >({});
+  const [avatarDoubt, setAvatarDoubt] = useState("");
+  const [avatarClarifications, setAvatarClarifications] = useState<
+    Array<{ text: string; emotion?: string }>
+  >([]);
+  const [isRaisingHand, setIsRaisingHand] = useState(false);
+  const [isResumingAvatar, setIsResumingAvatar] = useState(false);
 
   const { userHeader } = useAuth();
   const [currentRole, setCurrentRole] = useState("student");
@@ -5023,6 +5085,15 @@ const BookContentWindowDemo = () => {
     return () => document.removeEventListener("keydown", h);
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (avatarAudioRef.current) {
+        avatarAudioRef.current.pause();
+        avatarAudioRef.current = null;
+      }
+    };
+  }, []);
+
   // â”€â”€â”€ Build content blocks, pages, and spreads â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // â"€â"€â"€ Build content blocks, pages, and spreads â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
   let allPageContent: any[] = [];
@@ -5074,6 +5145,65 @@ const BookContentWindowDemo = () => {
     });
     return nextMap;
   })();
+  const sectionTopicByAnchor = new Map(
+    (displayChapter?.sectionTopics || []).map((topic: any) => [
+      topic.anchor,
+      topic,
+    ]),
+  );
+  const visiblePageStartIndex = isSinglePageView
+    ? safeSpreadIndex
+    : safeSpreadIndex * 2;
+  const visiblePageEndIndex = isSinglePageView
+    ? visiblePageStartIndex
+    : Math.min(visiblePageStartIndex + 1, readerPages.length - 1);
+  const currentGeniusSection = (() => {
+    let currentTopic: any = null;
+    for (let pageIndex = 0; pageIndex <= visiblePageEndIndex; pageIndex += 1) {
+      const page = readerPages[pageIndex];
+      if (!page) continue;
+      for (const item of page.items) {
+        if (item?.type === "heading2" && item.anchor) {
+          const topic = sectionTopicByAnchor.get(item.anchor);
+          currentTopic = topic || {
+            anchor: item.anchor,
+            title: item.content,
+            label: item.content,
+            sectionType: item.sectionType || null,
+          };
+        }
+      }
+    }
+    return currentTopic;
+  })();
+  const currentGeniusSectionType = String(
+    currentGeniusSection?.sectionType || "",
+  )
+    .trim()
+    .toLowerCase();
+  const isRemoteChapter = Boolean(
+    activeChapter &&
+      (Object.prototype.hasOwnProperty.call(activeChapter, "sourceContent") ||
+        Object.prototype.hasOwnProperty.call(
+          activeChapter,
+          "hasEnrichedContent",
+        )),
+  );
+  const hasGeniusContent = isRemoteChapter
+    ? Boolean(activeChapter?.sourceContent)
+    : Boolean(activeChapter?.enhancedContent || activeChapter?.content);
+  const canUseAvatarGenius =
+    hasGeniusContent &&
+    Boolean(activeChapter?.id) &&
+    Boolean(currentGeniusSection?.title || currentGeniusSection?.label) &&
+    currentGeniusSectionType === "section";
+  const geniusUnavailableReason = !hasGeniusContent
+    ? "No live chapter content is available for this unit yet."
+    : !currentGeniusSection
+      ? "Open a section page to use Genius Mode."
+      : currentGeniusSectionType !== "section"
+        ? "Genius Mode is available only for section content."
+        : "";
 
   useEffect(() => {
     const handleNav = (event: KeyboardEvent) => {
@@ -5393,17 +5523,332 @@ const BookContentWindowDemo = () => {
     }
   };
 
-  const isRemoteChapter = Boolean(
-    activeChapter &&
-    (Object.prototype.hasOwnProperty.call(activeChapter, "sourceContent") ||
-      Object.prototype.hasOwnProperty.call(
-        activeChapter,
-        "hasEnrichedContent",
-      )),
+  const avatarCurrentSegment = avatarSegments[avatarIndex] || null;
+  const avatarCurrentKey = String(
+    avatarCurrentSegment?.segment_id || `segment-${avatarIndex}`,
   );
-  const hasGeniusContent = isRemoteChapter
-    ? Boolean(activeChapter?.sourceContent)
-    : Boolean(activeChapter?.enhancedContent || activeChapter?.content);
+  const avatarCurrentCard = avatarCurrentSegment
+    ? avatarFlashcards[avatarCurrentKey] ||
+      avatarFlashcards[String(avatarCurrentSegment.segment_id || "")]
+    : null;
+  const avatarDisplaySegment = avatarCurrentCard
+    ? { ...avatarCurrentSegment, ...avatarCurrentCard }
+    : avatarCurrentSegment;
+  const avatarSegmentType = String(
+    avatarDisplaySegment?.type || "",
+  ).toLowerCase();
+  const avatarFlashcardType = String(
+    avatarDisplaySegment?.flashcard_type ||
+      (avatarDisplaySegment?.question || avatarDisplaySegment?.options
+        ? "mcq"
+        : "informative"),
+  ).toLowerCase();
+  const avatarIsMcq =
+    avatarSegmentType === "flashcard" &&
+    (avatarFlashcardType === "mcq" || Boolean(avatarDisplaySegment?.question));
+  const avatarCanAnswerMcq =
+    avatarIsMcq &&
+    avatarStatus === "waiting_flashcard" &&
+    !avatarMcqFeedback[avatarCurrentKey];
+
+  function getAvatarSegments(payload: any): AvatarSegment[] {
+    const segments =
+      payload?.avatar_explanation?.segments ||
+      payload?.remaining_segments ||
+      payload?.segments ||
+      [];
+    return Array.isArray(segments) ? segments : [];
+  }
+
+  function getAvatarAudioUrl(segment: AvatarSegment | null) {
+    if (!segment?.audio) return "";
+    return segment.audio.female || segment.audio.male || "";
+  }
+
+  async function completeAvatarSession() {
+    setAvatarStatus("completed");
+    if (!avatarSessionId || avatarEndCalledRef.current) return;
+    avatarEndCalledRef.current = true;
+    try {
+      await endAvatarSession({ sessionId: avatarSessionId });
+    } catch (error: any) {
+      setAvatarError(
+        error?.message || "Unable to end the avatar session cleanly.",
+      );
+    }
+  }
+
+  function advanceAvatarSegment() {
+    setAvatarIndex((current) => {
+      const nextIndex = current + 1;
+      if (nextIndex >= avatarSegments.length) {
+        window.setTimeout(() => completeAvatarSession(), 0);
+        return current;
+      }
+      setAvatarStatus("playing");
+      return nextIndex;
+    });
+  }
+
+  function handleAvatarAudioEnded(segment: AvatarSegment | null) {
+    const type = String(segment?.type || "").toLowerCase();
+    if (type === "flashcard") {
+      setAvatarStatus("waiting_flashcard");
+      return;
+    }
+    advanceAvatarSegment();
+  }
+
+  async function generateAvatarCardsForSession(
+    sessionId: string,
+    segments: AvatarSegment[],
+  ) {
+    const flashcardSegments = segments.filter(
+      (segment) => String(segment?.type || "").toLowerCase() === "flashcard",
+    );
+    if (!flashcardSegments.length) return;
+
+    setAvatarGeneratingCards(true);
+    try {
+      const response = await generateAvatarFlashcard({
+        sessionId,
+        flashCards: flashcardSegments.map((segment) => {
+          const segmentId = String(segment.segment_id || "");
+          const inferredType =
+            segment.flashcard_type ||
+            (segment.question || segment.options ? "mcq" : "informative");
+          return {
+            flashcardId: segmentId,
+            flashcardType: inferredType,
+            segmentId,
+          };
+        }),
+      });
+      const cards = Array.isArray(response?.flash_cards)
+        ? response.flash_cards
+        : [];
+      setAvatarFlashcards((prev) => {
+        const next = { ...prev };
+        cards.forEach((card: AvatarFlashcard) => {
+          const key = String(card.flashcard_id || card.segment_id || "");
+          if (key) next[key] = card;
+        });
+        return next;
+      });
+    } catch (error: any) {
+      setAvatarError(
+        error?.message || "Some avatar flashcards could not be generated.",
+      );
+    } finally {
+      setAvatarGeneratingCards(false);
+    }
+  }
+
+  const handleAvatarGeniusStart = () => {
+    if (!canUseAvatarGenius || !activeChapter?.id || !currentGeniusSection) {
+      pushToast({
+        title: "Genius Mode unavailable",
+        description:
+          geniusUnavailableReason || "Open a section page to use Genius Mode.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const geniusContext = JSON.stringify({
+          unitId: String(activeChapter.id),
+          sectionTitle: String(
+            currentGeniusSection.title || currentGeniusSection.label,
+          ),
+          subject: selectedBook?.subject || "",
+          unitTitle: activeChapter.unitTitle || activeChapter.title || "",
+          bookTitle: selectedBook?.title || "",
+          term: activeChapter.term || null,
+          theme: isDark ? "dark" : "light",
+        });
+      sessionStorage.setItem("gradeup-avatar-genius-context", geniusContext);
+      localStorage.setItem("gradeup-avatar-genius-context", geniusContext);
+      const targetUrl = `${window.location.origin}/avatar-genius`;
+      window.open(targetUrl, "_blank", "noopener,noreferrer");
+    } catch (error: any) {
+      pushToast({
+        title: "Genius Mode unavailable",
+        description: error?.message || "Unable to open Genius Mode.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleAvatarModalStart = async () => {
+    setIsAvatarOpen(true);
+    setIsAvatarStarting(true);
+    setAvatarError(null);
+    setAvatarSegments([]);
+    setAvatarIndex(0);
+    setAvatarStatus("idle");
+    setAvatarFlashcards({});
+    setAvatarMcqAnswers({});
+    setAvatarMcqFeedback({});
+    setAvatarClarifications([]);
+    setAvatarDoubt("");
+    avatarEndCalledRef.current = false;
+
+    try {
+      const response = await startAvatarSession({
+        unitId: String(activeChapter.id),
+        sectionTitle: String(
+          currentGeniusSection.title || currentGeniusSection.label,
+        ),
+        term: activeChapter.term || null,
+      });
+      const segments = getAvatarSegments(response);
+      const sessionId = response?.session_id || response?.sessionId;
+      if (!sessionId || !segments.length) {
+        throw new Error("Avatar session did not return playable segments.");
+      }
+      setAvatarSessionId(String(sessionId));
+      setAvatarSegments(segments);
+      setAvatarIndex(0);
+      setAvatarStatus("playing");
+      generateAvatarCardsForSession(String(sessionId), segments);
+    } catch (error: any) {
+      setAvatarStatus("idle");
+      setAvatarError(error?.message || "Unable to start Genius Mode.");
+    } finally {
+      setIsAvatarStarting(false);
+    }
+  };
+
+  const handleAvatarRaiseHand = async () => {
+    if (!avatarSessionId || !avatarDoubt.trim() || isRaisingHand) return;
+    if (avatarAudioRef.current) {
+      avatarAudioRef.current.pause();
+      avatarAudioRef.current = null;
+    }
+    setIsRaisingHand(true);
+    setAvatarStatus("paused");
+    setAvatarError(null);
+    try {
+      const response = await raiseAvatarHand({
+        sessionId: avatarSessionId,
+        studentDoubt: avatarDoubt.trim(),
+      });
+      const clarificationSegments = response?.clarification?.segments;
+      setAvatarClarifications(
+        Array.isArray(clarificationSegments) ? clarificationSegments : [],
+      );
+      setAvatarDoubt("");
+    } catch (error: any) {
+      setAvatarError(error?.message || "Unable to clear this doubt right now.");
+    } finally {
+      setIsRaisingHand(false);
+    }
+  };
+
+  const handleAvatarResume = async () => {
+    if (!avatarSessionId || isResumingAvatar) return;
+    setIsResumingAvatar(true);
+    setAvatarError(null);
+    try {
+      const response = await resumeAvatarSession({ sessionId: avatarSessionId });
+      const remainingSegments = getAvatarSegments(response);
+      if (remainingSegments.length) {
+        setAvatarSegments(remainingSegments);
+        setAvatarIndex(0);
+      }
+      setAvatarClarifications([]);
+      setAvatarStatus("playing");
+    } catch (error: any) {
+      setAvatarError(error?.message || "Unable to resume the avatar session.");
+    } finally {
+      setIsResumingAvatar(false);
+    }
+  };
+
+  const handleAvatarClose = async () => {
+    if (avatarAudioRef.current) {
+      avatarAudioRef.current.pause();
+      avatarAudioRef.current = null;
+    }
+    setIsAvatarOpen(false);
+    if (
+      avatarSessionId &&
+      avatarStatus !== "completed" &&
+      !avatarEndCalledRef.current
+    ) {
+      avatarEndCalledRef.current = true;
+      try {
+        await endAvatarSession({ sessionId: avatarSessionId });
+      } catch {}
+    }
+    setAvatarStatus("idle");
+  };
+
+  const handleAvatarMcqSubmit = () => {
+    if (!avatarDisplaySegment) return;
+    const answer = String(avatarMcqAnswers[avatarCurrentKey] || "")
+      .trim()
+      .toUpperCase();
+    const correctAnswer = String(avatarDisplaySegment.answer || "")
+      .trim()
+      .toUpperCase();
+    if (!answer || !correctAnswer) return;
+
+    const isCorrect = answer === correctAnswer;
+    const explanations = avatarDisplaySegment.option_explanations || {};
+    const selectedExplanation = explanations[answer] || "";
+    const correctExplanation = explanations[correctAnswer] || "";
+    setAvatarMcqFeedback((prev) => ({
+      ...prev,
+      [avatarCurrentKey]: {
+        correct: isCorrect,
+        message: isCorrect
+          ? "Congratulations, your answer is correct. Excellent work."
+          : selectedExplanation ||
+            correctExplanation ||
+            `The correct answer is ${correctAnswer}.`,
+      },
+    }));
+  };
+
+  useEffect(() => {
+    if (!isAvatarOpen || avatarStatus !== "playing") return;
+    const segment = avatarSegments[avatarIndex] || null;
+    if (!segment) return;
+
+    const audioUrl = getAvatarAudioUrl(segment);
+    if (!audioUrl) {
+      const t = window.setTimeout(() => handleAvatarAudioEnded(segment), 900);
+      return () => window.clearTimeout(t);
+    }
+
+    const audio = new Audio(audioUrl);
+    avatarAudioRef.current = audio;
+    audio.onended = () => handleAvatarAudioEnded(segment);
+    audio.onerror = () => {
+      setAvatarError("Audio could not be played for this segment.");
+      handleAvatarAudioEnded(segment);
+    };
+    audio.play().catch(() => {
+      setAvatarError("Tap continue if your browser blocked autoplay.");
+      setAvatarStatus(
+        String(segment.type || "").toLowerCase() === "flashcard"
+          ? "waiting_flashcard"
+          : "paused",
+      );
+    });
+
+    return () => {
+      audio.pause();
+      audio.onended = null;
+      audio.onerror = null;
+      if (avatarAudioRef.current === audio) {
+        avatarAudioRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAvatarOpen, avatarStatus, avatarIndex, avatarSegments]);
 
   const handleEnhanceContent = () => {
     if (!hasGeniusContent || !activeChapter || !selectedBook) {
@@ -6965,15 +7410,30 @@ const BookContentWindowDemo = () => {
                             )}
                           </button> */}
                     <motion.button
-                      className={`bk-float-btn bk-float-thunder ${!hasGeniusContent ? "locked" : ""}`}
+                      className={`bk-float-btn bk-float-thunder ${!canUseAvatarGenius ? "locked" : ""}`}
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleEnhanceContent();
+                        if (!canUseAvatarGenius) {
+                          pushToast({
+                            title: "Genius Mode unavailable",
+                            description:
+                              geniusUnavailableReason ||
+                              "Open a section page to use Genius Mode.",
+                            variant: "destructive",
+                          });
+                          return;
+                        }
+                        handleAvatarGeniusStart();
                       }}
-                      disabled={!hasGeniusContent || isEnhancing}
+                      disabled={!canUseAvatarGenius || isAvatarStarting}
+                      title={
+                        canUseAvatarGenius
+                          ? "Open Genius Mode"
+                          : geniusUnavailableReason
+                      }
                       // High-voltage animations
                       whileHover={
-                        hasGeniusContent
+                        canUseAvatarGenius
                           ? {
                               scale: 1.05,
                               x: [0, -1, 1, -1, 1, 0], // Subtle "electric vibration"
@@ -6992,12 +7452,12 @@ const BookContentWindowDemo = () => {
 
                       <Sparkles className="sparkle-icon" size={14} />
                       <span>
-                        {isEnhancing
+                        {isAvatarStarting
                           ? "Preparing Genius Mode..."
                           : "Try with Genius Mode"}
                       </span>
 
-                      {!hasGeniusContent && (
+                      {!canUseAvatarGenius && (
                         <span className="bk-float-lock">🔒</span>
                       )}
                     </motion.button>
@@ -7016,11 +7476,314 @@ const BookContentWindowDemo = () => {
                   <div className="genius-top-copy">
                     <span className="genius-top-eyebrow">Genius Mode</span>
                     <strong>
-                      Open the original immersive Genius reader for this unit
-                      with live content and media
+                      Start the avatar teacher for the current section
                     </strong>
                   </div>
                 </div>
+
+                <AnimatePresence>
+                  {isAvatarOpen && (
+                    <motion.div
+                      className="avatar-genius-backdrop"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                    >
+                      <motion.section
+                        className="avatar-genius-panel"
+                        initial={{ opacity: 0, y: 24, scale: 0.98 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 18, scale: 0.98 }}
+                        transition={{
+                          type: "spring",
+                          stiffness: 260,
+                          damping: 24,
+                        }}
+                      >
+                        <div className="avatar-genius-head">
+                          <div>
+                            <span className="avatar-genius-kicker">
+                              Genius Mode
+                            </span>
+                            <h3>
+                              {currentGeniusSection?.title ||
+                                currentGeniusSection?.label ||
+                                "Avatar Teacher"}
+                            </h3>
+                          </div>
+                          <button
+                            type="button"
+                            className="avatar-genius-close"
+                            onClick={handleAvatarClose}
+                            title="Close Genius Mode"
+                          >
+                            <X size={16} />
+                          </button>
+                        </div>
+
+                        {isAvatarStarting ? (
+                          <div className="avatar-genius-loading">
+                            <Sparkles size={24} />
+                            <strong>Preparing your avatar lesson...</strong>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="avatar-genius-stage">
+                              <div
+                                className={`avatar-teacher-orb ${
+                                  avatarStatus === "playing" ? "speaking" : ""
+                                }`}
+                              >
+                                <Bot size={34} />
+                              </div>
+                              <div className="avatar-segment-copy">
+                                <span className="avatar-segment-meta">
+                                  {avatarStatus === "playing" ? (
+                                    <Volume2 size={13} />
+                                  ) : (
+                                    <Sparkles size={13} />
+                                  )}
+                                  Segment{" "}
+                                  {Math.min(
+                                    avatarIndex + 1,
+                                    Math.max(avatarSegments.length, 1),
+                                  )}{" "}
+                                  of {Math.max(avatarSegments.length, 1)}
+                                  {avatarDisplaySegment?.emotion
+                                    ? ` • ${avatarDisplaySegment.emotion}`
+                                    : ""}
+                                </span>
+                                <p>
+                                  {avatarDisplaySegment?.type === "flashcard"
+                                    ? avatarDisplaySegment.avatar_line ||
+                                      avatarDisplaySegment.front ||
+                                      "Let's pause for a quick check."
+                                    : avatarDisplaySegment?.text ||
+                                      "Your avatar lesson is ready."}
+                                </p>
+                              </div>
+                            </div>
+
+                            {avatarGeneratingCards && (
+                              <div className="avatar-inline-note">
+                                Preparing flashcards for this lesson...
+                              </div>
+                            )}
+
+                            {avatarDisplaySegment?.type === "flashcard" && (
+                              <div className="avatar-flashcard">
+                                <div className="avatar-flashcard-title">
+                                  {avatarIsMcq
+                                    ? "Quick Check"
+                                    : avatarDisplaySegment.card_title ||
+                                      "Flashcard"}
+                                </div>
+                                {avatarIsMcq ? (
+                                  <>
+                                    <p className="avatar-mcq-question">
+                                      {avatarDisplaySegment.question ||
+                                        "Type the correct option after the audio completes."}
+                                    </p>
+                                    {avatarDisplaySegment.options && (
+                                      <div className="avatar-mcq-options">
+                                        {Object.entries(
+                                          avatarDisplaySegment.options,
+                                        ).map(([key, value]) => (
+                                          <div
+                                            key={key}
+                                            className="avatar-mcq-option"
+                                          >
+                                            <strong>{key}</strong>
+                                            <span>{value}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                    <div className="avatar-answer-row">
+                                      <input
+                                        value={
+                                          avatarMcqAnswers[
+                                            avatarCurrentKey
+                                          ] || ""
+                                        }
+                                        onChange={(event) =>
+                                          setAvatarMcqAnswers((prev) => ({
+                                            ...prev,
+                                            [avatarCurrentKey]:
+                                              event.target.value,
+                                          }))
+                                        }
+                                        disabled={!avatarCanAnswerMcq}
+                                        placeholder={
+                                          avatarStatus === "waiting_flashcard"
+                                            ? "Type A, B, C or D"
+                                            : "Answer unlocks after audio"
+                                        }
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={handleAvatarMcqSubmit}
+                                        disabled={
+                                          !avatarCanAnswerMcq ||
+                                          !avatarMcqAnswers[
+                                            avatarCurrentKey
+                                          ]?.trim()
+                                        }
+                                      >
+                                        Check
+                                      </button>
+                                    </div>
+                                    {avatarMcqFeedback[avatarCurrentKey] && (
+                                      <div
+                                        className={`avatar-feedback ${
+                                          avatarMcqFeedback[avatarCurrentKey]
+                                            .correct
+                                            ? "correct"
+                                            : "wrong"
+                                        }`}
+                                      >
+                                        {avatarMcqFeedback[avatarCurrentKey]
+                                          .correct ? (
+                                          <CheckCircle2 size={18} />
+                                        ) : (
+                                          <AlertCircle size={18} />
+                                        )}
+                                        <div>
+                                          <strong>
+                                            {avatarMcqFeedback[
+                                              avatarCurrentKey
+                                            ].correct
+                                              ? "Excellent"
+                                              : "Review this"}
+                                          </strong>
+                                          <p>
+                                            {
+                                              avatarMcqFeedback[
+                                                avatarCurrentKey
+                                              ].message
+                                            }
+                                          </p>
+                                          {!avatarMcqFeedback[
+                                            avatarCurrentKey
+                                          ].correct &&
+                                            avatarDisplaySegment.option_explanations && (
+                                              <div className="avatar-option-explanations">
+                                                {Object.entries(
+                                                  avatarDisplaySegment.option_explanations,
+                                                ).map(([key, value]) => (
+                                                  <p key={key}>
+                                                    <b>{key}:</b> {value}
+                                                  </p>
+                                                ))}
+                                              </div>
+                                            )}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </>
+                                ) : (
+                                  <p className="avatar-flashcard-front">
+                                    {avatarDisplaySegment.front ||
+                                      "A supporting flashcard is being prepared for this idea."}
+                                  </p>
+                                )}
+                              </div>
+                            )}
+
+                            {avatarClarifications.length > 0 && (
+                              <div className="avatar-clarification">
+                                <strong>Doubt clarification</strong>
+                                {avatarClarifications.map((item, index) => (
+                                  <p key={`${item.text}-${index}`}>
+                                    {item.text}
+                                  </p>
+                                ))}
+                                <button
+                                  type="button"
+                                  onClick={handleAvatarResume}
+                                  disabled={isResumingAvatar}
+                                >
+                                  {isResumingAvatar
+                                    ? "Resuming..."
+                                    : "Resume lesson"}
+                                </button>
+                              </div>
+                            )}
+
+                            {avatarError && (
+                              <div className="avatar-error">{avatarError}</div>
+                            )}
+
+                            <div className="avatar-genius-actions">
+                              <div className="avatar-doubt-box">
+                                <Hand size={15} />
+                                <input
+                                  value={avatarDoubt}
+                                  onChange={(event) =>
+                                    setAvatarDoubt(event.target.value)
+                                  }
+                                  placeholder="Raise hand with a doubt"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={handleAvatarRaiseHand}
+                                  disabled={
+                                    !avatarSessionId ||
+                                    !avatarDoubt.trim() ||
+                                    isRaisingHand
+                                  }
+                                >
+                                  {isRaisingHand ? "Asking..." : "Ask"}
+                                </button>
+                              </div>
+
+                              {avatarStatus === "paused" &&
+                                !avatarClarifications.length && (
+                                  <button
+                                    type="button"
+                                    className="avatar-secondary-btn"
+                                    onClick={() => setAvatarStatus("playing")}
+                                  >
+                                    Continue audio
+                                  </button>
+                                )}
+                              {avatarStatus === "waiting_flashcard" &&
+                                !avatarIsMcq && (
+                                  <button
+                                    type="button"
+                                    className="avatar-primary-btn"
+                                    onClick={advanceAvatarSegment}
+                                  >
+                                    Continue
+                                  </button>
+                                )}
+                              {avatarStatus === "waiting_flashcard" &&
+                                avatarIsMcq &&
+                                avatarMcqFeedback[avatarCurrentKey] && (
+                                  <button
+                                    type="button"
+                                    className="avatar-primary-btn"
+                                    onClick={advanceAvatarSegment}
+                                  >
+                                    Continue
+                                  </button>
+                                )}
+                              {avatarStatus === "completed" && (
+                                <button
+                                  type="button"
+                                  className="avatar-primary-btn"
+                                  onClick={handleAvatarClose}
+                                >
+                                  Done
+                                </button>
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </motion.section>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
                 {/* Context menu */}
                 <AnimatePresence>
@@ -7354,15 +8117,29 @@ const BookContentWindowDemo = () => {
                   <>
                     <div className="bk-float-btns no-select">
                       <motion.button
-                        className={`bk-float-btn bk-float-genius ${!hasGeniusContent ? "locked" : ""}`}
+                        className={`bk-float-btn bk-float-genius ${!canUseAvatarGenius ? "locked" : ""}`}
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleEnhanceContent();
+                          if (!canUseAvatarGenius) {
+                            pushToast({
+                              title: "Genius Mode unavailable",
+                              description:
+                                geniusUnavailableReason ||
+                                "Open a section page to use Genius Mode.",
+                              variant: "destructive",
+                            });
+                            return;
+                          }
+                          handleAvatarGeniusStart();
                         }}
-                        disabled={!hasGeniusContent || isEnhancing}
-                        title="Open Genius Mode"
+                        disabled={!canUseAvatarGenius || isAvatarStarting}
+                        title={
+                          canUseAvatarGenius
+                            ? "Open Genius Mode"
+                            : geniusUnavailableReason
+                        }
                         whileHover={
-                          hasGeniusContent
+                          canUseAvatarGenius
                             ? {
                                 y: -2,
                                 scale: 1.02,
@@ -7378,11 +8155,11 @@ const BookContentWindowDemo = () => {
                         </span>
                         <span className="genius-copy">
                           <strong>
-                            {isEnhancing ? "Launching..." : "Genius Mode"}
+                            {isAvatarStarting ? "Launching..." : "Genius Mode"}
                           </strong>
                           <small>Study smarter</small>
                         </span>
-                        {!hasGeniusContent && (
+                        {!canUseAvatarGenius && (
                           <span className="bk-float-lock">ðŸ”’</span>
                         )}
                       </motion.button>
@@ -7436,15 +8213,29 @@ const BookContentWindowDemo = () => {
                         {false && (
                           <div className="bk-float-btns no-select">
                             <motion.button
-                              className={`bk-float-btn bk-float-genius ${!hasGeniusContent ? "locked" : ""}`}
+                              className={`bk-float-btn bk-float-genius ${!canUseAvatarGenius ? "locked" : ""}`}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleEnhanceContent();
+                                if (!canUseAvatarGenius) {
+                                  pushToast({
+                                    title: "Genius Mode unavailable",
+                                    description:
+                                      geniusUnavailableReason ||
+                                      "Open a section page to use Genius Mode.",
+                                    variant: "destructive",
+                                  });
+                                  return;
+                                }
+                                handleAvatarGeniusStart();
                               }}
-                              disabled={!hasGeniusContent || isEnhancing}
-                              title="Open Genius Mode"
+                              disabled={!canUseAvatarGenius || isAvatarStarting}
+                              title={
+                                canUseAvatarGenius
+                                  ? "Open Genius Mode"
+                                  : geniusUnavailableReason
+                              }
                               whileHover={
-                                hasGeniusContent
+                                canUseAvatarGenius
                                   ? {
                                       y: -2,
                                       scale: 1.02,
@@ -7460,11 +8251,11 @@ const BookContentWindowDemo = () => {
                               </span>
                               <span className="genius-copy">
                                 <strong>
-                                  {isEnhancing ? "Launching..." : "Genius Mode"}
+                                  {isAvatarStarting ? "Launching..." : "Genius Mode"}
                                 </strong>
                                 <small>Study smarter</small>
                               </span>
-                              {!hasGeniusContent && (
+                              {!canUseAvatarGenius && (
                                 <span className="bk-float-lock">🔒</span>
                               )}
                             </motion.button>
@@ -9878,6 +10669,245 @@ mark.reader-highlight:hover { filter: brightness(1.15); }
 .unit-intro-display { display:flex; align-items:center; justify-content:center; flex-direction:column; min-height:60vh; }
 .unit-intro-display h1 { font-size:5rem; font-weight:900; color:var(--accent); opacity:.5; }
 
+/* ── Avatar Genius Mode ── */
+.avatar-genius-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 3600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 22px;
+  background: rgba(15,23,42,.52);
+  backdrop-filter: blur(12px);
+}
+.avatar-genius-panel {
+  width: min(760px, 100%);
+  max-height: min(760px, calc(100vh - 44px));
+  overflow: auto;
+  border-radius: 24px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  box-shadow: 0 32px 90px rgba(0,0,0,.36);
+  padding: 22px;
+  color: var(--text-main);
+}
+.avatar-genius-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 18px;
+}
+.avatar-genius-kicker {
+  display: block;
+  font-size: .68rem;
+  font-weight: 900;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 5px;
+}
+.avatar-genius-head h3 {
+  margin: 0;
+  font-size: 1.35rem;
+  line-height: 1.25;
+  color: var(--text-main);
+}
+.avatar-genius-close {
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-app);
+  color: var(--text-muted);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.avatar-genius-close:hover { color: #ef4444; border-color: rgba(239,68,68,.35); }
+.avatar-genius-loading {
+  min-height: 260px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 12px;
+  color: var(--accent);
+  text-align: center;
+}
+.avatar-genius-stage {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+  padding: 18px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(99,102,241,.10), rgba(14,165,233,.08));
+  border: 1px solid rgba(99,102,241,.18);
+}
+.avatar-teacher-orb {
+  width: 70px;
+  height: 70px;
+  border-radius: 22px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: linear-gradient(135deg, #4f46e5, #06b6d4);
+  box-shadow: 0 16px 34px rgba(79,70,229,.28);
+}
+.avatar-teacher-orb.speaking { animation: avatarPulse 1.1s ease-in-out infinite; }
+@keyframes avatarPulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 16px 34px rgba(79,70,229,.28); }
+  50% { transform: scale(1.04); box-shadow: 0 18px 44px rgba(6,182,212,.34); }
+}
+.avatar-segment-copy { min-width: 0; }
+.avatar-segment-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  font-size: .72rem;
+  font-weight: 800;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.avatar-segment-copy p {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.7;
+  color: var(--text-main);
+}
+.avatar-inline-note,
+.avatar-error {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: .83rem;
+  font-weight: 700;
+}
+.avatar-inline-note { background: rgba(14,165,233,.09); color: #0284c7; }
+.avatar-error { background: rgba(239,68,68,.10); color: #dc2626; }
+.avatar-flashcard,
+.avatar-clarification {
+  margin-top: 16px;
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: var(--bg-app);
+}
+.avatar-flashcard-title {
+  font-size: .9rem;
+  font-weight: 900;
+  color: var(--text-main);
+  margin-bottom: 10px;
+}
+.avatar-flashcard-front,
+.avatar-mcq-question {
+  margin: 0;
+  font-size: .96rem;
+  line-height: 1.7;
+  color: var(--text-main);
+}
+.avatar-mcq-options {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+.avatar-mcq-option {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  font-size: .88rem;
+  line-height: 1.45;
+}
+.avatar-mcq-option strong { color: var(--accent); }
+.avatar-answer-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+.avatar-answer-row input,
+.avatar-doubt-box input {
+  min-width: 0;
+  flex: 1;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  color: var(--text-main);
+  padding: 10px 12px;
+  outline: none;
+}
+.avatar-answer-row input:disabled { opacity: .58; cursor: not-allowed; }
+.avatar-answer-row button,
+.avatar-doubt-box button,
+.avatar-primary-btn,
+.avatar-secondary-btn,
+.avatar-clarification button {
+  border: none;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-weight: 850;
+  cursor: pointer;
+  background: var(--accent);
+  color: #fff;
+  white-space: nowrap;
+}
+.avatar-answer-row button:disabled,
+.avatar-doubt-box button:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+.avatar-feedback {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 10px;
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: 14px;
+}
+.avatar-feedback.correct { background: rgba(16,185,129,.12); color: #047857; }
+.avatar-feedback.wrong { background: rgba(245,158,11,.13); color: #92400e; }
+.avatar-feedback strong { display: block; margin-bottom: 3px; }
+.avatar-feedback p { margin: 0; line-height: 1.55; font-size: .86rem; }
+.avatar-option-explanations {
+  margin-top: 10px;
+  display: grid;
+  gap: 6px;
+}
+.avatar-clarification {
+  display: grid;
+  gap: 9px;
+}
+.avatar-clarification strong { color: var(--accent); }
+.avatar-clarification p { margin: 0; line-height: 1.6; font-size: .9rem; }
+.avatar-clarification button { justify-self: start; }
+.avatar-genius-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 16px;
+}
+.avatar-doubt-box {
+  flex: 1 1 360px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--bg-app);
+}
+.avatar-doubt-box svg { color: var(--accent); flex: 0 0 auto; }
+.avatar-secondary-btn { background: var(--bg-app); color: var(--text-main); border: 1px solid var(--border); }
+
 /* ── Responsive ── */
 
 /* 1024–1200px: keep two columns, tighten spacing */
@@ -9936,6 +10966,11 @@ mark.reader-highlight:hover { filter: brightness(1.15); }
   .reader-paragraph { font-size: .92rem; line-height: 1.78; }
   .bk-nav-btn { padding: 9px 14px; font-size: .78rem; max-width: 180px; }
   .bk-nav-row { padding-top: 22px; }
+  .avatar-genius-backdrop { padding: 10px; align-items: stretch; }
+  .avatar-genius-panel { max-height: calc(100vh - 20px); border-radius: 18px; padding: 16px; }
+  .avatar-genius-stage { grid-template-columns: 1fr; }
+  .avatar-teacher-orb { width: 58px; height: 58px; border-radius: 18px; }
+  .avatar-answer-row, .avatar-doubt-box { flex-direction: column; align-items: stretch; }
 }
 
 /* ≤480px */

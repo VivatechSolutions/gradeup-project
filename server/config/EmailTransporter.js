@@ -9,8 +9,16 @@ function getEmailTransporter() {
 
   const host = process.env.SMTP_HOST || "smtp.zoho.com";
   const port = Number(process.env.SMTP_PORT || 587);
-  const user = process.env.SMTP_USER || process.env.ZOHO_MAIL_USER;
-  const pass = process.env.SMTP_PASS || process.env.ZOHO_MAIL_PASS;
+  const user =
+    process.env.SMTP_USER ||
+    process.env.ZOHO_MAIL_USER ||
+    process.env.ZOHO_EMAIL ||
+    process.env.EMAIL_USER;
+  const pass =
+    process.env.SMTP_PASS ||
+    process.env.ZOHO_MAIL_PASS ||
+    process.env.ZOHO_PASSWORD ||
+    process.env.EMAIL_PASS;
   if (!host || !user || !pass) {
     return null;
   }
@@ -19,6 +27,7 @@ function getEmailTransporter() {
     host,
     port,
     secure: port === 465,
+    requireTLS: port === 587,
     auth: { user, pass },
   });
 
@@ -30,7 +39,9 @@ async function sendEmail({ to, subject, html, text }) {
   const from =
     process.env.SMTP_FROM ||
     process.env.SMTP_USER ||
-    process.env.ZOHO_MAIL_USER;
+    process.env.ZOHO_MAIL_USER ||
+    process.env.ZOHO_EMAIL ||
+    process.env.EMAIL_USER;
 
   if (!emailTransporter || !from) {
     console.log("Email skipped: SMTP is not configured", { to, subject });

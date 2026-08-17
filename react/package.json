@@ -108,6 +108,7 @@
     "react-scripts": "^5.0.1",
     "react-voice-visualizer": "^2.0.8",
     "recharts": "^2.15.2",
+    "socket.io-client": "^4.8.1",
     "speakeasy": "^2.0.0",
     "svg-captcha": "^1.4.0",
     "tailwind-merge": "^2.6.1",

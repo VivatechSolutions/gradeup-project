@@ -58,6 +58,85 @@ function getRequestedSessionId(source = {}) {
   return source.sessionId || source.session_id || source.liveSessionId || source.live_session_id || null;
 }
 
+function addonRequestAllowed(req) {
+  const expected = process.env.GRADEUP_ADDON_API_KEY || process.env.ADDON_API_KEY || "";
+  if (!expected) return true;
+  const provided =
+    req.headers["x-gradeup-addon-key"] ||
+    req.headers["x-addon-api-key"] ||
+    req.body?.addonApiKey ||
+    req.query?.addonApiKey ||
+    "";
+  return String(provided) === String(expected);
+}
+
+function summarizePptPayload(payload = {}) {
+  return {
+    session_id: payload.session_id || payload.sessionId || null,
+    slide_index: payload.slide_index ?? payload.slideIndex ?? null,
+    query: payload.query ? String(payload.query).slice(0, 300) : null,
+    decision: payload.decision || null,
+    deck_ref: payload.deck_ref || payload.deckRef || null,
+  };
+}
+
+function summarizePptResponse(data = {}) {
+  return {
+    status: data.status || null,
+    intent: data.intent || null,
+    mode: data.mode || null,
+    severity: data.severity || null,
+    ai_feedback: data.ai_feedback ? String(data.ai_feedback).slice(0, 300) : null,
+    suggestions_count: Array.isArray(data.suggestions) ? data.suggestions.length : 0,
+    images_count: Array.isArray(data.images) ? data.images.length : 0,
+    has_proposed_change: Boolean(data.proposed_change),
+    applied_ops_count: Array.isArray(data.applied_ops) ? data.applied_ops.length : 0,
+  };
+}
+
+async function proxyPptRequest(req, res, { pythonPath, label, logResponse = false }) {
+  if (!addonRequestAllowed(req)) {
+    return res.status(401).json({ status: false, message: "Invalid add-on API key" });
+  }
+
+  const requestPayload = req.body || {};
+  const startedAt = Date.now();
+
+  console.log(`[seminar:ppt:${label}] request`, summarizePptPayload(requestPayload));
+
+  try {
+    const data = await callPython({
+      method: "post",
+      path: pythonPath,
+      data: requestPayload,
+    });
+
+    const summary = summarizePptResponse(data);
+    console.log(`[seminar:ppt:${label}] response`, {
+      durationMs: Date.now() - startedAt,
+      ...summary,
+    });
+
+    if (logResponse) {
+      console.log(`[seminar:ppt:${label}] response.body`, JSON.stringify(data).slice(0, 5000));
+    }
+
+    return res.status(200).json({ status: true, data });
+  } catch (error) {
+    console.error(`[seminar:ppt:${label}] error`, {
+      durationMs: Date.now() - startedAt,
+      message: error.message,
+      statusCode: error.statusCode || 500,
+      details: error.details || null,
+    });
+    return res.status(error.statusCode || 500).json({
+      status: false,
+      message: error.message || `Failed to proxy PPT ${label}`,
+      details: error.details || null,
+    });
+  }
+}
+
 function normalizeParsedFieldValue(value) {
   if (Array.isArray(value)) {
     return value[0];
@@ -110,6 +189,28 @@ async function resolveLiveSessionAndPythonSessionId(sessionId) {
 }
 
 const controller = {
+  async pptSuggest(req, res) {
+    return proxyPptRequest(req, res, {
+      pythonPath: "/ppt/suggest",
+      label: "suggest",
+      logResponse: true,
+    });
+  },
+
+  async pptDecide(req, res) {
+    return proxyPptRequest(req, res, {
+      pythonPath: "/ppt/decide",
+      label: "decide",
+    });
+  },
+
+  async pptSessionEnd(req, res) {
+    return proxyPptRequest(req, res, {
+      pythonPath: "/ppt/session/end",
+      label: "session-end",
+    });
+  },
+
   async createRoom(req, res) {
     try {
       const candidate = getCandidate(req.body);

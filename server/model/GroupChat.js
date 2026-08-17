@@ -11,6 +11,7 @@ const groupMemberSchema = new mongoose.Schema(
     joinedAt: { type: Date, default: Date.now },
     leftAt: Date,
     lastSeenAt: Date,
+    metadata: mongoose.Schema.Types.Mixed,
   },
   { _id: false },
 );

@@ -1,6 +1,6 @@
 const { Server } = require("socket.io");
 const GroupChat = require("../model/GroupChat");
-const { resolveUserFromToken } = require("../middleware/userAuth");
+const { resolveAccessUser, serializeUser } = require("./studentAuthService");
 const { findActiveMember, serializeGroup } = require("./groupChatSerializer");
 
 let io;
@@ -40,10 +40,21 @@ function setupGroupChatSocket(server, allowedOrigins) {
   io.use(async (socket, next) => {
     try {
       const token = socket.handshake.auth?.token || socket.handshake.headers?.authorization?.replace(/^Bearer\s+/i, "");
-      if (!token) return next(new Error("Unauthorized"));
-      const authUser = await resolveUserFromToken(token);
-      if (!authUser) return next(new Error("Unauthorized"));
-      socket.authUser = authUser;
+      const headers = { ...socket.handshake.headers };
+      if (token) headers.authorization = `Bearer ${token}`;
+      const user = await resolveAccessUser({
+        headers,
+        ip: socket.handshake.address,
+        get(name) {
+          return headers[String(name).toLowerCase()] || headers[name];
+        },
+      });
+      if (!user) return next(new Error("Unauthorized"));
+      socket.authUser = {
+        id: user._id.toString(),
+        role: "student",
+        user: await serializeUser(user),
+      };
       next();
     } catch (error) {
       next(new Error("Unauthorized"));

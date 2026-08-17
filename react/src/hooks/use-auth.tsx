@@ -34,7 +34,7 @@ type LoginData = {
 type RegisterData = {
   email: string;
   username?: string;
-  password: string;
+  password?: string;
   firstName: string;
   lastName: string;
   role: string;
@@ -45,6 +45,19 @@ type RegisterData = {
   subjects?: string[];
 };
 
+type OAuthData = {
+  provider: "google" | "microsoft";
+  idToken?: string;
+  accessToken?: string;
+  profileContext?: {
+    firstName?: string;
+    lastName?: string;
+    schoolName?: string;
+    board?: string;
+    classNumber?: string;
+  };
+};
+
 type AuthContextType = {
   user: SelectUser | null;
   userHeader: SelectUser | null;
@@ -53,6 +66,7 @@ type AuthContextType = {
   loginMutation: UseMutationResult<SelectUser, Error, LoginData>;
   logoutMutation: UseMutationResult<void, Error, void>;
   registerMutation: UseMutationResult<SelectUser, Error, RegisterData>;
+  oauthMutation: UseMutationResult<SelectUser, Error, OAuthData>;
 };
 
 export const AuthContext = createContext<AuthContextType | null>(null);
@@ -115,6 +129,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
   });
 
+  const oauthMutation = useMutation({
+    mutationFn: async (payload: OAuthData) => {
+      const res = await apiRequest(
+        "POST",
+        `/api/v1/auth/student/oauth/${payload.provider}`,
+        payload,
+      );
+      return unwrapUser(await res.json());
+    },
+    onSuccess: (user: SelectUser) => {
+      queryClient.setQueryData(["/api/v1/auth/me"], user);
+      toast({ title: "Welcome to GradeUp!", description: "You are signed in." });
+      setLocation(consumePostAuthRedirect() || "/dashboard");
+    },
+    onError: (error: Error) => {
+      toast({ title: "OAuth failed", description: error.message, variant: "destructive" });
+    },
+  });
+
   const logoutMutation = useMutation({
     mutationFn: async () => {
       await apiRequest("POST", "/api/v1/auth/logout");
@@ -142,6 +175,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loginMutation,
         logoutMutation,
         registerMutation,
+        oauthMutation,
       }}
     >
       {children}

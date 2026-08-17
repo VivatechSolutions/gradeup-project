@@ -7,6 +7,7 @@ const {
   serializeUser,
   setAuthCookies,
 } = require("../services/studentAuthService");
+const { authenticateStudentWithOAuth } = require("../services/studentOAuthService");
 
 const controller = {
   async StudentRegister(req, res) {
@@ -98,11 +99,21 @@ const controller = {
   },
   async studentGoogleLogin(req, res) {
     try {
+      const { user, tokens, created } = await authenticateStudentWithOAuth(
+        { provider: "google", ...req.body },
+        req,
+      );
+      setAuthCookies(res, tokens);
+      return res.status(created ? 201 : 200).json({
+        message: created ? "Student account created" : "Login successful",
+        status: true,
+        data: await serializeUser(user),
+      });
     } catch (error) {
       console.log(error);
       res
-        .status(500)
-        .json({ message: "Internal Server Error", error, status: false });
+        .status(error.statusCode || 500)
+        .json({ message: error.message || "Internal Server Error", status: false });
     }
   },
   async TeacherGoogleLogin(req, res) {
@@ -116,11 +127,21 @@ const controller = {
   },
   async studentMicrosoftLogin(req, res) {
     try {
+      const { user, tokens, created } = await authenticateStudentWithOAuth(
+        { provider: "microsoft", ...req.body },
+        req,
+      );
+      setAuthCookies(res, tokens);
+      return res.status(created ? 201 : 200).json({
+        message: created ? "Student account created" : "Login successful",
+        status: true,
+        data: await serializeUser(user),
+      });
     } catch (error) {
       console.log(error);
       res
-        .status(500)
-        .json({ message: "Internal Server Error", error, status: false });
+        .status(error.statusCode || 500)
+        .json({ message: error.message || "Internal Server Error", status: false });
     }
   },
   async TeacherMicrosoftLogin(req, res) {

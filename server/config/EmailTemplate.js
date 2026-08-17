@@ -181,9 +181,36 @@ function getDebateInviteEmail({ senderName, debateTopic, debateType, joinUrl, ap
   };
 }
 
+function getGroupInviteEmail({ inviterName, groupName, joinUrl, appName = "GradeUp" }) {
+  const content = `
+    <p style="margin:0 0 18px;font-size:15px;line-height:1.7;">Hello,</p>
+    <p style="margin:0 0 18px;font-size:15px;line-height:1.7;">
+      ${inviterName || "A GradeUp learner"} invited you to join the <strong>${groupName || "study group"}</strong> group chat on ${appName}.
+    </p>
+    <p style="margin:0 0 18px;font-size:14px;line-height:1.7;color:#5f738c;">
+      You will be asked to confirm before joining. If the button does not work, open this link directly:<br />
+      <a href="${joinUrl}" style="color:#2c71f0;">${joinUrl}</a>
+    </p>
+  `;
+
+  return {
+    subject: `${inviterName || "A learner"} invited you to a GradeUp group`,
+    text: `Join ${groupName || "the study group"} on ${appName}: ${joinUrl}`,
+    html: layoutTemplate({
+      title: "You’re invited to a group chat",
+      intro: "Join the study conversation when you're ready.",
+      content,
+      actionLabel: "Review Invite",
+      actionUrl: joinUrl,
+      footerNote: "If you were not expecting this invitation, you can safely ignore this email.",
+    }),
+  };
+}
+
 module.exports = {
   getAdminWelcomeEmail,
   getDebateInviteEmail,
+  getGroupInviteEmail,
   getPasswordResetEmail,
   getStudentWelcomeEmail,
 };

@@ -15,6 +15,13 @@ import { useAuth } from "../hooks/use-auth";
 import { useTheme } from "../hooks/use-theme";
 import Navigation from "../components/navigation";
 import {
+  getHomeworkChatHistory,
+  getHomeworkChatSession,
+  sendHomeworkChat,
+  type HomeworkChatSession,
+  type HomeworkChatSessionSummary,
+} from "../lib/gradeupApi";
+import {
   useCallback,
   useEffect,
   useMemo,
@@ -70,6 +77,7 @@ interface AttachmentItem {
   size: number;
   kind: "image" | "document" | "other";
   previewUrl?: string;
+  base64?: string;
 }
 
 interface Message {
@@ -83,11 +91,20 @@ interface Message {
 
 interface ChatSession {
   id: string;
+  homeworkId?: string;
   title: string;
   subject: SubjectKey;
   mode: ModeKey;
   messages: Message[];
   updatedAt: string;
+  status?: string;
+  currentQuestion?: string;
+  currentQuestionIndex?: number;
+  totalQuestions?: number;
+  board?: string | null;
+  classNumber?: string | null;
+  unitNumber?: number | null;
+  term?: string | null;
 }
 
 interface AppState {
@@ -191,6 +208,14 @@ const STARTERS: Record<SubjectKey, string[]> = {
   coding: ["Debug my code", "Explain this error", "Write pseudocode"],
 };
 
+const DEFAULT_HOMEWORK_CONTEXT = {
+  subject: "science" as SubjectKey,
+  board: "State Board",
+  classNumber: "10",
+  unitNumber: 2,
+  term: null as string | null,
+};
+
 const SYSTEM_PROMPTS: Record<ModeKey, (subject: string) => string> = {
   guided: (subject) => `You are GradeUp, a brilliant and friendly academic tutor. The student is in TUTOR MODE.
 
@@ -252,11 +277,74 @@ const relTime = (iso: string): string => {
 const mkSession = (): ChatSession => ({
   id: uid(),
   title: "New chat",
-  subject: "general",
+  subject: DEFAULT_HOMEWORK_CONTEXT.subject,
   mode: "guided",
   messages: [],
   updatedAt: new Date().toISOString(),
+  board: DEFAULT_HOMEWORK_CONTEXT.board,
+  classNumber: DEFAULT_HOMEWORK_CONTEXT.classNumber,
+  unitNumber: DEFAULT_HOMEWORK_CONTEXT.unitNumber,
+  term: DEFAULT_HOMEWORK_CONTEXT.term,
 });
+
+const normalizeSubject = (value?: string | null): SubjectKey => {
+  const key = (value || DEFAULT_HOMEWORK_CONTEXT.subject).toLowerCase();
+  return key in SUBJECTS ? (key as SubjectKey) : DEFAULT_HOMEWORK_CONTEXT.subject;
+};
+
+const sessionSummaryToChat = (item: HomeworkChatSessionSummary): ChatSession => ({
+  id: item.homework_id,
+  homeworkId: item.homework_id,
+  title: item.title || "Homework chat",
+  subject: normalizeSubject(item.subject),
+  mode: "guided",
+  messages: [],
+  updatedAt: item.updated_at || item.assigned_at || new Date().toISOString(),
+  status: item.status || undefined,
+  currentQuestionIndex: item.current_question_index,
+  totalQuestions: item.total_questions,
+  board: item.board || DEFAULT_HOMEWORK_CONTEXT.board,
+  classNumber: item.class_number || DEFAULT_HOMEWORK_CONTEXT.classNumber,
+  unitNumber: item.unit_number || DEFAULT_HOMEWORK_CONTEXT.unitNumber,
+  term: item.term || DEFAULT_HOMEWORK_CONTEXT.term,
+});
+
+const sessionDetailToChat = (session: HomeworkChatSession): ChatSession => ({
+  ...sessionSummaryToChat({
+    homework_id: session.homework_id,
+    title: session.title || "Homework chat",
+    subject: session.subject,
+    unit_number: session.unit_number,
+    board: session.board,
+    class_number: session.class_number,
+    term: session.term,
+    status: session.status,
+    message_count: session.chat_history?.length || 0,
+    current_question_index: session.current_question_index,
+    total_questions: session.total_questions,
+    assigned_at: session.assigned_at,
+    updated_at: session.updated_at,
+  }),
+  currentQuestion: session.current_question,
+  messages: (session.chat_history || []).map((m) => ({
+    id: uid(),
+    role: m.role === "user" ? "user" : "assistant",
+    content: m.content || "",
+    createdAt: m.timestamp || session.updated_at || new Date().toISOString(),
+    animate: false,
+  })),
+});
+
+const fileToBase64 = (file: File): Promise<string | undefined> =>
+  new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onerror = () => resolve(undefined);
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      resolve(result.includes(",") ? result.split(",")[1] : result || undefined);
+    };
+    reader.readAsDataURL(file);
+  });
 
 const STORAGE_KEY = "gradeup-v3";
 
@@ -866,6 +954,37 @@ export default function HomeworkHelper() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    async function loadHomeworkHistory() {
+      try {
+        const history = await getHomeworkChatHistory();
+        if (cancelled || !history.sessions?.length) return;
+        const sessions = history.sessions.map(sessionSummaryToChat);
+        const activeId = sessions[0].id;
+        const activeDetail = await getHomeworkChatSession(activeId).catch(() => null);
+        const hydratedSessions = activeDetail
+          ? sessions.map((s) =>
+              s.id === activeId ? sessionDetailToChat(activeDetail.session) : s,
+            )
+          : sessions;
+        if (cancelled) return;
+        setAppState((prev) => ({
+          sessions: hydratedSessions,
+          activeId: hydratedSessions.some((s) => s.id === prev.activeId)
+            ? prev.activeId
+            : activeId,
+        }));
+      } catch (error) {
+        console.warn("Failed to load homework chat history", error);
+      }
+    }
+    void loadHomeworkHistory();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // ── State Mutators ────────────────────────────────────────
   const patchActive = useCallback((fn: (s: ChatSession) => ChatSession) => {
     setAppState((prev) => ({
@@ -883,10 +1002,21 @@ export default function HomeworkHelper() {
     setSidebarOpen(false);
   }, []);
 
-  const openSession = useCallback((id: string) => {
+  const openSession = useCallback(async (id: string) => {
     setAppState((prev) => ({ ...prev, activeId: id }));
     setView("chat");
     setSidebarOpen(false);
+    try {
+      const detail = await getHomeworkChatSession(id);
+      const loaded = sessionDetailToChat(detail.session);
+      setAppState((prev) => ({
+        ...prev,
+        activeId: loaded.id,
+        sessions: prev.sessions.map((s) => (s.id === loaded.id ? loaded : s)),
+      }));
+    } catch (error) {
+      console.warn("Failed to load homework chat session", error);
+    }
   }, []);
 
   const deleteSession = useCallback((id: string) => {
@@ -940,7 +1070,8 @@ export default function HomeworkHelper() {
           ? "document"
           : "other";
         const previewUrl = kind === "image" ? URL.createObjectURL(f) : undefined;
-        return { id: uid(), name: f.name, size: f.size, kind, previewUrl };
+        const base64 = kind === "image" ? await fileToBase64(f) : undefined;
+        return { id: uid(), name: f.name, size: f.size, kind, previewUrl, base64 };
       })
     );
     setPendingFiles((prev) => [...prev, ...items]);
@@ -997,29 +1128,50 @@ export default function HomeworkHelper() {
       }),
     }));
 
-    const history = [...active.messages, userMsg].map((m) => ({ role: m.role, content: m.content }));
-    const systemPrompt = SYSTEM_PROMPTS[active.mode](SUBJECTS[active.subject].label);
-
     try {
-      const answer = await callAnthropicAPI(history, systemPrompt);
+      const imageBase64 = attachments.find((item) => item.kind === "image" && item.base64)?.base64 || null;
+      const result = await sendHomeworkChat({
+        homeworkId: active.homeworkId || "new",
+        message: content,
+        imageBase64,
+        subject: active.subject || DEFAULT_HOMEWORK_CONTEXT.subject,
+        unitNumber: active.unitNumber || DEFAULT_HOMEWORK_CONTEXT.unitNumber,
+        board: active.board || DEFAULT_HOMEWORK_CONTEXT.board,
+        classNumber: active.classNumber || DEFAULT_HOMEWORK_CONTEXT.classNumber,
+        term: active.term || DEFAULT_HOMEWORK_CONTEXT.term,
+      });
       const aiMsg: Message = {
         id: uid(),
         role: "assistant",
-        content: answer,
+        content: result.response || "Let's keep working through this step by step.",
         createdAt: new Date().toISOString(),
         animate: true, // ← triggers typing animation
       };
       setAppState((prev) => ({
         ...prev,
-        sessions: prev.sessions.map((s) =>
-          s.id !== prev.activeId ? s : { ...s, messages: [...s.messages, aiMsg], updatedAt: new Date().toISOString() }
-        ),
+        activeId: result.homework_id || prev.activeId,
+        sessions: prev.sessions.map((s) => {
+          if (s.id !== prev.activeId) return s;
+          return {
+            ...s,
+            id: result.homework_id || s.id,
+            homeworkId: result.homework_id || s.homeworkId,
+            messages: [...s.messages, aiMsg],
+            updatedAt: new Date().toISOString(),
+            status: result.status,
+            currentQuestion: result.current_question,
+            currentQuestionIndex: result.current_question_index,
+            totalQuestions: result.total_questions,
+          };
+        }),
       }));
-    } catch {
+    } catch (error) {
       const aiMsg: Message = {
         id: uid(),
         role: "assistant",
-        content: FALLBACKS[active.mode],
+        content: error instanceof Error
+          ? `I couldn't reach the homework helper: ${error.message}`
+          : "I couldn't reach the homework helper. Please try again.",
         createdAt: new Date().toISOString(),
         animate: true, // ← also animate fallback
       };

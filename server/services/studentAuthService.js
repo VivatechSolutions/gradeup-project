@@ -297,6 +297,7 @@ module.exports = {
   ACCESS_COOKIE,
   REFRESH_COOKIE,
   clearAuthCookies,
+  createSession,
   loginStudent,
   registerIndependentStudent,
   resolveAccessUser,

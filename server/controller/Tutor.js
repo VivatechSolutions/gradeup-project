@@ -9,6 +9,11 @@ const {
   getConversation,
   clearConversations,
 } = require("../services/tutorConversationService");
+const {
+  recordHomeworkChatTurn,
+  listHomeworkChatSessions,
+  getHomeworkChatSession: findHomeworkChatSession,
+} = require("../services/homeworkChatSessionService");
 const { createRealtimeSession } = require("../services/speechService");
 const compression = require('compression');
 
@@ -459,6 +464,105 @@ const controller = {
       return res.status(error.statusCode || 500).json({
         status: false,
         message: error.message || "Failed to fetch homework history",
+      });
+    }
+  },
+
+  async homeworkChat(req, res) {
+    try {
+      const candidate = getCandidatePayload(req.body);
+      const pythonPayload = {
+        candidate_id: candidate.candidate_id,
+        homework_id: req.body.homeworkId || req.body.homework_id || "new",
+        message: req.body.message || "",
+        image_base64: req.body.imageBase64 || req.body.image_base64 || null,
+        subject: req.body.subject || null,
+        unit_number:
+          req.body.unitNumber !== undefined
+            ? Number(req.body.unitNumber)
+            : req.body.unit_number !== undefined
+              ? Number(req.body.unit_number)
+              : null,
+        board: req.body.board || null,
+        class_number: req.body.classNumber || req.body.class_number || null,
+        term: req.body.term || null,
+      };
+      const data = await callPython({
+        method: "post",
+        path: "/tutor/homework/chat",
+        data: pythonPayload,
+      });
+
+      await recordHomeworkChatTurn({
+        candidateId: candidate.candidate_id,
+        candidateName: candidate.candidate_name,
+        request: pythonPayload,
+        response: data,
+      });
+
+      return res.status(200).json({ status: true, data });
+    } catch (error) {
+      return res.status(error.statusCode || 500).json({
+        status: false,
+        message: error.message || "Failed to send homework chat message",
+        details: error.details || null,
+      });
+    }
+  },
+
+  async getHomeworkChatHistory(req, res) {
+    try {
+      const candidate = getCandidatePayload(req.query);
+      const sessions = await listHomeworkChatSessions({
+        candidateId: candidate.candidate_id,
+      });
+
+      return res.status(200).json({
+        status: true,
+        data: {
+          success: true,
+          candidate_id: candidate.candidate_id,
+          sessions,
+          count: sessions.length,
+        },
+      });
+    } catch (error) {
+      return res.status(error.statusCode || 500).json({
+        status: false,
+        message: error.message || "Failed to fetch homework chat history",
+        details: error.details || null,
+      });
+    }
+  },
+
+  async getHomeworkChatSession(req, res) {
+    try {
+      const candidate = getCandidatePayload(req.query);
+      const session = await findHomeworkChatSession({
+        candidateId: candidate.candidate_id,
+        homeworkId: req.params.homeworkId,
+      });
+
+      if (!session) {
+        return res.status(404).json({
+          status: false,
+          message: "Homework chat session not found",
+        });
+      }
+
+      return res.status(200).json({
+        status: true,
+        data: {
+          success: true,
+          candidate_id: candidate.candidate_id,
+          session,
+        },
+      });
+    } catch (error) {
+      return res.status(error.statusCode || 500).json({
+        status: false,
+        message: error.message || "Failed to fetch homework chat session",
+        details: error.details || null,
       });
     }
   },

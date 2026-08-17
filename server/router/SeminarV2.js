@@ -5,6 +5,10 @@ const { injectStudentIdentity } = require("../middleware/injectStudentIdentity")
 
 const router = express.Router();
 
+router.post("/ppt/suggest", controller.pptSuggest);
+router.post("/ppt/decide", controller.pptDecide);
+router.post("/ppt/session/end", controller.pptSessionEnd);
+
 router.use(requireStudentAuth, injectStudentIdentity);
 
 router.post("/start", controller.start);

@@ -302,6 +302,77 @@ export async function submitHomework(payload: {
   });
 }
 
+export type HomeworkChatResponse = {
+  success: boolean;
+  homework_id: string;
+  response: string;
+  current_question?: string;
+  current_question_index?: number;
+  total_questions?: number;
+  action?: string;
+  status?: string;
+};
+
+export type HomeworkChatSessionSummary = {
+  homework_id: string;
+  title: string;
+  subject?: string | null;
+  unit_number?: number | null;
+  board?: string | null;
+  class_number?: string | null;
+  term?: string | null;
+  status?: string | null;
+  message_count?: number;
+  current_question_index?: number;
+  total_questions?: number;
+  assigned_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type HomeworkChatSession = HomeworkChatSessionSummary & {
+  homework_id: string;
+  candidate_id?: string;
+  current_question?: string;
+  chat_history?: Array<{
+    role: "user" | "assistant" | string;
+    content: string;
+    timestamp?: string;
+  }>;
+};
+
+export async function sendHomeworkChat(payload: {
+  homeworkId: string;
+  message?: string;
+  imageBase64?: string | null;
+  subject?: string | null;
+  unitNumber?: number | null;
+  board?: string | null;
+  classNumber?: string | null;
+  term?: string | null;
+}) {
+  return apiFetch<HomeworkChatResponse>("/api/v1/tutor/homework/chat", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getHomeworkChatHistory() {
+  return apiFetch<{
+    success: boolean;
+    candidate_id: string;
+    sessions: HomeworkChatSessionSummary[];
+    count: number;
+  }>("/api/v1/tutor/homework/chat/history");
+}
+
+export async function getHomeworkChatSession(homeworkId: string) {
+  return apiFetch<{
+    success: boolean;
+    candidate_id: string;
+    session: HomeworkChatSession;
+  }>(`/api/v1/tutor/homework/chat/${encodeURIComponent(homeworkId)}`);
+}
+
 export async function getHomework(payload: {
   unitId?: string;
   candidateId: string;
@@ -837,6 +908,59 @@ export async function askHighlight(payload: {
   messages: Array<{ role: string; content: string }>;
 }) {
   return apiFetch<any>("/api/v1/highlight/ask", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export type AvatarFlashcardRequest = {
+  flashcardId: string;
+  flashcardType: "informative" | "mcq" | string;
+  segmentId: string;
+};
+
+export async function startAvatarSession(payload: {
+  unitId: string;
+  sectionTitle: string;
+  segments?: any[] | null;
+  term?: string | null;
+}) {
+  return apiFetch<any>("/api/v1/avatar/start", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function raiseAvatarHand(payload: {
+  sessionId: string;
+  studentDoubt?: string | null;
+  studentResponse?: string | null;
+}) {
+  return apiFetch<any>("/api/v1/avatar/raise-hand", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function generateAvatarFlashcard(payload: {
+  sessionId: string;
+  flashCards: AvatarFlashcardRequest[];
+}) {
+  return apiFetch<any>("/api/v1/avatar/flashcard/generate", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function resumeAvatarSession(payload: { sessionId: string }) {
+  return apiFetch<any>("/api/v1/avatar/resume", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function endAvatarSession(payload: { sessionId: string }) {
+  return apiFetch<any>("/api/v1/avatar/end", {
     method: "POST",
     body: JSON.stringify(payload),
   });
