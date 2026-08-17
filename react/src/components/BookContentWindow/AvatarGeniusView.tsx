@@ -346,6 +346,7 @@ export default function AvatarGeniusView() {
         setRaiseHandChat([]);
         flashcardAudioCacheRef.current = {};
         flashcardAudioPromiseRef.current = {};
+        preloadUpcomingFlashcards(0, 3, nextSegments);
         setStatus("playing");
       } catch (err: any) {
         if (!cancelled) {
@@ -370,41 +371,7 @@ export default function AvatarGeniusView() {
 
   useEffect(() => {
     if (status !== "playing" || !display) return;
-    const playingSegment = display;
-    const isFlashcardSegment = String(playingSegment.type || "").toLowerCase() === "flashcard";
-    if (isFlashcardSegment) {
-      playFlashcardSpeech(playingSegment, index);
-      return;
-    }
-
-    const audioUrl = getAudioUrl(playingSegment, teacher);
-    if (!audioUrl) {
-      clearFallbackTimer();
-      fallbackTimerRef.current = window.setTimeout(() => handleAudioEnded(playingSegment), 900);
-      return;
-    }
-
-    clearFallbackTimer();
-
-    const nextAudioKey = `${currentKey}:${teacher}:${audioUrl}`;
-    if (audioRef.current && audioKeyRef.current === nextAudioKey) {
-      audioRef.current.playbackRate = speed;
-      playAudioWithRetry(audioRef.current, "Lesson audio was blocked by the browser. Press Play to continue.");
-      return;
-    }
-
-    const audio = getLessonAudio();
-    audio.pause();
-    audio.src = audioUrl;
-    audio.currentTime = 0;
-    audio.playbackRate = speed;
-    audioKeyRef.current = nextAudioKey;
-    audio.onended = () => handleAudioEnded(playingSegment);
-    audio.onerror = () => {
-      setError("Audio could not be played for this segment.");
-      handleAudioEnded(playingSegment);
-    };
-    playAudioWithRetry(audio, "Lesson audio was blocked by the browser. Press Play to continue.");
+    startSegmentPlayback(display, index);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, index, segments, speed, teacher, display, currentKey]);
 
@@ -510,6 +477,43 @@ export default function AvatarGeniusView() {
     attempt(0);
   }
 
+  function startSegmentPlayback(segment: AvatarSegment, segmentIndex: number) {
+    if (statusRef.current !== "playing") return;
+    if (isFlashcardSegment(segment)) {
+      playFlashcardSpeech(segment, segmentIndex);
+      return;
+    }
+
+    const audioUrl = getAudioUrl(segment, teacher);
+    if (!audioUrl) {
+      clearFallbackTimer();
+      fallbackTimerRef.current = window.setTimeout(() => handleAudioEnded(segment, segmentIndex), 900);
+      return;
+    }
+
+    clearFallbackTimer();
+    const segmentKey = String(segment.segment_id || `segment-${segmentIndex}`);
+    const nextAudioKey = `${segmentKey}:${teacher}:${audioUrl}`;
+    if (audioRef.current && audioKeyRef.current === nextAudioKey) {
+      audioRef.current.playbackRate = speed;
+      playAudioWithRetry(audioRef.current, "Lesson audio was blocked by the browser. Press Play to continue.");
+      return;
+    }
+
+    const audio = getLessonAudio();
+    audio.pause();
+    audio.src = audioUrl;
+    audio.currentTime = 0;
+    audio.playbackRate = speed;
+    audioKeyRef.current = nextAudioKey;
+    audio.onended = () => handleAudioEnded(segment, segmentIndex);
+    audio.onerror = () => {
+      setError("Audio could not be played for this segment.");
+      handleAudioEnded(segment, segmentIndex);
+    };
+    playAudioWithRetry(audio, "Lesson audio was blocked by the browser. Press Play to continue.");
+  }
+
   function flashcardAudioKey(segment: AvatarSegment, segmentIndex: number) {
     const speechText = flashcardSpeechText(segment);
     const segmentKey = String(segment.segment_id || segment.flashcard_id || `segment-${segmentIndex}`);
@@ -549,10 +553,10 @@ export default function AvatarGeniusView() {
     return promise;
   }
 
-  function preloadUpcomingFlashcards(startIndex: number, limit: number) {
+  function preloadUpcomingFlashcards(startIndex: number, limit: number, sourceSegments = segments) {
     let queued = 0;
-    for (let segmentIndex = startIndex; segmentIndex < segments.length && queued < limit; segmentIndex += 1) {
-      const segment = segments[segmentIndex];
+    for (let segmentIndex = startIndex; segmentIndex < sourceSegments.length && queued < limit; segmentIndex += 1) {
+      const segment = sourceSegments[segmentIndex];
       if (!isFlashcardSegment(segment)) continue;
       queued += 1;
       ensureFlashcardAudio(segment, segmentIndex).catch(() => {
@@ -566,7 +570,7 @@ export default function AvatarGeniusView() {
 
     const { key: flashcardKey, speechText } = flashcardAudioKey(segment, segmentIndex);
     if (!speechText.trim()) {
-      handleAudioEnded(segment);
+      handleAudioEnded(segment, segmentIndex);
       return;
     }
 
@@ -584,12 +588,12 @@ export default function AvatarGeniusView() {
       audioEntry = await ensureFlashcardAudio(segment, segmentIndex);
     } catch (err: any) {
       setError(err?.message || "Flashcard audio could not be generated.");
-      handleAudioEnded(segment);
+      handleAudioEnded(segment, segmentIndex);
       return;
     }
 
     if (!audioEntry) {
-      handleAudioEnded(segment);
+      handleAudioEnded(segment, segmentIndex);
       return;
     }
     if (requestToken !== mediaRequestTokenRef.current || statusRef.current !== "playing") return;
@@ -600,10 +604,10 @@ export default function AvatarGeniusView() {
     audio.currentTime = 0;
     audio.playbackRate = speed;
     audioKeyRef.current = nextAudioKey;
-    audio.onended = () => handleAudioEnded(segment);
+    audio.onended = () => handleAudioEnded(segment, segmentIndex);
     audio.onerror = () => {
       setError("Flashcard audio could not be played.");
-      handleAudioEnded(segment);
+      handleAudioEnded(segment, segmentIndex);
     };
     playAudioWithRetry(audio, "Flashcard audio was blocked by the browser. Press Play to continue.");
   }
@@ -620,25 +624,29 @@ export default function AvatarGeniusView() {
     wasPlayingBeforeDoubtRef.current = false;
   }
 
-  function handleAudioEnded(segment: AvatarSegment | null) {
+  function handleAudioEnded(segment: AvatarSegment | null, segmentIndex = index) {
     if (String(segment?.type || "").toLowerCase() === "flashcard") {
       setStatus("waiting_flashcard");
       return;
     }
-    advance();
+    advanceFrom(segmentIndex);
   }
 
   function advance() {
+    advanceFrom(index);
+  }
+
+  function advanceFrom(currentIndex: number) {
     stopCurrentMedia();
-    setIndex((currentIndex) => {
-      const next = currentIndex + 1;
-      if (next >= segments.length) {
-        window.setTimeout(() => complete(), 0);
-        return currentIndex;
-      }
-      setStatus("playing");
-      return next;
-    });
+    const next = currentIndex + 1;
+    if (next >= segments.length) {
+      window.setTimeout(() => complete(), 0);
+      return;
+    }
+    statusRef.current = "playing";
+    setStatus("playing");
+    setIndex(next);
+    startSegmentPlayback(segments[next], next);
   }
 
   async function complete() {
@@ -734,15 +742,20 @@ export default function AvatarGeniusView() {
 
   function goToPreviousSegment() {
     stopCurrentMedia();
-    setIndex((value) => Math.max(0, value - 1));
+    const previous = Math.max(0, index - 1);
+    statusRef.current = "playing";
+    setIndex(previous);
     setStatus("playing");
+    startSegmentPlayback(segments[previous], previous);
   }
 
   function jumpToSegment(nextIndex: number) {
     if (nextIndex < 0 || nextIndex >= segments.length || nextIndex === index) return;
     stopCurrentMedia();
+    statusRef.current = "playing";
     setIndex(nextIndex);
     setStatus("playing");
+    startSegmentPlayback(segments[nextIndex], nextIndex);
   }
 
   function submitMcq(selectedOption?: string) {
