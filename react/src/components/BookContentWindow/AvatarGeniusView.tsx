@@ -43,6 +43,9 @@ type GeniusContext = {
 type AvatarSegment = {
   segment_id?: string;
   type?: string;
+  title?: string;
+  segment_title?: string;
+  segmentTitle?: string;
   text?: string;
   emotion?: string;
   card_title?: string;
@@ -115,6 +118,56 @@ function flashcardSpeechText(segment: AvatarSegment | null) {
     return [question, options].filter(Boolean).join(". ");
   }
   return [segment.avatar_line, segment.front].filter(Boolean).join(". ");
+}
+
+function titleCase(value = "") {
+  const smallWords = new Set(["a", "an", "and", "as", "at", "but", "by", "for", "in", "of", "on", "or", "the", "to", "with"]);
+  return value
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word, index) => {
+      const lower = word.toLowerCase();
+      if (index > 0 && smallWords.has(lower)) return lower;
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(" ");
+}
+
+function deriveSegmentTitle(segment: AvatarSegment | null, index: number) {
+  if (!segment) return `Segment ${index + 1}`;
+  const type = String(segment.type || "").toLowerCase();
+  const explicit =
+    segment.segment_title ||
+    segment.segmentTitle ||
+    segment.title ||
+    segment.card_title ||
+    (type === "flashcard" ? segment.question : "");
+  const source =
+    explicit ||
+    segment.text ||
+    segment.front ||
+    segment.avatar_line ||
+    "";
+  if (!source.trim()) return type === "flashcard" ? "Quick Check" : `Segment ${index + 1}`;
+
+  const cleaned = source
+    .replace(/\s+/g, " ")
+    .replace(/^[,.\s"'`]+/, "")
+    .replace(
+      /^(hello|hi|hey|welcome|today|now|next|first|second|third|finally|before we wrap up|to wrap it up|in summary|let us|let's|notice how|have you ever|did you know|okay|alright)\b[\s,!.:-]*/i,
+      "",
+    )
+    .trim();
+
+  const sentence = (cleaned.split(/[.!?]/)[0] || cleaned).trim();
+  const words = sentence
+    .replace(/[^a-zA-Z0-9 °CKF-]+/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, type === "flashcard" ? 6 : 5);
+  const title = titleCase(words.join(" "));
+  if (title) return title;
+  return type === "flashcard" ? "Quick Check" : `Segment ${index + 1}`;
 }
 
 function emotionClass(value = "") {
@@ -220,8 +273,13 @@ export default function AvatarGeniusView() {
   const canAnswer = isMcq && status === "waiting_flashcard" && !feedback[currentKey];
   const progress = segments.length ? ((index + (status === "completed" ? 1 : 0)) / segments.length) * 100 : 0;
 
-  const teachingSegments = useMemo(
-    () => segments.filter((segment) => String(segment.type || "").toLowerCase() !== "flashcard"),
+  const segmentChapters = useMemo(
+    () =>
+      segments.map((segment, segmentIndex) => ({
+        segment,
+        title: deriveSegmentTitle(segment, segmentIndex),
+        type: String(segment.type || "").toLowerCase() === "flashcard" ? "Flashcard" : "Teaching",
+      })),
     [segments],
   );
   const teacherName = teacher === "woman" ? "Prof. Maya" : "Prof. Nova";
@@ -593,6 +651,13 @@ export default function AvatarGeniusView() {
     setStatus("playing");
   }
 
+  function jumpToSegment(nextIndex: number) {
+    if (nextIndex < 0 || nextIndex >= segments.length || nextIndex === index) return;
+    stopCurrentMedia();
+    setIndex(nextIndex);
+    setStatus("playing");
+  }
+
   function submitMcq() {
     stopCurrentMedia();
     const answer = String(answers[currentKey] || "").trim().toUpperCase();
@@ -789,13 +854,20 @@ export default function AvatarGeniusView() {
           </div>
           <div id="topics-area">
             <div className="topic-label">Lesson Map</div>
-            {teachingSegments.map((segment, topicIndex) => (
-              <div className={`topic-item ${topicIndex <= index ? "done" : ""}`} key={segment.segment_id || topicIndex}>
+            {segmentChapters.map((chapter, topicIndex) => (
+              <button
+                className={`topic-item ${topicIndex < index ? "done" : ""} ${topicIndex === index ? "active" : ""}`}
+                key={chapter.segment.segment_id || topicIndex}
+                onClick={() => jumpToSegment(topicIndex)}
+                type="button"
+                title={chapter.title}
+              >
                 <span className="ti-num">{topicIndex + 1}</span>
                 <span className="ti-body">
-                  <span className="ti-name">{segment.text?.slice(0, 40) || "Teaching point"}</span>
+                  <span className="ti-name">{chapter.title}</span>
+                  <span className="ti-type">{chapter.type}</span>
                 </span>
-              </div>
+              </button>
             ))}
           </div>
         </aside>
@@ -806,10 +878,33 @@ export default function AvatarGeniusView() {
         <button className="vb-btn segment" onClick={goToPreviousSegment}><ChevronLeft size={16} /></button>
         <div className="vb-track">
           <div className="vb-label">
-            <span>{display?.segment_id || "Segment"}</span>
+            <span>{segmentChapters[index]?.title || display?.segment_id || "Segment"}</span>
             <span>{Math.round(progress)}%</span>
           </div>
-          <div className="vb-bg"><div className="vb-fill" style={{ width: `${Math.min(100, progress)}%` }} /></div>
+          <div className="vb-bg chapter-track" aria-label="Lesson segments">
+            {segmentChapters.map((chapter, chapterIndex) => {
+              const chapterState =
+                status === "completed" || chapterIndex < index
+                  ? "done"
+                  : chapterIndex === index
+                    ? "active"
+                    : "upcoming";
+              return (
+                <button
+                  className={`vb-chapter ${chapterState} ${chapter.type === "Flashcard" ? "flashcard" : "teaching"}`}
+                  key={chapter.segment.segment_id || chapterIndex}
+                  onClick={() => jumpToSegment(chapterIndex)}
+                  type="button"
+                  aria-label={`Segment ${chapterIndex + 1}: ${chapter.title}`}
+                >
+                  <span className="vb-tip">
+                    <b>{chapter.title}</b>
+                    <small>Segment {chapterIndex + 1} • {chapter.type}</small>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
         <button className="vb-btn segment" onClick={advance}><ChevronRight size={16} /></button>
         <span className="vb-spd">{speed}x</span>
@@ -955,8 +1050,8 @@ body{overflow:hidden;}
 .emo-talking .av-mouth-shape{animation:tlk .22s ease-in-out infinite alternate;}@keyframes tlk{from{width:26px;height:7px;border-radius:7px 7px 12px 12px}to{width:30px;height:20px;border-radius:10px 10px 18px 18px}}.emo-enthusiastic .av-arm.l,.emo-excited .av-arm.l,.emo-playful .av-arm.l,.emo-inspiring .av-arm.l{transform:rotate(-52deg)!important;}.emo-enthusiastic .av-r,.emo-inspiring .av-r{animation:avatarLift 1.4s ease-in-out infinite;}@keyframes avatarLift{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}.emo-curious .av-brow.l,.emo-thinking .av-brow.l,.emo-thoughtful .av-brow.l{top:37px;transform:rotate(15deg) translateY(-1px);}.emo-curious .av-mouth-shape,.emo-thinking .av-mouth-shape,.emo-thoughtful .av-mouth-shape{width:18px;height:6px;border-radius:10px;border-top:2px solid #8e3b38;}.emo-empathetic .av-brow.l,.emo-warm .av-brow.l,.emo-encouraging .av-brow.l{top:40px;transform:rotate(10deg) translateY(2px);}.emo-empathetic .av-brow.r,.emo-warm .av-brow.r,.emo-encouraging .av-brow.r{top:40px;transform:rotate(-10deg) translateY(2px);}.emo-warm .av-cheek,.emo-encouraging .av-cheek{background:rgba(236,72,153,.34);}.emo-confident .av-torso{transform:translateY(-2px) scale(1.02);}.emo-confident .av-brow.l{transform:rotate(-10deg);}.emo-confident .av-brow.r{transform:rotate(10deg);}.emo-surprised .av-eye{height:27px;}.emo-surprised .av-mouth-shape{width:22px;height:22px;border-radius:50%;border:3px solid #8e3b38;background:#5b151c;}.emo-playful .av-head{transform:rotate(-5deg);}.emo-playful .av-r{transform:rotate(-1.5deg);}
 .av-status{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);}.status-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pdot 2s infinite;}@keyframes pdot{0%,100%{box-shadow:0 0 0 0 rgba(16,185,129,.4)}50%{box-shadow:0 0 0 5px rgba(16,185,129,0)}}
 #raise-btn{position:relative;z-index:4;display:flex;align-items:center;gap:8px;padding:10px 20px;border-radius:20px;background:linear-gradient(135deg,var(--amber),#f97316);color:#fff;border:none;cursor:pointer;font-family:inherit;font-size:13px;font-weight:700;box-shadow:0 6px 20px rgba(245,158,11,.4);transition:all .2s;animation:btnPulse 2.5s ease-in-out infinite;margin:10px 0 16px;}#raise-btn:hover{transform:translateY(-3px);box-shadow:0 10px 28px rgba(245,158,11,.5);}@keyframes btnPulse{0%,100%{box-shadow:0 6px 20px rgba(245,158,11,.4)}50%{box-shadow:0 6px 30px rgba(245,158,11,.65)}}
-#topics-area{display:none;}.topic-label{font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:4px 6px 2px;}.topic-item{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:11px;cursor:pointer;transition:all .18s;border:1px solid transparent;}.topic-item.done{opacity:.6;}.ti-num{width:24px;height:24px;border-radius:7px;background:var(--surface2);font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;color:var(--accent);flex-shrink:0;}.ti-body{flex:1;min-width:0;}.ti-name{font-size:12px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-#voice-bar{position:fixed;bottom:0;left:0;width:calc(100% - 320px);background:var(--surface);border-top:1px solid var(--border);padding:8px 16px;display:flex;align-items:center;gap:10px;box-shadow:0 -4px 20px rgba(0,0,0,.06);z-index:50;}.vb-btn{width:32px;height:32px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--sub);transition:all .18s;flex-shrink:0;}.vb-btn:hover{border-color:var(--accent);color:var(--accent);}.vb-btn.play{background:var(--accent)!important;color:#fff!important;border-color:var(--accent)!important;box-shadow:0 3px 10px rgba(91,94,247,.3);}.vb-track{flex:1;min-width:120px;}.vb-label{font-size:10px;color:var(--muted);font-weight:600;display:flex;justify-content:space-between;margin-bottom:3px;}.vb-bg{height:8px;background:var(--surface2);border-radius:8px;overflow:hidden;position:relative;}.vb-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:4px;transition:width .25s linear;width:0%;}.vb-btn.segment{font-size:16px;font-weight:800;}.vb-spd{padding:4px 9px;border-radius:20px;font-size:10px;font-weight:700;border:1px solid var(--border);background:var(--surface2);color:var(--muted);flex-shrink:0;}.wave{display:flex;align-items:center;gap:3px;height:20px;}.wb{width:3px;border-radius:2px;background:var(--accent);height:4px;opacity:.2;animation:wavb 1.2s ease-in-out infinite;}.wb.on{opacity:1;}@keyframes wavb{0%,100%{height:4px}50%{height:18px}}
+#topics-area{width:100%;padding:0 14px 14px;display:grid;gap:5px;overflow:auto;max-height:25vh;}.topic-label{font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:4px 6px 2px;}.topic-item{display:flex;align-items:center;gap:10px;width:100%;padding:8px 9px;border-radius:11px;cursor:pointer;transition:all .18s;border:1px solid transparent;background:transparent;text-align:left;font-family:inherit;}.topic-item:hover,.topic-item.active{background:rgba(91,94,247,.08);border-color:rgba(91,94,247,.18);}.topic-item.done{opacity:.68;}.ti-num{width:24px;height:24px;border-radius:7px;background:var(--surface2);font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;color:var(--accent);flex-shrink:0;}.topic-item.active .ti-num{background:var(--accent);color:#fff;}.ti-body{flex:1;min-width:0;display:grid;gap:1px;}.ti-name{font-size:12px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}.ti-type{font-size:9px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);}
+#voice-bar{position:fixed;bottom:0;left:0;width:calc(100% - 320px);background:var(--surface);border-top:1px solid var(--border);padding:8px 16px;display:flex;align-items:center;gap:10px;box-shadow:0 -4px 20px rgba(0,0,0,.06);z-index:50;}.vb-btn{width:32px;height:32px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--sub);transition:all .18s;flex-shrink:0;}.vb-btn:hover{border-color:var(--accent);color:var(--accent);}.vb-btn.play{background:var(--accent)!important;color:#fff!important;border-color:var(--accent)!important;box-shadow:0 3px 10px rgba(91,94,247,.3);}.vb-track{flex:1;min-width:120px;}.vb-label{font-size:10px;color:var(--muted);font-weight:600;display:flex;justify-content:space-between;gap:12px;margin-bottom:4px;}.vb-label span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);}.vb-bg{height:12px;background:transparent;border-radius:8px;position:relative;}.chapter-track{display:flex;gap:3px;overflow:visible;}.vb-chapter{position:relative;flex:1;min-width:10px;height:100%;border:0;border-radius:2px;background:var(--surface2);cursor:pointer;padding:0;transition:transform .16s ease,background .16s ease,opacity .16s ease;}.vb-chapter.done{background:linear-gradient(90deg,var(--accent),var(--accent2));opacity:.82;}.vb-chapter.active{background:var(--accent);transform:scaleY(1.25);box-shadow:0 0 0 2px rgba(91,94,247,.16);}.vb-chapter.upcoming{opacity:.72;}.vb-chapter.flashcard{background-image:linear-gradient(135deg,rgba(245,158,11,.85),rgba(249,115,22,.78));}.vb-chapter.flashcard.upcoming{background:rgba(245,158,11,.22);}.vb-chapter:hover{transform:scaleY(1.45);opacity:1;}.vb-tip{position:absolute;left:50%;bottom:22px;transform:translateX(-50%) translateY(4px);width:max-content;max-width:220px;padding:9px 10px;border-radius:10px;background:rgba(13,16,33,.96);color:#fff;box-shadow:0 10px 28px rgba(0,0,0,.22);opacity:0;pointer-events:none;transition:opacity .14s ease,transform .14s ease;z-index:70;text-align:left;}.vb-tip::after{content:'';position:absolute;left:50%;bottom:-6px;transform:translateX(-50%);border:6px solid transparent;border-top-color:rgba(13,16,33,.96);border-bottom:0;}.vb-tip b{display:block;font-size:11px;line-height:1.25;white-space:normal;}.vb-tip small{display:block;margin-top:4px;font-size:9px;color:rgba(255,255,255,.68);font-weight:800;text-transform:uppercase;letter-spacing:.08em;}.vb-chapter:hover .vb-tip{opacity:1;transform:translateX(-50%) translateY(0);}.vb-btn.segment{font-size:16px;font-weight:800;}.vb-spd{padding:4px 9px;border-radius:20px;font-size:10px;font-weight:700;border:1px solid var(--border);background:var(--surface2);color:var(--muted);flex-shrink:0;}.wave{display:flex;align-items:center;gap:3px;height:20px;}.wb{width:3px;border-radius:2px;background:var(--accent);height:4px;opacity:.2;animation:wavb 1.2s ease-in-out infinite;}.wb.on{opacity:1;}@keyframes wavb{0%,100%{height:4px}50%{height:18px}}
 #doubt-overlay{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.48);display:none;align-items:flex-end;justify-content:flex-start;padding:0 0 60px 0;}#doubt-overlay.open{display:flex;}#doubt-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);box-shadow:var(--sh2);width:min(520px,calc(100vw - 32px));max-height:70vh;display:flex;flex-direction:column;margin:0 0 0 16px;animation:dSlide .32s cubic-bezier(.34,1.3,.64,1);}@keyframes dSlide{from{opacity:0;transform:translateY(20px) scale(.97)}to{opacity:1;transform:none}}
 .db-head{padding:14px 18px 12px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border);}.db-avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;}.db-title{font-size:13px;font-weight:700;color:var(--text);}.db-sub{font-size:11px;color:var(--muted);}.db-close{margin-left:auto;width:28px;height:28px;border-radius:8px;border:1px solid var(--border);background:none;cursor:pointer;font-size:14px;color:var(--muted);display:flex;align-items:center;justify-content:center;transition:all .15s;}.db-close:hover{background:rgba(239,68,68,.1);border-color:var(--red);color:var(--red);}
 .db-msgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;min-height:120px;max-height:calc(70vh - 140px);}.db-msg{display:flex;gap:8px;max-width:92%;}.db-msg.student{align-self:flex-end;}.db-msg.ai{align-self:flex-start;}.db-bubble{padding:9px 13px;border-radius:14px;font-size:13px;line-height:1.6;color:var(--text);background:var(--surface2);border:1px solid var(--border);border-radius:14px 14px 14px 4px;}.db-msg.student .db-bubble{background:linear-gradient(135deg,var(--accent),var(--accent2));border-color:transparent;color:#fff;border-radius:14px 14px 4px 14px;}.db-thinking{color:var(--muted);font-weight:700;}.db-input-row{display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--border);}.db-send{width:36px;height:36px;border-radius:10px;background:var(--accent);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;color:#fff;transition:all .18s;flex-shrink:0;}.db-send:disabled{opacity:.58;cursor:not-allowed;}.db-voice-actions{display:flex;gap:8px;padding:0 14px 14px;}.db-small-btn{border:1px solid var(--border);background:var(--surface2);color:var(--sub);border-radius:10px;padding:8px 11px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;}.db-small-btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;}
