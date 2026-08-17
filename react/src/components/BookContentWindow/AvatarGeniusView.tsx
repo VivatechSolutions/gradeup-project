@@ -42,6 +42,7 @@ type GeniusContext = {
 
 type AvatarSegment = {
   segment_id?: string;
+  flashcard_id?: string;
   type?: string;
   title?: string;
   segment_title?: string;
@@ -68,6 +69,10 @@ type RaiseHandMessage = {
   role: "student" | "ai";
   text: string;
   emotion?: string;
+};
+
+type FlashcardAudioEntry = {
+  dataUrl: string;
 };
 
 const CONTEXT_KEY = "gradeup-avatar-genius-context";
@@ -253,7 +258,8 @@ export default function AvatarGeniusView() {
   const [isResuming, setIsResuming] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioKeyRef = useRef("");
-  const flashcardAudioCacheRef = useRef<Record<string, string>>({});
+  const flashcardAudioCacheRef = useRef<Record<string, FlashcardAudioEntry>>({});
+  const flashcardAudioPromiseRef = useRef<Record<string, Promise<FlashcardAudioEntry>>>({});
   const mediaRequestTokenRef = useRef(0);
   const statusRef = useRef(status);
   const fallbackTimerRef = useRef<number | null>(null);
@@ -270,7 +276,6 @@ export default function AvatarGeniusView() {
     display?.flashcard_type || (display?.question || display?.options ? "mcq" : "informative"),
   ).toLowerCase();
   const isMcq = displayType === "flashcard" && (flashcardType === "mcq" || Boolean(display?.question));
-  const canAnswer = isMcq && status === "waiting_flashcard" && !feedback[currentKey];
   const progress = segments.length ? ((index + (status === "completed" ? 1 : 0)) / segments.length) * 100 : 0;
 
   const segmentChapters = useMemo(
@@ -340,6 +345,7 @@ export default function AvatarGeniusView() {
         setIndex(0);
         setRaiseHandChat([]);
         flashcardAudioCacheRef.current = {};
+        flashcardAudioPromiseRef.current = {};
         setStatus("playing");
       } catch (err: any) {
         if (!cancelled) {
@@ -357,7 +363,7 @@ export default function AvatarGeniusView() {
 
   useEffect(() => {
     return () => {
-      stopCurrentMedia();
+      destroyLessonAudio();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -367,7 +373,7 @@ export default function AvatarGeniusView() {
     const playingSegment = display;
     const isFlashcardSegment = String(playingSegment.type || "").toLowerCase() === "flashcard";
     if (isFlashcardSegment) {
-      playFlashcardSpeech(playingSegment);
+      playFlashcardSpeech(playingSegment, index);
       return;
     }
 
@@ -383,29 +389,30 @@ export default function AvatarGeniusView() {
     const nextAudioKey = `${currentKey}:${teacher}:${audioUrl}`;
     if (audioRef.current && audioKeyRef.current === nextAudioKey) {
       audioRef.current.playbackRate = speed;
-      audioRef.current.play().catch(() => {
-        setError("Tap Play if your browser blocked autoplay.");
-        setStatus("paused");
-      });
+      playAudioWithRetry(audioRef.current, "Lesson audio was blocked by the browser. Press Play to continue.");
       return;
     }
 
-    if (audioRef.current) audioRef.current.pause();
-    const audio = new Audio(audioUrl);
+    const audio = getLessonAudio();
+    audio.pause();
+    audio.src = audioUrl;
+    audio.currentTime = 0;
     audio.playbackRate = speed;
-    audioRef.current = audio;
     audioKeyRef.current = nextAudioKey;
     audio.onended = () => handleAudioEnded(playingSegment);
     audio.onerror = () => {
       setError("Audio could not be played for this segment.");
       handleAudioEnded(playingSegment);
     };
-    audio.play().catch(() => {
-      setError("Tap Play if your browser blocked autoplay.");
-      setStatus("paused");
-    });
+    playAudioWithRetry(audio, "Lesson audio was blocked by the browser. Press Play to continue.");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, index, segments, speed, teacher, display, currentKey]);
+
+  useEffect(() => {
+    if (!segments.length) return;
+    preloadUpcomingFlashcards(index, 2);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [segments, index, teacher]);
 
   useEffect(() => {
     if (audioRef.current) audioRef.current.playbackRate = speed;
@@ -438,13 +445,41 @@ export default function AvatarGeniusView() {
       audioRef.current.pause();
       audioRef.current.onended = null;
       audioRef.current.onerror = null;
-      audioRef.current = null;
     }
+    audioKeyRef.current = "";
+  }
+
+  function getLessonAudio() {
+    if (audioRef.current) return audioRef.current;
+    const audio = new Audio();
+    audio.preload = "auto";
+    audio.controls = false;
+    audio.playsInline = true;
+    audio.setAttribute("webkit-playsinline", "true");
+    audio.style.display = "none";
+    audio.style.pointerEvents = "none";
+    document.body.appendChild(audio);
+    audioRef.current = audio;
+    return audio;
+  }
+
+  function destroyLessonAudio() {
+    clearFallbackTimer();
+    mediaRequestTokenRef.current += 1;
+    if (!audioRef.current) return;
+    audioRef.current.pause();
+    audioRef.current.onended = null;
+    audioRef.current.onerror = null;
+    audioRef.current.removeAttribute("src");
+    audioRef.current.load();
+    audioRef.current.remove();
+    audioRef.current = null;
     audioKeyRef.current = "";
   }
 
   function pauseCurrentMedia() {
     clearFallbackTimer();
+    mediaRequestTokenRef.current += 1;
     audioRef.current?.pause();
     if (status === "playing") {
       statusRef.current = "paused";
@@ -458,67 +493,119 @@ export default function AvatarGeniusView() {
     setStatus("playing");
   }
 
-  async function playFlashcardSpeech(segment: AvatarSegment) {
+  function playAudioWithRetry(audio: HTMLAudioElement, blockedMessage: string) {
+    const requestToken = mediaRequestTokenRef.current;
+    const attempt = (tryIndex: number) => {
+      audio.play().catch(() => {
+        if (requestToken !== mediaRequestTokenRef.current) return;
+        if (tryIndex < 2) {
+          window.setTimeout(() => attempt(tryIndex + 1), 400 * (tryIndex + 1));
+          return;
+        }
+        statusRef.current = "paused";
+        setError(blockedMessage);
+        setStatus("paused");
+      });
+    };
+    attempt(0);
+  }
+
+  function flashcardAudioKey(segment: AvatarSegment, segmentIndex: number) {
+    const speechText = flashcardSpeechText(segment);
+    const segmentKey = String(segment.segment_id || segment.flashcard_id || `segment-${segmentIndex}`);
+    return {
+      key: `${segmentKey}:${teacher}:${speechText}`,
+      speechText,
+    };
+  }
+
+  function isFlashcardSegment(segment: AvatarSegment | null) {
+    return String(segment?.type || "").toLowerCase() === "flashcard";
+  }
+
+  async function ensureFlashcardAudio(segment: AvatarSegment, segmentIndex: number) {
+    const { key, speechText } = flashcardAudioKey(segment, segmentIndex);
+    if (!speechText.trim()) return null;
+    if (flashcardAudioCacheRef.current[key]) return flashcardAudioCacheRef.current[key];
+    if (flashcardAudioPromiseRef.current[key]) return flashcardAudioPromiseRef.current[key];
+
+    const promise = synthesizeDebateSpeech({
+      text: speechText,
+      voice: teacher === "woman" ? "shimmer" : "echo",
+      format: "mp3",
+    }).then((response) => {
+      const dataUrl = response?.dataUrl || "";
+      if (!dataUrl) throw new Error("No audio data received for flashcard.");
+      const entry = { dataUrl };
+      flashcardAudioCacheRef.current[key] = entry;
+      delete flashcardAudioPromiseRef.current[key];
+      return entry;
+    }).catch((error) => {
+      delete flashcardAudioPromiseRef.current[key];
+      throw error;
+    });
+
+    flashcardAudioPromiseRef.current[key] = promise;
+    return promise;
+  }
+
+  function preloadUpcomingFlashcards(startIndex: number, limit: number) {
+    let queued = 0;
+    for (let segmentIndex = startIndex; segmentIndex < segments.length && queued < limit; segmentIndex += 1) {
+      const segment = segments[segmentIndex];
+      if (!isFlashcardSegment(segment)) continue;
+      queued += 1;
+      ensureFlashcardAudio(segment, segmentIndex).catch(() => {
+        // Playback will surface the error if the learner reaches this card.
+      });
+    }
+  }
+
+  async function playFlashcardSpeech(segment: AvatarSegment, segmentIndex: number) {
     clearFallbackTimer();
 
-    const speechText = flashcardSpeechText(segment);
+    const { key: flashcardKey, speechText } = flashcardAudioKey(segment, segmentIndex);
     if (!speechText.trim()) {
       handleAudioEnded(segment);
       return;
     }
 
-    const flashcardKey = `${currentKey}:${teacher}:${speechText}`;
-    const cachedAudioUrl = flashcardAudioCacheRef.current[flashcardKey];
     const nextAudioKey = `flashcard:${flashcardKey}`;
 
     if (audioRef.current && audioKeyRef.current === nextAudioKey) {
       audioRef.current.playbackRate = speed;
-      audioRef.current.play().catch(() => {
-        setError("Tap Play if your browser blocked autoplay.");
-        setStatus("paused");
-      });
+      playAudioWithRetry(audioRef.current, "Flashcard audio was blocked by the browser. Press Play to continue.");
       return;
     }
 
     const requestToken = mediaRequestTokenRef.current;
-    let audioUrl = cachedAudioUrl;
-    if (!audioUrl) {
-      try {
-        const response = await synthesizeDebateSpeech({
-          text: speechText,
-          voice: teacher === "woman" ? "shimmer" : "echo",
-          format: "mp3",
-        });
-        audioUrl = response?.dataUrl || "";
-        if (audioUrl) flashcardAudioCacheRef.current[flashcardKey] = audioUrl;
-      } catch (err: any) {
-        setError(err?.message || "Flashcard audio could not be generated.");
-        handleAudioEnded(segment);
-        return;
-      }
-    }
-
-    if (!audioUrl) {
+    let audioEntry: FlashcardAudioEntry | null = null;
+    try {
+      audioEntry = await ensureFlashcardAudio(segment, segmentIndex);
+    } catch (err: any) {
+      setError(err?.message || "Flashcard audio could not be generated.");
       handleAudioEnded(segment);
       return;
     }
 
+    if (!audioEntry) {
+      handleAudioEnded(segment);
+      return;
+    }
     if (requestToken !== mediaRequestTokenRef.current || statusRef.current !== "playing") return;
 
-    if (audioRef.current) audioRef.current.pause();
-    const audio = new Audio(audioUrl);
+    const audio = getLessonAudio();
+    audio.pause();
+    audio.src = audioEntry.dataUrl;
+    audio.currentTime = 0;
     audio.playbackRate = speed;
-    audioRef.current = audio;
     audioKeyRef.current = nextAudioKey;
     audio.onended = () => handleAudioEnded(segment);
     audio.onerror = () => {
       setError("Flashcard audio could not be played.");
       handleAudioEnded(segment);
     };
-    audio.play().catch(() => {
-      setError("Tap Play if your browser blocked autoplay.");
-      setStatus("paused");
-    });
+    playAudioWithRetry(audio, "Flashcard audio was blocked by the browser. Press Play to continue.");
   }
 
   function openDoubtModal() {
@@ -658,13 +745,14 @@ export default function AvatarGeniusView() {
     setStatus("playing");
   }
 
-  function submitMcq() {
+  function submitMcq(selectedOption?: string) {
     stopCurrentMedia();
-    const answer = String(answers[currentKey] || "").trim().toUpperCase();
+    const answer = String(selectedOption || answers[currentKey] || "").trim().toUpperCase();
     const correctAnswer = String(display?.answer || "").trim().toUpperCase();
     if (!answer || !correctAnswer) return;
     const explanations = display?.option_explanations || {};
     const correct = answer === correctAnswer;
+    setAnswers((prev) => ({ ...prev, [currentKey]: answer }));
     setFeedback((prev) => ({
       ...prev,
       [currentKey]: {
@@ -674,6 +762,7 @@ export default function AvatarGeniusView() {
           : explanations[answer] || explanations[correctAnswer] || `The correct answer is ${correctAnswer}.`,
       },
     }));
+    setStatus("waiting_flashcard");
   }
 
   if (!context) {
@@ -775,26 +864,25 @@ export default function AvatarGeniusView() {
                         <div>
                           <p className="ic-q">{merged.question}</p>
                           <div className="mcq-options">
-                            {Object.entries(merged.options || {}).map(([option, text]) => (
-                              <div className="mcq-option" key={option}>
-                                <b>{option}</b>
-                                <span>{text}</span>
-                              </div>
-                            ))}
+                            {Object.entries(merged.options || {}).map(([option, text]) => {
+                              const normalizedOption = option.toUpperCase();
+                              const selected = String(answers[key] || "").toUpperCase() === normalizedOption;
+                              const correct = String(merged.answer || "").toUpperCase() === normalizedOption;
+                              const hasFeedback = Boolean(feedback[key]);
+                              return (
+                                <button
+                                  type="button"
+                                  className={`mcq-option ${selected ? "selected" : ""} ${hasFeedback && correct ? "correct" : ""} ${hasFeedback && selected && !correct ? "wrong" : ""}`}
+                                  key={option}
+                                  disabled={!isActive || Boolean(feedback[key])}
+                                  onClick={() => submitMcq(normalizedOption)}
+                                >
+                                  <b>{option}</b>
+                                  <span>{text}</span>
+                                </button>
+                              );
+                            })}
                           </div>
-                          {isActive && (
-                            <div className="answer-row">
-                              <input
-                                value={answers[currentKey] || ""}
-                                onChange={(event) =>
-                                  setAnswers((prev) => ({ ...prev, [currentKey]: event.target.value }))
-                                }
-                                disabled={!canAnswer}
-                                placeholder={status === "waiting_flashcard" ? "Type A, B, C or D" : "Answer unlocks after audio"}
-                              />
-                              <button disabled={!canAnswer || !answers[currentKey]?.trim()} onClick={submitMcq}>Check</button>
-                            </div>
-                          )}
                           {feedback[key] && (
                             <div className={`feedback ${feedback[key].correct ? "correct" : "wrong"}`}>
                               {feedback[key].correct ? <CheckCircle2 size={17} /> : <AlertCircle size={17} />}
@@ -1012,8 +1100,8 @@ body{overflow:hidden;}
 #prog-bar{height:3px;background:rgba(91,94,247,.1);}#prog-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));width:0%;transition:width .5s ease;border-radius:0 3px 3px 0;}
 .inline-card{margin:28px 0;border-radius:var(--r2);overflow:hidden;border:1px solid rgba(91,94,247,.25);background:linear-gradient(145deg,rgba(91,94,247,.06),rgba(91,94,247,.02));box-shadow:0 4px 20px rgba(91,94,247,.1);opacity:0;transform:translateY(12px) scale(.98);transition:opacity .5s ease,transform .5s ease;}.inline-card.visible{opacity:1;transform:none;}.inline-card.active{border-color:rgba(91,94,247,.45);box-shadow:0 10px 30px rgba(91,94,247,.14);}
 .ic-header{padding:14px 18px 10px;display:flex;align-items:center;gap:8px;border-bottom:1px solid rgba(91,94,247,.12);}.ic-tag{font-size:9px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);background:rgba(91,94,247,.1);padding:3px 9px;border-radius:20px;}.ic-flip-hint{font-size:10px;color:var(--muted);margin-left:auto;display:flex;align-items:center;gap:4px;}.ic-scene{perspective:900px;padding:14px 18px;}.ic-q{font-size:.92rem;font-weight:600;color:var(--text);line-height:1.55;}.ic-footer{padding:10px 18px 14px;display:flex;gap:8px;}.ic-fb-btn{flex:1;padding:7px;border-radius:10px;font-size:11px;font-weight:700;border:none;cursor:pointer;font-family:inherit;transition:all .2s;color:#fff;}.ic-fb-got{background:rgba(16,185,129,.75);}
-.mcq-options{display:grid;gap:8px;margin-top:12px;}.mcq-option{display:grid;grid-template-columns:28px minmax(0,1fr);gap:10px;align-items:start;padding:10px 12px;border-radius:12px;background:var(--surface);border:1px solid var(--border);font-size:.88rem;line-height:1.45;}.mcq-option b{color:var(--accent);}
-.answer-row{display:flex;gap:10px;margin-top:14px;}.answer-row input,.db-input{min-width:0;flex:1;border-radius:12px;border:1px solid var(--border);background:var(--surface);color:var(--text);padding:10px 12px;outline:none;}.answer-row input:disabled{opacity:.58;cursor:not-allowed;}.answer-row button{border:none;border-radius:12px;padding:10px 14px;font-weight:850;cursor:pointer;background:var(--accent);color:#fff;white-space:nowrap;}.answer-row button:disabled{opacity:.5;cursor:not-allowed;}
+.mcq-options{display:grid;gap:8px;margin-top:12px;}.mcq-option{display:grid;grid-template-columns:28px minmax(0,1fr);gap:10px;align-items:start;width:100%;padding:10px 12px;border-radius:12px;background:var(--surface);border:1px solid var(--border);font-family:inherit;font-size:.88rem;line-height:1.45;color:var(--text);text-align:left;cursor:pointer;transition:background .18s,border-color .18s,transform .18s,box-shadow .18s;}.mcq-option:hover:not(:disabled){border-color:rgba(91,94,247,.45);box-shadow:0 8px 20px rgba(91,94,247,.1);transform:translateY(-1px);}.mcq-option:disabled{cursor:default;}.mcq-option b{color:var(--accent);}.mcq-option.selected{border-color:rgba(91,94,247,.7);background:rgba(91,94,247,.1);}.mcq-option.correct{border-color:rgba(16,185,129,.72);background:rgba(16,185,129,.14);}.mcq-option.correct b{color:#047857;}.mcq-option.wrong{border-color:rgba(239,68,68,.7);background:rgba(239,68,68,.12);}.mcq-option.wrong b{color:#dc2626;}
+.db-input{min-width:0;flex:1;border-radius:12px;border:1px solid var(--border);background:var(--surface);color:var(--text);padding:10px 12px;outline:none;}
 .feedback{display:grid;grid-template-columns:22px minmax(0,1fr);gap:10px;margin-top:14px;padding:12px;border-radius:14px;}.feedback.correct{background:rgba(16,185,129,.12);color:#047857;}.feedback.wrong{background:rgba(245,158,11,.13);color:#92400e;}.feedback strong{display:block;margin-bottom:3px;}.feedback p{margin:0;line-height:1.55;font-size:.86rem;}.option-explain{margin-top:10px;display:grid;gap:6px;}
 .loading-card,.error-card{padding:16px 18px;border-radius:16px;margin:18px 0;font-size:13px;font-weight:700;}.loading-card{background:rgba(91,94,247,.1);color:var(--accent);}.error-card{background:rgba(239,68,68,.1);color:#dc2626;}
 #avatar-panel{display:flex;flex-direction:column;min-height:calc(100vh - var(--ah));overflow:hidden;}#av-stage{flex:1 1 auto;min-height:0;padding:18px 20px 0;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:8px;position:relative;overflow:hidden;}.av-name-badge{background:linear-gradient(135deg,#ec4899,#8b5cf6);color:#fff;font-size:10px;font-weight:700;padding:4px 14px;border-radius:99px;letter-spacing:.06em;text-transform:uppercase;box-shadow:0 4px 12px rgba(91,94,247,.3);}
@@ -1058,5 +1146,5 @@ body{overflow:hidden;}
 #complete-screen{position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center;}#complete-screen.open{display:flex;}.cs-card{background:var(--surface);border:1px solid rgba(91,94,247,.25);border-radius:28px;padding:40px;max-width:420px;width:90%;text-align:center;box-shadow:var(--sh2);animation:dSlide .4s cubic-bezier(.34,1.3,.64,1);position:relative;}.cs-close{position:absolute;top:16px;right:16px;width:34px;height:34px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--muted);font-size:18px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;}.cs-emoji{font-size:52px;margin-bottom:12px;}.cs-title{font-size:26px;font-weight:800;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:8px;}.cs-sub{font-size:14px;color:var(--muted);line-height:1.6;margin-bottom:24px;}.cs-btn{display:inline-flex;align-items:center;gap:8px;padding:12px 28px;border-radius:14px;border:none;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 6px 20px rgba(91,94,247,.35);}
 .genius-empty{min-height:100vh;background:var(--bg);color:var(--text);display:grid;place-items:center;align-content:center;gap:10px;font-family:Sora,system-ui,sans-serif;text-align:center;padding:24px;}.genius-empty h1{font-size:22px;}
 @media(max-width:900px){#app{grid-template-columns:1fr;}#avatar-panel{display:none;}#voice-bar{width:100%;}#raise-btn{bottom:72px;}}
-@media(max-width:600px){#content-scroll{padding:20px 18px 120px;}.ch-title{font-size:1.4rem;}.tb-btn span{display:none;}.tb-btn{padding:0 10px;}.tb-pill{display:none;}.answer-row{flex-direction:column;}}
+@media(max-width:600px){#content-scroll{padding:20px 18px 120px;}.ch-title{font-size:1.4rem;}.tb-btn span{display:none;}.tb-btn{padding:0 10px;}.tb-pill{display:none;}}
 `;
