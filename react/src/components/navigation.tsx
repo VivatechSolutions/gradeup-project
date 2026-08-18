@@ -315,6 +315,7 @@ const PAGE_LABELS: Record<string, string> = {
   "/ai-tutor":                 "AI Tutor",
   "/community":                "Community",
   "/communityNew":             "Group Chat",
+  "/live-events":              "Live Events",
   "/achievements":             "Achievements",
   "/homework":                 "Homework",
   "/bookExpanded":             "Book Content",
@@ -344,6 +345,7 @@ const STUDENT_LINKS: NavLinkItem[] = [
   { label: "Progress",     href: "/progress",     icon: "chart"  },
   { label: "AI Tutor",     href: "/ai-tutor",     icon: "bot"    },
   { label: "Community",    href: "/community",    icon: "users"  },
+  { label: "Live Events",  href: "/live-events",  icon: "calendar" },
   { label: "Achievements", href: "/achievements", icon: "trophy" },
 ];
 

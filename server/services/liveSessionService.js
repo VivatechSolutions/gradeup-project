@@ -1,4 +1,10 @@
 const LiveSession = require("../model/LiveSession");
+const {
+  buildVisibilityPatch,
+  canAccessSession,
+  eventAccessLabel,
+  normalizeVisibility,
+} = require("./sessionVisibilityService");
 
 function now() {
   return new Date();
@@ -87,6 +93,12 @@ function normalizeSession(session) {
     hostCandidateName: session.hostCandidateName || null,
     roomCode: session.roomCode || null,
     shareLink: session.shareLink || null,
+    visibility: normalizeVisibility(session.visibility),
+    allowedSchool: session.allowedSchool || null,
+    allowedClass: session.allowedClass || null,
+    invitedEmails: session.invitedEmails || [],
+    invitedUserIds: session.invitedUserIds || [],
+    visibilityUpdatedAt: session.visibilityUpdatedAt || null,
     teams: session.teams || null,
     currentRound: session.currentRound || null,
     feedback: session.feedback || null,
@@ -171,6 +183,10 @@ async function upsertSession({
   hostCandidateName = null,
   roomCode = null,
   shareLink = null,
+  visibility = "public",
+  visibilityContext = null,
+  invitedEmails = [],
+  invitedUserIds = [],
 }) {
   const participant = toParticipant(candidateId, candidateName, role, {
     isHost: role === "host",
@@ -207,12 +223,22 @@ async function upsertSession({
         hostCandidateName: hostCandidateName || candidateName,
         roomCode,
         shareLink,
+        ...buildVisibilityPatch({
+          visibility,
+          context: visibilityContext || {
+            school: unit?.schoolName || null,
+            classNumber: unit?.standard || null,
+          },
+        }),
       },
-      $push: {
-        participants: {
-          $each: [],
-        },
-      },
+      ...(invitedEmails.length || invitedUserIds.length
+        ? {
+            $addToSet: {
+              ...(invitedEmails.length ? { invitedEmails: { $each: invitedEmails } } : {}),
+              ...(invitedUserIds.length ? { invitedUserIds: { $each: invitedUserIds } } : {}),
+            },
+          }
+        : {}),
     },
     {
       upsert: true,
@@ -336,6 +362,10 @@ async function createRoomSession({
   metadata,
   roomCode = null,
   shareLink = null,
+  visibility = "public",
+  visibilityContext = null,
+  invitedEmails = [],
+  invitedUserIds = [],
 }) {
   return upsertSession({
     sessionType: "debate",
@@ -356,6 +386,10 @@ async function createRoomSession({
     hostCandidateName: candidateName,
     roomCode,
     shareLink,
+    visibility,
+    visibilityContext,
+    invitedEmails,
+    invitedUserIds,
   });
 }
 
@@ -698,10 +732,11 @@ async function listSessionTopics({ sessionType, subjectGroupKey }) {
   return [...uniqueTopics.values()];
 }
 
-async function listActiveSessions({ sessionType }) {
+async function listActiveSessions({ sessionType, context = null, includePrivate = false }) {
   const sessions = await LiveSession.find({
     sessionType,
     status: { $in: ["waiting", "active", "waiting_for_ai"] },
+    ...(includePrivate ? {} : { visibility: { $ne: "private" } }),
   })
     .sort({ updatedAt: -1 })
     .limit(100);
@@ -713,6 +748,7 @@ async function listActiveSessions({ sessionType }) {
       (participant) => participant.role !== "observer" && !participant.isAi,
     );
 
+    const access = context ? canAccessSession(session, context) : { allowed: true };
     return {
       id: normalized.sessionId,
       sessionId: normalized.sessionId,
@@ -724,6 +760,11 @@ async function listActiveSessions({ sessionType }) {
       observerCount: observers.length,
       participantCount: presenters.length,
       roomLink: normalized.shareLink || normalized.sessionId,
+      visibility: normalized.visibility,
+      allowedSchool: normalized.allowedSchool,
+      allowedClass: normalized.allowedClass,
+      canAccess: Boolean(access.allowed),
+      accessLabel: context ? eventAccessLabel(session, context) : "join",
       updatedAt: normalized.metadata?.updatedAt || normalized.startedAt || null,
     };
   });

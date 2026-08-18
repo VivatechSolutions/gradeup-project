@@ -64,6 +64,7 @@ import MeetingSystem from "./components/Meetingsystem";
 import DebatePage from "./pages/DebatePage";
 import SeminarPage from "./pages/SeminarPage";
 import MeetingPage from "./pages/MeetingPage";
+import LiveEventsPage from "./pages/live-events-page";
 import TeacherSeminarPage from "./pages/teacher-seminar-page";
 import TeacherDebatePage from "./pages/teacher-debate-page";
 import TeacherMeetingPage from "./pages/teacher-meeting-page";
@@ -174,6 +175,7 @@ function AppWithAuth() {
         <ProtectedRoute path="/seminarPage" component={SeminarPage} />
         <ProtectedRoute path="/seminarPage/join" component={SeminarPage} />
         <ProtectedRoute path="/seminar/join" component={SeminarPage} />
+        <ProtectedRoute path="/live-events" component={LiveEventsPage} />
         <ProtectedRoute path="/meetingPage" component={MeetingPage} />
         <ProtectedRoute path="/studio/quiz/:id?" component={(params) => <StudioQuizPage id={params.id} />} />
         <ProtectedRoute path="/bookGuide" component={QuizBankLanding} />

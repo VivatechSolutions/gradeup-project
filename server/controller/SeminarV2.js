@@ -18,6 +18,11 @@ const {
 } = require("../services/liveSessionService");
 const { recordProgress } = require("../services/studentDataService");
 const LiveSessionModel = require("../model/LiveSession");
+const {
+  assertSessionAccess,
+  getRequestStudentContext,
+  updateSessionVisibility,
+} = require("../services/sessionVisibilityService");
 
 function ensureSeminarStartPayload(context = {}) {
   const missing = [];
@@ -413,6 +418,7 @@ const controller = {
       const requestedSessionId = getRequestedSessionId(req.body);
       const sessionId = requestedSessionId || `seminar-room-${candidate.candidate_id}-${Date.now()}`;
       const shareLink = req.body.roomLink || req.body.shareLink || null;
+      const visibilityContext = await getRequestStudentContext(req);
 
       const maxParticipants = req.body.maxParticipants
         ? Number(req.body.maxParticipants)
@@ -430,6 +436,8 @@ const controller = {
         hostCandidateId: candidate.candidate_id,
         hostCandidateName: candidate.candidate_name,
         shareLink,
+        visibility: req.body.visibility,
+        visibilityContext,
         metadata: {
           createdVia: "seminar_room",
           session_mode: "main",
@@ -470,6 +478,7 @@ const controller = {
 
       const candidate = getCandidate(body);
       const { unit, context } = await getContext(body);
+      const visibilityContext = await getRequestStudentContext(req);
       const requestedSessionId = getRequestedSessionId(body);
       const requestedMode = body.mode || body.session_mode || "main";
       const existingLiveSession = requestedSessionId ? await getSession(requestedSessionId) : null;
@@ -558,6 +567,8 @@ const controller = {
         hostCandidateId: existingLiveSession?.hostCandidateId || candidate.candidate_id,
         hostCandidateName: existingLiveSession?.hostCandidateName || candidate.candidate_name,
         shareLink: existingLiveSession?.shareLink || body.roomLink || body.shareLink || null,
+        visibility: body.visibility || existingLiveSession?.visibility,
+        visibilityContext,
         metadata: {
           ...(existingLiveSession?.metadata || {}),
           ...data,
@@ -838,6 +849,13 @@ const controller = {
       const existingSession = await getSession(sessionId);
       if (!existingSession) {
         return res.status(404).json({ status: false, message: "Seminar session not found" });
+      }
+      await assertSessionAccess(sessionId, req);
+      if (existingSession.status === "completed" || existingSession.status === "ending") {
+        return res.status(403).json({
+          status: false,
+          message: "This seminar has already ended.",
+        });
       }
 
       // ── Participant limit enforcement ──────────────────────────────────────
@@ -1124,12 +1142,30 @@ const controller = {
 
   async getActive(req, res) {
     try {
-      const data = await listActiveSessions({ sessionType: "seminar" });
+      const context = await getRequestStudentContext(req);
+      const data = await listActiveSessions({ sessionType: "seminar", context });
       return res.status(200).json({ status: true, data });
     } catch (error) {
       return res.status(error.statusCode || 500).json({
         status: false,
         message: error.message || "Failed to load active seminar sessions",
+      });
+    }
+  },
+
+  async updateVisibility(req, res) {
+    try {
+      const session = await updateSessionVisibility({
+        sessionId: req.params.sessionId || req.body.sessionId || req.body.session_id,
+        visibility: req.body.visibility,
+        req,
+      });
+      const normalized = await getSession(session.sessionId);
+      return res.status(200).json({ status: true, data: normalized });
+    } catch (error) {
+      return res.status(error.statusCode || 500).json({
+        status: false,
+        message: error.message || "Failed to update seminar visibility",
       });
     }
   },
@@ -1151,6 +1187,7 @@ const controller = {
 
   async getSession(req, res) {
     try {
+      await assertSessionAccess(req.params.sessionId, req);
       const data = await getSession(req.params.sessionId);
       if (!data) {
         return res.status(404).json({ status: false, message: "Seminar session not found" });

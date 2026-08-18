@@ -16,6 +16,7 @@ router.post("/ppt/session/start", controller.pptSessionStart);
 router.post("/start", controller.start);
 router.post("/create-room", controller.createRoom);
 router.post("/room/start", controller.startRoom);
+router.patch("/session/:sessionId/visibility", controller.updateVisibility);
 router.post("/join", controller.join);
 router.post("/remove-participant", controller.removeParticipant);
 router.post("/respond", controller.respond);

@@ -23,6 +23,11 @@ const {
   normalizeTeams,
 } = require("../services/liveSessionService");
 const { recordProgress } = require("../services/studentDataService");
+const {
+  assertSessionAccess,
+  getRequestStudentContext,
+  updateSessionVisibility,
+} = require("../services/sessionVisibilityService");
 
 function getCandidate(source = {}) {
   return {
@@ -315,6 +320,7 @@ const controller = {
       const candidate = getCandidate(req.body);
       const { unit, context } = await getContext(req.body);
       const isTeamDebate = isTeamDebateRequest(req.body);
+      const visibilityContext = await getRequestStudentContext(req);
 
       if (isTeamDebate) {
         const roomData = await callPython({
@@ -352,6 +358,8 @@ const controller = {
           metadata: roomData,
           roomCode,
           shareLink: req.body.roomLink || null,
+          visibility: req.body.visibility,
+          visibilityContext,
         });
 
         return res.status(200).json({
@@ -396,6 +404,8 @@ const controller = {
         unit,
         metadata: data,
         debateType: req.body.debateType || "1_vs_ai",
+        visibility: req.body.visibility,
+        visibilityContext,
       });
 
       return res
@@ -482,6 +492,7 @@ console.log
   async join(req, res) {
     try {
       const candidate = getCandidate(req.body);
+      await assertSessionAccess(req.body.sessionId || req.body.session_id, req);
       const liveSession = await getSession(
         req.body.sessionId || req.body.session_id,
       );
@@ -572,6 +583,23 @@ console.log
 
   async joinRoom(req, res) {
     return controller.join(req, res);
+  },
+
+  async updateRoomVisibility(req, res) {
+    try {
+      const session = await updateSessionVisibility({
+        sessionId: req.params.sessionId || req.body.sessionId || req.body.session_id,
+        visibility: req.body.visibility,
+        req,
+      });
+      const normalized = await getSession(session.sessionId);
+      return res.status(200).json({ status: true, data: normalized });
+    } catch (error) {
+      return res.status(error.statusCode || 500).json({
+        status: false,
+        message: error.message || "Failed to update debate visibility",
+      });
+    }
   },
 
   async startRoom(req, res) {
@@ -1294,6 +1322,7 @@ console.log
 
   async getSession(req, res) {
     try {
+      await assertSessionAccess(req.params.sessionId, req);
       const liveSession = await getSession(req.params.sessionId);
       if (liveSession?.debateType === "team") {
         const snapshot = await fetchRoomState(req.params.sessionId);
@@ -1321,6 +1350,7 @@ console.log
 
   async getRoom(req, res) {
     try {
+      await assertSessionAccess(req.params.sessionId, req);
       const snapshot = await fetchRoomState(req.params.sessionId);
       return res.status(200).json({ status: true, data: snapshot });
     } catch (error) {

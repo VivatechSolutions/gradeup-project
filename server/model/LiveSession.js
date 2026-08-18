@@ -80,6 +80,17 @@ const liveSessionSchema = new mongoose.Schema(
     hostCandidateName: { type: String, default: null, trim: true },
     roomCode: { type: String, default: null, trim: true, index: true },
     shareLink: { type: String, default: null, trim: true },
+    visibility: {
+      type: String,
+      enum: ["public", "school", "class", "private"],
+      default: "public",
+      index: true,
+    },
+    allowedSchool: { type: String, default: null, trim: true, index: true },
+    allowedClass: { type: String, default: null, trim: true, index: true },
+    invitedEmails: { type: [String], default: [] },
+    invitedUserIds: { type: [String], default: [] },
+    visibilityUpdatedAt: { type: Date, default: null },
     status: {
       type: String,
       enum: ["created", "waiting", "active", "waiting_for_ai", "ending", "completed", "end_error"],
@@ -137,5 +148,6 @@ const liveSessionSchema = new mongoose.Schema(
 liveSessionSchema.index({ sessionType: 1, subjectGroupKey: 1, status: 1 });
 liveSessionSchema.index({ candidateId: 1, sessionType: 1, updatedAt: -1 });
 liveSessionSchema.index({ topicId: 1, sessionType: 1 });
+liveSessionSchema.index({ sessionType: 1, visibility: 1, status: 1 });
 
 module.exports = mongoose.model("LiveSession", liveSessionSchema);

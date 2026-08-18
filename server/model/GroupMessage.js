@@ -18,7 +18,7 @@ const groupMessageSchema = new mongoose.Schema(
     senderRole: { type: String, enum: ["student", "teacher"], default: "student" },
     senderName: { type: String, trim: true },
     text: { type: String, trim: true, default: "" },
-    type: { type: String, enum: ["message", "attachment", "system"], default: "message" },
+    type: { type: String, enum: ["message", "attachment", "system", "session_card"], default: "message" },
     attachment: attachmentSchema,
     metadata: mongoose.Schema.Types.Mixed,
     deletedAt: Date,

@@ -22,14 +22,19 @@ import {
   getDebateRoom,
   getDebateTopics,
   getLibrarySubjects,
+  listGroupChats,
   joinDebateRoom,
   respondDebate,
   retryEndDebateRoom,
+  shareSessionToCommunity,
+  shareSessionToGroup,
+  sendSessionInviteEmails,
   startDebate,
   startDebateRoom,
   submitDebateRoomTurn,
   synthesizeDebateSpeech,
   transcribeDebateAudio,
+  updateDebateRoomVisibility,
   type LibrarySubject,
 } from "../lib/gradeupApi";
 import { debateDebug, ttsDebug } from "../lib/ttsDebug";
@@ -2536,6 +2541,8 @@ function IntegratedDebateSetup({
   const [joining, setJoining] = useState(false);
   const [joinProgress, setJoinProgress] = useState(0);
   const [joinLinkSessionId, setJoinLinkSessionId] = useState("");
+  const [sessionVisibility, setSessionVisibility] = useState("public");
+  const [shareToCommunity, setShareToCommunity] = useState(false);
   const joinRoomFromLinkRef = useRef<string>("");
   const roomId = useRef(genRoomId());
   const roomLink = genRoomLink(roomId.current);
@@ -2625,6 +2632,12 @@ function IntegratedDebateSetup({
   useEffect(() => {
     toastRef.current = toast$;
   }, [toast$]);
+
+  useEffect(() => {
+    if (sessionVisibility === "private") {
+      setShareToCommunity(false);
+    }
+  }, [sessionVisibility]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -2904,6 +2917,7 @@ function IntegratedDebateSetup({
           topicSectionTitle: selectedTopicOption?.sectionTitle || null,
           topicPath: selectedTopicOption?.topicPath || [],
           debateType: "1_vs_ai",
+          visibility: sessionVisibility as "public" | "school" | "class" | "private",
         });
       } else if (
         subMode === "multi" &&
@@ -2931,6 +2945,7 @@ function IntegratedDebateSetup({
             topicPath: selectedTopicOption?.topicPath || [],
             roomLink,
             maxParticipants,
+            visibility: sessionVisibility as "public" | "school" | "class" | "private",
           });
         }
       }
@@ -2961,6 +2976,25 @@ function IntegratedDebateSetup({
       ? genRoomLink(launchedSessionId)
       : roomLink;
 
+    if (shareToCommunity && sessionVisibility !== "private" && subMode === "multi" && launchedSessionId) {
+      try {
+        await shareSessionToCommunity({
+          sessionType: "debate",
+          sessionId: launchedSessionId,
+          topic: finalTopic,
+          title: finalTopic,
+          createdBy: name || getCandidateContext(user || {}).candidateName,
+          joinUrl: launchedRoomLink,
+          status: "waiting",
+          participantCount: 1,
+          source: "debate_setup",
+          visibility: sessionVisibility as "public" | "school" | "class" | "private",
+        });
+      } catch (error) {
+        console.warn("Failed to share debate to community", error);
+      }
+    }
+
     setJoining(false);
     setShowConfirm(false);
     setJoinProgress(0);
@@ -2982,6 +3016,7 @@ function IntegratedDebateSetup({
       unitId: selectedUnitId,
       sessionId: launchedSessionId,
       liveSession: liveSession?.liveSession || null,
+      visibility: sessionVisibility,
       initialAiMessage:
         liveSession?.ai_greeting ||
         liveSession?.opening_statement ||
@@ -3366,6 +3401,49 @@ function IntegratedDebateSetup({
                   </div>
                 )}
               </div>
+            )}
+
+            {subMode === "multi" && (
+              <>
+                <div className="sec-div">Session Visibility</div>
+                <div className="fi">
+                  <select
+                    className="finput"
+                    value={sessionVisibility}
+                    onChange={(event) => setSessionVisibility(event.target.value)}
+                  >
+                    <option value="public">Access to all</option>
+                    <option value="school">Only to school</option>
+                    <option value="class">Only to class</option>
+                    <option value="private">Private - invited only</option>
+                  </select>
+                </div>
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 9,
+                    padding: "10px 12px",
+                    borderRadius: 12,
+                    background: "rgba(99,102,241,.05)",
+                    border: "1px solid rgba(99,102,241,.14)",
+                    fontSize: 12.5,
+                    fontWeight: 800,
+                    color: "var(--t1)",
+                    marginBottom: 12,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={shareToCommunity}
+                    disabled={sessionVisibility === "private"}
+                    onChange={(event) => setShareToCommunity(event.target.checked)}
+                  />
+                  {sessionVisibility === "private"
+                    ? "Share to Community disabled for private sessions"
+                    : "Share to Community after the waiting-room link is created"}
+                </label>
+              </>
             )}
 
 
@@ -7363,6 +7441,13 @@ function DebateWaitingRoom({
   const [showBackConfirm, setShowBackConfirm] = useState(false);
   const [copied, setCopied] = useState(false);
   const [meetingEnded, setMeetingEnded] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteMode, setInviteMode] = useState<"group" | "email">("group");
+  const [inviteGroups, setInviteGroups] = useState<any[]>([]);
+  const [selectedInviteGroup, setSelectedInviteGroup] = useState("");
+  const [inviteEmails, setInviteEmails] = useState("");
+  const [inviteSending, setInviteSending] = useState(false);
+  const [visibilitySaving, setVisibilitySaving] = useState(false);
   const [hostApproved, setHostApproved] = useState(
     Boolean(config.hostApproved || config.isHost),
   );
@@ -7378,6 +7463,7 @@ function DebateWaitingRoom({
   const roomLink =
     config.roomLink || (config.sessionId ? genRoomLink(config.sessionId) : "");
   const liveSession = snapshot?.liveSession || config.liveSession || null;
+  const currentVisibility = liveSession?.visibility || config.visibility || "public";
   const participants =
     liveSession?.participants ||
     snapshot?.participants ||
@@ -7570,6 +7656,13 @@ function DebateWaitingRoom({
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
+  useEffect(() => {
+    if (!inviteOpen) return;
+    listGroupChats()
+      .then((groups) => setInviteGroups(groups || []))
+      .catch(() => setInviteGroups([]));
+  }, [inviteOpen]);
+
   async function handleStart() {
     if (!config.sessionId) return;
     console.log("[ROOM] waiting-room start pressed", {
@@ -7706,6 +7799,61 @@ function DebateWaitingRoom({
     navigator.clipboard.writeText(roomLink);
     setCopied(true);
     setTimeout(() => setCopied(false), 1800);
+  }
+
+  async function sendWaitingInvite() {
+    if (!roomLink || !config.sessionId) return;
+    setInviteSending(true);
+    const card = {
+      sessionType: "debate" as const,
+      sessionId: config.sessionId,
+      topic: config.topic,
+      title: config.topic,
+      createdBy: candidateName,
+      joinUrl: roomLink,
+      status: "waiting",
+      participantCount,
+      source: "debate_waiting_room",
+      visibility: currentVisibility as "public" | "school" | "class" | "private",
+    };
+    try {
+      if (inviteMode === "group") {
+        if (!selectedInviteGroup) return;
+        await shareSessionToGroup({ ...card, groupId: selectedInviteGroup });
+      } else {
+        const emails = inviteEmails.split(/[\s,;]+/).map((item) => item.trim()).filter(Boolean);
+        if (!emails.length) return;
+        await sendSessionInviteEmails({ ...card, emails });
+      }
+      setInviteOpen(false);
+      setInviteEmails("");
+      setSelectedInviteGroup("");
+      toast$("Invite sent.", "success");
+    } catch (error: any) {
+      toast$(error?.message || "Unable to send invite.", "error");
+    } finally {
+      setInviteSending(false);
+    }
+  }
+
+  async function handleVisibilityChange(nextVisibility: string) {
+    if (!config.sessionId || nextVisibility === currentVisibility) return;
+    setVisibilitySaving(true);
+    try {
+      const updated = await updateDebateRoomVisibility(
+        config.sessionId,
+        nextVisibility as "public" | "school" | "class" | "private",
+      );
+      setSnapshot((previous: any) => ({
+        ...(previous || {}),
+        liveSession: updated || previous?.liveSession || null,
+      }));
+      toast$("Debate visibility updated.", "success");
+    } catch (error: any) {
+      toast$(error?.message || "Unable to update debate visibility.", "error");
+    } finally {
+      setVisibilitySaving(false);
+    }
   }
 
   return (
@@ -7849,6 +7997,9 @@ function DebateWaitingRoom({
                     <button className="copy-btn" onClick={copyLink}>
                       {copied ? "Copied" : "Copy"}
                     </button>
+                    <button className="copy-btn" onClick={() => setInviteOpen(true)}>
+                      Invite
+                    </button>
                   </div>
                 </div>
               )}
@@ -7917,6 +8068,38 @@ function DebateWaitingRoom({
                     ? "When you start, everyone will move to the debate meeting window and be shown in Team A / Team B."
                     : "Once the host starts the debate, this page will automatically move you into the meeting window."}
               </div>
+              {isHost && !meetingEnded && (
+                <div>
+                  <label
+                    style={{
+                      display: "block",
+                      fontSize: 10,
+                      fontWeight: 800,
+                      color: "rgba(255,255,255,.42)",
+                      textTransform: "uppercase",
+                      marginBottom: 6,
+                    }}
+                  >
+                    Session Visibility
+                  </label>
+                  <select
+                    className="finput"
+                    value={currentVisibility}
+                    disabled={visibilitySaving}
+                    onChange={(event) => handleVisibilityChange(event.target.value)}
+                    style={{
+                      background: "rgba(255,255,255,.05)",
+                      borderColor: "rgba(255,255,255,.12)",
+                      color: "#fff",
+                    }}
+                  >
+                    <option value="public">Access to all</option>
+                    <option value="school">Only to school</option>
+                    <option value="class">Only to class</option>
+                    <option value="private">Private - invited only</option>
+                  </select>
+                </div>
+              )}
               <div
                 style={{
                   padding: "10px 12px",
@@ -8001,6 +8184,36 @@ function DebateWaitingRoom({
               </button>
               <button className="btn-d" onClick={handleLeave} disabled={ending}>
                 {ending ? "Leaving..." : "Proceed"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {inviteOpen && (
+        <div className="overlay" onClick={() => setInviteOpen(false)}>
+          <div className="modal" style={{ maxWidth: 430 }} onClick={(event) => event.stopPropagation()}>
+            <div className="mh">
+              <div className="mh-title">Invite to Debate</div>
+              <button className="mh-close" onClick={() => setInviteOpen(false)}>x</button>
+            </div>
+            <div className="mb" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <button className="btn-s" onClick={() => setInviteMode("group")} style={inviteMode === "group" ? { borderColor: "var(--ind)", color: "var(--ind)" } : {}}>Send to group</button>
+                <button className="btn-s" onClick={() => setInviteMode("email")} style={inviteMode === "email" ? { borderColor: "var(--ind)", color: "var(--ind)" } : {}}>Send email</button>
+              </div>
+              {inviteMode === "group" ? (
+                <select className="finput" value={selectedInviteGroup} onChange={(event) => setSelectedInviteGroup(event.target.value)}>
+                  <option value="">Select group</option>
+                  {inviteGroups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+                </select>
+              ) : (
+                <textarea className="finput" rows={3} value={inviteEmails} onChange={(event) => setInviteEmails(event.target.value)} placeholder="student1@example.com, student2@example.com" />
+              )}
+            </div>
+            <div className="mf">
+              <button className="btn-s" onClick={() => setInviteOpen(false)}>Cancel</button>
+              <button className="btn-p" style={{ width: "auto" }} onClick={sendWaitingInvite} disabled={inviteSending}>
+                {inviteSending ? "Sending..." : "Send"}
               </button>
             </div>
           </div>

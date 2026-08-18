@@ -8,7 +8,7 @@ const GroupMessage = require("../model/GroupMessage");
 const User = require("../model/User");
 const StudentProfile = require("../model/StudentProfile");
 const { sendEmail } = require("../config/EmailTransporter");
-const { getGroupInviteEmail } = require("../config/EmailTemplate");
+const { getGroupInviteEmail, getSessionInviteEmail } = require("../config/EmailTemplate");
 const {
   displayName,
   findActiveMember,
@@ -21,6 +21,11 @@ const {
   emitToGroup,
   getOnlineUserKeys,
 } = require("../services/groupChatRealtime");
+const {
+  addGroupInviteesToSession,
+  addSessionInvitees,
+  findUsersByEmails,
+} = require("../services/sessionVisibilityService");
 
 const uploadDir = path.join(__dirname, "..", "uploads", "group-chat");
 fs.mkdirSync(uploadDir, { recursive: true });
@@ -77,6 +82,30 @@ function normalizeEmail(email = "") {
 
 function normalizeText(value = "") {
   return String(value || "").trim();
+}
+
+function normalizeSessionCard(input = {}) {
+  const sessionType = String(input.sessionType || input.type || "").toLowerCase() === "seminar" ? "seminar" : "debate";
+  const topic = normalizeText(input.topic || input.title || "Live session");
+  const status = normalizeText(input.status || "waiting") || "waiting";
+  const joinUrl = normalizeText(input.joinUrl || input.roomLink || input.link || "");
+  return {
+    sessionType,
+    sessionId: normalizeText(input.sessionId || input.id || ""),
+    topic,
+    title: normalizeText(input.title || topic),
+    createdBy: normalizeText(input.createdBy || ""),
+    joinUrl,
+    status,
+    participantCount: Number(input.participantCount || 0),
+    createdAt: input.createdAt || new Date().toISOString(),
+    source: normalizeText(input.source || "group_chat"),
+  };
+}
+
+function sessionCardText(card, groupName) {
+  const label = card.sessionType === "seminar" ? "seminar session" : "team debate";
+  return `${card.createdBy || "A GradeUp learner"} invited you to join a ${label} in #${groupName}: ${card.topic}`;
 }
 
 function sameText(left, right) {
@@ -445,7 +474,84 @@ const controller = {
       const message = await GroupMessage.findOne({ _id: req.params.messageId, deletedAt: null, type: "attachment" });
       if (!message?.attachment) return res.status(404).json({ status: false, message: "Attachment not found" });
       await requireGroupMember(message.groupId, req.authUser);
+      if (req.query?.preview === "1") {
+        res.setHeader("Content-Type", message.attachment.mimeType || "application/octet-stream");
+        res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(message.attachment.originalName)}"`);
+        return fs.createReadStream(message.attachment.path).pipe(res);
+      }
       return res.download(message.attachment.path, message.attachment.originalName);
+    } catch (error) {
+      return handleError(res, error);
+    }
+  },
+
+  async sendSessionCard(req, res) {
+    try {
+      const { group, member } = await requireGroupMember(req.params.groupId, req.authUser);
+      const card = normalizeSessionCard({
+        ...(req.body || {}),
+        createdBy: req.body?.createdBy || member.name || displayName(req.authUser.user),
+      });
+      if (!card.sessionId) return res.status(400).json({ status: false, message: "Session id is required" });
+      if (!card.joinUrl) return res.status(400).json({ status: false, message: "Session join URL is required" });
+      await addGroupInviteesToSession({ sessionId: card.sessionId, members: group.members });
+
+      const message = await GroupMessage.create({
+        groupId: group._id,
+        senderId: req.authUser.id,
+        senderRole: req.authUser.role,
+        senderName: member.name || displayName(req.authUser.user),
+        text: sessionCardText(card, group.name),
+        type: "session_card",
+        metadata: { memberRole: member.role, sessionCard: card },
+      });
+      const payload = serializeMessage(message);
+      emitToGroup(group._id.toString(), "group:message", payload);
+      return res.status(201).json({ status: true, data: payload });
+    } catch (error) {
+      return handleError(res, error);
+    }
+  },
+
+  async sendSessionInvites(req, res) {
+    try {
+      const emails = Array.isArray(req.body?.emails)
+        ? req.body.emails.map(normalizeEmail).filter(Boolean)
+        : String(req.body?.emails || "")
+            .split(/[\s,;]+/)
+            .map(normalizeEmail)
+            .filter(Boolean);
+      const uniqueEmails = Array.from(new Set(emails));
+      if (!uniqueEmails.length) return res.status(400).json({ status: false, message: "At least one email is required" });
+
+      const card = normalizeSessionCard(req.body || {});
+      if (!card.sessionId) return res.status(400).json({ status: false, message: "Session id is required" });
+      if (!card.joinUrl) return res.status(400).json({ status: false, message: "Session join URL is required" });
+      const invitedUsers = await findUsersByEmails(uniqueEmails);
+      await addSessionInvitees({
+        sessionId: card.sessionId,
+        emails: uniqueEmails,
+        userIds: invitedUsers.map((user) => user._id),
+      });
+      const senderName = displayName(req.authUser.user);
+      const email = getSessionInviteEmail({
+        senderName,
+        sessionType: card.sessionType,
+        topic: card.topic,
+        joinUrl: card.joinUrl,
+      });
+
+      await Promise.all(
+        uniqueEmails.map((to) =>
+          sendEmail({
+            to,
+            subject: email.subject,
+            text: email.text,
+            html: email.html,
+          }),
+        ),
+      );
+      return res.status(200).json({ status: true, data: { sent: uniqueEmails.length } });
     } catch (error) {
       return handleError(res, error);
     }

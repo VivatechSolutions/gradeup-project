@@ -207,10 +207,48 @@ function getGroupInviteEmail({ inviterName, groupName, joinUrl, appName = "Grade
   };
 }
 
+function getSessionInviteEmail({ senderName, sessionType, topic, joinUrl, appName = "GradeUp" }) {
+  const label = sessionType === "seminar" ? "seminar session" : "debate session";
+  const title = sessionType === "seminar" ? "You’re invited to a seminar" : "You’re invited to a debate";
+  const actionLabel = sessionType === "seminar" ? "Join Seminar" : "Join Debate";
+  const content = `
+    <p style="margin:0 0 18px;font-size:15px;line-height:1.7;">Hello,</p>
+    <p style="margin:0 0 18px;font-size:15px;line-height:1.7;">
+      ${senderName || "A GradeUp learner"} invited you to join a ${label} on ${appName}.
+    </p>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #dbe6f2;border-radius:18px;background:#f8fbfe;margin:20px 0;">
+      <tr>
+        <td style="padding:20px;">
+          <p style="margin:0 0 8px;font-size:13px;color:#5f738c;">Topic</p>
+          <p style="margin:0;font-size:16px;font-weight:700;color:#102033;">${topic || "Session topic"}</p>
+        </td>
+      </tr>
+    </table>
+    <p style="margin:0 0 18px;font-size:14px;line-height:1.7;color:#5f738c;">
+      If the button does not work, open this link directly:<br />
+      <a href="${joinUrl}" style="color:#2c71f0;">${joinUrl}</a>
+    </p>
+  `;
+
+  return {
+    subject: `${senderName || "A learner"} invited you to a GradeUp ${sessionType === "seminar" ? "seminar" : "debate"}`,
+    text: `Join the ${label} on ${appName}.\nTopic: ${topic || "Session topic"}\nJoin: ${joinUrl}`,
+    html: layoutTemplate({
+      title,
+      intro: "Open the session link and join when you're ready.",
+      content,
+      actionLabel,
+      actionUrl: joinUrl,
+      footerNote: "If you were not expecting this invitation, you can safely ignore this email.",
+    }),
+  };
+}
+
 module.exports = {
   getAdminWelcomeEmail,
   getDebateInviteEmail,
   getGroupInviteEmail,
+  getSessionInviteEmail,
   getPasswordResetEmail,
   getStudentWelcomeEmail,
 };

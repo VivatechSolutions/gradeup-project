@@ -20,6 +20,8 @@ router.post("/groups/:groupId/invites", controller.createInvite);
 router.get("/groups/:groupId/messages", controller.getMessages);
 router.post("/groups/:groupId/messages", controller.sendMessage);
 router.post("/groups/:groupId/attachments", controller.uploadAttachment);
+router.post("/groups/:groupId/session-cards", controller.sendSessionCard);
+router.post("/session-invites", controller.sendSessionInvites);
 router.get("/messages/:messageId/attachment", controller.downloadAttachment);
 
 module.exports = router;

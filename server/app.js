@@ -27,6 +27,7 @@ const realtimeRouter = require("./router/realtime");
 const StudentRouter = require("./router/Student");
 const GroupChatRouter = require("./router/GroupChat");
 const CommunityRouter = require("./router/Community");
+const LiveEventsRouter = require("./router/LiveEvents");
 
 // const { logRoutes } = require("./utils/routeLogger");
 const  secureRequestLogger  = require("./utils/logger");
@@ -63,6 +64,7 @@ app.use("/api/v1/admin/users", AdminUsersRouter);
 app.use("/api/v1/admin/subjects", AdminSubjectRouter);
 app.use("/api/v1/group-chat", GroupChatRouter);
 app.use("/api/community", CommunityRouter);
+app.use("/api/v1/live-events", LiveEventsRouter);
 app.use('/api/realtime', realtimeRouter);
 //AI Router
 app.use("/api/v1/AI/higlight", AIFeaturesRouter);

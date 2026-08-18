@@ -431,6 +431,7 @@ export async function startDebate(payload: {
   topicSectionTitle?: string | null;
   topicPath?: string[];
   debateType?: string;
+  visibility?: "public" | "school" | "class" | "private";
 }) {
   return apiFetch<any>("/api/v1/debate/start", {
     method: "POST",
@@ -490,6 +491,7 @@ export async function createDebateRoom(payload: {
   topicPath?: string[];
   maxParticipants?: number;
   roomLink?: string;
+  visibility?: "public" | "school" | "class" | "private";
 }) {
   return apiFetch<any>("/api/v1/debate/room/create", {
     method: "POST",
@@ -524,6 +526,13 @@ export async function startDebateRoom(payload: {
 
 export async function getDebateRoom(sessionId: string) {
   return apiFetch<any>(`/api/v1/debate/room/${encodeURIComponent(sessionId)}`);
+}
+
+export async function updateDebateRoomVisibility(sessionId: string, visibility: "public" | "school" | "class" | "private") {
+  return apiFetch<any>(`/api/v1/debate/room/${encodeURIComponent(sessionId)}/visibility`, {
+    method: "PATCH",
+    body: JSON.stringify({ visibility }),
+  });
 }
 
 export async function submitDebateRoomTurn(payload: {
@@ -689,6 +698,7 @@ export async function createSeminarRoom(payload: {
   topic: string;
   roomLink?: string;
   sessionId?: string;
+  visibility?: "public" | "school" | "class" | "private";
 }) {
   return apiFetch<any>("/api/v1/seminar/create-room", {
     method: "POST",
@@ -723,6 +733,13 @@ export async function getSeminarSession(sessionId: string) {
   return apiFetch<any>(
     `/api/v1/seminar/session/${encodeURIComponent(sessionId)}`,
   );
+}
+
+export async function updateSeminarVisibility(sessionId: string, visibility: "public" | "school" | "class" | "private") {
+  return apiFetch<any>(`/api/v1/seminar/session/${encodeURIComponent(sessionId)}/visibility`, {
+    method: "PATCH",
+    body: JSON.stringify({ visibility }),
+  });
 }
 
 export async function getActiveSeminarSessions() {
@@ -776,6 +793,62 @@ export async function deleteSeminarAiDocument(documentId: string) {
       method: "DELETE",
     },
   );
+}
+
+export type SessionShareCardPayload = {
+  groupId?: string;
+  sessionType: "debate" | "seminar";
+  sessionId: string;
+  topic: string;
+  title?: string;
+  createdBy?: string;
+  joinUrl: string;
+  status?: "waiting" | "active" | "completed" | "ended" | string;
+  participantCount?: number;
+  source?: string;
+  visibility?: "public" | "school" | "class" | "private";
+};
+
+export async function shareSessionToCommunity(payload: SessionShareCardPayload & { communityVisibility?: "all" | "school" }) {
+  const sessionLabel = payload.sessionType === "seminar" ? "seminar session" : "team debate";
+  return apiFetch<any>("/api/community/posts", {
+    method: "POST",
+    body: JSON.stringify({
+      type: "session_card",
+      visibility: payload.communityVisibility || (payload.visibility === "school" || payload.visibility === "class" ? "school" : "all"),
+      content: `${payload.createdBy || "A GradeUp learner"} created a ${sessionLabel}: ${payload.topic}. Join from the session card.`,
+      metadata: {
+        sessionCard: {
+          ...payload,
+          status: payload.status || "waiting",
+          title: payload.title || payload.topic,
+          source: payload.source || "session_setup",
+        },
+      },
+    }),
+  });
+}
+
+export async function shareSessionToGroup(payload: SessionShareCardPayload & { groupId: string }) {
+  return apiFetch<any>(`/api/v1/group-chat/groups/${encodeURIComponent(payload.groupId)}/session-cards`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function listGroupChats() {
+  return apiFetch<any[]>("/api/v1/group-chat/groups");
+}
+
+export async function sendSessionInviteEmails(payload: SessionShareCardPayload & { emails: string[] }) {
+  return apiFetch<any>("/api/v1/group-chat/session-invites", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function listLiveEvents(type?: "debate" | "seminar") {
+  return apiFetch<any[]>(`/api/v1/live-events${type ? `?type=${encodeURIComponent(type)}` : ""}`);
 }
 
 export async function startSeminarPptSession(payload: {

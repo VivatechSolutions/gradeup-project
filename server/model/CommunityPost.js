@@ -16,7 +16,7 @@ const communityPostSchema = new mongoose.Schema(
     authorName: { type: String, trim: true },
     type: {
       type: String,
-      enum: ["discussion", "question", "achievement", "study_tip"],
+      enum: ["discussion", "question", "achievement", "study_tip", "session_card"],
       default: "discussion",
       index: true,
     },
@@ -24,6 +24,7 @@ const communityPostSchema = new mongoose.Schema(
     visibility: { type: String, enum: ["all", "school"], default: "all", index: true },
     schoolName: { type: String, trim: true, default: null, index: true },
     classNumber: { type: String, trim: true, default: null },
+    metadata: { type: mongoose.Schema.Types.Mixed, default: null },
     likedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     comments: [communityCommentSchema],
     deletedAt: { type: Date, default: null, index: true },

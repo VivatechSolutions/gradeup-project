@@ -374,6 +374,7 @@ const STUDENT_MENU: MenuItem[] = [
   { label:"Homework Helper",  href:"/homework-helper",  icon:"lightbulb",  color:"cv" },
   { label:"Community",     href:"/community",        icon:"msg",      color:"cp" },
  { label:"Group Chat", href:"/communityNew", icon:"users", color:"cp" },
+  { label:"Live Events", href:"/live-events", icon:"calendar", color:"ct" },
   // { label:"Achievements",  href:"/achievements",     icon:"trophy",   color:"co" },
   // { label:"Seminar",       href:"/seminar-tool",     icon:"users",    color:"ct" },
   // { label:"Debate",        href:"/debate-tool",      icon:"debate",   color:"cs" },

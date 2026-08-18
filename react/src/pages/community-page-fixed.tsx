@@ -406,27 +406,91 @@ const moderateContent = (content: string) => {
 };
 
 interface TrendingTopic { id: string; title: string; posts: number; icon: string; }
-const mockTrendingTopics: TrendingTopic[] = [
-  { id: '1', title: 'Generative AI in Education', posts: 120, icon: 'Zap' },
-  { id: '2', title: 'New Study Techniques',       posts: 85,  icon: 'BookOpen' },
-  { id: '3', title: 'Exam Prep Hacks',            posts: 60,  icon: 'BrainCircuit' },
-  { id: '4', title: 'Post-Graduation Plans',      posts: 45,  icon: 'GraduationCap' },
-  { id: '5', title: 'Coding Challenges',          posts: 30,  icon: 'Code' },
-];
 
 interface PollOption { id: string; text: string; votes: number; }
-interface CommunityPoll { id: string; question: string; options: PollOption[]; totalVotes: number; userVoted: boolean; icon: string; }
+interface CommunityPoll { id: string; question: string; options: PollOption[]; totalVotes: number; userVoted: boolean; icon?: string; }
 
-const mockCommunityPolls: CommunityPoll[] = [
-  { id: 'p1', question: 'What is your favorite study method?', options: [
-    { id: 'o1', text: 'Flashcards', votes: 15 }, { id: 'o2', text: 'Spaced Repetition', votes: 25 },
-    { id: 'o3', text: 'Pomodoro Technique', votes: 10 }, { id: 'o4', text: 'Group Study', votes: 20 },
-  ], totalVotes: 70, userVoted: false, icon: 'Lightbulb' },
-  { id: 'p2', question: 'Which subject do you find most challenging?', options: [
-    { id: 'o5', text: 'Mathematics', votes: 30 }, { id: 'o6', text: 'Physics', votes: 20 },
-    { id: 'o7', text: 'Literature', votes: 10 }, { id: 'o8', text: 'Computer Science', votes: 15 },
-  ], totalVotes: 75, userVoted: true, icon: 'XCircle' },
-];
+function communitySessionStatus(card: any) {
+  const status = String(card?.status || "waiting").toLowerCase();
+  if (status === "completed" || status === "ended") return "Meeting has ended";
+  if (card?.sessionType === "seminar" && status === "active") return "Join Seminar";
+  if (status === "active" || status === "waiting_for_ai") return "Debate already started";
+  return card?.sessionType === "seminar" ? "Join Seminar" : "Join Debate";
+}
+
+function communitySessionJoinable(card: any) {
+  const status = String(card?.status || "waiting").toLowerCase();
+  if (status === "completed" || status === "ended") return false;
+  if (card?.sessionType === "seminar") return status === "waiting" || status === "active";
+  return status === "waiting";
+}
+
+function CommunitySessionCard({ card }: { card: any }) {
+  const [liveCard, setLiveCard] = useState(card || {});
+  useEffect(() => {
+    setLiveCard(card);
+  }, [card]);
+  useEffect(() => {
+    if (!card?.sessionId) return;
+    let closed = false;
+    const load = async () => {
+      try {
+        const path =
+          card.sessionType === "seminar"
+            ? `/api/v1/seminar/session/${encodeURIComponent(card.sessionId)}`
+            : `/api/v1/debate/room/${encodeURIComponent(card.sessionId)}`;
+        const response = await fetch(buildApiUrl(path), { credentials: "include" });
+        const payload = await response.json().catch(() => null);
+        const snapshot = payload?.data || payload || {};
+        const live = snapshot.liveSession || snapshot;
+        if (!closed) {
+          setLiveCard((previous: any) => ({
+            ...previous,
+            status: live?.status || previous.status,
+            participantCount: Array.isArray(live?.participants)
+              ? live.participants.filter((item: any) => !item.isAi).length
+              : previous.participantCount,
+          }));
+        }
+      } catch {
+        // Keep saved metadata when a session status cannot be refreshed.
+      }
+    };
+    load();
+    const timer = window.setInterval(load, 5000);
+    return () => {
+      closed = true;
+      window.clearInterval(timer);
+    };
+  }, [card?.sessionId, card?.sessionType]);
+  if (!card) return null;
+  const joinable = communitySessionJoinable(liveCard);
+  const label = communitySessionStatus(liveCard);
+  const joinUrl = liveCard.joinUrl
+    ? /^https?:\/\//i.test(liveCard.joinUrl)
+      ? liveCard.joinUrl
+      : `${window.location.origin}${liveCard.joinUrl.startsWith("/") ? liveCard.joinUrl : `/${liveCard.joinUrl}`}`
+    : "";
+  return (
+    <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden", background: "#fff", margin: "10px 0 12px" }}>
+      <div style={{ padding: "11px 13px", background: "#f8fafc" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 6 }}>
+          <span className="comm-badge indigo">{liveCard.sessionType === "seminar" ? "Seminar" : "Debate"}</span>
+          <span style={{ fontSize: 11, color: "#64748b", fontWeight: 700 }}>{liveCard.participantCount || 0} participant(s)</span>
+        </div>
+        <div style={{ fontSize: 13.5, fontWeight: 800, color: "#0f172a" }}>{liveCard.topic || liveCard.title || "Live session"}</div>
+        <div style={{ fontSize: 12, color: "#64748b", marginTop: 3 }}>Created by {liveCard.createdBy || "GradeUp learner"}</div>
+      </div>
+      {joinable ? (
+        <button className="comm-reaction-btn" style={{ width: "100%", justifyContent: "center", borderRadius: 0, border: "none", borderTop: "1px solid #e2e8f0" }} onClick={() => { if (joinUrl) window.location.href = joinUrl; }}>
+          {label}
+        </button>
+      ) : (
+        <div style={{ padding: 11, textAlign: "center", fontSize: 13, fontWeight: 800, color: "#475569", borderTop: "1px solid #e2e8f0" }}>{label}</div>
+      )}
+    </div>
+  );
+}
 
 
 
@@ -452,7 +516,6 @@ export default function CommunityPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const [polls, setPolls]                             = useState<CommunityPoll[]>(mockCommunityPolls);
   const [newPollQuestion, setNewPollQuestion]         = useState('');
   const [newPollOptions, setNewPollOptions]           = useState<string[]>(['', '']);
   const [showPollCreationForm, setShowPollCreationForm] = useState(false);
@@ -470,6 +533,8 @@ export default function CommunityPage() {
 
   const { data: user }            = useQuery<User>({ queryKey: ["/api/user"] });
   const { data: posts, isLoading: isLoadingPosts } = useQuery<any[]>({ queryKey: ["/api/community/posts"] });
+  const { data: polls = [], isLoading: isLoadingPolls } = useQuery<CommunityPoll[]>({ queryKey: ["/api/community/polls"] });
+  const { data: trendingTopics = [] } = useQuery<TrendingTopic[]>({ queryKey: ["/api/community/trending-topics"] });
   const { data: privateMessages } = useQuery<any[]>({ queryKey: ["/api/community/messages"] });
   const { data: classmates }      = useQuery<any[]>({ queryKey: ["/api/community/classmates"] });
   const { data: communityPoints } = useQuery<number>({ queryKey: ["/api/community/points"] });
@@ -510,6 +575,32 @@ export default function CommunityPage() {
       addNotification(`New comment on post: "${vars.content.substring(0, 20)}..."`);
       toast({ title:"Comment added!" });
     },
+  });
+
+  const createPollMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const r = await fetch(buildApiUrl("/api/community/polls"), { method:"POST", credentials:"include", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data) });
+      if (!r.ok) throw new Error('Failed'); return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey:["/api/community/polls"] });
+      setNewPollQuestion('');
+      setNewPollOptions(['','']);
+      setShowPollCreationForm(false);
+      toast({ title:"Poll created!" });
+    },
+  });
+
+  const votePollMutation = useMutation({
+    mutationFn: async ({ pollId, optionId }: { pollId: string; optionId: string }) => {
+      const r = await fetch(buildApiUrl(`/api/community/polls/${pollId}/options/${optionId}/vote`), { method:"POST", credentials:"include", headers:{"Content-Type":"application/json"} });
+      if (!r.ok) throw new Error('Failed'); return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey:["/api/community/polls"] });
+      toast({ title:"Vote cast!" });
+    },
+    onError: () => toast({ title:"Unable to cast vote" }),
   });
 
   const createPrivateMessageMutation = useMutation({
@@ -557,22 +648,11 @@ export default function CommunityPage() {
   const handleCreatePoll = () => {
     const validOpts = newPollOptions.filter(o => o.trim());
     if (!newPollQuestion.trim() || validOpts.length < 2) { toast({ title:"Add a question and at least 2 options." }); return; }
-    const newPoll: CommunityPoll = {
-      id: `p${polls.length+1}`, question: newPollQuestion.trim(), userVoted:false, icon:'Target', totalVotes:0,
-      options: validOpts.map((o,i) => ({ id:`o${i}`, text:o.trim(), votes:0 })),
-    };
-    setPolls(p => [newPoll,...p]); setNewPollQuestion(''); setNewPollOptions(['','']); setShowPollCreationForm(false);
-    toast({ title:"Poll created!" });
+    createPollMutation.mutate({ question:newPollQuestion.trim(), options:validOpts, visibility:postVisibility });
   };
 
   const handleVote = (pollId: string, optionId: string) => {
-    setPolls(p => p.map(poll => {
-      if (poll.id === pollId && !poll.userVoted) {
-        return { ...poll, options:poll.options.map(o => o.id===optionId ? {...o,votes:o.votes+1} : o), totalVotes:poll.totalVotes+1, userVoted:true };
-      }
-      return poll;
-    }));
-    toast({ title:"Vote cast!" });
+    votePollMutation.mutate({ pollId, optionId });
   };
 
   const handleCreateChannel = () => {
@@ -665,12 +745,18 @@ export default function CommunityPage() {
                       <div className="comm-card-title"><Vote size={15} style={{color:"#6366f1"}} /> Community Polls</div>
                     </div>
                     <div className="comm-card-body" style={{ maxHeight:480, overflowY:"auto" }}>
-                      {polls.map(poll => (
+                      {isLoadingPolls && <FunnyLoader text="Loading polls..." />}
+                      {!isLoadingPolls && polls.length === 0 && (
+                        <div style={{padding:"14px",borderRadius:12,background:"#f8fafc",border:"1px dashed #e2e8f0",fontSize:12,color:"#64748b",textAlign:"center"}}>
+                          No live polls yet.
+                        </div>
+                      )}
+                      {!isLoadingPolls && polls.map(poll => (
                         <div key={poll.id} className="comm-poll">
                           <div className="comm-poll-q"><BarChart3 size={14} style={{color:"#6366f1",flexShrink:0}} />{poll.question}</div>
                           {poll.options.map(opt => (
                             <button key={opt.id} className="comm-poll-opt"
-                              onClick={() => handleVote(poll.id, opt.id)} disabled={poll.userVoted}>
+                              onClick={() => handleVote(poll.id, opt.id)} disabled={poll.userVoted || votePollMutation.isPending}>
                               <span>{opt.text}</span>
                               <span style={{fontSize:11,color:"#94a3b8",fontWeight:600}}>({opt.votes})</span>
                             </button>
@@ -702,7 +788,7 @@ export default function CommunityPage() {
                             style={{fontSize:12,color:"#6366f1",fontWeight:600,background:"none",border:"none",cursor:"pointer",padding:"4px 0",marginBottom:6}}>
                             + Add option
                           </button>
-                          <button className="comm-create-poll-btn" onClick={handleCreatePoll}><Target size={14}/> Create Poll</button>
+                          <button className="comm-create-poll-btn" onClick={handleCreatePoll} disabled={createPollMutation.isPending}><Target size={14}/> {createPollMutation.isPending ? "Creating..." : "Create Poll"}</button>
                           <button className="comm-cancel-poll-btn" onClick={() => setShowPollCreationForm(false)}>Cancel</button>
                         </motion.div>
                       )}
@@ -725,6 +811,7 @@ export default function CommunityPage() {
                           <option value="question">Question</option>
                           <option value="achievement">Achievement</option>
                           <option value="study_tip">Study Tip</option>
+                          <option value="session_card">Session</option>
                         </select>
                         <select value={postVisibility} onChange={e => setPostVisibility(e.target.value as "all" | "school")}
                           className="w-full p-2 rounded-lg border bg-gray-50 dark:bg-gray-700 text-sm font-sans outline-none text-gray-800 dark:text-gray-300 border-gray-200 dark:border-gray-600 focus:border-indigo-500 dark:focus:border-indigo-400">
@@ -760,6 +847,7 @@ export default function CommunityPage() {
                       <option value="discussion">Discussions</option>
                       <option value="achievement">Achievements</option>
                       <option value="study_tip">Study Tips</option>
+                      <option value="session_card">Sessions</option>
                     </select>
                   </div>
 
@@ -785,6 +873,7 @@ export default function CommunityPage() {
                               <span className="comm-post-time">{formatDistanceToNow(new Date(post.createdAt), {addSuffix:true})}</span>
                             </div>
                             <div className="comm-post-content">{post.content}</div>
+                            {post.metadata?.sessionCard && <CommunitySessionCard card={post.metadata.sessionCard} />}
                             <div className="comm-post-reactions">
                               <button className="comm-reaction-btn" onClick={() => likePostMutation.mutate(post.id)}>
                                 <Heart size={14}/> Like ({post.likesCount || 0})
@@ -842,7 +931,10 @@ export default function CommunityPage() {
                       <div className="comm-card-title"><TrendingUp size={15} style={{color:"#6366f1"}}/> Trending Topics</div>
                     </div>
                     <div className="comm-card-body">
-                      {mockTrendingTopics.map(t => (
+                      {trendingTopics.length === 0 && (
+                        <div style={{fontSize:12,color:"#64748b",padding:"8px 0"}}>No trending topics yet.</div>
+                      )}
+                      {trendingTopics.map(t => (
                         <div key={t.id} className="comm-topic">
                           <div className="comm-topic-icon"><Zap size={15}/></div>
                           <div>

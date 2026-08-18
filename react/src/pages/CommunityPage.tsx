@@ -91,9 +91,21 @@ import {
 } from "../components/ui/tabs";
 import { useAuth } from "../hooks/use-auth";
 import Navigation from "../components/navigation";
-import { useMeetingSystem } from "./MeetingModalSystem";
 import FunnyLoader from "../components/ui/FunnyLoader";
 import { API_BASE_URL, buildApiUrl } from "../lib/apiBase";
+import {
+  createDebateRoom,
+  createSeminarRoom,
+  getCandidateContext,
+  getDebateTopics,
+  getDebateRoom,
+  getSeminarSession,
+  getLibrarySubjects,
+  getUnitContent,
+  shareSessionToCommunity,
+  shareSessionToGroup,
+  sendSessionInviteEmails,
+} from "../lib/gradeupApi";
 /* ─────────────────────────────────────────────────────────────
    CSS — matches dashboard design tokens exactly
    #6366f1 accent · #8b5cf6 purple · #ec4899 pink
@@ -1025,33 +1037,51 @@ const MsgBubble = ({
             ))}
           </div>
         ) : msg.isFile ? (
-          <div className="cm-file-bubble">
-            <div className="cm-file-icon">
-              <FileText size={15} style={{ color: "#6366f1" }} />
-            </div>
-            <span
-              style={{
-                fontSize: 12,
-                fontWeight: 500,
-                color: "#374151",
-                flex: 1,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {msg.fileName}
-            </span>
-            {msg.downloadUrl ? (
-              <a href={buildApiUrl(msg.downloadUrl)} target="_blank" rel="noreferrer" style={{ color: "#94a3b8", display: "flex", flexShrink: 0 }}>
-                <Download size={13} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 7, maxWidth: 340 }}>
+            {msg.attachment?.mimeType?.startsWith("image/") && msg.previewUrl && (
+              <a href={buildApiUrl(msg.downloadUrl)} target="_blank" rel="noreferrer">
+                <img
+                  src={buildApiUrl(msg.previewUrl)}
+                  alt={msg.fileName || "attachment"}
+                  style={{
+                    display: "block",
+                    maxWidth: 260,
+                    maxHeight: 180,
+                    objectFit: "cover",
+                    borderRadius: 10,
+                    border: "1px solid var(--cm-border)",
+                  }}
+                />
               </a>
-            ) : (
-              <Download
-                size={13}
-                style={{ color: "#94a3b8", cursor: "pointer", flexShrink: 0 }}
-              />
             )}
+            <div className="cm-file-bubble">
+              <div className="cm-file-icon">
+                <FileText size={15} style={{ color: "#6366f1" }} />
+              </div>
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: 500,
+                  color: "#374151",
+                  flex: 1,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {msg.fileName}
+              </span>
+              {msg.downloadUrl ? (
+                <a href={buildApiUrl(msg.downloadUrl)} target="_blank" rel="noreferrer" style={{ color: "#94a3b8", display: "flex", flexShrink: 0 }}>
+                  <Download size={13} />
+                </a>
+              ) : (
+                <Download
+                  size={13}
+                  style={{ color: "#94a3b8", cursor: "pointer", flexShrink: 0 }}
+                />
+              )}
+            </div>
           </div>
         ) : (
           <div
@@ -1254,7 +1284,115 @@ function formatMessageTime(value: string) {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+function absoluteAppUrl(pathOrUrl = "") {
+  if (!pathOrUrl) return "";
+  if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
+  return `${window.location.origin}${pathOrUrl.startsWith("/") ? pathOrUrl : `/${pathOrUrl}`}`;
+}
+
+function sessionStatusLabel(card: any) {
+  const status = String(card?.status || "waiting").toLowerCase();
+  if (status === "completed" || status === "ended") return "Meeting has ended";
+  if (card?.sessionType === "seminar" && status === "active") return "Seminar started";
+  if (status === "active" || status === "waiting_for_ai") return "Debate already started";
+  return card?.sessionType === "seminar" ? "Join Seminar" : "Join Debate";
+}
+
+function canJoinSessionCard(card: any) {
+  const status = String(card?.status || "waiting").toLowerCase();
+  if (status === "completed" || status === "ended") return false;
+  if (card?.sessionType === "seminar") return status === "waiting" || status === "active";
+  return status === "waiting";
+}
+
+function normalizeSessionTopicLabel(value: any) {
+  return String(value ?? "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function mapSessionDebateTopics(hierarchy: any, selectedSubjectLabel = "") {
+  const liveUnits = Array.isArray(hierarchy?.units) ? hierarchy.units : [];
+  return liveUnits
+    .flatMap((unit: any) =>
+      (unit.sections || []).flatMap((section: any) =>
+        (section.debate_topics || []).map((item: any, index: number) => {
+          const label =
+            item.topic_title ||
+            item.label ||
+            item.topic ||
+            item.title ||
+            item.name ||
+            `Debate Topic ${index + 1}`;
+          return {
+            id: String(
+              item.topic_id ||
+                `${unit.unit_number || "topic"}-${section.section_id || section.section_title || "section"}-${index}`,
+            ),
+            value: String(item.topic_id || label),
+            label,
+            title: label,
+            unitNumber: unit.unit_number ?? null,
+            unitTitle: unit.unit_title || "",
+            sectionId: section.section_id || item.section_id || null,
+            sectionTitle: section.section_title || "",
+            topicDescription: item.topic_description || "",
+            keyConcepts: Array.isArray(item.key_concepts) ? item.key_concepts : [],
+            topicPath: [
+              selectedSubjectLabel,
+              unit.unit_title || "",
+              section.section_title || "",
+              label,
+            ].filter(Boolean),
+          };
+        }),
+      ),
+    )
+    .filter((item: any) => item.label);
+}
+
+function extractSessionSectionTopics(content: any) {
+  const unitContent = Array.isArray(content?.units)
+    ? content.units[0]
+    : Array.isArray(content)
+      ? content[0]
+      : content;
+  const sections = Array.isArray(unitContent?.sections) ? unitContent.sections : [];
+
+  return sections
+    .filter((section: any) => {
+      const sectionType = normalizeSessionTopicLabel(
+        section?.type || section?.kind || section?.section_type || section?.sectionType,
+      ).toLowerCase();
+      return !sectionType || sectionType === "section";
+    })
+    .map((section: any, index: number) => {
+      const title = normalizeSessionTopicLabel(
+        section?.title || section?.section_title || section?.sectionTitle,
+      );
+      const number = normalizeSessionTopicLabel(
+        section?.id ||
+          section?.section_id ||
+          section?.sectionId ||
+          section?.section_number ||
+          section?.sectionNumber,
+      );
+      const label = number ? `${number} ${title}`.trim() : title;
+      return {
+        id: String(section?.id || section?.section_id || section?.sectionId || `section-${index + 1}`),
+        value: String(section?.id || section?.section_id || section?.sectionId || label || `section-${index + 1}`),
+        label: label || title || `Section ${index + 1}`,
+        title: title || label || `Section ${index + 1}`,
+        sectionTitle: title || label || `Section ${index + 1}`,
+        topicPath: [unitContent?.unit_title || unitContent?.unitTitle || unitContent?.title, title || label].filter(Boolean),
+      };
+    })
+    .filter((item: any) => item.label);
+}
+
 function mapLiveMessage(message: any, currentUserId?: string) {
+  const sessionCard = message.metadata?.sessionCard || null;
   return {
     id: message.id,
     groupId: message.groupId,
@@ -1267,9 +1405,12 @@ function mapLiveMessage(message: any, currentUserId?: string) {
     role: message.role || "Member",
     isAI: message.type === "system",
     isFile: Boolean(message.isFile || message.type === "attachment"),
+    isSessionCard: Boolean(message.isSessionCard || message.type === "session_card"),
+    sessionCard,
     fileName: message.fileName || message.attachment?.fileName,
     attachment: message.attachment,
     downloadUrl: message.attachment?.downloadUrl,
+    previewUrl: message.attachment?.downloadUrl ? `${message.attachment.downloadUrl}?preview=1` : "",
   };
 }
 
@@ -1343,6 +1484,133 @@ function upsertLiveGroup(previous: any, group: any) {
   };
 }
 
+const SessionInviteCard = ({ card, groupName }: { card: any; groupName?: string }) => {
+  const [liveCard, setLiveCard] = useState(card || {});
+  useEffect(() => {
+    setLiveCard(card || {});
+  }, [card]);
+  useEffect(() => {
+    if (!card?.sessionId) return;
+    let closed = false;
+    const load = async () => {
+      try {
+        const snapshot =
+          card.sessionType === "seminar"
+            ? await getSeminarSession(card.sessionId)
+            : await getDebateRoom(card.sessionId);
+        const live = snapshot?.liveSession || snapshot || {};
+        if (!closed) {
+          setLiveCard((previous: any) => ({
+            ...previous,
+            status: live.status || previous.status,
+            participantCount: Array.isArray(live.participants)
+              ? live.participants.filter((item: any) => !item.isAi).length
+              : previous.participantCount,
+          }));
+        }
+      } catch {
+        // Keep the saved card if the status endpoint is unavailable.
+      }
+    };
+    load();
+    const timer = window.setInterval(load, 5000);
+    return () => {
+      closed = true;
+      window.clearInterval(timer);
+    };
+  }, [card?.sessionId, card?.sessionType]);
+  const status = sessionStatusLabel(liveCard);
+  const joinable = canJoinSessionCard(liveCard);
+  const sessionType = liveCard?.sessionType === "seminar" ? "Seminar" : "Debate";
+  const creator = liveCard?.createdBy || "A GradeUp learner";
+  const topic = liveCard?.topic || liveCard?.title || "Live session";
+  const count = Number(liveCard?.participantCount || 0);
+  return (
+    <div
+      style={{
+        maxWidth: 430,
+        border: "1px solid rgba(15,23,42,.08)",
+        background: "#fff",
+        borderRadius: 10,
+        overflow: "hidden",
+        boxShadow: "0 8px 22px rgba(15,23,42,.06)",
+      }}
+    >
+      <div
+        style={{
+          padding: "12px 14px 14px",
+          background: "linear-gradient(135deg,#f8fafc,#eef6ff)",
+          minHeight: 92,
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              padding: "4px 8px",
+              borderRadius: 8,
+              background: "#fff",
+              color: "#334155",
+              fontSize: 11,
+              fontWeight: 700,
+              border: "1px solid rgba(15,23,42,.06)",
+            }}
+          >
+            <Phone size={11} /> {sessionType}
+          </span>
+          <span style={{ fontSize: 12, color: "#64748b", fontWeight: 700 }}>
+            {card?.createdAt ? formatMessageTime(card.createdAt) : ""}
+          </span>
+        </div>
+        <div style={{ fontSize: 13.5, lineHeight: 1.6, color: "#334155" }}>
+          <strong style={{ color: "#2563eb" }}>{creator}</strong> has invited you to join{" "}
+          <strong style={{ color: "#0f172a" }}>#{groupName || "Group"}</strong>
+        </div>
+        <div style={{ fontSize: 13.5, fontWeight: 800, color: "#0f172a", marginTop: 2 }}>
+          {topic}
+        </div>
+        <div style={{ fontSize: 12, color: "#475569", marginTop: 9 }}>
+          {count || 0} user{count === 1 ? "" : "s"} participated in the meeting
+        </div>
+      </div>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          minHeight: 42,
+          background: joinable ? "#f8fafc" : "#f1f5f9",
+          borderTop: "1px solid rgba(15,23,42,.06)",
+        }}
+      >
+        {joinable ? (
+          <button
+            onClick={() => {
+              if (liveCard?.joinUrl) window.location.href = absoluteAppUrl(liveCard.joinUrl);
+            }}
+            style={{
+              border: "none",
+              background: "transparent",
+              color: "#2563eb",
+              fontWeight: 800,
+              fontSize: 13,
+              cursor: "pointer",
+              width: "100%",
+              height: 42,
+            }}
+          >
+            {status}
+          </button>
+        ) : (
+          <span style={{ color: "#475569", fontWeight: 800, fontSize: 13 }}>{status}</span>
+        )}
+      </div>
+    </div>
+  );
+};
+
 /* ─── Main Component ─── */
 const CommunityNewPage = () => {
   const { theme, setTheme } = useTheme();
@@ -1372,6 +1640,25 @@ const CommunityNewPage = () => {
   const [serverModal, setServerModal] = useState(false);
   const [channelModal, setChannelModal] = useState(false);
   const [memberModal, setMemberModal] = useState(false);
+  const [memberSearch, setMemberSearch] = useState("");
+  const [memberResults, setMemberResults] = useState<any[]>([]);
+  const [memberSearchLoading, setMemberSearchLoading] = useState(false);
+  const [memberActionLoading, setMemberActionLoading] = useState("");
+  const [sessionModal, setSessionModal] = useState(false);
+  const [sessionCreating, setSessionCreating] = useState(false);
+  const [sessionSubjects, setSessionSubjects] = useState<any[]>([]);
+  const [sessionTopicOptions, setSessionTopicOptions] = useState<any[]>([]);
+  const [sessionTopicsLoading, setSessionTopicsLoading] = useState(false);
+  const [sessionForm, setSessionForm] = useState({
+    sessionType: "debate",
+    topic: "",
+    customTopic: "",
+    subject: "",
+    unitId: "",
+    maxParticipants: "8",
+    visibility: "public",
+    shareToCommunity: false,
+  });
   
   const [pollModal, setPollModal] = useState({
     open: false,
@@ -1448,6 +1735,86 @@ const CommunityNewPage = () => {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!sessionModal) return;
+    let cancelled = false;
+    getLibrarySubjects()
+      .then((subjects) => {
+        if (!cancelled) setSessionSubjects(subjects || []);
+      })
+      .catch((error) => {
+        console.error("Failed to load session subjects", error);
+        if (!cancelled) setSessionSubjects([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionModal]);
+
+  useEffect(() => {
+    if (!sessionModal || !sessionForm.subject || !sessionForm.unitId) {
+      setSessionTopicOptions([]);
+      setSessionTopicsLoading(false);
+      return;
+    }
+
+    const selectedSubject = sessionSubjects.find((item) => item.subjectGroupKey === sessionForm.subject);
+    const selectedUnit = (selectedSubject?.units || []).find((item: any) => item.id === sessionForm.unitId);
+    if (!selectedSubject || !selectedUnit) {
+      setSessionTopicOptions([]);
+      setSessionTopicsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setSessionTopicsLoading(true);
+    setSessionTopicOptions([]);
+    setSessionForm((previous) => ({ ...previous, topic: "", customTopic: "" }));
+
+    async function loadSessionTopics() {
+      try {
+        if (sessionForm.sessionType === "seminar") {
+          const structured = await getUnitContent(sessionForm.unitId, "structured");
+          if (!cancelled) {
+            setSessionTopicOptions(extractSessionSectionTopics(structured?.content));
+          }
+          return;
+        }
+
+        const topics = await getDebateTopics(sessionForm.subject, selectedUnit?.unitNumber);
+        if (!cancelled) {
+          const liveTopics = mapSessionDebateTopics(topics, selectedSubject?.title || selectedSubject?.subjectName || "");
+          const storedTopics = liveTopics.length
+            ? []
+            : mapSessionDebateTopics(
+                selectedUnit?.debateTopics?.debateTopics || selectedUnit?.debateTopics,
+                selectedSubject?.title || selectedSubject?.subjectName || "",
+              );
+          setSessionTopicOptions(liveTopics.length ? liveTopics : storedTopics);
+        }
+      } catch (error) {
+        console.error("Failed to load session topics", error);
+        if (!cancelled && sessionForm.sessionType === "debate") {
+          setSessionTopicOptions(
+            mapSessionDebateTopics(
+              selectedUnit?.debateTopics?.debateTopics || selectedUnit?.debateTopics,
+              selectedSubject?.title || selectedSubject?.subjectName || "",
+            ),
+          );
+        } else if (!cancelled) {
+          setSessionTopicOptions([]);
+        }
+      } finally {
+        if (!cancelled) setSessionTopicsLoading(false);
+      }
+    }
+
+    loadSessionTopics();
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionModal, sessionForm.sessionType, sessionForm.subject, sessionForm.unitId, sessionSubjects]);
 
   useEffect(() => {
     if (!activeServerId) return;
@@ -1529,11 +1896,27 @@ const CommunityNewPage = () => {
   const members = data.members[msgKey] || [];
   const filtered = searchQuery
     ? messages.filter((m: any) =>
-        m.text?.toLowerCase().includes(searchQuery.toLowerCase()),
+        [
+          m.text,
+          m.user,
+          m.fileName,
+          m.attachment?.fileName,
+          m.sessionCard?.topic,
+          m.sessionCard?.title,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(searchQuery.toLowerCase()),
       )
     : messages;
   const onlineCount = members.filter((m: any) => m.status === "Online").length;
   const pinnedMsg = messages.find((m: any) => m.id === data.pinnedMessageId);
+  const selectedSessionSubject = sessionSubjects.find((item) => item.subjectGroupKey === sessionForm.subject);
+  const selectedSessionUnit = (selectedSessionSubject?.units || []).find((item: any) => item.id === sessionForm.unitId);
+  const selectedSessionTopicOption = sessionTopicOptions.find((item) => item.value === sessionForm.topic);
+  const finalSessionTopic =
+    sessionForm.topic === "__custom__" ? sessionForm.customTopic.trim() : String(selectedSessionTopicOption?.label || sessionForm.topic || "").trim();
   const rank =
     studyPoints >= 100
       ? { title: "Professor", color: "#8b5cf6" }
@@ -1665,57 +2048,151 @@ const CommunityNewPage = () => {
     setChannelModal(false);
   };
 
-  const handleAddMember = () => {
-    if (!memberForm.name.trim()) return;
-    const nm = {
-      id: `u${Date.now()}`,
-      name: memberForm.name.replace(/\s+/g, "_"),
-      status: "Online",
-      role: memberForm.role,
-      grade: memberForm.grade,
-      subject: memberForm.subject,
-      email: memberForm.email,
-      phone: memberForm.phone,
-      bio: memberForm.bio,
-      location: memberForm.location,
-      joined: new Date().toLocaleDateString("en-GB", {
-        month: "short",
-        year: "numeric",
-      }),
+  useEffect(() => {
+    if (!memberModal || !activeServerId || memberSearch.trim().length < 2) {
+      setMemberResults([]);
+      return;
+    }
+    let cancelled = false;
+    setMemberSearchLoading(true);
+    const timer = window.setTimeout(() => {
+      groupChatApi<any[]>(
+        `/api/v1/group-chat/groups/${activeServerId}/search-members?q=${encodeURIComponent(memberSearch.trim())}`,
+      )
+        .then((results) => {
+          if (!cancelled) setMemberResults(results || []);
+        })
+        .catch((error) => {
+          console.error("Failed to search members", error);
+          if (!cancelled) setMemberResults([]);
+        })
+        .finally(() => {
+          if (!cancelled) setMemberSearchLoading(false);
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
     };
-    setData((p) => ({
-      ...p,
-      members: { ...p.members, [msgKey]: [...(p.members[msgKey] || []), nm] },
-    }));
-    const wm = {
-      id: Date.now().toString(),
-      user: "AI Moderator",
-      isAI: true,
-      text: `Welcome ${nm.name}! 🎉 They've joined as ${nm.role}.`,
-      timestamp: new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-      role: "Moderator",
-    };
-    setData((p) => ({
-      ...p,
-      messages: {
-        ...p.messages,
-        [msgKey]: [...(p.messages[msgKey] || []), wm],
-      },
-    }));
-    setMemberForm({
-      name: "",
-      email: "",
-      phone: "",
-      grade: "",
-      subject: "",
-      role: "Member",
-      bio: "",
-      location: "",
-    });
-    setMemberModal(false);
+  }, [memberModal, memberSearch, activeServerId]);
+
+  const handleDirectAddMember = async (student: any) => {
+    if (!activeServerId || !student?.id) return;
+    setMemberActionLoading(`add:${student.id}`);
+    try {
+      const group = await groupChatApi<any>(`/api/v1/group-chat/groups/${activeServerId}/members`, {
+        method: "POST",
+        body: JSON.stringify({ userId: student.id }),
+      });
+      setData((p) => upsertLiveGroup(p, group));
+      await refreshMessages(activeServerId);
+    } catch (error) {
+      console.error("Failed to add member", error);
+    } finally {
+      setMemberActionLoading("");
+    }
+  };
+
+  const handleInviteMember = async (student: any) => {
+    const email = student?.email || memberSearch;
+    if (!activeServerId || !email) return;
+    setMemberActionLoading(`invite:${student?.id || email}`);
+    try {
+      await groupChatApi<any>(`/api/v1/group-chat/groups/${activeServerId}/invites`, {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      });
+      setMemberSearch("");
+      setMemberResults([]);
+    } catch (error) {
+      console.error("Failed to invite member", error);
+    } finally {
+      setMemberActionLoading("");
+    }
+  };
+
+  const handleCreateSessionFromGroup = async () => {
+    if (!activeServerId || !finalSessionTopic) return;
+    if (!selectedSessionUnit) return;
+    setSessionCreating(true);
+    try {
+      const candidate = getCandidateContext(user || {});
+      const type = sessionForm.sessionType === "seminar" ? "seminar" : "debate";
+      const seedSessionId = `group-${type}-${Date.now()}`;
+      const localPath =
+        type === "seminar"
+          ? `/seminar?sessionId=${encodeURIComponent(seedSessionId)}`
+          : `/debate?sessionId=${encodeURIComponent(seedSessionId)}`;
+      let created: any;
+      if (type === "seminar") {
+        created = await createSeminarRoom({
+          sessionId: seedSessionId,
+          roomLink: localPath,
+          unitId: sessionForm.unitId,
+          candidateId: candidate.candidateId,
+          candidateName: candidate.candidateName,
+          topic: finalSessionTopic,
+          visibility: sessionForm.visibility as "public" | "school" | "class" | "private",
+        });
+      } else {
+        created = await createDebateRoom({
+          unitId: sessionForm.unitId,
+          candidateId: candidate.candidateId,
+          candidateName: candidate.candidateName,
+          topic: finalSessionTopic,
+          topicId: selectedSessionTopicOption?.id || undefined,
+          topicUnitNumber: selectedSessionTopicOption?.unitNumber ?? selectedSessionUnit?.unitNumber ?? null,
+          topicSectionTitle: selectedSessionTopicOption?.sectionTitle || null,
+          topicPath:
+            selectedSessionTopicOption?.topicPath ||
+            [selectedSessionSubject?.title, selectedSessionUnit?.unitTitle || selectedSessionUnit?.unitLabel, finalSessionTopic].filter(Boolean),
+          roomLink: localPath,
+          maxParticipants: Math.min(12, Math.max(2, Number(sessionForm.maxParticipants) || 8)),
+          visibility: sessionForm.visibility as "public" | "school" | "class" | "private",
+        });
+      }
+      const sessionId = created?.session_id || created?.sessionId || created?.liveSession?.sessionId || seedSessionId;
+      const joinUrl =
+        created?.shareLink ||
+        created?.liveSession?.shareLink ||
+        (type === "seminar"
+          ? `/seminar?sessionId=${encodeURIComponent(sessionId)}`
+          : `/debate?sessionId=${encodeURIComponent(sessionId)}`);
+      const card = {
+        groupId: activeServerId,
+        sessionType: type as "debate" | "seminar",
+        sessionId,
+        topic: finalSessionTopic,
+        title: finalSessionTopic,
+        createdBy: candidate.candidateName,
+        joinUrl,
+        status: "waiting",
+        participantCount: 1,
+        source: "group_chat",
+        visibility: sessionForm.visibility as "public" | "school" | "class" | "private",
+      };
+      const message = await shareSessionToGroup(card);
+      setData((p) => appendLiveMessage(p, message, user?.id));
+      if (sessionForm.shareToCommunity && sessionForm.visibility !== "private") {
+        await shareSessionToCommunity(card);
+      }
+      setSessionModal(false);
+      setSessionForm({
+        sessionType: "debate",
+        topic: "",
+        customTopic: "",
+        subject: "",
+        unitId: "",
+        maxParticipants: "8",
+        visibility: "public",
+        shareToCommunity: false,
+      });
+      window.location.href = absoluteAppUrl(joinUrl);
+    } catch (error) {
+      console.error("Failed to create group session", error);
+    } finally {
+      setSessionCreating(false);
+    }
   };
 
   const handleCreatePoll = () => {
@@ -1755,35 +2232,7 @@ const CommunityNewPage = () => {
       Tutor: "cm-role-tutor",
       "Student Leader": "cm-role-leader",
     })[r] || "cm-role-member";
-const { meetingUI, openMeeting, renderMeetingCard } = useMeetingSystem({
-  isDark: theme === "dark",
-  members: members,  // already resolved above, not members[msgKey]
-  currentUser: "You",
-  onPostCard: (card) => {
-    if (card._update) {
-      setData((p) => ({
-        ...p,
-        messages: {
-          ...p.messages,
-          [msgKey]: p.messages[msgKey].map((m) =>
-            m.isMeetingCard && m.card?.id === card.id ? { ...m, card } : m,
-          ),
-        },
-      }));
-    } else {
-      setData((p) => ({
-        ...p,
-        messages: {
-          ...p.messages,
-          [msgKey]: [
-            ...(p.messages[msgKey] || []),
-            { id: card.id, isMeetingCard: true, card },
-          ],
-        },
-      }));
-    }
-  },
-});
+  const openMeeting = () => setSessionModal(true);
   /* ── Reusable sidebar content (used both desktop + mobile drawer) ── */
   const SidebarContent = () => (
     <div
@@ -2106,41 +2555,7 @@ const { meetingUI, openMeeting, renderMeetingCard } = useMeetingSystem({
                     <UserPlus size={14} />
                   </button>
                 )}
-                <button
-                  className="cm-hbtn"
-                  style={{ position: "relative" }}
-                  onClick={() => setIsSeminarSidebarOpen(true)}
-                >
-                  <Presentation size={14} />
-
-                  {communitySessions.length > 0 && (
-                    <span
-                      style={{
-                        position: "absolute",
-                        top: -4,
-                        right: -4,
-                        background: "#ef4444",
-                        color: "#fff",
-                        fontSize: 9,
-                        fontWeight: "bold",
-                        width: 14,
-                        height: 14,
-                        borderRadius: 7,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      {communitySessions.length}
-                    </span>
-                  )}
-                </button>
-                <button
-                  className="cm-hbtn"
-                  onClick={() => setIsSettingsOpen(true)}
-                >
-                  <Settings size={14} />
-                </button>
+                {/* Live sessions sidebar and settings are hidden for now. */}
               </div>
             </div>
 
@@ -2183,11 +2598,10 @@ const { meetingUI, openMeeting, renderMeetingCard } = useMeetingSystem({
                 {filtered
                   .filter((m: any) => !m.hidden)
                   .map((msg: any) => {
-                     // Meeting card — render inline in feed
-  if (msg.isMeetingCard) {
+  if (msg.isSessionCard) {
     return (
       <div key={msg.id} style={{padding:"4px 0"}}>
-        {renderMeetingCard(msg.card)}
+        <SessionInviteCard card={msg.sessionCard} groupName={activeServer?.name} />
       </div>
     );
   }
@@ -2938,208 +3352,70 @@ const { meetingUI, openMeeting, renderMeetingCard } = useMeetingSystem({
                 marginTop: 3,
               }}
             >
-              Enter the student's details
+              Search students, add classmates directly, or send an invite
             </p>
           </div>
           <div style={{ padding: 22, maxHeight: "60vh", overflowY: "auto" }}>
-            <div
+            <input
+              value={memberSearch}
+              onChange={(e) => setMemberSearch(e.target.value)}
+              placeholder="Search by student name or email"
               style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "9px 12px",
-                background: "#f8fafc",
+                width: "100%",
+                height: 40,
                 borderRadius: 11,
-                marginBottom: 14,
-                border: "1px solid rgba(0,0,0,.06)",
+                border: "1.5px solid rgba(0,0,0,.08)",
+                padding: "0 12px",
+                fontSize: 13,
+                outline: "none",
+                fontFamily: "inherit",
+                background: "#f8fafc",
+                boxSizing: "border-box",
               }}
-            >
-              <UserAvatar name={memberForm.name || "New"} size={38} />
-              <div style={{ flex: 1 }}>
-                <p style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>
-                  {memberForm.name || "New Member"}
-                </p>
-                <p style={{ fontSize: 11, color: "#94a3b8" }}>
-                  {memberForm.grade || "Grade not set"} ·{" "}
-                  {memberForm.subject || "Subject not set"}
-                </p>
-              </div>
-              <span
-                style={{
-                  fontSize: 9.5,
-                  fontWeight: 700,
-                  padding: "2px 8px",
-                  borderRadius: 20,
-                  background: "rgba(99,102,241,.1)",
-                  color: "#6366f1",
-                  textTransform: "uppercase",
-                }}
-              >
-                {memberForm.role}
-              </span>
-            </div>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 11,
-              }}
-            >
-              {[
-                {
-                  label: "Full Name *",
-                  key: "name",
-                  ph: "Student name",
-                  type: "text",
-                },
-                {
-                  label: "Email",
-                  key: "email",
-                  ph: "student@school.edu",
-                  type: "email",
-                },
-                {
-                  label: "Phone",
-                  key: "phone",
-                  ph: "+91 00000 00000",
-                  type: "text",
-                },
-                {
-                  label: "Location",
-                  key: "location",
-                  ph: "e.g. Chennai",
-                  type: "text",
-                },
-              ].map((f) => (
-                <div key={f.key}>
-                  <label
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 700,
-                      color: "#64748b",
-                      textTransform: "uppercase",
-                      letterSpacing: ".08em",
-                      display: "block",
-                      marginBottom: 5,
-                    }}
-                  >
-                    {f.label}
-                  </label>
-                  <input
-                    value={(memberForm as any)[f.key]}
-                    onChange={(e) =>
-                      setMemberForm((p) => ({ ...p, [f.key]: e.target.value }))
-                    }
-                    placeholder={f.ph}
-                    type={f.type}
-                    style={{
-                      width: "100%",
-                      height: 36,
-                      borderRadius: 10,
-                      border: "1.5px solid rgba(0,0,0,.08)",
-                      padding: "0 11px",
-                      fontSize: 13,
-                      outline: "none",
-                      fontFamily: "inherit",
-                      background: "#f8fafc",
-                      boxSizing: "border-box",
-                    }}
-                  />
+            />
+            <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 9 }}>
+              {memberSearchLoading && <div style={{ fontSize: 12, color: "#64748b" }}>Searching students...</div>}
+              {!memberSearchLoading && memberSearch.trim().length >= 2 && memberResults.length === 0 && (
+                <div style={{ fontSize: 12, color: "#64748b" }}>
+                  No matching registered student found. You can invite this email if it is valid.
                 </div>
-              ))}
-              {[
-                { label: "Role", key: "role", opts: ROLES },
-                {
-                  label: "Grade",
-                  key: "grade",
-                  opts: SCHOOL_GRADES,
-                  placeholder: "Select grade",
-                },
-                {
-                  label: "Subject",
-                  key: "subject",
-                  opts: SUBJECTS_LIST,
-                  placeholder: "Select subject",
-                },
-              ].map((f) => (
-                <div key={f.key}>
-                  <label
+              )}
+              {memberResults.map((student) => {
+                const canDirectAdd = Boolean(student.canDirectAdd);
+                const key = student.id || student.email;
+                return (
+                  <div
+                    key={key}
                     style={{
-                      fontSize: 10,
-                      fontWeight: 700,
-                      color: "#64748b",
-                      textTransform: "uppercase",
-                      letterSpacing: ".08em",
-                      display: "block",
-                      marginBottom: 5,
-                    }}
-                  >
-                    {f.label}
-                  </label>
-                  <select
-                    value={(memberForm as any)[f.key]}
-                    onChange={(e) =>
-                      setMemberForm((p) => ({ ...p, [f.key]: e.target.value }))
-                    }
-                    style={{
-                      width: "100%",
-                      height: 36,
-                      borderRadius: 10,
-                      border: "1.5px solid rgba(0,0,0,.08)",
-                      padding: "0 11px",
-                      fontSize: 13,
-                      outline: "none",
-                      fontFamily: "inherit",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "10px 12px",
+                      borderRadius: 12,
                       background: "#f8fafc",
-                      boxSizing: "border-box",
+                      border: "1px solid rgba(0,0,0,.06)",
                     }}
                   >
-                    {"placeholder" in f && (
-                      <option value="">{(f as any).placeholder}</option>
+                    <UserAvatar name={student.name || student.email || "Student"} size={34} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: "#0f172a" }}>{student.name || "Student"}</div>
+                      <div style={{ fontSize: 11, color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {student.email}
+                      </div>
+                      {student.tag && <div style={{ fontSize: 10.5, color: "#0d9488", fontWeight: 700, marginTop: 2 }}>{student.tag}</div>}
+                    </div>
+                    {canDirectAdd ? (
+                      <button className="copy-btn" onClick={() => handleDirectAddMember(student)} disabled={memberActionLoading === `add:${student.id}`}>
+                        {memberActionLoading === `add:${student.id}` ? "Adding" : "Add"}
+                      </button>
+                    ) : (
+                      <button className="copy-btn" onClick={() => handleInviteMember(student)} disabled={memberActionLoading === `invite:${key}`}>
+                        {memberActionLoading === `invite:${key}` ? "Sending" : "Invite"}
+                      </button>
                     )}
-                    {f.opts.map((o: string) => (
-                      <option key={o} value={o}>
-                        {o}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ))}
-            </div>
-            <div style={{ marginTop: 11 }}>
-              <label
-                style={{
-                  fontSize: 10,
-                  fontWeight: 700,
-                  color: "#64748b",
-                  textTransform: "uppercase",
-                  letterSpacing: ".08em",
-                  display: "block",
-                  marginBottom: 5,
-                }}
-              >
-                Bio
-              </label>
-              <textarea
-                value={memberForm.bio}
-                onChange={(e) =>
-                  setMemberForm((p) => ({ ...p, bio: e.target.value }))
-                }
-                rows={2}
-                placeholder="Short bio…"
-                style={{
-                  width: "100%",
-                  borderRadius: 10,
-                  border: "1.5px solid rgba(0,0,0,.08)",
-                  padding: "9px 11px",
-                  fontSize: 13,
-                  outline: "none",
-                  fontFamily: "inherit",
-                  background: "#f8fafc",
-                  resize: "none",
-                  boxSizing: "border-box",
-                }}
-              />
+                  </div>
+                );
+              })}
             </div>
           </div>
           <div style={{ padding: "0 22px 20px", display: "flex", gap: 9 }}>
@@ -3161,8 +3437,8 @@ const { meetingUI, openMeeting, renderMeetingCard } = useMeetingSystem({
               Cancel
             </button>
             <button
-              onClick={handleAddMember}
-              disabled={!memberForm.name.trim()}
+              onClick={() => handleInviteMember({ email: memberSearch })}
+              disabled={!memberSearch.includes("@")}
               style={{
                 flex: 1,
                 padding: "9px",
@@ -3174,10 +3450,153 @@ const { meetingUI, openMeeting, renderMeetingCard } = useMeetingSystem({
                 fontWeight: 700,
                 cursor: "pointer",
                 fontFamily: "inherit",
-                opacity: memberForm.name.trim() ? 1 : 0.5,
+                opacity: memberSearch.includes("@") ? 1 : 0.5,
               }}
             >
-              Add Member
+              Invite Email
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Debate / Seminar Session Setup */}
+      <Dialog
+        open={sessionModal}
+        onOpenChange={(o) => !o && !sessionCreating && setSessionModal(false)}
+      >
+        <DialogContent className="sm:max-w-lg rounded-2xl p-0 overflow-hidden bg-white dark:bg-slate-900 border border-gray-200 shadow-2xl">
+          <div style={{ background: "linear-gradient(135deg,#2563eb,#0d9488)", padding: "18px 22px" }}>
+            <DialogTitle style={{ color: "#fff", fontSize: 16, fontWeight: 800 }}>
+              Create Session
+            </DialogTitle>
+            <p style={{ color: "rgba(255,255,255,.76)", fontSize: 12, marginTop: 3 }}>
+              Create a team debate or seminar and send a card to this group.
+            </p>
+          </div>
+          <div style={{ padding: 22, display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 9 }}>
+              {[
+                { id: "debate", label: "Team Debate" },
+                { id: "seminar", label: "Seminar" },
+              ].map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => setSessionForm((p) => ({ ...p, sessionType: item.id, topic: "", customTopic: "" }))}
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: 11,
+                    border: sessionForm.sessionType === item.id ? "1.5px solid #2563eb" : "1.5px solid rgba(0,0,0,.08)",
+                    background: sessionForm.sessionType === item.id ? "rgba(37,99,235,.08)" : "#f8fafc",
+                    color: "#0f172a",
+                    fontWeight: 800,
+                    fontSize: 13,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            <select
+              value={sessionForm.subject}
+              onChange={(e) => setSessionForm((p) => ({ ...p, subject: e.target.value, unitId: "", topic: "", customTopic: "" }))}
+              style={{ height: 40, borderRadius: 11, border: "1.5px solid rgba(0,0,0,.08)", padding: "0 12px", fontSize: 13, outline: "none", background: "#f8fafc" }}
+            >
+              <option value="">Select subject</option>
+              {sessionSubjects.map((subject) => (
+                <option key={subject.subjectGroupKey} value={subject.subjectGroupKey}>{subject.title}</option>
+              ))}
+            </select>
+            <select
+              value={sessionForm.unitId}
+              onChange={(e) => setSessionForm((p) => ({ ...p, unitId: e.target.value, topic: "", customTopic: "" }))}
+              disabled={!sessionForm.subject}
+              style={{ height: 40, borderRadius: 11, border: "1.5px solid rgba(0,0,0,.08)", padding: "0 12px", fontSize: 13, outline: "none", background: "#f8fafc" }}
+            >
+              <option value="">{sessionForm.subject ? "Select unit" : "Select subject first"}</option>
+              {(sessionSubjects.find((item) => item.subjectGroupKey === sessionForm.subject)?.units || []).map((unit: any) => (
+                <option key={unit.id} value={unit.id}>{unit.unitTitle || unit.unitLabel}</option>
+              ))}
+            </select>
+            <select
+              value={sessionForm.topic}
+              onChange={(e) => setSessionForm((p) => ({ ...p, topic: e.target.value, customTopic: e.target.value === "__custom__" ? p.customTopic : "" }))}
+              disabled={!sessionForm.unitId || sessionTopicsLoading}
+              style={{ height: 40, borderRadius: 11, border: "1.5px solid rgba(0,0,0,.08)", padding: "0 12px", fontSize: 13, outline: "none", background: "#f8fafc" }}
+            >
+              <option value="">
+                {!sessionForm.unitId
+                  ? "Select unit first"
+                  : sessionTopicsLoading
+                    ? sessionForm.sessionType === "seminar"
+                      ? "Loading section topics..."
+                      : "Loading debate topics..."
+                    : sessionForm.sessionType === "seminar"
+                      ? "Select section topic"
+                      : "Select debate topic"}
+              </option>
+              {sessionTopicOptions.map((topic) => (
+                <option key={topic.value || topic.id} value={topic.value || topic.id}>{topic.label}</option>
+              ))}
+              {sessionForm.unitId && <option value="__custom__">Custom topic...</option>}
+            </select>
+            {sessionForm.topic === "__custom__" && (
+              <input
+                value={sessionForm.customTopic}
+                onChange={(e) => setSessionForm((p) => ({ ...p, customTopic: e.target.value }))}
+                placeholder={sessionForm.sessionType === "seminar" ? "Enter seminar section topic" : "Enter debate topic"}
+                style={{ height: 40, borderRadius: 11, border: "1.5px solid rgba(0,0,0,.08)", padding: "0 12px", fontSize: 13, outline: "none", background: "#f8fafc" }}
+              />
+            )}
+            {sessionForm.sessionType === "debate" && (
+              <input
+                type="number"
+                min={2}
+                max={12}
+                value={sessionForm.maxParticipants}
+                onChange={(e) => setSessionForm((p) => ({ ...p, maxParticipants: e.target.value }))}
+                placeholder="Participants"
+                style={{ height: 40, borderRadius: 11, border: "1.5px solid rgba(0,0,0,.08)", padding: "0 12px", fontSize: 13, outline: "none", background: "#f8fafc" }}
+              />
+            )}
+            <select
+              value={sessionForm.visibility}
+              onChange={(e) =>
+                setSessionForm((p) => ({
+                  ...p,
+                  visibility: e.target.value,
+                  shareToCommunity: e.target.value === "private" ? false : p.shareToCommunity,
+                }))
+              }
+              style={{ height: 40, borderRadius: 11, border: "1.5px solid rgba(0,0,0,.08)", padding: "0 12px", fontSize: 13, outline: "none", background: "#f8fafc" }}
+            >
+              <option value="public">Access to all</option>
+              <option value="school">Only to school</option>
+              <option value="class">Only to class</option>
+              <option value="private">Private - invited only</option>
+            </select>
+            <label style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 12.5, fontWeight: 700, color: "#334155" }}>
+              <input
+                type="checkbox"
+                checked={sessionForm.shareToCommunity}
+                disabled={sessionForm.visibility === "private"}
+                onChange={(e) => setSessionForm((p) => ({ ...p, shareToCommunity: e.target.checked }))}
+              />
+              {sessionForm.visibility === "private" ? "Share to Community disabled for private sessions" : "Share to Community"}
+            </label>
+          </div>
+          <div style={{ padding: "0 22px 20px", display: "flex", gap: 9 }}>
+            <button className="copy-btn" style={{ flex: 1, color: "#64748b", background: "#fff" }} onClick={() => setSessionModal(false)} disabled={sessionCreating}>
+              Cancel
+            </button>
+            <button
+              className="copy-btn"
+              style={{ flex: 1, background: "#2563eb", color: "#fff" }}
+              onClick={handleCreateSessionFromGroup}
+              disabled={sessionCreating || !finalSessionTopic || !sessionForm.unitId}
+            >
+              {sessionCreating ? "Creating..." : "Create"}
             </button>
           </div>
         </DialogContent>
@@ -4221,8 +4640,7 @@ const { meetingUI, openMeeting, renderMeetingCard } = useMeetingSystem({
         )}
       </AnimatePresence>
 
-      <FloatingChatbot />
-      {meetingUI}
+      {/* Floating chatbot hidden while group chat is being completed. */}
     </TooltipProvider>
   );
 };

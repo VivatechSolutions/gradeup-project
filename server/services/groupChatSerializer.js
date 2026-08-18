@@ -70,6 +70,7 @@ function serializeMessage(message) {
     text: message.text,
     type: message.type,
     isFile: message.type === "attachment",
+    isSessionCard: message.type === "session_card",
     fileName: attachment?.fileName,
     attachment,
     timestamp: message.createdAt,

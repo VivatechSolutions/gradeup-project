@@ -1,41 +1,143 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useDebateLivekit } from "../hooks/useDebateLivekit";
 import jsPDF from "jspdf";
+import {
+  AlertTriangle,
+  BarChart3,
+  Bot,
+  BookOpen,
+  CalendarDays,
+  Check,
+  ClipboardList,
+  Copy,
+  Eye,
+  FileText,
+  GraduationCap,
+  HelpCircle,
+  Lightbulb,
+  Link as LinkIcon,
+  MessageSquare,
+  Mic,
+  MonitorUp,
+  Pencil,
+  Play,
+  Presentation,
+  Radio,
+  Send,
+  Share2,
+  TrendingUp,
+  Trophy,
+  Users,
+  Zap,
+} from "lucide-react";
 
 import Navigation from "../components/navigation";
 import FormattedAIContent from "../components/ai/FormattedAIContent";
 import { useAuth } from "../hooks/use-auth";
 import { useSessionState } from "../hooks/useSessionState";
 import {
-  createSeminarAiDocument,
-  createSeminarRoom,
-  deleteSeminarAiDocument,
-  endSeminarWithTranscript,
-  getActiveSeminarSessions,
-  getCandidateContext,
-  getLibrarySubjects,
-  getSeminarAiDocument,
-  getSeminarSession,
-  getSeminarTopics,
-  getUnitContent,
-  guideSeminar,
-  joinSeminarSession,
-  removeSeminarParticipant,
-  respondSeminar,
-  requestSeminarSpeakingAccess,
-  respondSeminarSpeakingAccess,
-  sendSeminarMessage,
-  saveSeminarAiDocument,
-  startSeminar,
-  startSeminarChat,
-  startSeminarPptSession,
-  respondSeminarChat,
-  sendSeminarAiDocumentChat,
-  startSeminarRoom,
-  transcribeDebateAudio,
-  synthesizeDebateSpeech,
+   createSeminarAiDocument,
+   createSeminarRoom,
+   deleteSeminarAiDocument,
+   endSeminarWithTranscript,
+   getActiveSeminarSessions,
+   getCandidateContext,
+   getLibrarySubjects,
+   listGroupChats,
+   getSeminarAiDocument,
+   getSeminarSession,
+   getSeminarTopics,
+   getUnitContent,
+   guideSeminar,
+   joinSeminarSession,
+   removeSeminarParticipant,
+   respondSeminar,
+   requestSeminarSpeakingAccess,
+   respondSeminarSpeakingAccess,
+   sendSeminarMessage,
+   saveSeminarAiDocument,
+   startSeminar,
+   startSeminarChat,
+   startSeminarPptSession,
+   respondSeminarChat,
+   sendSeminarAiDocumentChat,
+   shareSessionToCommunity,
+   shareSessionToGroup,
+   sendSessionInviteEmails,
+   startSeminarRoom,
+   updateSeminarVisibility,
+   transcribeDebateAudio,
+   synthesizeDebateSpeech,
   type LibrarySubject,
 } from "../lib/gradeupApi";
+
+const seminarIcons = {
+  alert: AlertTriangle,
+  ai: Bot,
+  book: BookOpen,
+  calendar: CalendarDays,
+  chart: BarChart3,
+  check: Check,
+  clipboard: ClipboardList,
+  copy: Copy,
+  eye: Eye,
+  file: FileText,
+  graduation: GraduationCap,
+  help: HelpCircle,
+  lightbulb: Lightbulb,
+  link: LinkIcon,
+  message: MessageSquare,
+  mic: Mic,
+  monitor: MonitorUp,
+  pencil: Pencil,
+  play: Play,
+  presentation: Presentation,
+  radio: Radio,
+  send: Send,
+  share: Share2,
+  trend: TrendingUp,
+  trophy: Trophy,
+  users: Users,
+  zap: Zap,
+};
+
+function SeminarIcon({
+  name,
+  size = 16,
+  strokeWidth = 2.5,
+}: {
+  name: keyof typeof seminarIcons | string;
+  size?: number;
+  strokeWidth?: number;
+}) {
+  const rawName = String(name);
+  const normalizedName = rawName.includes("¤")
+    ? "ai"
+    : rawName.includes("’¬")
+      ? "message"
+      : rawName.includes("‘¥")
+        ? "users"
+        : rawName.includes("“‹")
+          ? "clipboard"
+          : rawName.includes("š¡")
+            ? "zap"
+            : rawName.includes("Ž™") || rawName.includes("Ž¤")
+              ? "mic"
+              : rawName.includes("‘")
+                ? "eye"
+                : rawName.includes("“Š")
+                  ? "chart"
+                  : rawName.includes("–¥")
+                    ? "monitor"
+                    : rawName.includes("Ž“")
+                      ? "graduation"
+                      : rawName.includes("œ")
+                        ? "check"
+                        : rawName;
+  const Icon =
+    seminarIcons[normalizedName as keyof typeof seminarIcons] || MessageSquare;
+  return <Icon aria-hidden="true" size={size} strokeWidth={strokeWidth} />;
+}
 
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
@@ -670,7 +772,7 @@ select.finput{cursor:pointer;appearance:none;background-image:url("data:image/sv
 
 /* Results loader */
 .results-loader{position:fixed;inset:0;background:rgba(8,16,30,.96);z-index:800;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;animation:fadeIn .2s ease}
-.results-loader-icon{font-size:48px;animation:scaleIn .5s cubic-bezier(.34,1.56,.64,1) both}
+      <div className="results-loader-icon"><SeminarIcon name={isObserver ? "eye" : "chart"} size={34} /></div>
 .results-loader-title{font-size:16px;font-weight:800;color:#e8ecf2}
 .results-loader-sub{font-size:11px;color:rgba(255,255,255,.35)}
 .results-loader-steps{display:flex;flex-direction:column;gap:8px;margin-top:10px;width:280px}
@@ -850,41 +952,171 @@ select.finput{cursor:pointer;appearance:none;background-image:url("data:image/sv
 `;
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
-const COLORS = ["#00c37a","#6366f1","#f59e0b","#38bdf8","#ec4899","#8b5cf6","#f97316","#06b6d4"];
-const REACTIONS = ["👍","👏","❤️","🔥","🤔","🎓","✨","💡"];
+const COLORS = [
+  "#00c37a",
+  "#6366f1",
+  "#f59e0b",
+  "#38bdf8",
+  "#ec4899",
+  "#8b5cf6",
+  "#f97316",
+  "#06b6d4",
+];
+const REACTIONS = ["👍", "👏", "❤️", "🔥", "🤔", "🎓", "✨", "💡"];
 
 const SUBJECT_UNITS = {
-  "Computer Science":["Data Structures","Algorithms","Operating Systems","Networks","Databases","AI & ML","Web Development","Cybersecurity","Other"],
-  "Mathematics":["Calculus","Linear Algebra","Statistics","Number Theory","Discrete Math","Probability","Geometry","Other"],
-  "Biology":["Cell Biology","Genetics","Ecology","Evolution","Physiology","Microbiology","Biochemistry","Other"],
-  "Physics":["Mechanics","Thermodynamics","Electromagnetism","Quantum Physics","Optics","Relativity","Other"],
-  "Chemistry":["Organic Chemistry","Inorganic Chemistry","Physical Chemistry","Analytical Chemistry","Biochemistry","Other"],
-  "History":["Ancient History","Medieval History","Modern History","World Wars","Cold War","Economic History","Other"],
-  "Literature":["Poetry","Fiction","Drama","Non-Fiction","Literary Theory","Comparative Lit","Other"],
-  "Economics":["Microeconomics","Macroeconomics","Development Economics","International Trade","Behavioral Econ","Other"],
-  "Philosophy":["Ethics","Logic","Metaphysics","Epistemology","Political Philosophy","Philosophy of Mind","Other"],
-  "Psychology":["Cognitive Psychology","Social Psychology","Developmental Psych","Clinical Psychology","Neuroscience","Other"],
-  "Law":["Constitutional Law","Criminal Law","Contract Law","International Law","Tort Law","Other"],
-  "Business":["Marketing","Finance","Strategy","Operations","Entrepreneurship","HR Management","Other"],
-  "Medicine":["Anatomy","Pharmacology","Pathology","Clinical Skills","Public Health","Other"],
-  "Engineering":["Mechanical Eng","Electrical Eng","Civil Eng","Chemical Eng","Aerospace Eng","Other"],
-  "Arts":["Fine Arts","Design","Music Theory","Film Studies","Architecture","Other"],
+  "Computer Science": [
+    "Data Structures",
+    "Algorithms",
+    "Operating Systems",
+    "Networks",
+    "Databases",
+    "AI & ML",
+    "Web Development",
+    "Cybersecurity",
+    "Other",
+  ],
+  Mathematics: [
+    "Calculus",
+    "Linear Algebra",
+    "Statistics",
+    "Number Theory",
+    "Discrete Math",
+    "Probability",
+    "Geometry",
+    "Other",
+  ],
+  Biology: [
+    "Cell Biology",
+    "Genetics",
+    "Ecology",
+    "Evolution",
+    "Physiology",
+    "Microbiology",
+    "Biochemistry",
+    "Other",
+  ],
+  Physics: [
+    "Mechanics",
+    "Thermodynamics",
+    "Electromagnetism",
+    "Quantum Physics",
+    "Optics",
+    "Relativity",
+    "Other",
+  ],
+  Chemistry: [
+    "Organic Chemistry",
+    "Inorganic Chemistry",
+    "Physical Chemistry",
+    "Analytical Chemistry",
+    "Biochemistry",
+    "Other",
+  ],
+  History: [
+    "Ancient History",
+    "Medieval History",
+    "Modern History",
+    "World Wars",
+    "Cold War",
+    "Economic History",
+    "Other",
+  ],
+  Literature: [
+    "Poetry",
+    "Fiction",
+    "Drama",
+    "Non-Fiction",
+    "Literary Theory",
+    "Comparative Lit",
+    "Other",
+  ],
+  Economics: [
+    "Microeconomics",
+    "Macroeconomics",
+    "Development Economics",
+    "International Trade",
+    "Behavioral Econ",
+    "Other",
+  ],
+  Philosophy: [
+    "Ethics",
+    "Logic",
+    "Metaphysics",
+    "Epistemology",
+    "Political Philosophy",
+    "Philosophy of Mind",
+    "Other",
+  ],
+  Psychology: [
+    "Cognitive Psychology",
+    "Social Psychology",
+    "Developmental Psych",
+    "Clinical Psychology",
+    "Neuroscience",
+    "Other",
+  ],
+  Law: [
+    "Constitutional Law",
+    "Criminal Law",
+    "Contract Law",
+    "International Law",
+    "Tort Law",
+    "Other",
+  ],
+  Business: [
+    "Marketing",
+    "Finance",
+    "Strategy",
+    "Operations",
+    "Entrepreneurship",
+    "HR Management",
+    "Other",
+  ],
+  Medicine: [
+    "Anatomy",
+    "Pharmacology",
+    "Pathology",
+    "Clinical Skills",
+    "Public Health",
+    "Other",
+  ],
+  Engineering: [
+    "Mechanical Eng",
+    "Electrical Eng",
+    "Civil Eng",
+    "Chemical Eng",
+    "Aerospace Eng",
+    "Other",
+  ],
+  Arts: [
+    "Fine Arts",
+    "Design",
+    "Music Theory",
+    "Film Studies",
+    "Architecture",
+    "Other",
+  ],
 };
 const SUBJECTS = Object.keys(SUBJECT_UNITS);
 
 const TOPICS = [
-  "Should AI replace human teachers?","Is social media harmful to democracy?",
-  "Should coding be mandatory in schools?","Is nuclear energy the answer to climate change?",
-  "Should universal basic income be implemented?","Is space exploration worth the cost?",
-  "Should animal testing be banned?","The ethics of gene editing in humans",
+  "Should AI replace human teachers?",
+  "Is social media harmful to democracy?",
+  "Should coding be mandatory in schools?",
+  "Is nuclear energy the answer to climate change?",
+  "Should universal basic income be implemented?",
+  "Is space exploration worth the cost?",
+  "Should animal testing be banned?",
+  "The ethics of gene editing in humans",
 ];
 
 const AI_RESPONSES = {
-  outline:`Here is a complete outline for your seminar:\n\n1. Opening Hook — start with a bold question or striking statistic\n2. Thesis Statement — one clear sentence stating your position\n3. Argument 1 — your strongest point with supporting evidence\n4. Argument 2 — a second angle supported by a case study\n5. Argument 3 — address the nuance or complexity\n6. Counterarguments — acknowledge and rebut key objections\n7. Conclusion — restate thesis, call to action, or open question for the audience`,
-  questions:`Likely audience questions to prepare for:\n\n• What specific evidence supports your main claim?\n• What are the real-world risks of your proposed stance?\n• How does this apply in different cultural or geographic contexts?\n• What would the strongest opponent of your view say?\n• What is your personal position on this topic?\n• If your position is wrong, what would change your mind?`,
-  examples:`Strong examples and evidence to use:\n\n• Cite a peer-reviewed study relevant to your subject area\n• Reference a real-world case study (success or failure)\n• Use a recent news event as a contemporary anchor\n• Include a historical precedent for long-term perspective\n• Add a personal or expert anecdote to make it memorable\n• Use statistics sparingly — one powerful number beats ten weak ones`,
-  script:`Opening script for your seminar:\n\n"Good [morning/afternoon] everyone. My name is [Name], and today I will be presenting on [topic].\n\nThis is a critical issue because [key reason]. Over the next [X] minutes, I'll walk you through [point 1], [point 2], and [point 3] — before opening the floor to your questions.\n\nLet me start with a question for you all: [pose a thought-provoking question to the audience]..."`,
-  feedback:`AI Demo Feedback:\n\n✅ Strong opening — your introduction established the topic clearly\n✅ Main argument was identifiable and well-structured\n⚠️ Pace yourself — slow down during key claims for impact\n⚠️ Add a stronger, memorable closing statement\n💡 Tip: End with a direct question to engage your observers\n💡 Tip: Use pauses after important points — silence is powerful`,
+  outline: `Here is a complete outline for your seminar:\n\n1. Opening Hook — start with a bold question or striking statistic\n2. Thesis Statement — one clear sentence stating your position\n3. Argument 1 — your strongest point with supporting evidence\n4. Argument 2 — a second angle supported by a case study\n5. Argument 3 — address the nuance or complexity\n6. Counterarguments — acknowledge and rebut key objections\n7. Conclusion — restate thesis, call to action, or open question for the audience`,
+  questions: `Likely audience questions to prepare for:\n\n• What specific evidence supports your main claim?\n• What are the real-world risks of your proposed stance?\n• How does this apply in different cultural or geographic contexts?\n• What would the strongest opponent of your view say?\n• What is your personal position on this topic?\n• If your position is wrong, what would change your mind?`,
+  examples: `Strong examples and evidence to use:\n\n• Cite a peer-reviewed study relevant to your subject area\n• Reference a real-world case study (success or failure)\n• Use a recent news event as a contemporary anchor\n• Include a historical precedent for long-term perspective\n• Add a personal or expert anecdote to make it memorable\n• Use statistics sparingly — one powerful number beats ten weak ones`,
+  script: `Opening script for your seminar:\n\n"Good [morning/afternoon] everyone. My name is [Name], and today I will be presenting on [topic].\n\nThis is a critical issue because [key reason]. Over the next [X] minutes, I'll walk you through [point 1], [point 2], and [point 3] — before opening the floor to your questions.\n\nLet me start with a question for you all: [pose a thought-provoking question to the audience]..."`,
+  feedback: `AI Demo Feedback:\n\n✅ Strong opening — your introduction established the topic clearly\n✅ Main argument was identifiable and well-structured\n⚠️ Pace yourself — slow down during key claims for impact\n⚠️ Add a stronger, memorable closing statement\n💡 Tip: End with a direct question to engage your observers\n💡 Tip: Use pauses after important points — silence is powerful`,
 };
 
 const AI_STUCK_SUGGESTIONS = [
@@ -905,34 +1137,60 @@ const AI_PRESENTATION_ANALYSIS = [
 ];
 
 const COMMUNITY_SESSIONS_KEY = "gradeup_community_sessions_v1";
-const avColor = n => COLORS[(n||"U").charCodeAt(0) % COLORS.length];
-const avInit = n => (n||"U").split(/[_\s]/).map(w=>w[0]).join("").slice(0,2).toUpperCase();
-const genId = () => Math.random().toString(36).slice(2,12);
-const genRoomLink = id => `${typeof window!=="undefined"?window.location.origin:""}/seminarPage/join?room=${id}`;
+const avColor = (n) => COLORS[(n || "U").charCodeAt(0) % COLORS.length];
+const avInit = (n) =>
+  (n || "U")
+    .split(/[_\s]/)
+    .map((w) => w[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+const genId = () => Math.random().toString(36).slice(2, 12);
+const genRoomLink = (id) =>
+  `${typeof window !== "undefined" ? window.location.origin : ""}/seminarPage/join?room=${id}`;
 const CREATE_AI_DOCS_KEY = "gradeup_create_ai_docs_v1";
-const CREATE_AI_DEFAULT_FILE_URL = "https://docs.google.com/presentation/d/13UVvA8_S5u35Pafd9cCsxwZYZq5E8Kfwihndh_PPNGg";
-const genCreateAILink = id => `${typeof window !== "undefined" ? window.location.origin : ""}/seminarPage?createAi=${id}`;
-const isHttpUrl = (value) => typeof value === "string" && /^https?:\/\//i.test(value);
-const cleanUrl = (value = "") => String(value).trim().replace(/^[<[(]+/g, "").replace(/[>\])}.,;:!?]+$/g, "");
-const firstUrlFromText = (value = "") => cleanUrl(String(value).match(/https?:\/\/[^\s"'<>()[\]]+/i)?.[0] || "");
-const normalizeCreateFileLink = (value = "") => firstUrlFromText(value) || cleanUrl(value);
+const CREATE_AI_DEFAULT_FILE_URL =
+  "https://docs.google.com/presentation/d/13UVvA8_S5u35Pafd9cCsxwZYZq5E8Kfwihndh_PPNGg";
+const genCreateAILink = (id) =>
+  `${typeof window !== "undefined" ? window.location.origin : ""}/seminarPage?createAi=${id}`;
+const isHttpUrl = (value) =>
+  typeof value === "string" && /^https?:\/\//i.test(value);
+const cleanUrl = (value = "") =>
+  String(value)
+    .trim()
+    .replace(/^[<[(]+/g, "")
+    .replace(/[>\])}.,;:!?]+$/g, "");
+const firstUrlFromText = (value = "") =>
+  cleanUrl(String(value).match(/https?:\/\/[^\s"'<>()[\]]+/i)?.[0] || "");
+const normalizeCreateFileLink = (value = "") =>
+  firstUrlFromText(value) || cleanUrl(value);
 function slugify(value = "", fallback = "seminar-file") {
-  const slug = String(value).trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  const slug = String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
   return slug || fallback;
 }
 const inferCreateArtifact = (config = {}) => {
   const sourceUrl = normalizeCreateFileLink(
     config.fileUrl ||
-    config.documentUrl ||
-    config.artifactUrl ||
-    config.sourceUrl ||
-    config.previewSourceUrl ||
-    (isHttpUrl(config.link) && !/\/seminarPage\?createAi=/i.test(config.link) ? config.link : "")
+      config.documentUrl ||
+      config.artifactUrl ||
+      config.sourceUrl ||
+      config.previewSourceUrl ||
+      (isHttpUrl(config.link) && !/\/seminarPage\?createAi=/i.test(config.link)
+        ? config.link
+        : ""),
   );
-  const rawType = String(config.fileType || config.mimeType || config.kind || "").toLowerCase();
+  const rawType = String(
+    config.fileType || config.mimeType || config.kind || "",
+  ).toLowerCase();
   const lowerUrl = String(sourceUrl || "").toLowerCase();
 
-  const googleMatch = sourceUrl.match(/docs\.google\.com\/(presentation|document|spreadsheets)\/d\/([^/?#]+)/i);
+  const googleMatch = sourceUrl.match(
+    /docs\.google\.com\/(presentation|document|spreadsheets)\/d\/([^/?#]+)/i,
+  );
   const isGoogleSlides = googleMatch?.[1]?.toLowerCase() === "presentation";
   const isGoogleDoc = googleMatch?.[1]?.toLowerCase() === "document";
   const isGoogleSheet = googleMatch?.[1]?.toLowerCase() === "spreadsheets";
@@ -941,51 +1199,115 @@ const inferCreateArtifact = (config = {}) => {
   const driveMatch = sourceUrl.match(/drive\.google\.com\/file\/d\/([^/?#]+)/i);
   const isDriveFile = Boolean(driveMatch);
   const driveFileId = driveMatch?.[1] || "";
-  const extFromUrl = (lowerUrl.match(/\.([a-z0-9]{2,5})(?:\?|#|$)/) || [])[1] || "";
+  const extFromUrl =
+    (lowerUrl.match(/\.([a-z0-9]{2,5})(?:\?|#|$)/) || [])[1] || "";
 
   const isPdf = rawType.includes("pdf") || extFromUrl === "pdf";
-  const isPpt = rawType.includes("presentation") || rawType.includes("powerpoint") || ["ppt", "pptx"].includes(extFromUrl) || isGoogleSlides;
-  const isDoc = rawType.includes("document") || rawType.includes("word") || ["doc", "docx"].includes(extFromUrl) || isGoogleDoc;
-  const isSheet = rawType.includes("sheet") || rawType.includes("excel") || ["xls", "xlsx", "csv"].includes(extFromUrl) || isGoogleSheet;
-  const googleViewerUrl = sourceUrl ? `https://docs.google.com/viewer?url=${encodeURIComponent(sourceUrl)}&embedded=true` : "";
-  const officeViewerUrl = sourceUrl ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(sourceUrl)}` : "";
+  const isPpt =
+    rawType.includes("presentation") ||
+    rawType.includes("powerpoint") ||
+    ["ppt", "pptx"].includes(extFromUrl) ||
+    isGoogleSlides;
+  const isDoc =
+    rawType.includes("document") ||
+    rawType.includes("word") ||
+    ["doc", "docx"].includes(extFromUrl) ||
+    isGoogleDoc;
+  const isSheet =
+    rawType.includes("sheet") ||
+    rawType.includes("excel") ||
+    ["xls", "xlsx", "csv"].includes(extFromUrl) ||
+    isGoogleSheet;
+  const googleViewerUrl = sourceUrl
+    ? `https://docs.google.com/viewer?url=${encodeURIComponent(sourceUrl)}&embedded=true`
+    : "";
+  const officeViewerUrl = sourceUrl
+    ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(sourceUrl)}`
+    : "";
 
   const previewUrl =
     config.previewUrl ||
-    (isGoogleSlides ? `https://docs.google.com/presentation/d/${googleFileId}/embed?start=false&loop=false&delayms=3000` :
-      isGoogleDoc ? `https://docs.google.com/document/d/${googleFileId}/preview` :
-      isGoogleSheet ? `https://docs.google.com/spreadsheets/d/${googleFileId}/preview` :
-      isDriveFile ? `https://drive.google.com/file/d/${driveFileId}/preview` :
-      (isPpt || isDoc || isSheet || isPdf) && sourceUrl ? googleViewerUrl :
-      sourceUrl);
+    (isGoogleSlides
+      ? `https://docs.google.com/presentation/d/${googleFileId}/embed?start=false&loop=false&delayms=3000`
+      : isGoogleDoc
+        ? `https://docs.google.com/document/d/${googleFileId}/preview`
+        : isGoogleSheet
+          ? `https://docs.google.com/spreadsheets/d/${googleFileId}/preview`
+          : isDriveFile
+            ? `https://drive.google.com/file/d/${driveFileId}/preview`
+            : (isPpt || isDoc || isSheet || isPdf) && sourceUrl
+              ? googleViewerUrl
+              : sourceUrl);
 
   const googleViewerFallbackUrl = googleViewerUrl;
   const editUrl =
     config.editUrl ||
-    (isGoogleSlides ? `https://docs.google.com/presentation/d/${googleFileId}/edit` :
-      isGoogleDoc ? `https://docs.google.com/document/d/${googleFileId}/edit` :
-      isGoogleSheet ? `https://docs.google.com/spreadsheets/d/${googleFileId}/edit` :
-      sourceUrl);
+    (isGoogleSlides
+      ? `https://docs.google.com/presentation/d/${googleFileId}/edit`
+      : isGoogleDoc
+        ? `https://docs.google.com/document/d/${googleFileId}/edit`
+        : isGoogleSheet
+          ? `https://docs.google.com/spreadsheets/d/${googleFileId}/edit`
+          : sourceUrl);
   const downloadUrl =
     config.downloadUrl ||
-    (isGoogleSlides ? `https://docs.google.com/presentation/d/${googleFileId}/export/pptx` :
-      isGoogleDoc ? `https://docs.google.com/document/d/${googleFileId}/export?format=docx` :
-      isGoogleSheet ? `https://docs.google.com/spreadsheets/d/${googleFileId}/export?format=xlsx` :
-      isDriveFile && driveFileId ? `https://drive.google.com/uc?export=download&id=${driveFileId}` :
-      sourceUrl);
+    (isGoogleSlides
+      ? `https://docs.google.com/presentation/d/${googleFileId}/export/pptx`
+      : isGoogleDoc
+        ? `https://docs.google.com/document/d/${googleFileId}/export?format=docx`
+        : isGoogleSheet
+          ? `https://docs.google.com/spreadsheets/d/${googleFileId}/export?format=xlsx`
+          : isDriveFile && driveFileId
+            ? `https://drive.google.com/uc?export=download&id=${driveFileId}`
+            : sourceUrl);
   const extension =
     config.fileExtension ||
-    (isPpt ? "pptx" : isDoc ? "docx" : isSheet ? (extFromUrl === "csv" ? "csv" : "xlsx") : isPdf ? "pdf" : "");
-  const label = isPpt ? "Presentation" : isDoc ? "Document" : isSheet ? "Spreadsheet" : isPdf ? "PDF" : sourceUrl ? "File" : "Text Draft";
+    (isPpt
+      ? "pptx"
+      : isDoc
+        ? "docx"
+        : isSheet
+          ? extFromUrl === "csv"
+            ? "csv"
+            : "xlsx"
+          : isPdf
+            ? "pdf"
+            : "");
+  const label = isPpt
+    ? "Presentation"
+    : isDoc
+      ? "Document"
+      : isSheet
+        ? "Spreadsheet"
+        : isPdf
+          ? "PDF"
+          : sourceUrl
+            ? "File"
+            : "Text Draft";
   const downloadFileName = `${slugify(config.topic || config.title || "seminar-file")}${extension ? `.${extension}` : ""}`;
-  const rawSlides = config.slides || config.slideImages || config.slidePreviewUrls || config.previewImages || [];
+  const rawSlides =
+    config.slides ||
+    config.slideImages ||
+    config.slidePreviewUrls ||
+    config.previewImages ||
+    [];
   const slides = Array.isArray(rawSlides)
     ? rawSlides
         .map((item, index) => {
-          if (typeof item === "string") return { id: `slide-${index + 1}`, imageUrl: item, title: `Slide ${index + 1}` };
+          if (typeof item === "string")
+            return {
+              id: `slide-${index + 1}`,
+              imageUrl: item,
+              title: `Slide ${index + 1}`,
+            };
           return {
             id: item?.id || item?.slideId || `slide-${index + 1}`,
-            imageUrl: item?.imageUrl || item?.url || item?.previewUrl || item?.thumbnailUrl || "",
+            imageUrl:
+              item?.imageUrl ||
+              item?.url ||
+              item?.previewUrl ||
+              item?.thumbnailUrl ||
+              "",
             title: item?.title || item?.name || `Slide ${index + 1}`,
           };
         })
@@ -1009,7 +1331,10 @@ const inferCreateArtifact = (config = {}) => {
 async function downloadArtifactFile(artifact, toast$) {
   if (!artifact?.hasFile || !artifact.downloadUrl) return;
 
-  if (artifact.isGoogleFile || /drive\.google\.com\/uc\?export=download/i.test(artifact.downloadUrl)) {
+  if (
+    artifact.isGoogleFile ||
+    /drive\.google\.com\/uc\?export=download/i.test(artifact.downloadUrl)
+  ) {
     const link = document.createElement("a");
     link.href = artifact.downloadUrl;
     link.target = "_blank";
@@ -1033,7 +1358,10 @@ async function downloadArtifactFile(artifact, toast$) {
     link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
   } catch {
-    toast$?.("This file host blocked direct download. Opening it in a new tab instead.", "warn");
+    toast$?.(
+      "This file host blocked direct download. Opening it in a new tab instead.",
+      "warn",
+    );
     window.open(artifact.downloadUrl, "_blank", "noopener");
   }
 }
@@ -1057,17 +1385,24 @@ const getCreateDocs = () => {
   }
 };
 const saveCreateDocConfig = (id, config) => {
-  localStorage.setItem(CREATE_AI_DOCS_KEY, JSON.stringify({ ...getCreateDocs(), [id]: config }));
+  localStorage.setItem(
+    CREATE_AI_DOCS_KEY,
+    JSON.stringify({ ...getCreateDocs(), [id]: config }),
+  );
 };
 const getCreateAIReply = (prompt, isFileMode = false) => {
   const lower = prompt.toLowerCase();
   const suffix = isFileMode
     ? " I've sent this request for the linked presentation and refreshed the preview. If the backend has not updated the source file yet, the request is saved in Companion Notes."
     : " I've updated the document on the left with this change.";
-  if (lower.includes("simpl")) return `I simplified the language and shortened the sentences for easier delivery.${suffix}`;
-  if (lower.includes("question")) return `I added stronger audience questions and discussion points.${suffix}`;
-  if (lower.includes("conclusion") || lower.includes("closing")) return `I refreshed the closing with a more direct final takeaway.${suffix}`;
-  if (lower.includes("example") || lower.includes("evidence")) return `I added evidence prompts and example placeholders to strengthen each point.${suffix}`;
+  if (lower.includes("simpl"))
+    return `I simplified the language and shortened the sentences for easier delivery.${suffix}`;
+  if (lower.includes("question"))
+    return `I added stronger audience questions and discussion points.${suffix}`;
+  if (lower.includes("conclusion") || lower.includes("closing"))
+    return `I refreshed the closing with a more direct final takeaway.${suffix}`;
+  if (lower.includes("example") || lower.includes("evidence"))
+    return `I added evidence prompts and example placeholders to strengthen each point.${suffix}`;
   return `I updated the content based on your request.${suffix}`;
 };
 const buildCreateAISection = (prompt, config = {}) => {
@@ -1105,7 +1440,10 @@ Presenter Line
 "The key point I want the audience to remember is that ${config?.topic || "this topic"} becomes clearer when we connect the concept, evidence, and real-world impact."`;
 };
 const appendCreateAIRefresh = (documentText, prompt, config = {}) => {
-  const stamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const stamp = new Date().toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
   return {
     documentText: `${(documentText || "").trim()}
 
@@ -1113,8 +1451,16 @@ ${buildCreateAISection(prompt, config)}`,
     refreshNote: `Refreshed at ${stamp}: ${prompt}`,
   };
 };
-const buildSeminarDocument = ({ name, subject, unit, topic, requirements = "" }) => {
-  const focus = requirements.trim() || "Build a complete, classroom-ready seminar file with clear sections, presenter notes, audience interaction points, and a concise conclusion.";
+const buildSeminarDocument = ({
+  name,
+  subject,
+  unit,
+  topic,
+  requirements = "",
+}) => {
+  const focus =
+    requirements.trim() ||
+    "Build a complete, classroom-ready seminar file with clear sections, presenter notes, audience interaction points, and a concise conclusion.";
   return `Seminar File: ${topic || "Untitled Seminar"}
 
 Presenter: ${name || "Student"}
@@ -1172,25 +1518,43 @@ const buildCreateDocConfig = (payload = {}, backendDoc = {}) => {
     fileUrl: CREATE_AI_DEFAULT_FILE_URL,
     sourceUrl: CREATE_AI_DEFAULT_FILE_URL,
   };
-  const id = sourcePayload.id || sourcePayload.documentId || sourcePayload._id || payload.id || `create-${Date.now()}-${genId()}`;
-  const linkedArtifact = inferCreateArtifact({ ...sourcePayload, topic: sourcePayload.topic });
-  const documentText = sourcePayload.documentText || buildSeminarDocument(sourcePayload);
+  const id =
+    sourcePayload.id ||
+    sourcePayload.documentId ||
+    sourcePayload._id ||
+    payload.id ||
+    `create-${Date.now()}-${genId()}`;
+  const linkedArtifact = inferCreateArtifact({
+    ...sourcePayload,
+    topic: sourcePayload.topic,
+  });
+  const documentText =
+    sourcePayload.documentText || buildSeminarDocument(sourcePayload);
   const config = {
     ...sourcePayload,
     id,
     documentId: sourcePayload.documentId || id,
     documentText,
-    companionNotesText: sourcePayload.companionNotesText || (linkedArtifact.hasFile ? buildCompanionNotes({ ...sourcePayload, fileType: linkedArtifact.label }) : ""),
-    ...(linkedArtifact.hasFile ? {
-      sourceUrl: linkedArtifact.sourceUrl,
-      fileUrl: linkedArtifact.sourceUrl,
-      previewUrl: linkedArtifact.previewUrl,
-      editUrl: linkedArtifact.editUrl,
-      downloadUrl: linkedArtifact.downloadUrl,
-      fileType: linkedArtifact.label,
-      fileExtension: linkedArtifact.extension,
-      slides: linkedArtifact.slides,
-    } : {}),
+    companionNotesText:
+      sourcePayload.companionNotesText ||
+      (linkedArtifact.hasFile
+        ? buildCompanionNotes({
+            ...sourcePayload,
+            fileType: linkedArtifact.label,
+          })
+        : ""),
+    ...(linkedArtifact.hasFile
+      ? {
+          sourceUrl: linkedArtifact.sourceUrl,
+          fileUrl: linkedArtifact.sourceUrl,
+          previewUrl: linkedArtifact.previewUrl,
+          editUrl: linkedArtifact.editUrl,
+          downloadUrl: linkedArtifact.downloadUrl,
+          fileType: linkedArtifact.label,
+          fileExtension: linkedArtifact.extension,
+          slides: linkedArtifact.slides,
+        }
+      : {}),
     seminarMode: "create",
     sessionSubMode: "create-ai",
     role: "Author",
@@ -1245,7 +1609,13 @@ const CREATE_AI_API = {
     try {
       backendUpdates = await saveSeminarAiDocument(id, updates);
     } catch {}
-    const next = { ...current, ...updates, ...(backendUpdates || {}), id, updatedAt: new Date().toISOString() };
+    const next = {
+      ...current,
+      ...updates,
+      ...(backendUpdates || {}),
+      id,
+      updatedAt: new Date().toISOString(),
+    };
     saveCreateDocConfig(id, next);
     return next;
   },
@@ -1253,7 +1623,14 @@ const CREATE_AI_API = {
   // POST /api/v1/seminar/create-ai/documents/:id/chat
   // Return shape expected here:
   // { reply, documentText?, fileUrl?/documentUrl?/artifactUrl?, previewUrl?, editUrl?, downloadUrl?, fileType?/mimeType? }
-  async sendChat({ documentId, prompt, hasFile, documentText, companionNotesText, config }) {
+  async sendChat({
+    documentId,
+    prompt,
+    hasFile,
+    documentText,
+    companionNotesText,
+    config,
+  }) {
     try {
       const backendResponse = await sendSeminarAiDocumentChat({
         documentId,
@@ -1269,15 +1646,31 @@ const CREATE_AI_API = {
       });
       if (backendResponse) {
         const updates = {
-          ...(backendResponse.documentText ? { documentText: backendResponse.documentText } : {}),
-          ...(backendResponse.companionNotesText ? { companionNotesText: backendResponse.companionNotesText } : {}),
-          ...(backendResponse.refreshNote ? { refreshNote: backendResponse.refreshNote } : {}),
-          ...(backendResponse.previewUrl ? { previewUrl: backendResponse.previewUrl } : {}),
-          ...(backendResponse.editUrl ? { editUrl: backendResponse.editUrl } : {}),
-          ...(backendResponse.downloadUrl ? { downloadUrl: backendResponse.downloadUrl } : {}),
+          ...(backendResponse.documentText
+            ? { documentText: backendResponse.documentText }
+            : {}),
+          ...(backendResponse.companionNotesText
+            ? { companionNotesText: backendResponse.companionNotesText }
+            : {}),
+          ...(backendResponse.refreshNote
+            ? { refreshNote: backendResponse.refreshNote }
+            : {}),
+          ...(backendResponse.previewUrl
+            ? { previewUrl: backendResponse.previewUrl }
+            : {}),
+          ...(backendResponse.editUrl
+            ? { editUrl: backendResponse.editUrl }
+            : {}),
+          ...(backendResponse.downloadUrl
+            ? { downloadUrl: backendResponse.downloadUrl }
+            : {}),
           ...(backendResponse.slides ? { slides: backendResponse.slides } : {}),
-          ...(backendResponse.slideImages ? { slideImages: backendResponse.slideImages } : {}),
-          ...(backendResponse.slidePreviewUrls ? { slidePreviewUrls: backendResponse.slidePreviewUrls } : {}),
+          ...(backendResponse.slideImages
+            ? { slideImages: backendResponse.slideImages }
+            : {}),
+          ...(backendResponse.slidePreviewUrls
+            ? { slidePreviewUrls: backendResponse.slidePreviewUrls }
+            : {}),
           fileUrl: CREATE_AI_DEFAULT_FILE_URL,
           sourceUrl: CREATE_AI_DEFAULT_FILE_URL,
         };
@@ -1294,21 +1687,35 @@ const CREATE_AI_API = {
         throw error;
       }
     }
-    await new Promise((resolve) => setTimeout(resolve, 500 + Math.random() * 400));
+    await new Promise((resolve) =>
+      setTimeout(resolve, 500 + Math.random() * 400),
+    );
     if (hasFile) {
       const refresh = appendCreateAIRefresh(companionNotesText, prompt, config);
       const reply = getCreateAIReply(prompt, true);
       if (documentId) {
-        await this.saveDocument(documentId, { companionNotesText: refresh.documentText });
+        await this.saveDocument(documentId, {
+          companionNotesText: refresh.documentText,
+        });
       }
-      return { reply, companionNotesText: refresh.documentText, refreshNote: refresh.refreshNote };
+      return {
+        reply,
+        companionNotesText: refresh.documentText,
+        refreshNote: refresh.refreshNote,
+      };
     }
     const refresh = appendCreateAIRefresh(documentText, prompt, config);
     const reply = getCreateAIReply(prompt, false);
     if (documentId) {
-      await this.saveDocument(documentId, { documentText: refresh.documentText });
+      await this.saveDocument(documentId, {
+        documentText: refresh.documentText,
+      });
     }
-    return { reply, documentText: refresh.documentText, refreshNote: refresh.refreshNote };
+    return {
+      reply,
+      documentText: refresh.documentText,
+      refreshNote: refresh.refreshNote,
+    };
   },
   // Backend integration point:
   // DELETE /api/v1/seminar/create-ai/documents/:id
@@ -1331,7 +1738,13 @@ const getErrorMessage = (error, fallback) => {
     error;
   if (typeof raw === "string" && raw.trim()) return raw;
   if (raw && typeof raw === "object") {
-    const nested = raw.message || raw.error || raw.detail || raw.reason || raw.statusText || null;
+    const nested =
+      raw.message ||
+      raw.error ||
+      raw.detail ||
+      raw.reason ||
+      raw.statusText ||
+      null;
     if (typeof nested === "string" && nested.trim()) return nested;
     try {
       const json = JSON.stringify(raw);
@@ -1340,12 +1753,16 @@ const getErrorMessage = (error, fallback) => {
   }
   return fallback;
 };
-const parseSeminarSessionId = value => {
+const parseSeminarSessionId = (value) => {
   const raw = (value || "").trim();
   if (!raw) return "";
   try {
     const url = new URL(raw);
-    return url.searchParams.get("room") || url.pathname.split("/").filter(Boolean).pop() || raw;
+    return (
+      url.searchParams.get("room") ||
+      url.pathname.split("/").filter(Boolean).pop() ||
+      raw
+    );
   } catch {
     const roomMatch = raw.match(/[?&]room=([^&]+)/i);
     if (roomMatch?.[1]) {
@@ -1357,17 +1774,26 @@ const parseSeminarSessionId = value => {
 
 function publishCommunitySession(session) {
   try {
-    const prev = JSON.parse(localStorage.getItem(COMMUNITY_SESSIONS_KEY)||"[]");
-    const next = [session,...prev.filter(s=>s.id!==session.id)].slice(0,20);
-    localStorage.setItem(COMMUNITY_SESSIONS_KEY,JSON.stringify(next));
-    window.dispatchEvent(new StorageEvent("storage",{key:COMMUNITY_SESSIONS_KEY}));
+    const prev = JSON.parse(
+      localStorage.getItem(COMMUNITY_SESSIONS_KEY) || "[]",
+    );
+    const next = [session, ...prev.filter((s) => s.id !== session.id)].slice(
+      0,
+      20,
+    );
+    localStorage.setItem(COMMUNITY_SESSIONS_KEY, JSON.stringify(next));
+    window.dispatchEvent(
+      new StorageEvent("storage", { key: COMMUNITY_SESSIONS_KEY }),
+    );
   } catch {}
 }
 
 function getCommunitySessions() {
   try {
-    return JSON.parse(localStorage.getItem(COMMUNITY_SESSIONS_KEY)||"[]");
-  } catch { return []; }
+    return JSON.parse(localStorage.getItem(COMMUNITY_SESSIONS_KEY) || "[]");
+  } catch {
+    return [];
+  }
 }
 
 // ─── HOOKS ────────────────────────────────────────────────────────────────────
@@ -1375,10 +1801,10 @@ function useTimer(running) {
   const [s, setS] = useState(0);
   useEffect(() => {
     if (!running) return;
-    const id = setInterval(() => setS(x=>x+1), 1000);
+    const id = setInterval(() => setS((x) => x + 1), 1000);
     return () => clearInterval(id);
   }, [running]);
-  return `${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;
+  return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 }
 
 function usePausableTimer() {
@@ -1386,11 +1812,18 @@ function usePausableTimer() {
   const [running, setRunning] = useState(true);
   useEffect(() => {
     if (!running) return;
-    const id = setInterval(() => setElapsed(x=>x+1), 1000);
+    const id = setInterval(() => setElapsed((x) => x + 1), 1000);
     return () => clearInterval(id);
   }, [running]);
-  const fmt = n => `${String(Math.floor(n/60)).padStart(2,"0")}:${String(n%60).padStart(2,"0")}`;
-  return { display: fmt(elapsed), elapsed, isPaused: !running, pause: () => setRunning(false), resume: () => setRunning(true) };
+  const fmt = (n) =>
+    `${String(Math.floor(n / 60)).padStart(2, "0")}:${String(n % 60).padStart(2, "0")}`;
+  return {
+    display: fmt(elapsed),
+    elapsed,
+    isPaused: !running,
+    pause: () => setRunning(false),
+    resume: () => setRunning(true),
+  };
 }
 
 function useSpeechRecognition() {
@@ -1401,24 +1834,35 @@ function useSpeechRecognition() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) return;
     const rec = new SR();
-    rec.continuous=true; rec.interimResults=true; rec.lang="en-US";
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = "en-US";
     rec.onstart = () => setIsListening(true);
-    rec.onend   = () => setIsListening(false);
-    rec.onresult = e => {
-      let final="",interim="";
-      for (let i=e.resultIndex;i<e.results.length;i++) {
-        if (e.results[i].isFinal) final+=e.results[i][0].transcript;
-        else interim+=e.results[i][0].transcript;
+    rec.onend = () => setIsListening(false);
+    rec.onresult = (e) => {
+      let final = "",
+        interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) final += e.results[i][0].transcript;
+        else interim += e.results[i][0].transcript;
       }
-      const combined=(final+" "+interim).trim();
+      const combined = (final + " " + interim).trim();
       setTranscript(combined);
       if (final.trim()) onResult(final.trim());
     };
     rec.onerror = () => setIsListening(false);
-    recRef.current=rec;
-    try { rec.start(); } catch {}
+    recRef.current = rec;
+    try {
+      rec.start();
+    } catch {}
   }, []);
-  const stop = useCallback(() => { try { recRef.current?.stop(); } catch {} setIsListening(false); setTranscript(""); }, []);
+  const stop = useCallback(() => {
+    try {
+      recRef.current?.stop();
+    } catch {}
+    setIsListening(false);
+    setTranscript("");
+  }, []);
   return { transcript, isListening, start, stop };
 }
 
@@ -1436,21 +1880,26 @@ function useMicPerm() {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = null;
     analyserRef.current = null;
-    try { audioContextRef.current?.close?.(); } catch {}
+    try {
+      audioContextRef.current?.close?.();
+    } catch {}
     audioContextRef.current = null;
     setMicLevel(0);
   }, []);
 
-  const stop = useCallback((silent = false) => {
-    cleanupAnalysis();
-    streamRef.current?.getTracks?.().forEach((track) => track.stop());
-    streamRef.current = null;
-    if (!silent) {
-      setStream(null);
-      setState("idle");
-      setError(null);
-    }
-  }, [cleanupAnalysis]);
+  const stop = useCallback(
+    (silent = false) => {
+      cleanupAnalysis();
+      streamRef.current?.getTracks?.().forEach((track) => track.stop());
+      streamRef.current = null;
+      if (!silent) {
+        setStream(null);
+        setState("idle");
+        setError(null);
+      }
+    },
+    [cleanupAnalysis],
+  );
 
   const request = useCallback(async () => {
     setError(null);
@@ -1462,10 +1911,15 @@ function useMicPerm() {
     stop(true);
     setState("requesting");
     try {
-      const nextStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      const nextStream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: false,
+      });
       const audioTrack = nextStream.getAudioTracks?.()[0] || null;
-      if (!audioTrack) throw new Error("No audio track was returned from the browser.");
-      if (audioTrack.readyState !== "live") throw new Error("Microphone track is not live.");
+      if (!audioTrack)
+        throw new Error("No audio track was returned from the browser.");
+      if (audioTrack.readyState !== "live")
+        throw new Error("Microphone track is not live.");
       audioTrack.enabled = true;
       streamRef.current = nextStream;
       setStream(nextStream);
@@ -1499,9 +1953,13 @@ function useMicPerm() {
       if (name === "NotAllowedError" || name === "PermissionDeniedError") {
         setError("PERMISSION_DENIED");
       } else if (name === "NotFoundError" || name === "DevicesNotFoundError") {
-        setError("No microphone found. Please connect a microphone and click Retry.");
+        setError(
+          "No microphone found. Please connect a microphone and click Retry.",
+        );
       } else if (name === "NotReadableError" || name === "TrackStartError") {
-        setError("Microphone is in use by another app. Close other apps using the mic and click Retry.");
+        setError(
+          "Microphone is in use by another app. Close other apps using the mic and click Retry.",
+        );
       } else {
         setError(err?.message || "Microphone access was denied.");
       }
@@ -1512,13 +1970,16 @@ function useMicPerm() {
   const setMicEnabled = useCallback((next) => {
     const track = streamRef.current?.getAudioTracks?.()[0] || null;
     if (track) track.enabled = next;
-    setStream((current) => current ? new MediaStream(current.getTracks()) : current);
+    setStream((current) =>
+      current ? new MediaStream(current.getTracks()) : current,
+    );
   }, []);
 
   useEffect(() => {
     const track = stream?.getAudioTracks?.()[0] || null;
     if (!track) return;
-    const sync = () => setState(track.readyState === "live" ? "granted" : "denied");
+    const sync = () =>
+      setState(track.readyState === "live" ? "granted" : "denied");
     track.addEventListener("ended", sync);
     track.addEventListener("mute", sync);
     track.addEventListener("unmute", sync);
@@ -1531,12 +1992,32 @@ function useMicPerm() {
 
   const audioTrack = stream?.getAudioTracks?.()[0] || null;
   const micEnabled = Boolean(audioTrack?.enabled);
-  const canProceed = Boolean(stream && audioTrack?.readyState === "live" && micEnabled);
+  const canProceed = Boolean(
+    stream && audioTrack?.readyState === "live" && micEnabled,
+  );
 
-  return { state, stream, request, stop, micLevel, error, micEnabled, canProceed, setMicEnabled };
+  return {
+    state,
+    stream,
+    request,
+    stop,
+    micLevel,
+    error,
+    micEnabled,
+    canProceed,
+    setMicEnabled,
+  };
 }
 
-function MicPermCard({ perm, stream, micLevel, micOn, onRequest, onToggle, error }) {
+function MicPermCard({
+  perm,
+  stream,
+  micLevel,
+  micOn,
+  onRequest,
+  onToggle,
+  error,
+}) {
   const statusLabels = {
     idle: {
       label: "Microphone permission required",
@@ -1563,7 +2044,9 @@ function MicPermCard({ perm, stream, micLevel, micOn, onRequest, onToggle, error
         <div className="mic-perm-icon">🎤</div>
         <div>
           <div className="mic-perm-title">Microphone Setup</div>
-          <div className="mic-perm-sub">Required before entering the seminar room</div>
+          <div className="mic-perm-sub">
+            Required before entering the seminar room
+          </div>
         </div>
       </div>
 
@@ -1573,23 +2056,37 @@ function MicPermCard({ perm, stream, micLevel, micOn, onRequest, onToggle, error
           <div className="mic-perm-label">{label}</div>
           <div className="mic-perm-hint">{hint}</div>
         </div>
-        {perm === "idle" && <button className="mic-perm-action allow" onClick={onRequest}>Allow Mic</button>}
+        {perm === "idle" && (
+          <button className="mic-perm-action allow" onClick={onRequest}>
+            Allow Mic
+          </button>
+        )}
         {perm === "requesting" && (
           <button className="mic-perm-action allow" disabled>
-            <span className="loader-spin" style={{ width: 14, height: 14, borderWidth: 2, marginRight: 4 }} />
+            <span
+              className="loader-spin"
+              style={{ width: 14, height: 14, borderWidth: 2, marginRight: 4 }}
+            />
             Waiting...
           </button>
         )}
-        {perm === "denied" && <button className="mic-perm-action retry" onClick={onRequest}>Retry</button>}
+        {perm === "denied" && (
+          <button className="mic-perm-action retry" onClick={onRequest}>
+            Retry
+          </button>
+        )}
       </div>
 
       {perm === "denied" && error === "PERMISSION_DENIED" && (
         <div className="mic-perm-warn">
           Your browser has blocked microphone access for this site.
-          <br /><br />
-          Desktop: click the lock icon in the address bar, set Microphone to Allow, then click Retry.
           <br />
-          Mobile: open browser site permissions, allow Microphone, then click Retry.
+          <br />
+          Desktop: click the lock icon in the address bar, set Microphone to
+          Allow, then click Retry.
+          <br />
+          Mobile: open browser site permissions, allow Microphone, then click
+          Retry.
         </div>
       )}
       {perm === "denied" && error !== "PERMISSION_DENIED" && error && (
@@ -1601,17 +2098,32 @@ function MicPermCard({ perm, stream, micLevel, micOn, onRequest, onToggle, error
           <div className="mic-level-row">
             <span className="mic-level-label">Mic level</span>
             <div className="mic-level-track">
-              <div className="mic-level-fill" style={{ width: `${micLevel}%` }} />
+              <div
+                className="mic-level-fill"
+                style={{ width: `${micLevel}%` }}
+              />
             </div>
-            <span style={{ fontSize: 10, color: "rgba(255,255,255,.4)", minWidth: 26, textAlign: "right" }}>
+            <span
+              style={{
+                fontSize: 10,
+                color: "rgba(255,255,255,.4)",
+                minWidth: 26,
+                textAlign: "right",
+              }}
+            >
               {Math.round(micLevel)}%
             </span>
           </div>
           <div className="mic-toggle-row">
             <span className="mic-toggle-label">
-              {micOn ? "🎤 Mic is on - will be active in room" : "🔇 Mic is off - you'll join muted"}
+              {micOn
+                ? "🎤 Mic is on - will be active in room"
+                : "🔇 Mic is off - you'll join muted"}
             </span>
-            <button className={`mic-toggle-btn ${micOn ? "on" : "off"}`} onClick={onToggle}>
+            <button
+              className={`mic-toggle-btn ${micOn ? "on" : "off"}`}
+              onClick={onToggle}
+            >
               {micOn ? "On" : "Off"}
             </button>
           </div>
@@ -1622,29 +2134,50 @@ function MicPermCard({ perm, stream, micLevel, micOn, onRequest, onToggle, error
 }
 
 function useAIVoice() {
-  const [isSpeaking,setIsSpeaking] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const voiceRef = useRef(null);
   const audioRef = useRef(null);
   useEffect(() => {
     const pick = () => {
-      const v=window.speechSynthesis?.getVoices()||[];
-      voiceRef.current=v.find(x=>x.name.includes("Google UK English"))||v.find(x=>x.lang.startsWith("en")&&!x.localService)||v[0]||null;
+      const v = window.speechSynthesis?.getVoices() || [];
+      voiceRef.current =
+        v.find((x) => x.name.includes("Google UK English")) ||
+        v.find((x) => x.lang.startsWith("en") && !x.localService) ||
+        v[0] ||
+        null;
     };
-    pick(); window.speechSynthesis?.addEventListener("voiceschanged",pick);
-    return () => window.speechSynthesis?.removeEventListener("voiceschanged",pick);
-  },[]);
-  const speak = useCallback((text,onDone,callbacks={}) => {
-    const onStart = typeof callbacks?.onStart === "function" ? callbacks.onStart : null;
+    pick();
+    window.speechSynthesis?.addEventListener("voiceschanged", pick);
+    return () =>
+      window.speechSynthesis?.removeEventListener("voiceschanged", pick);
+  }, []);
+  const speak = useCallback((text, onDone, callbacks = {}) => {
+    const onStart =
+      typeof callbacks?.onStart === "function" ? callbacks.onStart : null;
     const speakWithBrowserVoice = () => {
-      if (!("speechSynthesis" in window)){onDone?.();return;}
+      if (!("speechSynthesis" in window)) {
+        onDone?.();
+        return;
+      }
       window.speechSynthesis.cancel();
-      const u=new SpeechSynthesisUtterance(text);
-      u.rate=0.9;u.pitch=1.05;u.volume=1;
-      if (voiceRef.current) u.voice=voiceRef.current;
-      u.onstart=()=>{setIsSpeaking(true);onStart?.();};
-      u.onend=()=>{setIsSpeaking(false);onDone?.();};
-      u.onerror=()=>{setIsSpeaking(false);onDone?.();};
-      setTimeout(()=>window.speechSynthesis.speak(u),80);
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate = 0.9;
+      u.pitch = 1.05;
+      u.volume = 1;
+      if (voiceRef.current) u.voice = voiceRef.current;
+      u.onstart = () => {
+        setIsSpeaking(true);
+        onStart?.();
+      };
+      u.onend = () => {
+        setIsSpeaking(false);
+        onDone?.();
+      };
+      u.onerror = () => {
+        setIsSpeaking(false);
+        onDone?.();
+      };
+      setTimeout(() => window.speechSynthesis.speak(u), 80);
     };
 
     synthesizeDebateSpeech({ text, voice: "alloy" })
@@ -1653,35 +2186,41 @@ function useAIVoice() {
           throw new Error("Missing audio data");
         }
         window.speechSynthesis?.cancel();
-     if (audioRef.current) {
+        if (audioRef.current) {
           audioRef.current.onended = null;
           audioRef.current.pause();
         }
         const player = new Audio(audio.dataUrl);
         audioRef.current = player;
-        player.onplay = () => { setIsSpeaking(true); onStart?.(); };
+        player.onplay = () => {
+          setIsSpeaking(true);
+          onStart?.();
+        };
         player.onended = () => {
           setIsSpeaking(false);
           onDone?.();
         };
         player.onerror = () => {
           setIsSpeaking(false);
-          onStart?.();          // advance greetingState to "speaking" before fallback
+          onStart?.(); // advance greetingState to "speaking" before fallback
           speakWithBrowserVoice();
         };
-        player.play().then(() => {
-          // play() resolved — audio started (onplay will also fire, that's fine)
-        }).catch(() => {
-          setIsSpeaking(false);
-          onStart?.();          // ensure greetingState advances to "speaking"
-          speakWithBrowserVoice();
-        });
+        player
+          .play()
+          .then(() => {
+            // play() resolved — audio started (onplay will also fire, that's fine)
+          })
+          .catch(() => {
+            setIsSpeaking(false);
+            onStart?.(); // ensure greetingState advances to "speaking"
+            speakWithBrowserVoice();
+          });
       })
       .catch(() => {
         speakWithBrowserVoice();
       });
-  },[]);
-  const cancel = useCallback(()=>{
+  }, []);
+  const cancel = useCallback(() => {
     window.speechSynthesis?.cancel();
     if (audioRef.current) {
       audioRef.current.onended = null;
@@ -1691,42 +2230,61 @@ function useAIVoice() {
       audioRef.current = null;
     }
     setIsSpeaking(false);
-  },[]);
-  return useMemo(() => ({isSpeaking,speak,cancel}), [isSpeaking, speak, cancel]);
+  }, []);
+  return useMemo(
+    () => ({ isSpeaking, speak, cancel }),
+    [isSpeaking, speak, cancel],
+  );
 }
 
 function useToast() {
-  const [toast,setToast] = useState(null);
-  const show = useCallback((msg,type="success") => setToast({msg,type}), []);
+  const [toast, setToast] = useState(null);
+  const show = useCallback(
+    (msg, type = "success") => setToast({ msg, type }),
+    [],
+  );
   useEffect(() => {
     if (!toast) return;
-    const t=setTimeout(()=>setToast(null),3200);
-    return ()=>clearTimeout(t);
-  },[toast]);
+    const t = setTimeout(() => setToast(null), 3200);
+    return () => clearTimeout(t);
+  }, [toast]);
   const node = toast ? (
-    <div className={`sp-toast ${toast.type}`} onClick={()=>setToast(null)}>
-      {toast.type==="success"?"✅":toast.type==="error"?"❌":toast.type==="warn"?"⚠️":"ℹ️"} {toast.msg}
+    <div className={`sp-toast ${toast.type}`} onClick={() => setToast(null)}>
+      {toast.type === "success"
+        ? "✅"
+        : toast.type === "error"
+          ? "❌"
+          : toast.type === "warn"
+            ? "⚠️"
+            : "ℹ️"}{" "}
+      {toast.msg}
     </div>
   ) : null;
-  return {show,node};
+  return { show, node };
 }
 
 // Kept only as a fallback reference while the premium exporter below owns all downloads.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-function downloadSessionPDFLegacy({ config, timer, transcriptHistory, notes, messages }) {
+function downloadSessionPDFLegacy({
+  config,
+  timer,
+  transcriptHistory,
+  notes,
+  messages,
+}) {
   const doc = new jsPDF();
   const now = new Date().toLocaleString();
-  
+
   doc.setFont("helvetica", "bold");
   doc.setFontSize(20);
   doc.setTextColor(0, 195, 122);
   doc.text("SeminarArena Session Report", 20, 20);
-  
+
   doc.setFontSize(12);
   doc.setTextColor(100, 100, 100);
   doc.setFont("helvetica", "normal");
   doc.text(`Generated: ${now}`, 20, 30);
-  
+
   doc.setFontSize(14);
   doc.setTextColor(20, 20, 20);
   doc.setFont("helvetica", "bold");
@@ -1736,49 +2294,70 @@ function downloadSessionPDFLegacy({ config, timer, transcriptHistory, notes, mes
   const splitTopic = doc.splitTextToSize(topicText, 140);
   doc.text(splitTopic, 40, 45);
 
-  let y = 45 + (splitTopic.length * 7) + 5;
-  
+  let y = 45 + splitTopic.length * 7 + 5;
+
   if (notes && notes.length > 0) {
-    if (y > 270) { doc.addPage(); y = 20; }
+    if (y > 270) {
+      doc.addPage();
+      y = 20;
+    }
     doc.setFont("helvetica", "bold");
     doc.setFontSize(14);
     doc.setTextColor(45, 156, 219);
     doc.text(`AI Notes (${notes.length})`, 20, y);
     y += 10;
-    
+
     notes.forEach((n, i) => {
-      if (y > 270) { doc.addPage(); y = 20; }
+      if (y > 270) {
+        doc.addPage();
+        y = 20;
+      }
       doc.setFont("helvetica", "bold");
       doc.setFontSize(10);
       doc.setTextColor(0, 195, 122);
       doc.text(`Note ${i + 1}`, 20, y);
       y += 6;
-      
+
       doc.setFont("helvetica", "bold");
       doc.setFontSize(12);
       doc.setTextColor(20, 20, 20);
-      
+
       const splitQ = doc.splitTextToSize(n.q, 170);
-      if (y + (splitQ.length * 6) > 280) { doc.addPage(); y = 20; }
+      if (y + splitQ.length * 6 > 280) {
+        doc.addPage();
+        y = 20;
+      }
       doc.text(splitQ, 20, y);
-      y += (splitQ.length * 6) + 2;
-      
+      y += splitQ.length * 6 + 2;
+
       doc.setFont("helvetica", "normal");
       doc.setFontSize(11);
       doc.setTextColor(80, 80, 80);
-      
+
       const splitA = doc.splitTextToSize(n.a, 170);
-      
-      if (y + (splitA.length * 5) > 280) { doc.addPage(); y = 20; }
+
+      if (y + splitA.length * 5 > 280) {
+        doc.addPage();
+        y = 20;
+      }
       doc.text(splitA, 20, y);
-      y += (splitA.length * 5) + 10;
+      y += splitA.length * 5 + 10;
     });
   }
-  
+
   doc.save(`seminar-report-${Date.now()}.pdf`);
 }
 
-function downloadSessionPDF({ config, timer, transcriptHistory, notes, messages, apiScores = null, hintsUsed = 0, topicsCovered = [] }) {
+function downloadSessionPDF({
+  config,
+  timer,
+  transcriptHistory,
+  notes,
+  messages,
+  apiScores = null,
+  hintsUsed = 0,
+  topicsCovered = [],
+}) {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const PW = 210;
   const PH = 297;
@@ -1801,22 +2380,35 @@ function downloadSessionPDF({ config, timer, transcriptHistory, notes, messages,
     muted: [139, 150, 166],
   };
 
-  const clean = (value) => String(value ?? "")
-    .replace(/[•]/g, "-")
-    .replace(/[–—]/g, "-")
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'")
-    .split("")
-    .filter((ch) => {
-      const code = ch.charCodeAt(0);
-      return code === 9 || code === 10 || code === 13 || (code >= 32 && code <= 126);
-    })
-    .join("")
-    .trim();
+  const clean = (value) =>
+    String(value ?? "")
+      .replace(/[•]/g, "-")
+      .replace(/[–—]/g, "-")
+      .replace(/[“”]/g, '"')
+      .replace(/[‘’]/g, "'")
+      .split("")
+      .filter((ch) => {
+        const code = ch.charCodeAt(0);
+        return (
+          code === 9 ||
+          code === 10 ||
+          code === 13 ||
+          (code >= 32 && code <= 126)
+        );
+      })
+      .join("")
+      .trim();
 
   const now = new Date();
-  const dateStr = now.toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
-  const timeStr = now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  const dateStr = now.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  });
+  const timeStr = now.toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
   const topic = clean(config?.topic || "Seminar Session");
   const presenter = clean(config?.name || "Student");
   const subject = clean(config?.subject || "General");
@@ -1827,7 +2419,9 @@ function downloadSessionPDF({ config, timer, transcriptHistory, notes, messages,
   const transcript = (Array.isArray(transcriptHistory) ? transcriptHistory : [])
     .map((item) => clean(typeof item === "string" ? item : item?.text || ""))
     .filter(Boolean);
-  const chatMessages = safeMessages.filter((m) => (m.from || m.type) !== "system" && clean(m.text || ""));
+  const chatMessages = safeMessages.filter(
+    (m) => (m.from || m.type) !== "system" && clean(m.text || ""),
+  );
 
   let pageNum = 1;
   let y = TOP;
@@ -1893,7 +2487,8 @@ function downloadSessionPDF({ config, timer, transcriptHistory, notes, messages,
     rect(ML, y, CW, 12, C.panel2, 2);
     rect(ML, y, 3, 12, col, 1.5);
     txt(title, ML + 7, y + 7.8, 9, col, true);
-    if (subtitle) txt(subtitle, PW - MR - 4, y + 7.8, 6.5, C.muted, false, "right");
+    if (subtitle)
+      txt(subtitle, PW - MR - 4, y + 7.8, 6.5, C.muted, false, "right");
     y += 17;
   };
   const pill = (x, ry, w, label, col) => {
@@ -1907,34 +2502,77 @@ function downloadSessionPDF({ config, timer, transcriptHistory, notes, messages,
   };
   const hashScore = (seed, min, max) => {
     let h = 0;
-    for (let i = 0; i < seed.length; i += 1) h = (h * 31 + seed.charCodeAt(i)) | 0;
+    for (let i = 0; i < seed.length; i += 1)
+      h = (h * 31 + seed.charCodeAt(i)) | 0;
     return min + (Math.abs(h) % (max - min + 1));
   };
 
   const transcriptVolume = Math.min(10, transcript.join(" ").length / 220);
-  const aiExchanges = chatMessages.filter((m) => (m.from || m.type) === "ai" || m.sender === "AI Moderator").length;
-  const learnerExchanges = chatMessages.filter((m) => (m.from || "").includes("me") || (m.sender && m.sender !== "AI Moderator")).length;
+  const aiExchanges = chatMessages.filter(
+    (m) => (m.from || m.type) === "ai" || m.sender === "AI Moderator",
+  ).length;
+  const learnerExchanges = chatMessages.filter(
+    (m) =>
+      (m.from || "").includes("me") ||
+      (m.sender && m.sender !== "AI Moderator"),
+  ).length;
   // Use real API scores if available, otherwise fall back to calculated
-  const hasApiScores = apiScores && typeof apiScores === "object" && apiScores.total_score != null;
-  const scores = hasApiScores ? {
-    delivery: Math.round(((apiScores.presentation_flow ?? 0) / 20) * 100),
-    clarity: Math.round(((apiScores.conceptual_understanding ?? 0) / 30) * 100),
-    depth: Math.round(((apiScores.depth_of_knowledge ?? 0) / 25) * 100),
-    engagement: Math.round(((apiScores.engagement ?? 0) / 15) * 100),
-  } : {
-    delivery: Math.min(98, hashScore(topic + presenter + "delivery", 68, 92) + Math.round(transcriptVolume / 2)),
-    clarity: Math.min(98, hashScore(topic + "clarity", 66, 94) + (safeNotes.length > 2 ? 2 : 0)),
-    depth: Math.min(96, hashScore(topic + subject + "depth", 62, 90) + Math.min(6, safeNotes.length)),
-    engagement: Math.min(97, hashScore(topic + "engagement", 64, 91) + Math.min(5, aiExchanges + learnerExchanges)),
-  };
-  const overall = hasApiScores ? (apiScores.total_score ?? 0) : Math.round((scores.delivery + scores.clarity + scores.depth + scores.engagement) / 4);
+  const hasApiScores =
+    apiScores && typeof apiScores === "object" && apiScores.total_score != null;
+  const scores = hasApiScores
+    ? {
+        delivery: Math.round(((apiScores.presentation_flow ?? 0) / 20) * 100),
+        clarity: Math.round(
+          ((apiScores.conceptual_understanding ?? 0) / 30) * 100,
+        ),
+        depth: Math.round(((apiScores.depth_of_knowledge ?? 0) / 25) * 100),
+        engagement: Math.round(((apiScores.engagement ?? 0) / 15) * 100),
+      }
+    : {
+        delivery: Math.min(
+          98,
+          hashScore(topic + presenter + "delivery", 68, 92) +
+            Math.round(transcriptVolume / 2),
+        ),
+        clarity: Math.min(
+          98,
+          hashScore(topic + "clarity", 66, 94) + (safeNotes.length > 2 ? 2 : 0),
+        ),
+        depth: Math.min(
+          96,
+          hashScore(topic + subject + "depth", 62, 90) +
+            Math.min(6, safeNotes.length),
+        ),
+        engagement: Math.min(
+          97,
+          hashScore(topic + "engagement", 64, 91) +
+            Math.min(5, aiExchanges + learnerExchanges),
+        ),
+      };
+  const overall = hasApiScores
+    ? (apiScores.total_score ?? 0)
+    : Math.round(
+        (scores.delivery + scores.clarity + scores.depth + scores.engagement) /
+          4,
+      );
   const scoreColor = overall >= 82 ? C.green : overall >= 68 ? C.amber : C.red;
-  const verdict = overall >= 88 ? "Outstanding" : overall >= 78 ? "Strong" : overall >= 65 ? "Promising" : "Needs focused practice";
+  const verdict =
+    overall >= 88
+      ? "Outstanding"
+      : overall >= 78
+        ? "Strong"
+        : overall >= 65
+          ? "Promising"
+          : "Needs focused practice";
 
   bg();
   for (let i = 0; i < 54; i += 1) {
     const mix = i / 54;
-    doc.setFillColor(Math.round(8 + mix * 8), Math.round(14 + mix * 92), Math.round(26 + mix * 55));
+    doc.setFillColor(
+      Math.round(8 + mix * 8),
+      Math.round(14 + mix * 92),
+      Math.round(26 + mix * 55),
+    );
     doc.rect(6, i * 1.25, PW - 6, 1.3, "F");
   }
   rect(ML, 19, 16, 16, C.green, 3);
@@ -1961,10 +2599,24 @@ function downloadSessionPDF({ config, timer, transcriptHistory, notes, messages,
   rect(ML, y, CW, 38, C.panel2, 4);
   rect(ML, y, 4, 38, C.green, 2);
   txt("SEMINAR TOPIC", ML + 9, y + 8, 7, C.green, true);
-  const topicHeight = wrap(topic, ML + 9, y + 16, CW - 18, 11, C.white, true, 5);
+  const topicHeight = wrap(
+    topic,
+    ML + 9,
+    y + 16,
+    CW - 18,
+    11,
+    C.white,
+    true,
+    5,
+  );
   const metaY = y + Math.max(27, topicHeight + 17);
-  [["Presenter", presenter], ["Subject", subject], ["Unit", unit], ["Duration", duration]].forEach(([label, value], i) => {
-    const x = ML + 9 + i * (CW - 18) / 4;
+  [
+    ["Presenter", presenter],
+    ["Subject", subject],
+    ["Unit", unit],
+    ["Duration", duration],
+  ].forEach(([label, value], i) => {
+    const x = ML + 9 + (i * (CW - 18)) / 4;
     txt(label, x, metaY, 6.4, C.muted);
     txt(String(value).slice(0, 20), x, metaY + 5.5, 7.2, C.soft, true);
   });
@@ -1972,7 +2624,12 @@ function downloadSessionPDF({ config, timer, transcriptHistory, notes, messages,
   y = 148;
   rect(ML, y, CW, 50, C.panel, 4);
   txt("PERFORMANCE SNAPSHOT", ML + 9, y + 9, 8, C.green, true);
-  [["Delivery", scores.delivery, C.green], ["Clarity", scores.clarity, C.sky], ["Depth", scores.depth, C.amber], ["Engagement", scores.engagement, C.pink]].forEach(([label, score, col], i) => {
+  [
+    ["Delivery", scores.delivery, C.green],
+    ["Clarity", scores.clarity, C.sky],
+    ["Depth", scores.depth, C.amber],
+    ["Engagement", scores.engagement, C.pink],
+  ].forEach(([label, score, col], i) => {
     const by = y + 17 + i * 8.5;
     txt(label, ML + 9, by + 3.6, 7.2, C.soft);
     progress(ML + 46, by, CW - 68, 4.5, score, col);
@@ -1980,7 +2637,12 @@ function downloadSessionPDF({ config, timer, transcriptHistory, notes, messages,
   });
 
   y = 211;
-  [["AI Exchanges", String(aiExchanges + learnerExchanges), C.sky], ["Notes Saved", String(safeNotes.length), C.green], ["Transcript Lines", String(transcript.length), C.amber], ["Overall", `${overall}%`, scoreColor]].forEach(([label, value, col], i) => {
+  [
+    ["AI Exchanges", String(aiExchanges + learnerExchanges), C.sky],
+    ["Notes Saved", String(safeNotes.length), C.green],
+    ["Transcript Lines", String(transcript.length), C.amber],
+    ["Overall", `${overall}%`, scoreColor],
+  ].forEach(([label, value, col], i) => {
     const w = CW / 4;
     const x = ML + i * w;
     rect(x, y, w - 2, 24, C.panel2, 3);
@@ -1992,12 +2654,46 @@ function downloadSessionPDF({ config, timer, transcriptHistory, notes, messages,
   rect(ML, y, CW, 22, [0, 55, 38], 4);
   rect(ML, y, 4, 22, C.green, 2);
   txt(`${verdict} seminar performance`, ML + 10, y + 9, 10, C.white, true);
-  wrap(`Composite score ${overall}/100. This report combines session activity, AI coaching notes, transcript volume, and deterministic topic-based performance scoring.`, ML + 10, y + 16, CW - 20, 7, C.green, false, 4);
+  wrap(
+    `Composite score ${overall}/100. This report combines session activity, AI coaching notes, transcript volume, and deterministic topic-based performance scoring.`,
+    ML + 10,
+    y + 16,
+    CW - 20,
+    7,
+    C.green,
+    false,
+    4,
+  );
   footer();
 
   addPage();
   section("Detailed Performance Analysis", "score breakdown", C.green);
-  [["Delivery", "Pace, voice control, confidence, and presentation flow.", scores.delivery, C.green], ["Clarity", "Argument structure, framing, and ease of audience understanding.", scores.clarity, C.sky], ["Depth", "Evidence quality, nuance, research grounding, and examples.", scores.depth, C.amber], ["Engagement", "Audience connection, energy, responsiveness, and memorable moments.", scores.engagement, C.pink]].forEach(([label, desc, score, col], i) => {
+  [
+    [
+      "Delivery",
+      "Pace, voice control, confidence, and presentation flow.",
+      scores.delivery,
+      C.green,
+    ],
+    [
+      "Clarity",
+      "Argument structure, framing, and ease of audience understanding.",
+      scores.clarity,
+      C.sky,
+    ],
+    [
+      "Depth",
+      "Evidence quality, nuance, research grounding, and examples.",
+      scores.depth,
+      C.amber,
+    ],
+    [
+      "Engagement",
+      "Audience connection, energy, responsiveness, and memorable moments.",
+      scores.engagement,
+      C.pink,
+    ],
+  ].forEach(([label, desc, score, col], i) => {
     const x = ML + (i % 2) * ((CW - 5) / 2 + 5);
     const ry = y + Math.floor(i / 2) * 37;
     rect(x, ry, (CW - 5) / 2, 32, C.panel2, 3);
@@ -2012,19 +2708,68 @@ function downloadSessionPDF({ config, timer, transcriptHistory, notes, messages,
 
   section("AI Coach Feedback", "strengths and improvements", C.sky);
   const weakest = Object.entries(scores).sort((a, b) => a[1] - b[1])[0][0];
-  const feedbackItems = hasApiScores ? [
-    ...( apiScores.overall_feedback ? [["Overview", apiScores.overall_feedback, C.sky, [8, 31, 52]]] : [] ),
-    ...( (apiScores.strengths||[]).map(s => ["Strength", s, C.green, [0, 42, 28]]) ),
-    ...( (apiScores.improvements||[]).map(s => ["Improve", s, C.amber, [48, 33, 6]]) ),
-    ...( (apiScores.topics_mastered||[]).map(t => ["Mastered", t, C.sky, [8, 31, 52]]) ),
-    ...( (apiScores.topics_need_work||[]).map(t => ["Needs Work", t, C.red, [52, 14, 14]]) ),
-  ] : [
-    ["Strength", "Your session shows a clear base to build from. The topic framing and saved Q&A notes give you useful material for a stronger final presentation.", C.green, [0, 42, 28]],
-    ["Strength", "The strongest scoring area should become your anchor. Open with that confidence, then use transitions to carry the audience across the remaining points.", C.green, [0, 42, 28]],
-    ["Improve", `The main development area is ${weakest}. Use shorter claims, one concrete example per claim, and a deliberate pause before moving to the next idea.`, C.amber, [48, 33, 6]],
-    ["Improve", "Close with a compact final message: restate the thesis, name the takeaway, then give the audience one question or action to remember.", C.amber, [48, 33, 6]],
-    ["Coach Tip", "For the next practice run, record three minutes only. Review filler words, pacing, and whether the central argument is understandable without extra explanation.", C.sky, [8, 31, 52]],
-  ];
+  const feedbackItems = hasApiScores
+    ? [
+        ...(apiScores.overall_feedback
+          ? [["Overview", apiScores.overall_feedback, C.sky, [8, 31, 52]]]
+          : []),
+        ...(apiScores.strengths || []).map((s) => [
+          "Strength",
+          s,
+          C.green,
+          [0, 42, 28],
+        ]),
+        ...(apiScores.improvements || []).map((s) => [
+          "Improve",
+          s,
+          C.amber,
+          [48, 33, 6],
+        ]),
+        ...(apiScores.topics_mastered || []).map((t) => [
+          "Mastered",
+          t,
+          C.sky,
+          [8, 31, 52],
+        ]),
+        ...(apiScores.topics_need_work || []).map((t) => [
+          "Needs Work",
+          t,
+          C.red,
+          [52, 14, 14],
+        ]),
+      ]
+    : [
+        [
+          "Strength",
+          "Your session shows a clear base to build from. The topic framing and saved Q&A notes give you useful material for a stronger final presentation.",
+          C.green,
+          [0, 42, 28],
+        ],
+        [
+          "Strength",
+          "The strongest scoring area should become your anchor. Open with that confidence, then use transitions to carry the audience across the remaining points.",
+          C.green,
+          [0, 42, 28],
+        ],
+        [
+          "Improve",
+          `The main development area is ${weakest}. Use shorter claims, one concrete example per claim, and a deliberate pause before moving to the next idea.`,
+          C.amber,
+          [48, 33, 6],
+        ],
+        [
+          "Improve",
+          "Close with a compact final message: restate the thesis, name the takeaway, then give the audience one question or action to remember.",
+          C.amber,
+          [48, 33, 6],
+        ],
+        [
+          "Coach Tip",
+          "For the next practice run, record three minutes only. Review filler words, pacing, and whether the central argument is understandable without extra explanation.",
+          C.sky,
+          [8, 31, 52],
+        ],
+      ];
   feedbackItems.forEach(([label, body, col, box]) => {
     const lines = doc.splitTextToSize(body, CW - 35);
     const h = Math.max(16, lines.length * 4.6 + 8);
@@ -2040,12 +2785,21 @@ function downloadSessionPDF({ config, timer, transcriptHistory, notes, messages,
   section("Session Notes", `${safeNotes.length} saved notes`, C.green);
   if (!safeNotes.length) {
     rect(ML, y, CW, 18, C.panel2, 3);
-    txt("No AI notes were saved during this session.", ML + 8, y + 11, 8, C.muted);
+    txt(
+      "No AI notes were saved during this session.",
+      ML + 8,
+      y + 11,
+      8,
+      C.muted,
+    );
     y += 24;
   } else {
     safeNotes.forEach((note, i) => {
       const q = clean(note.q || `Note ${note.n || i + 1}`);
-      const aLines = doc.splitTextToSize(clean(note.a || "No answer text available."), CW - 16);
+      const aLines = doc.splitTextToSize(
+        clean(note.a || "No answer text available."),
+        CW - 16,
+      );
       const qLines = doc.splitTextToSize(q, CW - 16);
       const h = Math.max(24, qLines.length * 4.5 + aLines.length * 4.2 + 15);
       ensure(Math.min(h, 70) + 5);
@@ -2084,7 +2838,14 @@ function downloadSessionPDF({ config, timer, transcriptHistory, notes, messages,
     addPage();
     section("AI Chat History", `${chatMessages.length} messages`, C.sky);
     chatMessages.slice(-40).forEach((msg, i) => {
-      const role = clean(msg.sender || (msg.from === "me" ? presenter : msg.from === "ai" ? "AI Coach" : msg.type || "Message"));
+      const role = clean(
+        msg.sender ||
+          (msg.from === "me"
+            ? presenter
+            : msg.from === "ai"
+              ? "AI Coach"
+              : msg.type || "Message"),
+      );
       const body = clean(msg.text || "");
       const col = role.toLowerCase().includes("ai") ? C.sky : C.green;
       const lines = doc.splitTextToSize(body, CW - 28);
@@ -2100,7 +2861,44 @@ function downloadSessionPDF({ config, timer, transcriptHistory, notes, messages,
 
   addPage();
   section("Personalised Improvement Plan", "next practice cycle", C.amber);
-  [["Delivery", "Record a 3-minute version of the seminar and remove repeated filler words.", "High", C.red], ["Clarity", "Use PEEL for each argument: point, evidence, explanation, link.", "High", C.red], ["Depth", "Add one statistic, case study, or source-backed example to every key claim.", "Medium", C.amber], ["Engagement", "Start with a question and end with a compact audience takeaway.", "Medium", C.amber], ["Pacing", "Practice at 100-120 words per minute and pause after major claims.", "Low", C.green], ["Confidence", "Run one full rehearsal before the next live session.", "Low", C.green]].forEach(([area, action, priority, col]) => {
+  [
+    [
+      "Delivery",
+      "Record a 3-minute version of the seminar and remove repeated filler words.",
+      "High",
+      C.red,
+    ],
+    [
+      "Clarity",
+      "Use PEEL for each argument: point, evidence, explanation, link.",
+      "High",
+      C.red,
+    ],
+    [
+      "Depth",
+      "Add one statistic, case study, or source-backed example to every key claim.",
+      "Medium",
+      C.amber,
+    ],
+    [
+      "Engagement",
+      "Start with a question and end with a compact audience takeaway.",
+      "Medium",
+      C.amber,
+    ],
+    [
+      "Pacing",
+      "Practice at 100-120 words per minute and pause after major claims.",
+      "Low",
+      C.green,
+    ],
+    [
+      "Confidence",
+      "Run one full rehearsal before the next live session.",
+      "Low",
+      C.green,
+    ],
+  ].forEach(([area, action, priority, col]) => {
     ensure(20);
     rect(ML, y, CW, 16, C.panel2, 3);
     rect(ML, y, 3, 16, col, 1.5);
@@ -2114,55 +2912,134 @@ function downloadSessionPDF({ config, timer, transcriptHistory, notes, messages,
   rect(ML, y, CW, 31, [0, 52, 36], 4);
   rect(ML, y, CW, 3, C.green, 1.5);
   txt("Recommended next steps", ML + 8, y + 10, 9, C.white, true);
-  txt("1. Drill the weakest score area with AI Coach.", ML + 10, y + 17, 7.3, C.green);
-  txt("2. Schedule one practice run within 3 days.", ML + 10, y + 22.5, 7.3, C.green);
-  txt("3. Share this report with a tutor or peer for targeted review.", ML + 10, y + 28, 7.3, C.green);
+  txt(
+    "1. Drill the weakest score area with AI Coach.",
+    ML + 10,
+    y + 17,
+    7.3,
+    C.green,
+  );
+  txt(
+    "2. Schedule one practice run within 3 days.",
+    ML + 10,
+    y + 22.5,
+    7.3,
+    C.green,
+  );
+  txt(
+    "3. Share this report with a tutor or peer for targeted review.",
+    ML + 10,
+    y + 28,
+    7.3,
+    C.green,
+  );
   y += 42;
   ensure(26);
   rect(ML, y, CW, 24, C.panel, 4);
-  txt("SeminarArena Performance Report", PW / 2, y + 8, 9, C.white, true, "center");
-  txt(`Presenter: ${presenter} | Topic: ${topic.slice(0, 52)}`, PW / 2, y + 14, 7, C.muted, false, "center");
-  txt(`Generated: ${dateStr} at ${timeStr} | Overall score: ${overall}/100`, PW / 2, y + 19, 7, C.green, false, "center");
+  txt(
+    "SeminarArena Performance Report",
+    PW / 2,
+    y + 8,
+    9,
+    C.white,
+    true,
+    "center",
+  );
+  txt(
+    `Presenter: ${presenter} | Topic: ${topic.slice(0, 52)}`,
+    PW / 2,
+    y + 14,
+    7,
+    C.muted,
+    false,
+    "center",
+  );
+  txt(
+    `Generated: ${dateStr} at ${timeStr} | Overall score: ${overall}/100`,
+    PW / 2,
+    y + 19,
+    7,
+    C.green,
+    false,
+    "center",
+  );
 
-  const safeName = presenter.replace(/[^a-z0-9]/gi, "-").replace(/-+/g, "-").toLowerCase() || "student";
+  const safeName =
+    presenter
+      .replace(/[^a-z0-9]/gi, "-")
+      .replace(/-+/g, "-")
+      .toLowerCase() || "student";
   doc.save(`seminararena-report-${safeName}-${Date.now()}.pdf`);
 }
 
 // ─── SHARED COMPONENTS ────────────────────────────────────────────────────────
-function SoundAnalyser({ active, color="#00c37a", bars=7, size=32 }) {
+function SoundAnalyser({ active, color = "#00c37a", bars = 7, size = 32 }) {
   return (
-    <div className={`sound-analyser${active?" active":""}`} style={{height:size,"--color":color}}>
-      {Array.from({length:bars}).map((_,i)=><div key={i} className="bar" style={{height:active?undefined:3}}/>)}
+    <div
+      className={`sound-analyser${active ? " active" : ""}`}
+      style={{ height: size, "--color": color }}
+    >
+      {Array.from({ length: bars }).map((_, i) => (
+        <div
+          key={i}
+          className="bar"
+          style={{ height: active ? undefined : 3 }}
+        />
+      ))}
     </div>
   );
 }
 
-function PageLoader({ label="Launching…", sublabel="Setting up your session", steps=[] }) {
-  const [progress,setProgress] = useState(0);
-  const [step,setStep] = useState(0);
-  useEffect(()=>{
-    let p=0;
-    const id=setInterval(()=>{p+=Math.random()*18+8;if(p>=100){p=100;clearInterval(id);}setProgress(Math.min(p,100));},180);
-    return ()=>clearInterval(id);
-  },[]);
-  useEffect(()=>{
+function PageLoader({
+  label = "Launching…",
+  sublabel = "Setting up your session",
+  steps = [],
+}) {
+  const [progress, setProgress] = useState(0);
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    let p = 0;
+    const id = setInterval(() => {
+      p += Math.random() * 18 + 8;
+      if (p >= 100) {
+        p = 100;
+        clearInterval(id);
+      }
+      setProgress(Math.min(p, 100));
+    }, 180);
+    return () => clearInterval(id);
+  }, []);
+  useEffect(() => {
     if (!steps.length) return;
-    const delays=[600,1100,1700,2200];
-    const timers=delays.map((d,i)=>setTimeout(()=>setStep(i+1),d));
-    return ()=>timers.forEach(clearTimeout);
-  },[steps]);
+    const delays = [600, 1100, 1700, 2200];
+    const timers = delays.map((d, i) => setTimeout(() => setStep(i + 1), d));
+    return () => timers.forEach(clearTimeout);
+  }, [steps]);
   return (
     <div className="page-loader">
       <div className="page-loader-logo">🎓</div>
       <div className="page-loader-text">{label}</div>
       <div className="page-loader-sub">{sublabel}</div>
-      <div className="page-loader-bar"><div className="page-loader-fill" style={{width:`${progress}%`}}/></div>
-      {steps.length>0&&(
+      <div className="page-loader-bar">
+        <div className="page-loader-fill" style={{ width: `${progress}%` }} />
+      </div>
+      {steps.length > 0 && (
         <div className="page-loader-steps">
-          {steps.map((s,i)=>(
-            <div key={i} className={`page-loader-step ${i<step?"done":i===step?"active":"pending"}`}>
-              <span style={{fontSize:13}}>{s.ic}</span><span>{i<step?"✓ ":""}{s.label}</span>
-              {i===step&&<span className="loader-spin" style={{marginLeft:"auto"}}/>}
+          {steps.map((s, i) => (
+            <div
+              key={i}
+              className={`page-loader-step ${i < step ? "done" : i === step ? "active" : "pending"}`}
+            >
+              <span style={{ display: "inline-flex" }}>
+                <SeminarIcon name={s.ic} size={13} />
+              </span>
+              <span>
+                {i < step ? "✓ " : ""}
+                {s.label}
+              </span>
+              {i === step && (
+                <span className="loader-spin" style={{ marginLeft: "auto" }} />
+              )}
             </div>
           ))}
         </div>
@@ -2171,27 +3048,55 @@ function PageLoader({ label="Launching…", sublabel="Setting up your session", 
   );
 }
 
-function ResultsLoader({onDone,isObserver}) {
-  const steps=isObserver
-    ?[{label:"Saving session notes",icon:"📝"},{label:"Updating your progress",icon:"📈"},{label:"Preparing summary",icon:"🎓"}]
-    :[{label:"Analysing your delivery",icon:"🎙️"},{label:"Scoring clarity & depth",icon:"📊"},{label:"Generating AI feedback",icon:"🤖"},{label:"Preparing full report",icon:"🏅"}];
-  const [step,setStep]=useState(0);
-  useEffect(()=>{
-    const delays=isObserver?[600,1100,1700]:[500,1100,1700,2300];
-    const timers=delays.map((d,i)=>setTimeout(()=>setStep(i+1),d));
-    timers.push(setTimeout(()=>onDone(),isObserver?2200:2900));
-    return ()=>timers.forEach(clearTimeout);
-  },[isObserver,onDone]);
+function ResultsLoader({ onDone, isObserver }) {
+  const steps = isObserver
+    ? [
+        { label: "Saving session notes", icon: "pencil" },
+        { label: "Updating your progress", icon: "trend" },
+        { label: "Preparing summary", icon: "graduation" },
+      ]
+    : [
+        { label: "Analysing your delivery", icon: "mic" },
+        { label: "Scoring clarity & depth", icon: "chart" },
+        { label: "Generating AI feedback", icon: "ai" },
+        { label: "Preparing full report", icon: "trophy" },
+      ];
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    const delays = isObserver ? [600, 1100, 1700] : [500, 1100, 1700, 2300];
+    const timers = delays.map((d, i) => setTimeout(() => setStep(i + 1), d));
+    timers.push(setTimeout(() => onDone(), isObserver ? 2200 : 2900));
+    return () => timers.forEach(clearTimeout);
+  }, [isObserver, onDone]);
   return (
     <div className="results-loader">
-      <div className="results-loader-icon">{isObserver?"👁️":"📊"}</div>
-      <div className="results-loader-title">{isObserver?"Wrapping up…":"Generating your report…"}</div>
-      <div className="results-loader-sub">{isObserver?"Thank you for observing":"AI is reviewing your performance"}</div>
+      <div className="results-loader-icon">
+        <SeminarIcon name={isObserver ? "eye" : "chart"} size={34} />
+      </div>
+      <div className="results-loader-title">
+        {isObserver ? "Wrapping up…" : "Generating your report…"}
+      </div>
+      <div className="results-loader-sub">
+        {isObserver
+          ? "Thank you for observing"
+          : "AI is reviewing your performance"}
+      </div>
       <div className="results-loader-steps">
-        {steps.map((s,i)=>(
-          <div key={i} className={`results-loader-step ${i<step?"done":i===step?"active":"pending"}`}>
-            <span style={{fontSize:14}}>{s.icon}</span><span>{i<step?"✓ ":""}{s.label}</span>
-            {i===step&&<span className="loader-spin" style={{marginLeft:"auto"}}/>}
+        {steps.map((s, i) => (
+          <div
+            key={i}
+            className={`results-loader-step ${i < step ? "done" : i === step ? "active" : "pending"}`}
+          >
+            <span style={{ display: "inline-flex" }}>
+              <SeminarIcon name={s.icon} size={14} />
+            </span>
+            <span>
+              {i < step ? "✓ " : ""}
+              {s.label}
+            </span>
+            {i === step && (
+              <span className="loader-spin" style={{ marginLeft: "auto" }} />
+            )}
           </div>
         ))}
       </div>
@@ -2199,38 +3104,121 @@ function ResultsLoader({onDone,isObserver}) {
   );
 }
 
-function ScheduleSeminarModal({config,onSchedule,onClose}) {
-  const [date,setDate]=useState("");const [time,setTime]=useState("10:00");const [saving,setSaving]=useState(false);
-  async function save(){
-    if(!date)return;setSaving(true);await new Promise(r=>setTimeout(r,700));
+function ScheduleSeminarModal({ config, onSchedule, onClose }) {
+  const [date, setDate] = useState("");
+  const [time, setTime] = useState("10:00");
+  const [saving, setSaving] = useState(false);
+  async function save() {
+    if (!date) return;
+    setSaving(true);
+    await new Promise((r) => setTimeout(r, 700));
     try {
-      const ev={id:`sem-${Date.now()}`,title:config?.topic||"Seminar",type:"seminar",date,startTime:time,subject:config?.subject||"",unit:config?.unit||"",link:config?.roomLink||""};
-      const ex=JSON.parse(localStorage.getItem("gradeup_cal_events_v3")||"[]");
-      localStorage.setItem("gradeup_cal_events_v3",JSON.stringify([...ex,ev]));
-      window.dispatchEvent(new StorageEvent("storage",{key:"gradeup_cal_events_v3"}));
-      publishCommunitySession({...ev,roles:["Observer","Participant"],createdAt:new Date().toISOString(),status:"upcoming"});
+      const ev = {
+        id: `sem-${Date.now()}`,
+        title: config?.topic || "Seminar",
+        type: "seminar",
+        date,
+        startTime: time,
+        subject: config?.subject || "",
+        unit: config?.unit || "",
+        link: config?.roomLink || "",
+      };
+      const ex = JSON.parse(
+        localStorage.getItem("gradeup_cal_events_v3") || "[]",
+      );
+      localStorage.setItem(
+        "gradeup_cal_events_v3",
+        JSON.stringify([...ex, ev]),
+      );
+      window.dispatchEvent(
+        new StorageEvent("storage", { key: "gradeup_cal_events_v3" }),
+      );
+      publishCommunitySession({
+        ...ev,
+        roles: ["Observer", "Participant"],
+        createdAt: new Date().toISOString(),
+        status: "upcoming",
+      });
     } catch {}
-    setSaving(false);onSchedule({date,time});
+    setSaving(false);
+    onSchedule({ date, time });
   }
   return (
     <div className="overlay">
-      <div className="modal" style={{maxWidth:400}}>
-        <div className="mh"><span className="mh-title">📅 Schedule Seminar</span><button className="mh-close" onClick={onClose}>✕</button></div>
+      <div className="modal" style={{ maxWidth: 400 }}>
+        <div className="mh">
+          <span className="mh-title">📅 Schedule Seminar</span>
+          <button className="mh-close" onClick={onClose}>
+            ✕
+          </button>
+        </div>
         <div className="mb">
           <div className="sched-info">
-            <span style={{fontSize:20}}>📅</span>
-            <div><div className="sched-info-text">Auto-synced to Calendar & Community</div><div className="sched-info-sub">Anyone in your group can join as Observer or Participant</div></div>
+            <span style={{ fontSize: 20 }}>📅</span>
+            <div>
+              <div className="sched-info-text">
+                Auto-synced to Calendar & Community
+              </div>
+              <div className="sched-info-sub">
+                Anyone in your group can join as Observer or Participant
+              </div>
+            </div>
           </div>
-          {config?.topic&&<div style={{padding:"8px 11px",borderRadius:9,background:"rgba(0,195,122,.06)",border:"1px solid rgba(0,195,122,.16)",marginBottom:12,fontSize:12.5,fontWeight:700,color:"var(--t1)"}}>🎓 "{config.topic}"</div>}
+          {config?.topic && (
+            <div
+              style={{
+                padding: "8px 11px",
+                borderRadius: 9,
+                background: "rgba(0,195,122,.06)",
+                border: "1px solid rgba(0,195,122,.16)",
+                marginBottom: 12,
+                fontSize: 12.5,
+                fontWeight: 700,
+                color: "var(--t1)",
+              }}
+            >
+              🎓 "{config.topic}"
+            </div>
+          )}
           <div className="fi-row fi">
-            <div><label className="fl">Date *</label><input className="finput" type="date" value={date} onChange={e=>setDate(e.target.value)}/></div>
-            <div><label className="fl">Time</label><input className="finput" type="time" value={time} onChange={e=>setTime(e.target.value)}/></div>
+            <div>
+              <label className="fl">Date *</label>
+              <input
+                className="finput"
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="fl">Time</label>
+              <input
+                className="finput"
+                type="time"
+                value={time}
+                onChange={(e) => setTime(e.target.value)}
+              />
+            </div>
           </div>
         </div>
         <div className="mf">
-          <button className="btn-s" onClick={onClose} disabled={saving}>Cancel</button>
-          <button className="btn-p" style={{width:"auto",padding:"8px 20px"}} onClick={save} disabled={!date||saving}>
-            {saving?<><span className="loader-spin"/>Scheduling…</>:"📅 Schedule & Publish"}
+          <button className="btn-s" onClick={onClose} disabled={saving}>
+            Cancel
+          </button>
+          <button
+            className="btn-p"
+            style={{ width: "auto", padding: "8px 20px" }}
+            onClick={save}
+            disabled={!date || saving}
+          >
+            {saving ? (
+              <>
+                <span className="loader-spin" />
+                Scheduling…
+              </>
+            ) : (
+              "📅 Schedule & Publish"
+            )}
           </button>
         </div>
       </div>
@@ -2238,201 +3226,867 @@ function ScheduleSeminarModal({config,onSchedule,onClose}) {
   );
 }
 
-function AnalysisModal({topic,subject,unit,timer,exchanges,presenterName,apiScores,hintsUsed,onClose,onDownload}) {
+function AnalysisModal({
+  topic,
+  subject,
+  unit,
+  timer,
+  exchanges,
+  presenterName,
+  apiScores,
+  hintsUsed,
+  onClose,
+  onDownload,
+}) {
   const hasApi = apiScores && apiScores.total_score != null;
-  const scores = hasApi ? {
-    delivery: Math.round(((apiScores.presentation_flow??0)/20)*100),
-    clarity:  Math.round(((apiScores.conceptual_understanding??0)/30)*100),
-    depth:    Math.round(((apiScores.depth_of_knowledge??0)/25)*100),
-    engagement: Math.round(((apiScores.engagement??0)/15)*100),
-  } : {delivery:68+Math.floor(Math.random()*28),clarity:62+Math.floor(Math.random()*30),depth:55+Math.floor(Math.random()*38),engagement:70+Math.floor(Math.random()*25)};
-  const overall = hasApi ? (apiScores.total_score??0) : Math.round(Object.values(scores).reduce((a,b)=>a+b,0)/4);
+  const scores = hasApi
+    ? {
+        delivery: Math.round(((apiScores.presentation_flow ?? 0) / 20) * 100),
+        clarity: Math.round(
+          ((apiScores.conceptual_understanding ?? 0) / 30) * 100,
+        ),
+        depth: Math.round(((apiScores.depth_of_knowledge ?? 0) / 25) * 100),
+        engagement: Math.round(((apiScores.engagement ?? 0) / 15) * 100),
+      }
+    : {
+        delivery: 68 + Math.floor(Math.random() * 28),
+        clarity: 62 + Math.floor(Math.random() * 30),
+        depth: 55 + Math.floor(Math.random() * 38),
+        engagement: 70 + Math.floor(Math.random() * 25),
+      };
+  const overall = hasApi
+    ? (apiScores.total_score ?? 0)
+    : Math.round(Object.values(scores).reduce((a, b) => a + b, 0) / 4);
   return (
     <div className="analysis-bg" onClick={onClose}>
-      <div className="analysis-box" onClick={e=>e.stopPropagation()} style={{maxHeight:"90vh",overflowY:"auto"}}>
+      <div
+        className="analysis-box"
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxHeight: "90vh", overflowY: "auto" }}
+      >
         <div className="analysis-head">
           <div className="analysis-title">📊 Seminar Performance Report</div>
-          <button style={{width:24,height:24,borderRadius:6,border:"1px solid rgba(255,255,255,.1)",background:"rgba(255,255,255,.05)",cursor:"pointer",color:"rgba(255,255,255,.5)",fontSize:11}} onClick={onClose}>✕</button>
+          <button
+            style={{
+              width: 24,
+              height: 24,
+              borderRadius: 6,
+              border: "1px solid rgba(255,255,255,.1)",
+              background: "rgba(255,255,255,.05)",
+              cursor: "pointer",
+              color: "rgba(255,255,255,.5)",
+              fontSize: 11,
+            }}
+            onClick={onClose}
+          >
+            ✕
+          </button>
         </div>
-        <div className="analysis-body" style={{gap:16,paddingBottom:20}}>
+        <div className="analysis-body" style={{ gap: 16, paddingBottom: 20 }}>
           <div className="a-sec">
             <div className="a-sec-title">Session Overview</div>
-            <div style={{padding:"8px 11px",borderRadius:9,background:"rgba(0,195,122,.07)",border:"1px solid rgba(0,195,122,.16)",fontSize:12.5,fontWeight:700,color:"#e8ecf2",marginBottom:7}}>"{topic}"</div>
-            <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-              {[`📚 ${subject||"—"}`,`📖 ${unit||"—"}`,`⏱ ${timer}`,`💬 ${exchanges||0} exchanges`].map(t=>(
-                <span key={t} style={{padding:"2px 9px",borderRadius:20,background:"rgba(255,255,255,.06)",border:"1px solid rgba(255,255,255,.1)",fontSize:10,fontWeight:700,color:"rgba(255,255,255,.5)"}}>{t}</span>
+            <div
+              style={{
+                padding: "8px 11px",
+                borderRadius: 9,
+                background: "rgba(0,195,122,.07)",
+                border: "1px solid rgba(0,195,122,.16)",
+                fontSize: 12.5,
+                fontWeight: 700,
+                color: "#e8ecf2",
+                marginBottom: 7,
+              }}
+            >
+              "{topic}"
+            </div>
+            <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+              {[
+                `📚 ${subject || "—"}`,
+                `📖 ${unit || "—"}`,
+                `⏱ ${timer}`,
+                `💬 ${exchanges || 0} exchanges`,
+              ].map((t) => (
+                <span
+                  key={t}
+                  style={{
+                    padding: "2px 9px",
+                    borderRadius: 20,
+                    background: "rgba(255,255,255,.06)",
+                    border: "1px solid rgba(255,255,255,.1)",
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: "rgba(255,255,255,.5)",
+                  }}
+                >
+                  {t}
+                </span>
               ))}
             </div>
           </div>
-          <div className="a-sec" style={{animationDelay:".08s"}}>
+          <div className="a-sec" style={{ animationDelay: ".08s" }}>
             <div className="a-sec-title">Presenter Performance</div>
-            <div style={{background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.07)",borderRadius:10,padding:"11px 13px"}}>
-              <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:14}}>
-                <div style={{width:40,height:40,borderRadius:"50%",background:avColor(presenterName||"U")+"22",color:avColor(presenterName||"U"),display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800}}>{avInit(presenterName||"?")}</div>
-                <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700,color:"#e8ecf2"}}>{presenterName}</div><div style={{fontSize:10.5,color:"rgba(255,255,255,.35)"}}>Seminar Presenter</div></div>
-                <div style={{fontSize:26,fontWeight:900,color:"#5ee3b7",textAlign:"right"}}>
+            <div
+              style={{
+                background: "rgba(255,255,255,.04)",
+                border: "1px solid rgba(255,255,255,.07)",
+                borderRadius: 10,
+                padding: "11px 13px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 9,
+                  marginBottom: 14,
+                }}
+              >
+                <div
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: "50%",
+                    background: avColor(presenterName || "U") + "22",
+                    color: avColor(presenterName || "U"),
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 14,
+                    fontWeight: 800,
+                  }}
+                >
+                  {avInit(presenterName || "?")}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div
+                    style={{ fontSize: 13, fontWeight: 700, color: "#e8ecf2" }}
+                  >
+                    {presenterName}
+                  </div>
+                  <div
+                    style={{ fontSize: 10.5, color: "rgba(255,255,255,.35)" }}
+                  >
+                    Seminar Presenter
+                  </div>
+                </div>
+                <div
+                  style={{
+                    fontSize: 26,
+                    fontWeight: 900,
+                    color: "#5ee3b7",
+                    textAlign: "right",
+                  }}
+                >
                   <div>{overall}</div>
-                  <div style={{fontSize:10,fontWeight:700,color:"var(--t2)",marginTop:2}}>TOTAL SCORE</div>
+                  <div
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: "var(--t2)",
+                      marginTop: 2,
+                    }}
+                  >
+                    TOTAL SCORE
+                  </div>
                 </div>
               </div>
               {hasApi ? (
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10}}>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))",
+                    gap: 10,
+                  }}
+                >
                   {[
-                    {label:"Conceptual Understanding",v:apiScores.conceptual_understanding??0,c:"#00c37a",m:30},
-                    {label:"Depth of Knowledge",v:apiScores.depth_of_knowledge??0,c:"#2d9cdb",m:25},
-                    {label:"Presentation Flow",v:apiScores.presentation_flow??0,c:"#7c3aed",m:20},
-                    {label:"Engagement",v:apiScores.engagement??0,c:"#f6a623",m:15},
-                    {label:"Hints Penalty",v:apiScores.hints_penalty??0,c:"#e53e3e",m:10,neg:true},
-                  ].map(s=>(
-                    <div key={s.label} style={{padding:"12px 14px",borderRadius:12,background:"rgba(255,255,255,.03)",border:"1px solid rgba(255,255,255,.08)",textAlign:"center"}}>
-                      <div style={{fontSize:18,fontWeight:900,color:s.c}}>{s.neg?"-":""}{s.v}</div>
-                      <div style={{fontSize:10,fontWeight:700,color:"var(--t2)",marginTop:4,lineHeight:1.3}}>{s.label}</div>
-                      <div style={{marginTop:8,height:4,borderRadius:4,background:"rgba(255,255,255,.06)"}}>
-                        <div style={{height:"100%",borderRadius:4,background:s.c,width:`${Math.min(100,(s.v/s.m)*100)}%`,transition:"width .6s"}}/>
+                    {
+                      label: "Conceptual Understanding",
+                      v: apiScores.conceptual_understanding ?? 0,
+                      c: "#00c37a",
+                      m: 30,
+                    },
+                    {
+                      label: "Depth of Knowledge",
+                      v: apiScores.depth_of_knowledge ?? 0,
+                      c: "#2d9cdb",
+                      m: 25,
+                    },
+                    {
+                      label: "Presentation Flow",
+                      v: apiScores.presentation_flow ?? 0,
+                      c: "#7c3aed",
+                      m: 20,
+                    },
+                    {
+                      label: "Engagement",
+                      v: apiScores.engagement ?? 0,
+                      c: "#f6a623",
+                      m: 15,
+                    },
+                    {
+                      label: "Hints Penalty",
+                      v: apiScores.hints_penalty ?? 0,
+                      c: "#e53e3e",
+                      m: 10,
+                      neg: true,
+                    },
+                  ].map((s) => (
+                    <div
+                      key={s.label}
+                      style={{
+                        padding: "12px 14px",
+                        borderRadius: 12,
+                        background: "rgba(255,255,255,.03)",
+                        border: "1px solid rgba(255,255,255,.08)",
+                        textAlign: "center",
+                      }}
+                    >
+                      <div
+                        style={{ fontSize: 18, fontWeight: 900, color: s.c }}
+                      >
+                        {s.neg ? "-" : ""}
+                        {s.v}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          color: "var(--t2)",
+                          marginTop: 4,
+                          lineHeight: 1.3,
+                        }}
+                      >
+                        {s.label}
+                      </div>
+                      <div
+                        style={{
+                          marginTop: 8,
+                          height: 4,
+                          borderRadius: 4,
+                          background: "rgba(255,255,255,.06)",
+                        }}
+                      >
+                        <div
+                          style={{
+                            height: "100%",
+                            borderRadius: 4,
+                            background: s.c,
+                            width: `${Math.min(100, (s.v / s.m) * 100)}%`,
+                            transition: "width .6s",
+                          }}
+                        />
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
                 <>
-                  {[["Delivery",scores.delivery,"#00c37a"],["Clarity",scores.clarity,"#38bdf8"],["Depth",scores.depth,"#f59e0b"],["Audience Engagement",scores.engagement,"#ec4899"]].map(([l,v,c])=>(
+                  {[
+                    ["Delivery", scores.delivery, "#00c37a"],
+                    ["Clarity", scores.clarity, "#38bdf8"],
+                    ["Depth", scores.depth, "#f59e0b"],
+                    ["Audience Engagement", scores.engagement, "#ec4899"],
+                  ].map(([l, v, c]) => (
                     <div key={l} className="prog-wrap">
-                      <div className="prog-lbl"><span>{l}</span><span>{v}%</span></div>
-                      <div className="prog-track"><div className="prog-fill" style={{width:`${v}%`,background:c}}/></div>
+                      <div className="prog-lbl">
+                        <span>{l}</span>
+                        <span>{v}%</span>
+                      </div>
+                      <div className="prog-track">
+                        <div
+                          className="prog-fill"
+                          style={{ width: `${v}%`, background: c }}
+                        />
+                      </div>
                     </div>
                   ))}
                 </>
               )}
             </div>
           </div>
- <div className="a-sec" style={{animationDelay:".16s"}}>
+          <div className="a-sec" style={{ animationDelay: ".16s" }}>
             <div className="a-sec-title">AI Feedback & Insights</div>
-            <div style={{display:"flex",flexDirection:"column",gap:10}}>
-              {hasApi?(
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {hasApi ? (
                 <>
-                  {apiScores.overall_feedback&&(
-                    <div style={{padding:"14px 16px",borderRadius:12,background:"var(--surf)",border:"1px solid var(--bdr)"}}>
-                      <div style={{fontSize:12,fontWeight:800,color:"var(--t1)",marginBottom:8}}>📋 Overall Feedback</div>
-                      <div style={{fontSize:13,color:"var(--t2)",lineHeight:1.6}}>
+                  {apiScores.overall_feedback && (
+                    <div
+                      style={{
+                        padding: "14px 16px",
+                        borderRadius: 12,
+                        background: "var(--surf)",
+                        border: "1px solid var(--bdr)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 800,
+                          color: "var(--t1)",
+                          marginBottom: 8,
+                        }}
+                      >
+                        📋 Overall Feedback
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 13,
+                          color: "var(--t2)",
+                          lineHeight: 1.6,
+                        }}
+                      >
                         {apiScores.overall_feedback}
                       </div>
                     </div>
                   )}
 
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                    {apiScores.strengths?.length>0&&(
-                      <div style={{padding:"12px 14px",borderRadius:12,background:"rgba(0,195,122,.06)",border:"1px solid rgba(0,195,122,.18)"}}>
-                        <div style={{fontSize:12,fontWeight:800,color:"var(--em)",marginBottom:8}}>✅ Strengths</div>
-                        {apiScores.strengths.map((s,i)=>(
-                          <div key={`str-${i}`} style={{fontSize:12,color:"var(--t2)",marginBottom:6,paddingLeft:8,borderLeft:"2px solid rgba(0,195,122,.4)",lineHeight:1.4}}>{s}</div>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: 10,
+                    }}
+                  >
+                    {apiScores.strengths?.length > 0 && (
+                      <div
+                        style={{
+                          padding: "12px 14px",
+                          borderRadius: 12,
+                          background: "rgba(0,195,122,.06)",
+                          border: "1px solid rgba(0,195,122,.18)",
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 800,
+                            color: "var(--em)",
+                            marginBottom: 8,
+                          }}
+                        >
+                          ✅ Strengths
+                        </div>
+                        {apiScores.strengths.map((s, i) => (
+                          <div
+                            key={`str-${i}`}
+                            style={{
+                              fontSize: 12,
+                              color: "var(--t2)",
+                              marginBottom: 6,
+                              paddingLeft: 8,
+                              borderLeft: "2px solid rgba(0,195,122,.4)",
+                              lineHeight: 1.4,
+                            }}
+                          >
+                            {s}
+                          </div>
                         ))}
                       </div>
                     )}
-                    {apiScores.improvements?.length>0&&(
-                      <div style={{padding:"12px 14px",borderRadius:12,background:"rgba(229,62,62,.06)",border:"1px solid rgba(229,62,62,.18)"}}>
-                        <div style={{fontSize:12,fontWeight:800,color:"var(--red)",marginBottom:8}}>🎯 Areas to Improve</div>
-                        {apiScores.improvements.map((s,i)=>(
-                          <div key={`imp-${i}`} style={{fontSize:12,color:"var(--t2)",marginBottom:6,paddingLeft:8,borderLeft:"2px solid rgba(229,62,62,.4)",lineHeight:1.4}}>{s}</div>
+                    {apiScores.improvements?.length > 0 && (
+                      <div
+                        style={{
+                          padding: "12px 14px",
+                          borderRadius: 12,
+                          background: "rgba(229,62,62,.06)",
+                          border: "1px solid rgba(229,62,62,.18)",
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 800,
+                            color: "var(--red)",
+                            marginBottom: 8,
+                          }}
+                        >
+                          🎯 Areas to Improve
+                        </div>
+                        {apiScores.improvements.map((s, i) => (
+                          <div
+                            key={`imp-${i}`}
+                            style={{
+                              fontSize: 12,
+                              color: "var(--t2)",
+                              marginBottom: 6,
+                              paddingLeft: 8,
+                              borderLeft: "2px solid rgba(229,62,62,.4)",
+                              lineHeight: 1.4,
+                            }}
+                          >
+                            {s}
+                          </div>
                         ))}
                       </div>
                     )}
                   </div>
 
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                    {apiScores.topics_mastered?.length>0&&(
-                      <div style={{padding:"12px 14px",borderRadius:12,background:"rgba(45,156,219,.06)",border:"1px solid rgba(45,156,219,.18)"}}>
-                        <div style={{fontSize:12,fontWeight:800,color:"var(--sky)",marginBottom:8}}>🏆 Topics Mastered</div>
-                        {apiScores.topics_mastered.map((t,i)=>(
-                          <div key={`tm-${i}`} style={{fontSize:12,color:"var(--t2)",marginBottom:5,paddingLeft:8,borderLeft:"2px solid rgba(45,156,219,.4)",lineHeight:1.4}}>{t}</div>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: 10,
+                    }}
+                  >
+                    {apiScores.topics_mastered?.length > 0 && (
+                      <div
+                        style={{
+                          padding: "12px 14px",
+                          borderRadius: 12,
+                          background: "rgba(45,156,219,.06)",
+                          border: "1px solid rgba(45,156,219,.18)",
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 800,
+                            color: "var(--sky)",
+                            marginBottom: 8,
+                          }}
+                        >
+                          🏆 Topics Mastered
+                        </div>
+                        {apiScores.topics_mastered.map((t, i) => (
+                          <div
+                            key={`tm-${i}`}
+                            style={{
+                              fontSize: 12,
+                              color: "var(--t2)",
+                              marginBottom: 5,
+                              paddingLeft: 8,
+                              borderLeft: "2px solid rgba(45,156,219,.4)",
+                              lineHeight: 1.4,
+                            }}
+                          >
+                            {t}
+                          </div>
                         ))}
                       </div>
                     )}
-                    {apiScores.topics_need_work?.length>0&&(
-                      <div style={{padding:"12px 14px",borderRadius:12,background:"rgba(246,166,35,.06)",border:"1px solid rgba(246,166,35,.18)"}}>
-                        <div style={{fontSize:12,fontWeight:800,color:"#f6a623",marginBottom:8}}>📚 Needs More Work</div>
-                        {apiScores.topics_need_work.map((t,i)=>(
-                          <div key={`tnw-${i}`} style={{fontSize:12,color:"var(--t2)",marginBottom:5,paddingLeft:8,borderLeft:"2px solid rgba(246,166,35,.4)",lineHeight:1.4}}>{t}</div>
+                    {apiScores.topics_need_work?.length > 0 && (
+                      <div
+                        style={{
+                          padding: "12px 14px",
+                          borderRadius: 12,
+                          background: "rgba(246,166,35,.06)",
+                          border: "1px solid rgba(246,166,35,.18)",
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 800,
+                            color: "#f6a623",
+                            marginBottom: 8,
+                          }}
+                        >
+                          📚 Needs More Work
+                        </div>
+                        {apiScores.topics_need_work.map((t, i) => (
+                          <div
+                            key={`tnw-${i}`}
+                            style={{
+                              fontSize: 12,
+                              color: "var(--t2)",
+                              marginBottom: 5,
+                              paddingLeft: 8,
+                              borderLeft: "2px solid rgba(246,166,35,.4)",
+                              lineHeight: 1.4,
+                            }}
+                          >
+                            {t}
+                          </div>
                         ))}
                       </div>
                     )}
                   </div>
 
-                  {hintsUsed>0&&(
-                    <div style={{display:"flex",gap:9,padding:"10px 12px",borderRadius:10,background:"rgba(229,62,62,.06)",border:"1px solid rgba(229,62,62,.18)"}}>
-                      <span style={{fontSize:16,flexShrink:0}}>💡</span>
-                      <span style={{fontSize:12,fontWeight:600,color:"#fca5a5",lineHeight:1.4}}>{hintsUsed} hint{hintsUsed>1?"s":""} used during the session.</span>
+                  {hintsUsed > 0 && (
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 9,
+                        padding: "10px 12px",
+                        borderRadius: 10,
+                        background: "rgba(229,62,62,.06)",
+                        border: "1px solid rgba(229,62,62,.18)",
+                      }}
+                    >
+                      <span style={{ fontSize: 16, flexShrink: 0 }}>💡</span>
+                      <span
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: "#fca5a5",
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        {hintsUsed} hint{hintsUsed > 1 ? "s" : ""} used during
+                        the session.
+                      </span>
                     </div>
                   )}
                 </>
-              ):[{ic:"✅",c:"rgba(0,195,122,.08)",bc:"rgba(0,195,122,.2)",t:"#5ee3b7",msg:"Strong opening with clear thesis statement established."},{ic:"✅",c:"rgba(0,195,122,.08)",bc:"rgba(0,195,122,.2)",t:"#5ee3b7",msg:"Good use of evidence to support main arguments."},{ic:"⚠️",c:"rgba(246,166,35,.06)",bc:"rgba(246,166,35,.18)",t:"#fcd18e",msg:"Consider slowing down during key points for emphasis."},{ic:"💡",c:"rgba(45,156,219,.06)",bc:"rgba(45,156,219,.18)",t:"#7ed3f7",msg:"End with a strong question or call-to-action to engage observers."}].map((f,i)=>(
-                <div key={i} style={{display:"flex",gap:9,padding:"8px 11px",borderRadius:9,background:f.c,border:`1px solid ${f.bc}`}}>
-                  <span style={{fontSize:15,flexShrink:0}}>{f.ic}</span>
-                  <span style={{fontSize:11.5,fontWeight:600,color:f.t,lineHeight:1.5}}>{f.msg}</span>
-                </div>
-              ))}
+              ) : (
+                [
+                  {
+                    ic: "✅",
+                    c: "rgba(0,195,122,.08)",
+                    bc: "rgba(0,195,122,.2)",
+                    t: "#5ee3b7",
+                    msg: "Strong opening with clear thesis statement established.",
+                  },
+                  {
+                    ic: "✅",
+                    c: "rgba(0,195,122,.08)",
+                    bc: "rgba(0,195,122,.2)",
+                    t: "#5ee3b7",
+                    msg: "Good use of evidence to support main arguments.",
+                  },
+                  {
+                    ic: "⚠️",
+                    c: "rgba(246,166,35,.06)",
+                    bc: "rgba(246,166,35,.18)",
+                    t: "#fcd18e",
+                    msg: "Consider slowing down during key points for emphasis.",
+                  },
+                  {
+                    ic: "💡",
+                    c: "rgba(45,156,219,.06)",
+                    bc: "rgba(45,156,219,.18)",
+                    t: "#7ed3f7",
+                    msg: "End with a strong question or call-to-action to engage observers.",
+                  },
+                ].map((f, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      display: "flex",
+                      gap: 9,
+                      padding: "8px 11px",
+                      borderRadius: 9,
+                      background: f.c,
+                      border: `1px solid ${f.bc}`,
+                    }}
+                  >
+                    <span style={{ fontSize: 15, flexShrink: 0 }}>{f.ic}</span>
+                    <span
+                      style={{
+                        fontSize: 11.5,
+                        fontWeight: 600,
+                        color: f.t,
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {f.msg}
+                    </span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
-          <div className="a-sec" style={{animationDelay:".22s"}}>
+          <div className="a-sec" style={{ animationDelay: ".22s" }}>
             <div className="a-sec-title">Verdict</div>
-            <div style={{padding:"12px 14px",borderRadius:11,border:"1.5px solid rgba(0,195,122,.35)",background:"rgba(0,195,122,.07)",textAlign:"center"}}>
-              <div style={{fontSize:18,fontWeight:900,color:"#5ee3b7",marginBottom:2}}>🏅 {overall>=85?"Outstanding Seminar":overall>=70?"Strong Presentation":"Good Effort — Keep Practising"}</div>
-              <div style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,.45)"}}>Overall score: {overall}/100</div>
+            <div
+              style={{
+                padding: "12px 14px",
+                borderRadius: 11,
+                border: "1.5px solid rgba(0,195,122,.35)",
+                background: "rgba(0,195,122,.07)",
+                textAlign: "center",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 18,
+                  fontWeight: 900,
+                  color: "#5ee3b7",
+                  marginBottom: 2,
+                }}
+              >
+                🏅{" "}
+                {overall >= 85
+                  ? "Outstanding Seminar"
+                  : overall >= 70
+                    ? "Strong Presentation"
+                    : "Good Effort — Keep Practising"}
+              </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: "rgba(255,255,255,.45)",
+                }}
+              >
+                Overall score: {overall}/100
+              </div>
             </div>
           </div>
         </div>
         <div className="analysis-foot">
-          <button className="btn-s" style={{background:"rgba(255,255,255,.04)",borderColor:"rgba(255,255,255,.1)",color:"rgba(255,255,255,.5)"}} onClick={onClose}>Close</button>
-          {onDownload&&<button className="btn-p" style={{width:"auto",padding:"7px 15px",fontSize:12}} onClick={onDownload}>📥 Download Report</button>}
+          <button
+            className="btn-s"
+            style={{
+              background: "rgba(255,255,255,.04)",
+              borderColor: "rgba(255,255,255,.1)",
+              color: "rgba(255,255,255,.5)",
+            }}
+            onClick={onClose}
+          >
+            Close
+          </button>
+          {onDownload && (
+            <button
+              className="btn-p"
+              style={{ width: "auto", padding: "7px 15px", fontSize: 12 }}
+              onClick={onDownload}
+            >
+              📥 Download Report
+            </button>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-function MicPreviewModal({config,onConfirm,onBack}) {
-  const [micGranted,setMicGranted]=useState(false);const [micStream,setMicStream]=useState(null);
-  const [micChecking,setMicChecking]=useState(false);const [joining,setJoining]=useState(false);const [joinProgress,setJoinProgress]=useState(0);
-  const {show:toast$,node:toastNode}=useToast();
-  async function requestMic(){
+function MicPreviewModal({ config, onConfirm, onBack }) {
+  const [micGranted, setMicGranted] = useState(false);
+  const [micStream, setMicStream] = useState(null);
+  const [micChecking, setMicChecking] = useState(false);
+  const [joining, setJoining] = useState(false);
+  const [joinProgress, setJoinProgress] = useState(0);
+  const { show: toast$, node: toastNode } = useToast();
+  async function requestMic() {
     setMicChecking(true);
-    try { const s=await navigator.mediaDevices.getUserMedia({audio:true,video:false});setMicStream(s);setMicGranted(true);toast$("🎤 Microphone active","success"); }
-    catch { toast$("Mic permission denied","error"); }
-    finally { setMicChecking(false); }
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: false,
+      });
+      setMicStream(s);
+      setMicGranted(true);
+      toast$("🎤 Microphone active", "success");
+    } catch {
+      toast$("Mic permission denied", "error");
+    } finally {
+      setMicChecking(false);
+    }
   }
-  async function handleConfirm(){
+  async function handleConfirm() {
     setJoining(true);
-    for (let p=0;p<=100;p+=25){await new Promise(r=>setTimeout(r,120));setJoinProgress(p);}
-    setJoining(false);onConfirm({...config,stream:micStream,micOn:micGranted});
+    for (let p = 0; p <= 100; p += 25) {
+      await new Promise((r) => setTimeout(r, 120));
+      setJoinProgress(p);
+    }
+    setJoining(false);
+    onConfirm({ ...config, stream: micStream, micOn: micGranted });
   }
-  const presenterColor=avColor(config.name||"U");
+  const presenterColor = avColor(config.name || "U");
   return (
     <div className="overlay">
-      <div className="modal" style={{maxWidth:400,background:"#0c1422",border:"1px solid rgba(255,255,255,.1)"}}>
-        <div style={{background:"linear-gradient(135deg,#060e1c,#081a10)",padding:"22px 18px",textAlign:"center",flexShrink:0}}>
-          <div style={{width:60,height:60,borderRadius:"50%",background:`${presenterColor}22`,border:`2px solid ${presenterColor}44`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,fontWeight:800,color:presenterColor,margin:"0 auto 10px"}}>{avInit(config.name||"?")}</div>
-          <div style={{fontSize:15,fontWeight:800,color:"#fff",marginBottom:3}}>{config.name}</div>
-          <div style={{fontSize:10.5,color:"rgba(255,255,255,.4)",marginBottom:2}}>{config.seminarMode==="prepare"?"🤖 AI Preparation Mode":"🎙️ Seminar Presenter"}</div>
-          {config.subject&&<div style={{fontSize:10,color:"rgba(255,255,255,.28)"}}>📚 {config.subject}{config.unit?` · ${config.unit}`:""}</div>}
+      <div
+        className="modal"
+        style={{
+          maxWidth: 400,
+          background: "#0c1422",
+          border: "1px solid rgba(255,255,255,.1)",
+        }}
+      >
+        <div
+          style={{
+            background: "linear-gradient(135deg,#060e1c,#081a10)",
+            padding: "22px 18px",
+            textAlign: "center",
+            flexShrink: 0,
+          }}
+        >
+          <div
+            style={{
+              width: 60,
+              height: 60,
+              borderRadius: "50%",
+              background: `${presenterColor}22`,
+              border: `2px solid ${presenterColor}44`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 22,
+              fontWeight: 800,
+              color: presenterColor,
+              margin: "0 auto 10px",
+            }}
+          >
+            {avInit(config.name || "?")}
+          </div>
+          <div
+            style={{
+              fontSize: 15,
+              fontWeight: 800,
+              color: "#fff",
+              marginBottom: 3,
+            }}
+          >
+            {config.name}
+          </div>
+          <div
+            style={{
+              fontSize: 10.5,
+              color: "rgba(255,255,255,.4)",
+              marginBottom: 2,
+            }}
+          >
+            {config.seminarMode === "prepare"
+              ? "🤖 AI Preparation Mode"
+              : "🎙️ Seminar Presenter"}
+          </div>
+          {config.subject && (
+            <div style={{ fontSize: 10, color: "rgba(255,255,255,.28)" }}>
+              📚 {config.subject}
+              {config.unit ? ` · ${config.unit}` : ""}
+            </div>
+          )}
         </div>
-        <div className="mb" style={{background:"#0c1422"}}>
-          {config.topic&&<div style={{padding:"9px 12px",borderRadius:10,background:"rgba(0,195,122,.07)",border:"1px solid rgba(0,195,122,.18)",marginBottom:12,fontSize:12,fontWeight:700,color:"#e8ecf2",lineHeight:1.4}}>🎓 "{config.topic}"</div>}
-          <div style={{padding:"12px 13px",borderRadius:12,border:`1.5px solid ${micGranted?"rgba(0,195,122,.4)":"rgba(255,255,255,.12)"}`,background:micGranted?"rgba(0,195,122,.07)":"rgba(255,255,255,.04)",marginBottom:10,transition:"all .2s"}}>
-            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:micGranted?0:10}}>
-              <div style={{width:36,height:36,borderRadius:10,background:micGranted?"rgba(0,195,122,.2)":"rgba(255,255,255,.08)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>{micGranted?"✅":"🎤"}</div>
-              <div style={{flex:1}}>
-                <div style={{fontSize:12,fontWeight:700,color:micGranted?"#5ee3b7":"#e8ecf2"}}>{micGranted?"Microphone Active":"Microphone Required"}</div>
-                <div style={{fontSize:10.5,color:"rgba(255,255,255,.4)"}}>{micGranted?"Voice transcription enabled":"Enable your mic to continue"}</div>
+        <div className="mb" style={{ background: "#0c1422" }}>
+          {config.topic && (
+            <div
+              style={{
+                padding: "9px 12px",
+                borderRadius: 10,
+                background: "rgba(0,195,122,.07)",
+                border: "1px solid rgba(0,195,122,.18)",
+                marginBottom: 12,
+                fontSize: 12,
+                fontWeight: 700,
+                color: "#e8ecf2",
+                lineHeight: 1.4,
+              }}
+            >
+              🎓 "{config.topic}"
+            </div>
+          )}
+          <div
+            style={{
+              padding: "12px 13px",
+              borderRadius: 12,
+              border: `1.5px solid ${micGranted ? "rgba(0,195,122,.4)" : "rgba(255,255,255,.12)"}`,
+              background: micGranted
+                ? "rgba(0,195,122,.07)"
+                : "rgba(255,255,255,.04)",
+              marginBottom: 10,
+              transition: "all .2s",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                marginBottom: micGranted ? 0 : 10,
+              }}
+            >
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 10,
+                  background: micGranted
+                    ? "rgba(0,195,122,.2)"
+                    : "rgba(255,255,255,.08)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 16,
+                  flexShrink: 0,
+                }}
+              >
+                {micGranted ? "✅" : "🎤"}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: micGranted ? "#5ee3b7" : "#e8ecf2",
+                  }}
+                >
+                  {micGranted ? "Microphone Active" : "Microphone Required"}
+                </div>
+                <div style={{ fontSize: 10.5, color: "rgba(255,255,255,.4)" }}>
+                  {micGranted
+                    ? "Voice transcription enabled"
+                    : "Enable your mic to continue"}
+                </div>
               </div>
             </div>
-            {!micGranted&&<button className="btn-p" onClick={requestMic} disabled={micChecking} style={{marginTop:2,fontSize:12}}>{micChecking?<><span className="loader-spin"/>Checking…</>:"🎤 Allow Microphone Access"}</button>}
+            {!micGranted && (
+              <button
+                className="btn-p"
+                onClick={requestMic}
+                disabled={micChecking}
+                style={{ marginTop: 2, fontSize: 12 }}
+              >
+                {micChecking ? (
+                  <>
+                    <span className="loader-spin" />
+                    Checking…
+                  </>
+                ) : (
+                  "🎤 Allow Microphone Access"
+                )}
+              </button>
+            )}
           </div>
         </div>
-        <div className="mf" style={{borderColor:"rgba(255,255,255,.08)",background:"#0c1422",flexDirection:"column",gap:8}}>
-          <button className="btn-p" onClick={handleConfirm} disabled={joining||!micGranted} style={{fontSize:13}}>
-            {joining?<><span className="loader-spin"/>{joinProgress>0?`Loading ${joinProgress}%`:"Launching…"}</>:config.seminarMode==="prepare"?"🤖 Enter AI Coach Room":"🎙️ Enter Seminar Room"}
+        <div
+          className="mf"
+          style={{
+            borderColor: "rgba(255,255,255,.08)",
+            background: "#0c1422",
+            flexDirection: "column",
+            gap: 8,
+          }}
+        >
+          <button
+            className="btn-p"
+            onClick={handleConfirm}
+            disabled={joining || !micGranted}
+            style={{ fontSize: 13 }}
+          >
+            {joining ? (
+              <>
+                <span className="loader-spin" />
+                {joinProgress > 0 ? `Loading ${joinProgress}%` : "Launching…"}
+              </>
+            ) : config.seminarMode === "prepare" ? (
+              "🤖 Enter AI Coach Room"
+            ) : (
+              "🎙️ Enter Seminar Room"
+            )}
           </button>
-          {joinProgress>0&&<div className="lo-progress"><div className="lo-progress-fill" style={{width:`${joinProgress}%`}}/></div>}
-          <button className="btn-s" onClick={onBack} disabled={joining} style={{width:"100%",justifyContent:"center",background:"rgba(255,255,255,.04)",borderColor:"rgba(255,255,255,.1)",color:"rgba(255,255,255,.5)"}}>← Back</button>
+          {joinProgress > 0 && (
+            <div className="lo-progress">
+              <div
+                className="lo-progress-fill"
+                style={{ width: `${joinProgress}%` }}
+              />
+            </div>
+          )}
+          <button
+            className="btn-s"
+            onClick={onBack}
+            disabled={joining}
+            style={{
+              width: "100%",
+              justifyContent: "center",
+              background: "rgba(255,255,255,.04)",
+              borderColor: "rgba(255,255,255,.1)",
+              color: "rgba(255,255,255,.5)",
+            }}
+          >
+            ← Back
+          </button>
         </div>
         {toastNode}
       </div>
@@ -2441,27 +4095,36 @@ function MicPreviewModal({config,onConfirm,onBack}) {
 }
 
 // ─── SETUP ────────────────────────────────────────────────────────────────────
-function SeminarSetup({onBack,onLaunch}) {
+function SeminarSetup({ onBack, onLaunch }) {
   const { user } = useAuth();
   // Auto-fill name from user auth
-  const defaultName = user ? `${user.firstName||""} ${user.lastName||""}`.trim() : "";
-  const [name,setName]=useState(defaultName);
-  const [seminarMode,setSeminarMode]=useState("");
-  const [sessionSubMode,setSessionSubMode]=useState("");
-  const [subject,setSubject]=useState("");const [unit,setUnit]=useState("");
-  const [topic,setTopic]=useState("");const [custom,setCustom]=useState("");
-  const [seminarType,setSeminarType]=useState("instant");
-  const [showSchedule,setShowSchedule]=useState(false);const [scheduled,setScheduled]=useState(false);const [scheduledInfo,setScheduledInfo]=useState(null);
-  const [copied,setCopied]=useState(false);
-  const [showMicPreview,setShowMicPreview]=useState(false);
-  const [showObsConfirm,setShowObsConfirm]=useState(false);
-  const [joining,setJoining]=useState(false);const [joinProgress,setJoinProgress]=useState(0);
-  const [joinId,setJoinId]=useState("");const [selectedSession,setSelectedSession]=useState(null);
-  const [onlineSessions,setOnlineSessions]=useState([]);
-  const roomId=useRef(genId());const roomLink=genRoomLink(roomId.current);
-  const {show:toast$,node:toastNode}=useToast();
-  const finalTopic=topic==="__custom__"?custom:topic;
-  const availableUnits=subject?SUBJECT_UNITS[subject]||[]:[];
+  const defaultName = user
+    ? `${user.firstName || ""} ${user.lastName || ""}`.trim()
+    : "";
+  const [name, setName] = useState(defaultName);
+  const [seminarMode, setSeminarMode] = useState("");
+  const [sessionSubMode, setSessionSubMode] = useState("");
+  const [subject, setSubject] = useState("");
+  const [unit, setUnit] = useState("");
+  const [topic, setTopic] = useState("");
+  const [custom, setCustom] = useState("");
+  const [seminarType, setSeminarType] = useState("instant");
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [scheduled, setScheduled] = useState(false);
+  const [scheduledInfo, setScheduledInfo] = useState(null);
+  const [copied, setCopied] = useState(false);
+  const [showMicPreview, setShowMicPreview] = useState(false);
+  const [showObsConfirm, setShowObsConfirm] = useState(false);
+  const [joining, setJoining] = useState(false);
+  const [joinProgress, setJoinProgress] = useState(0);
+  const [joinId, setJoinId] = useState("");
+  const [selectedSession, setSelectedSession] = useState(null);
+  const [onlineSessions, setOnlineSessions] = useState([]);
+  const roomId = useRef(genId());
+  const roomLink = genRoomLink(roomId.current);
+  const { show: toast$, node: toastNode } = useToast();
+  const finalTopic = topic === "__custom__" ? custom : topic;
+  const availableUnits = subject ? SUBJECT_UNITS[subject] || [] : [];
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -2478,60 +4141,161 @@ function SeminarSetup({onBack,onLaunch}) {
   }, []);
 
   // Update name if user loads after render
-  useEffect(()=>{
-    if(user&&!name){setName(`${user.firstName||""} ${user.lastName||""}`.trim());}
-  },[name,user]);
+  useEffect(() => {
+    if (user && !name) {
+      setName(`${user.firstName || ""} ${user.lastName || ""}`.trim());
+    }
+  }, [name, user]);
 
-  useEffect(()=>{
-    const load=()=>{const s=getCommunitySessions().filter(s=>s.type==="seminar");setOnlineSessions(s);};
-    load();window.addEventListener("storage",load);return()=>window.removeEventListener("storage",load);
-  },[]);
+  useEffect(() => {
+    const load = () => {
+      const s = getCommunitySessions().filter((s) => s.type === "seminar");
+      setOnlineSessions(s);
+    };
+    load();
+    window.addEventListener("storage", load);
+    return () => window.removeEventListener("storage", load);
+  }, []);
 
-  const copyLink=()=>{navigator.clipboard.writeText(roomLink);setCopied(true);setTimeout(()=>setCopied(false),2200);};
-  const presenterSteps=[{label:"Enter your name",done:name.trim().length>0},{label:"Select subject & unit",done:!!subject&&!!unit},{label:"Select seminar topic",done:!!finalTopic}];
-  const canLaunchPresenter=presenterSteps.every(s=>s.done);
-  const canJoinObserver=!!(selectedSession||joinId.trim().length>=4);
-
-  const leftFeatures=seminarMode==="prepare"?[
-    {ic:"🎙️",t:"Voice Transcript",d:"Your speech transcribed live"},{ic:"🤖",t:"AI Coach Chat",d:"Ask anything — voice or text"},
-    {ic:"📋",t:"FAQ Notes",d:"AI answers saved as notes"},{ic:"▶️",t:"Demo Mode",d:"Practice with AI feedback"},
-  ]:sessionSubMode==="observer"?[
-    {ic:"👁️",t:"Watch Live",d:"See the presenter's delivery"},{ic:"💬",t:"Ask in Chat",d:"Send questions to the presenter"},
-    {ic:"🎤",t:"Raise Hand",d:"Request mic to speak verbally"},{ic:"📊",t:"Session Feed",d:"See all ongoing seminars"},
-  ]:[
-    {ic:"🖥️",t:"Screen Share",d:"Present your content live"},{ic:"🎙️",t:"Live Transcript",d:"AI transcribes your speech"},
-    {ic:"🤖",t:"AI Moderator",d:"Intro, tips, and report"},{ic:"📊",t:"Auto Report",d:"Full performance analysis"},
+  const copyLink = () => {
+    navigator.clipboard.writeText(roomLink);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2200);
+  };
+  const presenterSteps = [
+    { label: "Enter your name", done: name.trim().length > 0 },
+    { label: "Select subject & unit", done: !!subject && !!unit },
+    { label: "Select seminar topic", done: !!finalTopic },
   ];
+  const canLaunchPresenter = presenterSteps.every((s) => s.done);
+  const canJoinObserver = !!(selectedSession || joinId.trim().length >= 4);
 
-  async function handleObsJoin(){
+  const leftFeatures =
+    seminarMode === "prepare"
+      ? [
+          {
+            ic: "mic",
+            t: "Voice Transcript",
+            d: "Your speech transcribed live",
+          },
+          { ic: "ai", t: "AI Coach Chat", d: "Ask anything — voice or text" },
+          { ic: "clipboard", t: "FAQ Notes", d: "AI answers saved as notes" },
+          { ic: "play", t: "Demo Mode", d: "Practice with AI feedback" },
+        ]
+      : sessionSubMode === "observer"
+        ? [
+            { ic: "eye", t: "Watch Live", d: "See the presenter's delivery" },
+            {
+              ic: "message",
+              t: "Ask in Chat",
+              d: "Send questions to the presenter",
+            },
+            { ic: "mic", t: "Raise Hand", d: "Request mic to speak verbally" },
+            { ic: "chart", t: "Session Feed", d: "See all ongoing seminars" },
+          ]
+        : [
+            {
+              ic: "monitor",
+              t: "Screen Share",
+              d: "Present your content live",
+            },
+            {
+              ic: "mic",
+              t: "Live Transcript",
+              d: "AI transcribes your speech",
+            },
+            { ic: "ai", t: "AI Moderator", d: "Intro, tips, and report" },
+            { ic: "chart", t: "Auto Report", d: "Full performance analysis" },
+          ];
+
+  async function handleObsJoin() {
     setJoining(true);
-    for (let p=0;p<=100;p+=20){await new Promise(r=>setTimeout(r,150));setJoinProgress(p);}
-    setJoining(false);setShowObsConfirm(false);setJoinProgress(0);
-    onLaunch({seminarMode:"session",sessionSubMode:"observer",name,role:"Observer",subject:"",unit:"",topic:"",roomId:roomId.current,roomLink,stream:null,micOn:false,joinSession:selectedSession||(joinId.trim()?{id:joinId.trim(),title:"Seminar Session"}:null)});
+    for (let p = 0; p <= 100; p += 20) {
+      await new Promise((r) => setTimeout(r, 150));
+      setJoinProgress(p);
+    }
+    setJoining(false);
+    setShowObsConfirm(false);
+    setJoinProgress(0);
+    onLaunch({
+      seminarMode: "session",
+      sessionSubMode: "observer",
+      name,
+      role: "Observer",
+      subject: "",
+      unit: "",
+      topic: "",
+      roomId: roomId.current,
+      roomLink,
+      stream: null,
+      micOn: false,
+      joinSession:
+        selectedSession ||
+        (joinId.trim()
+          ? { id: joinId.trim(), title: "Seminar Session" }
+          : null),
+    });
   }
 
   return (
     <div className="sp-setup route-enter">
       <div className="sp-left">
-        <div className="sp-grid-lines"/><div className="sp-glow1"/><div className="sp-glow2"/>
+        <div className="sp-grid-lines" />
+        <div className="sp-glow1" />
+        <div className="sp-glow2" />
         <div className="sp-left-inner">
-          <div className="sp-logo"><div className="sp-logo-ico">🎓</div><span className="sp-logo-name">SeminarArena</span></div>
-          <div className="sp-badge"><div className="sp-badge-dot"/>Seminar Setup</div>
-          <h2 className="sp-h1">Your stage,<br/><span className="hl">your seminar.</span></h2>
-          <p className="sp-desc">AI-facilitated sessions with voice transcription, screen sharing, observer chat & full performance reports.</p>
+          <div className="sp-logo">
+            <div className="sp-logo-ico">
+              <SeminarIcon name="graduation" />
+            </div>
+            <span className="sp-logo-name">SeminarArena</span>
+          </div>
+          <div className="sp-badge">
+            <div className="sp-badge-dot" />
+            Seminar Setup
+          </div>
+          <h2 className="sp-h1">
+            Your stage,
+            <br />
+            <span className="hl">your seminar.</span>
+          </h2>
+          <p className="sp-desc">
+            AI-facilitated sessions with voice transcription, screen sharing,
+            observer chat & full performance reports.
+          </p>
           <div className="sp-features">
-            {leftFeatures.map((f,i)=>(
-              <div key={f.t} className="sp-feat" style={{animationDelay:`${.1+i*.06}s`}}>
-                <div className="sp-feat-ic">{f.ic}</div>
-                <div><div className="sp-feat-t">{f.t}</div><div className="sp-feat-d">{f.d}</div></div>
+            {leftFeatures.map((f, i) => (
+              <div
+                key={f.t}
+                className="sp-feat"
+                style={{ animationDelay: `${0.1 + i * 0.06}s` }}
+              >
+                <div className="sp-feat-ic">
+                  <SeminarIcon name={f.ic} />
+                </div>
+                <div>
+                  <div className="sp-feat-t">{f.t}</div>
+                  <div className="sp-feat-d">{f.d}</div>
+                </div>
               </div>
             ))}
           </div>
-          {(subject||finalTopic)&&(
+          {(subject || finalTopic) && (
             <div className="ctx-chip">
               <div className="ctx-chip-lbl">Session Context</div>
-              {subject&&<div className="ctx-chip-val">📚 {subject}{unit?` · ${unit}`:""}</div>}
-              {finalTopic&&<div className="ctx-chip-sub">{finalTopic.length>44?finalTopic.slice(0,44)+"…":finalTopic}</div>}
+              {subject && (
+                <div className="ctx-chip-val">
+                  📚 {subject}
+                  {unit ? ` · ${unit}` : ""}
+                </div>
+              )}
+              {finalTopic && (
+                <div className="ctx-chip-sub">
+                  {finalTopic.length > 44
+                    ? finalTopic.slice(0, 44) + "…"
+                    : finalTopic}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -2540,169 +4304,649 @@ function SeminarSetup({onBack,onLaunch}) {
       <div className="sp-right">
         <div className="sp-right-scroll">
           <div className="sp-right-inner">
-            {onBack&&<button className="back-btn" onClick={onBack}>← Back</button>}
-            <h2 className="setup-h">🎓 Seminar Setup</h2>
-            <p className="setup-sub">Choose your mode — prepare alone with AI, run a live seminar, or join one as an observer.</p>
+            {onBack && (
+              <button className="back-btn" onClick={onBack}>
+                ← Back
+              </button>
+            )}
+            <h2 className="setup-h">
+              <SeminarIcon name="graduation" /> Seminar Setup
+            </h2>
+            <p className="setup-sub">
+              Choose your mode — prepare alone with AI, run a live seminar, or
+              join one as an observer.
+            </p>
             <div className="sec-div">Choose Mode</div>
             <div className="module-grid fi">
-              {[{id:"prepare",ic:"🤖",t:"Prepare with AI",d:"AI coach helps you rehearse, build outline, transcribe speech and practice demo."},{id:"session",ic:"🔴",t:"Seminar Session",d:"Start or join a live seminar with AI moderator, screen share & full report."}].map(m=>(
-                <div key={m.id} className={`module-card${seminarMode===m.id?" sel":""}`} onClick={()=>{setSeminarMode(m.id);setSessionSubMode("");}}>
-                  <div className="mod-ic">{m.ic}</div>
-                  <div><div className="mod-title">{m.t}</div><div className="mod-desc">{m.d}</div></div>
+              {[
+                {
+                  id: "prepare",
+                  ic: "ai",
+                  t: "Prepare with AI",
+                  d: "AI coach helps you rehearse, build outline, transcribe speech and practice demo.",
+                },
+                {
+                  id: "session",
+                  ic: "presentation",
+                  t: "Seminar Session",
+                  d: "Start or join a live seminar with AI moderator, screen share & full report.",
+                },
+              ].map((m) => (
+                <div
+                  key={m.id}
+                  className={`module-card${seminarMode === m.id ? " sel" : ""}`}
+                  onClick={() => {
+                    setSeminarMode(m.id);
+                    setSessionSubMode("");
+                  }}
+                >
+                  <div className="mod-ic">
+                    <SeminarIcon name={m.ic} />
+                  </div>
+                  <div>
+                    <div className="mod-title">{m.t}</div>
+                    <div className="mod-desc">{m.d}</div>
+                  </div>
                 </div>
               ))}
             </div>
 
-            {seminarMode==="session"&&(
-              <><div className="sec-div">I want to…</div>
-              <div className="submode-grid fi">
-                <div className={`submode-card${sessionSubMode==="presenter"?" sel":""}`} onClick={()=>setSessionSubMode("presenter")}>
-                  <div className="submode-ic">🎙️</div><div className="submode-title">Present a Seminar</div>
-                  <div className="submode-desc">Start a room, share your screen, deliver your seminar.</div>
-                </div>
-                <div className={`submode-card${sessionSubMode==="observer"?" sel":""}`} onClick={()=>setSessionSubMode("observer")}>
-                  <div className="submode-ic">👁️</div><div className="submode-title">Join as Observer</div>
-                  <div className="submode-desc">Watch live seminars, ask questions in chat.</div>
-                </div>
-              </div></>
-            )}
-
-            {seminarMode==="session"&&sessionSubMode==="observer"&&(
-              <><div className="sec-div">Join a Session</div>
-              <div className="obs-join-section">
-                <div className="obs-join-title">🔗 Join with Room Link or ID</div>
-                <div className="obs-join-input-row">
-                  <input className="finput" placeholder="Paste room link or enter Room ID…" style={{flex:1}} value={joinId} onChange={e=>setJoinId(e.target.value)}/>
-                  <button className="btn-s" onClick={()=>{if(joinId.trim())toast$("Joining room…","info");}}>Join</button>
-                </div>
-                <div className="obs-join-or">or</div>
-                <div style={{fontSize:10.5,fontWeight:700,color:"var(--t2)",marginBottom:8}}>📡 Live & Upcoming Sessions</div>
-                {onlineSessions.length===0
-                  ?<div className="ongoing-empty">No active sessions. Check back soon.</div>
-                  :<div className="ongoing-list">{onlineSessions.map(s=>(
-                    <div key={s.id} className={`ongoing-card${selectedSession?.id===s.id?" sel":""}`} onClick={()=>setSelectedSession(selectedSession?.id===s.id?null:s)}>
-                      <div className="ongoing-live-dot" style={{background:s.status==="live"?"var(--red)":"var(--amb)"}}/>
-                      <div className="ongoing-info">
-                        <div className="ongoing-topic">{s.title}</div>
-                        <div className="ongoing-meta">📚 {s.subject||"—"}{s.unit?` · ${s.unit}`:""} · {s.presenterName?`by ${s.presenterName} · `:""}{s.status==="live"?"🔴 Live now":`📅 ${s.date||""} ${s.time||""}`}</div>
-                      </div>
-                      <div className="ongoing-count" style={{background:s.status==="live"?"rgba(229,62,62,.1)":"rgba(246,166,35,.1)",color:s.status==="live"?"var(--red)":"var(--amb)"}}>
-                        {s.status==="live"?(s.observerCount?`${s.observerCount} 👁`:"● LIVE"):"⏰"}
-                      </div>
+            {seminarMode === "session" && (
+              <>
+                <div className="sec-div">I want to…</div>
+                <div className="submode-grid fi">
+                  <div
+                    className={`submode-card${sessionSubMode === "presenter" ? " sel" : ""}`}
+                    onClick={() => setSessionSubMode("presenter")}
+                  >
+                    <div className="submode-ic">
+                      <SeminarIcon name="mic" />
                     </div>
-                  ))}</div>
-                }
-              </div>
-              <div className="sec-div">Your Name</div>
-              <div className="fi"><label className="fl">Display Name</label><input className="finput" placeholder="e.g. Alex (Observer)" value={name} onChange={e=>setName(e.target.value)} maxLength={40}/></div>
-              <div style={{marginTop:14,marginBottom:10}}><button className="btn-p" onClick={()=>setShowObsConfirm(true)} disabled={!canJoinObserver||!name.trim()}>👁️ Join as Observer</button></div></>
+                    <div className="submode-title">Present a Seminar</div>
+                    <div className="submode-desc">
+                      Start a room, share your screen, deliver your seminar.
+                    </div>
+                  </div>
+                  <div
+                    className={`submode-card${sessionSubMode === "observer" ? " sel" : ""}`}
+                    onClick={() => setSessionSubMode("observer")}
+                  >
+                    <div className="submode-ic">
+                      <SeminarIcon name="eye" />
+                    </div>
+                    <div className="submode-title">Join as Observer</div>
+                    <div className="submode-desc">
+                      Watch live seminars, ask questions in chat.
+                    </div>
+                  </div>
+                </div>
+              </>
             )}
 
-            {(seminarMode==="prepare"||(seminarMode==="session"&&sessionSubMode==="presenter"))&&(
+            {seminarMode === "session" && sessionSubMode === "observer" && (
+              <>
+                <div className="sec-div">Join a Session</div>
+                <div className="obs-join-section">
+                  <div className="obs-join-title">
+                    🔗 Join with Room Link or ID
+                  </div>
+                  <div className="obs-join-input-row">
+                    <input
+                      className="finput"
+                      placeholder="Paste room link or enter Room ID…"
+                      style={{ flex: 1 }}
+                      value={joinId}
+                      onChange={(e) => setJoinId(e.target.value)}
+                    />
+                    <button
+                      className="btn-s"
+                      onClick={() => {
+                        if (joinId.trim()) toast$("Joining room…", "info");
+                      }}
+                    >
+                      Join
+                    </button>
+                  </div>
+                  <div className="obs-join-or">or</div>
+                  <div
+                    style={{
+                      fontSize: 10.5,
+                      fontWeight: 700,
+                      color: "var(--t2)",
+                      marginBottom: 8,
+                    }}
+                  >
+                    📡 Live & Upcoming Sessions
+                  </div>
+                  {onlineSessions.length === 0 ? (
+                    <div className="ongoing-empty">
+                      No active sessions. Check back soon.
+                    </div>
+                  ) : (
+                    <div className="ongoing-list">
+                      {onlineSessions.map((s) => (
+                        <div
+                          key={s.id}
+                          className={`ongoing-card${selectedSession?.id === s.id ? " sel" : ""}`}
+                          onClick={() =>
+                            setSelectedSession(
+                              selectedSession?.id === s.id ? null : s,
+                            )
+                          }
+                        >
+                          <div
+                            className="ongoing-live-dot"
+                            style={{
+                              background:
+                                s.status === "live"
+                                  ? "var(--red)"
+                                  : "var(--amb)",
+                            }}
+                          />
+                          <div className="ongoing-info">
+                            <div className="ongoing-topic">{s.title}</div>
+                            <div className="ongoing-meta">
+                              📚 {s.subject || "—"}
+                              {s.unit ? ` · ${s.unit}` : ""} ·{" "}
+                              {s.presenterName
+                                ? `by ${s.presenterName} · `
+                                : ""}
+                              {s.status === "live"
+                                ? "🔴 Live now"
+                                : `📅 ${s.date || ""} ${s.time || ""}`}
+                            </div>
+                          </div>
+                          <div
+                            className="ongoing-count"
+                            style={{
+                              background:
+                                s.status === "live"
+                                  ? "rgba(229,62,62,.1)"
+                                  : "rgba(246,166,35,.1)",
+                              color:
+                                s.status === "live"
+                                  ? "var(--red)"
+                                  : "var(--amb)",
+                            }}
+                          >
+                            {s.status === "live"
+                              ? s.observerCount
+                                ? `${s.observerCount} 👁`
+                                : "● LIVE"
+                              : "⏰"}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="sec-div">Your Name</div>
+                <div className="fi">
+                  <label className="fl">Display Name</label>
+                  <input
+                    className="finput"
+                    placeholder="e.g. Alex (Observer)"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    maxLength={40}
+                  />
+                </div>
+                <div style={{ marginTop: 14, marginBottom: 10 }}>
+                  <button
+                    className="btn-p"
+                    onClick={() => setShowObsConfirm(true)}
+                    disabled={!canJoinObserver || !name.trim()}
+                  >
+                    👁️ Join as Observer
+                  </button>
+                </div>
+              </>
+            )}
+
+            {(seminarMode === "prepare" ||
+              (seminarMode === "session" &&
+                sessionSubMode === "presenter")) && (
               <>
                 <div className="sec-div">Your Identity</div>
-                <div className="fi"><label className="fl">Your Name</label><input className="finput" placeholder="e.g. Alex Johnson" value={name} onChange={e=>setName(e.target.value)} maxLength={40}/></div>
+                <div className="fi">
+                  <label className="fl">Your Name</label>
+                  <input
+                    className="finput"
+                    placeholder="e.g. Alex Johnson"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    maxLength={40}
+                  />
+                </div>
                 <div className="sec-div">Academic Context</div>
                 <div className="fi-row fi">
-                  <div><label className="fl">Subject</label>
-                    <select className="finput" value={subject} onChange={e=>{setSubject(e.target.value);setUnit("");}}>
-                      <option value="">Select subject…</option>{SUBJECTS.map(s=><option key={s}>{s}</option>)}
+                  <div>
+                    <label className="fl">Subject</label>
+                    <select
+                      className="finput"
+                      value={subject}
+                      onChange={(e) => {
+                        setSubject(e.target.value);
+                        setUnit("");
+                      }}
+                    >
+                      <option value="">Select subject…</option>
+                      {SUBJECTS.map((s) => (
+                        <option key={s}>{s}</option>
+                      ))}
                     </select>
                   </div>
-                  <div><label className="fl">Unit / Module</label>
-                    <select className="finput" value={unit} onChange={e=>setUnit(e.target.value)} disabled={!subject}>
-                      <option value="">{subject?"Select unit…":"Subject first"}</option>
-                      {availableUnits.map(u=><option key={u}>{u}</option>)}
+                  <div>
+                    <label className="fl">Unit / Module</label>
+                    <select
+                      className="finput"
+                      value={unit}
+                      onChange={(e) => setUnit(e.target.value)}
+                      disabled={!subject}
+                    >
+                      <option value="">
+                        {subject ? "Select unit…" : "Subject first"}
+                      </option>
+                      {availableUnits.map((u) => (
+                        <option key={u}>{u}</option>
+                      ))}
                     </select>
                   </div>
                 </div>
                 <div className="sec-div">Seminar Topic</div>
                 <div className="fi">
-                  <select className="finput" value={topic} onChange={e=>setTopic(e.target.value)}>
+                  <select
+                    className="finput"
+                    value={topic}
+                    onChange={(e) => setTopic(e.target.value)}
+                  >
                     <option value="">Select a topic…</option>
-                    {TOPICS.map(t=><option key={t} value={t}>{t}</option>)}
-                    <option value="__custom__">✏️ Custom topic…</option>
+                    {TOPICS.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                    <option value="__custom__">Custom topic...</option>
                   </select>
                 </div>
-                {topic==="__custom__"&&<div className="fi"><input className="finput" placeholder="Enter your seminar topic…" value={custom} onChange={e=>setCustom(e.target.value)}/></div>}
-
-                {seminarMode==="session"&&sessionSubMode==="presenter"&&(
-                  <>
-                    <div className="sec-div">Session Timing</div>
-                    <div className="timing-grid fi">
-                      {[{id:"instant",ic:"⚡",t:"Start Now",d:"Launch immediately"},{id:"schedule",ic:"📅",t:"Schedule",d:"Plan for a future date"}].map(o=>(
-                        <div key={o.id} className={`timing-card${seminarType===o.id?" sel":""}`} onClick={()=>setSeminarType(o.id)}>
-                          <div className="timing-ic">{o.ic}</div><div><div className="timing-title">{o.t}</div><div className="timing-desc">{o.d}</div></div>
-                        </div>
-                      ))}
-                    </div>
-                    {seminarType==="schedule"&&(
-                      <div style={{padding:"11px 13px",borderRadius:11,background:"rgba(0,195,122,.04)",border:"1.5px solid rgba(0,195,122,.16)",marginBottom:10}}>
-                        {!scheduled?(<><div style={{fontSize:12,fontWeight:700,color:"var(--t1)",marginBottom:5}}>📅 Schedule & publish to community</div><div style={{fontSize:11,color:"var(--t2)",marginBottom:8}}>Observers in your group will see and can join.</div><button className="btn-s" style={{width:"100%",justifyContent:"center"}} onClick={()=>setShowSchedule(true)}>📅 Set Date & Time</button></>)
-                        :(<div style={{display:"flex",alignItems:"center",gap:9}}><span style={{fontSize:20}}>✅</span><div style={{flex:1}}><div style={{fontSize:11.5,fontWeight:800,color:"var(--em)"}}>Scheduled & Published</div><div style={{fontSize:10.5,color:"var(--t2)"}}>📅 {scheduledInfo?.date} at {scheduledInfo?.time}</div></div><button className="btn-s" style={{fontSize:10.5,padding:"3px 8px"}} onClick={()=>{setScheduled(false);setShowSchedule(true);}}>Edit</button></div>)}
-                      </div>
-                    )}
-                    <div className="link-box">
-                      <div className="link-lbl">🔗 Your Room Link — Share with Observers</div>
-                      <div className="link-row"><span className="link-val">{roomLink}</span><button className="copy-btn" onClick={copyLink}>{copied?"✓ Copied":"Copy"}</button></div>
-                      <div style={{display:"flex",gap:6,marginTop:7}}>
-                        <button className="btn-s" style={{flex:1,fontSize:11,justifyContent:"center"}} onClick={()=>{navigator.clipboard.writeText(roomLink);toast$("Link copied!","info");}}>📋 Copy</button>
-                        <button className="btn-s" style={{flex:1,fontSize:11,justifyContent:"center"}} onClick={()=>{if(navigator.share)navigator.share({title:"Join my seminar",url:roomLink});else copyLink();}}>↗ Share</button>
-                      </div>
-                    </div>
-                  </>
+                {topic === "__custom__" && (
+                  <div className="fi">
+                    <input
+                      className="finput"
+                      placeholder="Enter your seminar topic…"
+                      value={custom}
+                      onChange={(e) => setCustom(e.target.value)}
+                    />
+                  </div>
                 )}
-                <div style={{marginTop:14,marginBottom:10}}>
+
+                {seminarMode === "session" &&
+                  sessionSubMode === "presenter" && (
+                    <>
+                      <div className="sec-div">Session Timing</div>
+                      <div className="timing-grid fi">
+                        {[
+                          {
+                            id: "instant",
+                            ic: "zap",
+                            t: "Start Now",
+                            d: "Launch immediately",
+                          },
+                          {
+                            id: "schedule",
+                            ic: "calendar",
+                            t: "Schedule",
+                            d: "Plan for a future date",
+                          },
+                        ].map((o) => (
+                          <div
+                            key={o.id}
+                            className={`timing-card${seminarType === o.id ? " sel" : ""}`}
+                            onClick={() => setSeminarType(o.id)}
+                          >
+                            <div className="timing-ic">
+                              <SeminarIcon name={o.ic} />
+                            </div>
+                            <div>
+                              <div className="timing-title">{o.t}</div>
+                              <div className="timing-desc">{o.d}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      {seminarType === "schedule" && (
+                        <div
+                          style={{
+                            padding: "11px 13px",
+                            borderRadius: 11,
+                            background: "rgba(0,195,122,.04)",
+                            border: "1.5px solid rgba(0,195,122,.16)",
+                            marginBottom: 10,
+                          }}
+                        >
+                          {!scheduled ? (
+                            <>
+                              <div
+                                style={{
+                                  fontSize: 12,
+                                  fontWeight: 700,
+                                  color: "var(--t1)",
+                                  marginBottom: 5,
+                                }}
+                              >
+                                📅 Schedule & publish to community
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: 11,
+                                  color: "var(--t2)",
+                                  marginBottom: 8,
+                                }}
+                              >
+                                Observers in your group will see and can join.
+                              </div>
+                              <button
+                                className="btn-s"
+                                style={{
+                                  width: "100%",
+                                  justifyContent: "center",
+                                }}
+                                onClick={() => setShowSchedule(true)}
+                              >
+                                📅 Set Date & Time
+                              </button>
+                            </>
+                          ) : (
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 9,
+                              }}
+                            >
+                              <span style={{ fontSize: 20 }}>✅</span>
+                              <div style={{ flex: 1 }}>
+                                <div
+                                  style={{
+                                    fontSize: 11.5,
+                                    fontWeight: 800,
+                                    color: "var(--em)",
+                                  }}
+                                >
+                                  Scheduled & Published
+                                </div>
+                                <div
+                                  style={{ fontSize: 10.5, color: "var(--t2)" }}
+                                >
+                                  📅 {scheduledInfo?.date} at{" "}
+                                  {scheduledInfo?.time}
+                                </div>
+                              </div>
+                              <button
+                                className="btn-s"
+                                style={{ fontSize: 10.5, padding: "3px 8px" }}
+                                onClick={() => {
+                                  setScheduled(false);
+                                  setShowSchedule(true);
+                                }}
+                              >
+                                Edit
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      <div className="link-box">
+                        <div className="link-lbl">
+                          🔗 Your Room Link — Share with Observers
+                        </div>
+                        <div className="link-row">
+                          <span className="link-val">{roomLink}</span>
+                          <button className="copy-btn" onClick={copyLink}>
+                            {copied ? "✓ Copied" : "Copy"}
+                          </button>
+                        </div>
+                        <div style={{ display: "flex", gap: 6, marginTop: 7 }}>
+                          <button
+                            className="btn-s"
+                            style={{
+                              flex: 1,
+                              fontSize: 11,
+                              justifyContent: "center",
+                            }}
+                            onClick={() => {
+                              navigator.clipboard.writeText(roomLink);
+                              toast$("Link copied!", "info");
+                            }}
+                          >
+                            📋 Copy
+                          </button>
+                          <button
+                            className="btn-s"
+                            style={{
+                              flex: 1,
+                              fontSize: 11,
+                              justifyContent: "center",
+                            }}
+                            onClick={() => {
+                              if (navigator.share)
+                                navigator.share({
+                                  title: "Join my seminar",
+                                  url: roomLink,
+                                });
+                              else copyLink();
+                            }}
+                          >
+                            ↗ Share
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                <div style={{ marginTop: 14, marginBottom: 10 }}>
                   <div className="steps">
-                    {presenterSteps.map((s,i)=>{const done=s.done;const prev=presenterSteps.slice(0,i).every(x=>x.done);const act=!done&&prev;return(
-                      <div key={i} className={`step-r ${done?"done":act?"act":"pend"}`}><div className="step-num">{done?"✓":i+1}</div><div className="step-lbl">{s.label}</div></div>
-                    );})}
+                    {presenterSteps.map((s, i) => {
+                      const done = s.done;
+                      const prev = presenterSteps
+                        .slice(0, i)
+                        .every((x) => x.done);
+                      const act = !done && prev;
+                      return (
+                        <div
+                          key={i}
+                          className={`step-r ${done ? "done" : act ? "act" : "pend"}`}
+                        >
+                          <div className="step-num">{done ? "✓" : i + 1}</div>
+                          <div className="step-lbl">{s.label}</div>
+                        </div>
+                      );
+                    })}
                   </div>
                   {seminarType !== "schedule" && (
-                    <button className="btn-p" onClick={()=>setShowMicPreview(true)} disabled={!canLaunchPresenter}>
-                      {seminarMode==="prepare"?"🤖 Start AI Preparation":"🎙️ Launch Seminar Room"}
+                    <button
+                      className="btn-p"
+                      onClick={() => setShowMicPreview(true)}
+                      disabled={!canLaunchPresenter}
+                    >
+                      {seminarMode === "prepare"
+                        ? "🤖 Start AI Preparation"
+                        : "🎙️ Launch Seminar Room"}
                     </button>
                   )}
                 </div>
               </>
             )}
-            <div style={{height:20}}/>
+            <div style={{ height: 20 }} />
           </div>
         </div>
       </div>
 
-      {showSchedule&&<ScheduleSeminarModal config={{topic:finalTopic,subject,unit,roomLink}} onSchedule={info=>{setScheduledInfo(info);setScheduled(true);setShowSchedule(false);toast$("📅 Seminar scheduled & published!","success");}} onClose={()=>setShowSchedule(false)}/>}
-
-      {showMicPreview&&(
-        <MicPreviewModal
-          config={{seminarMode,sessionSubMode,name,subject,unit,topic:finalTopic,roomId:roomId.current,roomLink,date:scheduledInfo?.date,time:scheduledInfo?.time}}
-          onConfirm={cfg=>{
-            setShowMicPreview(false);
-            if(cfg.seminarMode==="session"&&cfg.sessionSubMode==="presenter"){
-              const ev={id:`sem-${Date.now()}`,title:cfg.topic,type:"seminar",date:new Date().toISOString().slice(0,10),startTime:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}),subject:cfg.subject,unit:cfg.unit,link:cfg.roomLink};
-              try{const ex=JSON.parse(localStorage.getItem("gradeup_cal_events_v3")||"[]");localStorage.setItem("gradeup_cal_events_v3",JSON.stringify([...ex,ev]));window.dispatchEvent(new StorageEvent("storage",{key:"gradeup_cal_events_v3"}));publishCommunitySession({...ev,roles:["Observer","Participant"],createdAt:new Date().toISOString(),status:"live"});}catch{}
-            }
-            onLaunch({...cfg,role:"Presenter",joinSession:null});
+      {showSchedule && (
+        <ScheduleSeminarModal
+          config={{ topic: finalTopic, subject, unit, roomLink }}
+          onSchedule={(info) => {
+            setScheduledInfo(info);
+            setScheduled(true);
+            setShowSchedule(false);
+            toast$("📅 Seminar scheduled & published!", "success");
           }}
-          onBack={()=>setShowMicPreview(false)}
+          onClose={() => setShowSchedule(false)}
         />
       )}
 
-      {showObsConfirm&&(
+      {showMicPreview && (
+        <MicPreviewModal
+          config={{
+            seminarMode,
+            sessionSubMode,
+            name,
+            subject,
+            unit,
+            topic: finalTopic,
+            roomId: roomId.current,
+            roomLink,
+            date: scheduledInfo?.date,
+            time: scheduledInfo?.time,
+          }}
+          onConfirm={(cfg) => {
+            setShowMicPreview(false);
+            if (
+              cfg.seminarMode === "session" &&
+              cfg.sessionSubMode === "presenter"
+            ) {
+              const ev = {
+                id: `sem-${Date.now()}`,
+                title: cfg.topic,
+                type: "seminar",
+                date: new Date().toISOString().slice(0, 10),
+                startTime: new Date().toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                }),
+                subject: cfg.subject,
+                unit: cfg.unit,
+                link: cfg.roomLink,
+              };
+              try {
+                const ex = JSON.parse(
+                  localStorage.getItem("gradeup_cal_events_v3") || "[]",
+                );
+                localStorage.setItem(
+                  "gradeup_cal_events_v3",
+                  JSON.stringify([...ex, ev]),
+                );
+                window.dispatchEvent(
+                  new StorageEvent("storage", { key: "gradeup_cal_events_v3" }),
+                );
+                publishCommunitySession({
+                  ...ev,
+                  roles: ["Observer", "Participant"],
+                  createdAt: new Date().toISOString(),
+                  status: "live",
+                });
+              } catch {}
+            }
+            onLaunch({ ...cfg, role: "Presenter", joinSession: null });
+          }}
+          onBack={() => setShowMicPreview(false)}
+        />
+      )}
+
+      {showObsConfirm && (
         <div className="overlay">
-          <div className="modal" style={{maxWidth:340,background:"#0c1422",border:"1px solid rgba(255,255,255,.1)"}}>
-            <div style={{background:"linear-gradient(135deg,#060e1c,#081a10)",padding:"20px 18px",textAlign:"center"}}>
-              <div style={{fontSize:38,marginBottom:8}}>👁️</div>
-              <div style={{fontSize:14,fontWeight:800,color:"#fff",marginBottom:2}}>{name}</div>
-              <div style={{fontSize:10.5,color:"rgba(255,255,255,.4)"}}>Joining as Observer</div>
+          <div
+            className="modal"
+            style={{
+              maxWidth: 340,
+              background: "#0c1422",
+              border: "1px solid rgba(255,255,255,.1)",
+            }}
+          >
+            <div
+              style={{
+                background: "linear-gradient(135deg,#060e1c,#081a10)",
+                padding: "20px 18px",
+                textAlign: "center",
+              }}
+            >
+              <div style={{ fontSize: 38, marginBottom: 8 }}>👁️</div>
+              <div
+                style={{
+                  fontSize: 14,
+                  fontWeight: 800,
+                  color: "#fff",
+                  marginBottom: 2,
+                }}
+              >
+                {name}
+              </div>
+              <div style={{ fontSize: 10.5, color: "rgba(255,255,255,.4)" }}>
+                Joining as Observer
+              </div>
             </div>
-            <div className="mb" style={{background:"#0c1422"}}>
-              {selectedSession&&<div style={{padding:"9px 11px",borderRadius:9,background:"rgba(45,156,219,.06)",border:"1px solid rgba(45,156,219,.2)",marginBottom:9,fontSize:11.5,fontWeight:600,color:"var(--sky)"}}>👁️ Joining: {selectedSession.title}</div>}
+            <div className="mb" style={{ background: "#0c1422" }}>
+              {selectedSession && (
+                <div
+                  style={{
+                    padding: "9px 11px",
+                    borderRadius: 9,
+                    background: "rgba(45,156,219,.06)",
+                    border: "1px solid rgba(45,156,219,.2)",
+                    marginBottom: 9,
+                    fontSize: 11.5,
+                    fontWeight: 600,
+                    color: "var(--sky)",
+                  }}
+                >
+                  👁️ Joining: {selectedSession.title}
+                </div>
+              )}
             </div>
-            <div className="mf" style={{borderColor:"rgba(255,255,255,.08)",background:"#0c1422",flexDirection:"column",gap:7}}>
-              <button className="btn-p" onClick={handleObsJoin} disabled={joining}>{joining?<><span className="loader-spin"/>{joinProgress>0?`Loading ${joinProgress}%`:"Joining…"}</>:"👁️ Enter as Observer"}</button>
-              {joinProgress>0&&<div className="lo-progress"><div className="lo-progress-fill" style={{width:`${joinProgress}%`}}/></div>}
-              <button className="btn-s" onClick={()=>setShowObsConfirm(false)} disabled={joining} style={{width:"100%",justifyContent:"center",background:"rgba(255,255,255,.04)",borderColor:"rgba(255,255,255,.1)",color:"rgba(255,255,255,.5)"}}>Cancel</button>
+            <div
+              className="mf"
+              style={{
+                borderColor: "rgba(255,255,255,.08)",
+                background: "#0c1422",
+                flexDirection: "column",
+                gap: 7,
+              }}
+            >
+              <button
+                className="btn-p"
+                onClick={handleObsJoin}
+                disabled={joining}
+              >
+                {joining ? (
+                  <>
+                    <span className="loader-spin" />
+                    {joinProgress > 0 ? `Loading ${joinProgress}%` : "Joining…"}
+                  </>
+                ) : (
+                  "👁️ Enter as Observer"
+                )}
+              </button>
+              {joinProgress > 0 && (
+                <div className="lo-progress">
+                  <div
+                    className="lo-progress-fill"
+                    style={{ width: `${joinProgress}%` }}
+                  />
+                </div>
+              )}
+              <button
+                className="btn-s"
+                onClick={() => setShowObsConfirm(false)}
+                disabled={joining}
+                style={{
+                  width: "100%",
+                  justifyContent: "center",
+                  background: "rgba(255,255,255,.04)",
+                  borderColor: "rgba(255,255,255,.1)",
+                  color: "rgba(255,255,255,.5)",
+                }}
+              >
+                Cancel
+              </button>
             </div>
           </div>
         </div>
@@ -2715,7 +4959,9 @@ function SeminarSetup({onBack,onLaunch}) {
 // ─── PREPARE WITH AI ─────────────────────────────────────────────────────────
 function SeminarSetupIntegrated({ onBack, onLaunch }) {
   const { user } = useAuth();
-  const defaultName = user ? `${user.firstName || ""} ${user.lastName || ""}`.trim() : "";
+  const defaultName = user
+    ? `${user.firstName || ""} ${user.lastName || ""}`.trim()
+    : "";
   const [name, setName] = useState(defaultName);
   const [seminarMode, setSeminarMode] = useState("");
   const [sessionSubMode, setSessionSubMode] = useState("");
@@ -2725,16 +4971,18 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
   const [selectedUnitId, setSelectedUnitId] = useState("");
   const [seminarTopicCatalog, setSeminarTopicCatalog] = useState([]);
   const [structuredSectionTopics, setStructuredSectionTopics] = useState([]);
-  const [structuredSectionsLoading, setStructuredSectionsLoading] = useState(false);
+  const [structuredSectionsLoading, setStructuredSectionsLoading] =
+    useState(false);
   const [topic, setTopic] = useState("");
   const [custom, setCustom] = useState("");
   const [seminarType, setSeminarType] = useState("instant");
   const [showSchedule, setShowSchedule] = useState(false);
   const [scheduled, setScheduled] = useState(false);
   const [scheduledInfo, setScheduledInfo] = useState(null);
-  const [copied, setCopied] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [joining, setJoining] = useState(false);
+  const [sessionVisibility, setSessionVisibility] = useState("public");
+  const [shareToCommunity, setShareToCommunity] = useState(false);
   const [setupFile, setSetupFile] = useState<File | null>(null);
   const [createDocLink, setCreateDocLink] = useState("");
   const [createDocConfig, setCreateDocConfig] = useState(null);
@@ -2766,8 +5014,14 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
   useEffect(() => {
     toastRef.current = toast$;
   }, [toast$]);
+  useEffect(() => {
+    if (sessionVisibility === "private") {
+      setShareToCommunity(false);
+    }
+  }, [sessionVisibility]);
   const selectedSubjectEntry = useMemo(
-    () => subjectCatalog.find((item) => item.subjectGroupKey === subject) || null,
+    () =>
+      subjectCatalog.find((item) => item.subjectGroupKey === subject) || null,
     [subjectCatalog, subject],
   );
   const selectedSubjectLabel = selectedSubjectEntry?.title || subject;
@@ -2776,22 +5030,38 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
     [selectedSubjectEntry],
   );
   const topicOptions = useMemo(() => {
-    const selectedUnit = availableUnits.find((item) => item.id === selectedUnitId);
+    const selectedUnit = availableUnits.find(
+      (item) => item.id === selectedUnitId,
+    );
     const sectionTopics = (selectedUnit?.sectionTopics || [])
       .map((item) => item.label || item.sectionTitle || item.sectionNumber)
       .filter(Boolean);
     const fallbackTopics = (seminarTopicCatalog || [])
       .filter((item) => {
         if (!selectedUnitId) return true;
-        return item?.unitId === selectedUnitId ||
+        return (
+          item?.unitId === selectedUnitId ||
           item?.unit_id === selectedUnitId ||
           item?.unitTitle === unit ||
-          item?.unit === unit;
+          item?.unit === unit
+        );
       })
       .map((item) => item.topic || item.title || item.name || item.label)
       .filter(Boolean);
-    return Array.from(new Set([...structuredSectionTopics, ...sectionTopics, ...fallbackTopics]));
-  }, [availableUnits, selectedUnitId, seminarTopicCatalog, structuredSectionTopics, unit]);
+    return Array.from(
+      new Set([
+        ...structuredSectionTopics,
+        ...sectionTopics,
+        ...fallbackTopics,
+      ]),
+    );
+  }, [
+    availableUnits,
+    selectedUnitId,
+    seminarTopicCatalog,
+    structuredSectionTopics,
+    unit,
+  ]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -2848,7 +5118,10 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
       } catch {
         if (!ignore) {
           setSeminarTopicCatalog([]);
-          toastRef.current("Unable to load seminar topics from the server.", "warn");
+          toastRef.current(
+            "Unable to load seminar topics from the server.",
+            "warn",
+          );
         }
       }
     }
@@ -2869,7 +5142,9 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
       setStructuredSectionsLoading(true);
       try {
         const structured = await getUnitContent(selectedUnitId, "structured");
-        const sectionLabels = extractStructuredSectionLabels(structured?.content);
+        const sectionLabels = extractStructuredSectionLabels(
+          structured?.content,
+        );
         if (!ignore) {
           setStructuredSectionTopics(sectionLabels);
         }
@@ -2892,7 +5167,11 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
   useEffect(() => {
     if (topic && topic !== "__custom__" && !topicOptions.includes(topic)) {
       setTopic((current) => {
-        if (!current || current === "__custom__" || topicOptions.includes(current)) {
+        if (
+          !current ||
+          current === "__custom__" ||
+          topicOptions.includes(current)
+        ) {
           return current;
         }
         return "";
@@ -2922,12 +5201,6 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
     };
   }, []);
 
-  const copyLink = () => {
-    navigator.clipboard.writeText(roomLink);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2200);
-  };
-
   const addInvitee = () => {
     const value = inviteInput.trim();
     if (!value) return;
@@ -2947,31 +5220,60 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
       },
     ]);
     setInviteInput("");
-    toast$(isEmail ? `Invite sent to ${value}` : `Added ${value}`, isEmail ? "info" : "success");
+    toast$(
+      isEmail ? `Invite sent to ${value}` : `Added ${value}`,
+      isEmail ? "info" : "success",
+    );
   };
 
   const canJoinObserver = !!(selectedSession || parseSeminarSessionId(joinId));
-  const hasPrepareSubMode = seminarMode !== "prepare" || sessionSubMode === "practice" || sessionSubMode === "demo";
+  const hasPrepareSubMode =
+    seminarMode !== "prepare" ||
+    sessionSubMode === "practice" ||
+    sessionSubMode === "demo";
   const presenterSteps = [
     { label: "Choose mode", done: seminarMode !== "" },
-    ...(seminarMode === "prepare" ? [{ label: "Choose preparation type", done: hasPrepareSubMode }] : []),
+    ...(seminarMode === "prepare"
+      ? [{ label: "Choose preparation type", done: hasPrepareSubMode }]
+      : []),
     { label: "Enter your name", done: name.trim().length > 0 },
-    { label: "Select subject and unit", done: !!subject && !!unit && !!selectedUnitId },
+    {
+      label: "Select subject and unit",
+      done: !!subject && !!unit && !!selectedUnitId,
+    },
     { label: "Select topic", done: !!finalTopic },
   ];
   const createSteps = [
     { label: "Choose Create with AI", done: seminarMode === "create" },
     { label: "Enter your name", done: name.trim().length > 0 },
-    { label: "Select subject and unit", done: !!subject && !!unit && !!selectedUnitId },
+    {
+      label: "Select subject and unit",
+      done: !!subject && !!unit && !!selectedUnitId,
+    },
     { label: "Select topic", done: !!finalTopic },
   ];
   const observerSteps = [
-    { label: "Choose observer mode", done: seminarMode === "session" && sessionSubMode === "observer" },
+    {
+      label: "Choose observer mode",
+      done: seminarMode === "session" && sessionSubMode === "observer",
+    },
     { label: "Enter your name", done: name.trim().length > 0 },
-    { label: "Pick a live session or paste a link", done: Boolean(selectedSession || parseSeminarSessionId(joinId)) },
+    {
+      label: "Pick a live session or paste a link",
+      done: Boolean(selectedSession || parseSeminarSessionId(joinId)),
+    },
   ];
   const activeSteps =
-    seminarMode === "create" ? createSteps : seminarMode === "session" && sessionSubMode === "observer" ? observerSteps : seminarMode === "prepare" && sessionSubMode === "demo" ? [...presenterSteps, { label: "Upload presentation file", done: !!setupFile }] : presenterSteps;
+    seminarMode === "create"
+      ? createSteps
+      : seminarMode === "session" && sessionSubMode === "observer"
+        ? observerSteps
+        : seminarMode === "prepare" && sessionSubMode === "demo"
+          ? [
+              ...presenterSteps,
+              { label: "Upload presentation file", done: !!setupFile },
+            ]
+          : presenterSteps;
   const canLaunch =
     seminarMode !== "" &&
     hasPrepareSubMode &&
@@ -2979,45 +5281,129 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
     (seminarMode === "session" && sessionSubMode === "observer"
       ? canJoinObserver
       : !!subject && !!selectedUnitId && !!finalTopic) &&
-    (seminarMode === "prepare" && sessionSubMode === "demo" ? !!setupFile : true);
+    (seminarMode === "prepare" && sessionSubMode === "demo"
+      ? !!setupFile
+      : true);
 
   const leftFeatures =
     seminarMode === "create"
       ? [
-          { ic: "DOC", t: "Google Docs Style", d: "Edit the generated seminar file on the left." },
-          { ic: "AI", t: "Chat Builder", d: "Ask AI to expand, rewrite, or refresh sections." },
-          { ic: "RF", t: "Auto Refresh", d: "Requirements update the document instantly." },
-          { ic: "RS", t: "Responsive Workspace", d: "Works across mobile, tablet, laptop, and desktop." },
+          {
+            ic: "DOC",
+            t: "Google Docs Style",
+            d: "Edit the generated seminar file on the left.",
+          },
+          {
+            ic: "AI",
+            t: "Chat Builder",
+            d: "Ask AI to expand, rewrite, or refresh sections.",
+          },
+          {
+            ic: "RF",
+            t: "Auto Refresh",
+            d: "Requirements update the document instantly.",
+          },
+          {
+            ic: "RS",
+            t: "Responsive Workspace",
+            d: "Works across mobile, tablet, laptop, and desktop.",
+          },
         ]
       : seminarMode === "prepare"
-      ? sessionSubMode === "demo"
-        ? [
-            { ic: "UP", t: "File First", d: "Upload the seminar file during setup." },
-            { ic: "DM", t: "Demo Room", d: "Enter directly into AI demo practice." },
-            { ic: "AI", t: "Live Coach", d: "AI follows your spoken presentation." },
-            { ic: "FB", t: "Demo Feedback", d: "End with a clean session report." },
-          ]
-        : [
-            { ic: "AI", t: "AI Coach", d: "Practice seminar flow with guided help." },
-            { ic: "TT", t: "Transcript", d: "Speech can be captured and reused for feedback." },
-            { ic: "CH", t: "Coach Chat", d: "Ask follow-up questions any time." },
-            { ic: "FB", t: "Preparation Complete", d: "End with a preparation summary." },
-          ]
-      : sessionSubMode === "observer"
-        ? [
-            { ic: "LV", t: "Watch Live", d: "Join active seminar rooms as an observer." },
-            { ic: "CH", t: "Observer Chat", d: "Message the presenter through Node APIs." },
-            { ic: "WR", t: "Waiting Room", d: "See room status before the host starts." },
-            { ic: "RT", t: "Real-time Sync", d: "Live participant and session updates." },
-          ]
-        : [
-            { ic: "RM", t: "Presenter Lobby", d: "Create a real room before starting AI." },
-            { ic: "AI", t: "AI Greeting", d: "Use backend TTS from the Python response." },
-            { ic: "OB", t: "Observer Join", d: "Share a real room link backed by MongoDB." },
-            { ic: "RP", t: "Session Report", d: "End with clean seminar feedback." },
-          ];
+        ? sessionSubMode === "demo"
+          ? [
+              {
+                ic: "UP",
+                t: "File First",
+                d: "Upload the seminar file during setup.",
+              },
+              {
+                ic: "DM",
+                t: "Demo Room",
+                d: "Enter directly into AI demo practice.",
+              },
+              {
+                ic: "AI",
+                t: "Live Coach",
+                d: "AI follows your spoken presentation.",
+              },
+              {
+                ic: "FB",
+                t: "Demo Feedback",
+                d: "End with a clean session report.",
+              },
+            ]
+          : [
+              {
+                ic: "AI",
+                t: "AI Coach",
+                d: "Practice seminar flow with guided help.",
+              },
+              {
+                ic: "TT",
+                t: "Transcript",
+                d: "Speech can be captured and reused for feedback.",
+              },
+              {
+                ic: "CH",
+                t: "Coach Chat",
+                d: "Ask follow-up questions any time.",
+              },
+              {
+                ic: "FB",
+                t: "Preparation Complete",
+                d: "End with a preparation summary.",
+              },
+            ]
+        : sessionSubMode === "observer"
+          ? [
+              {
+                ic: "eye",
+                t: "Watch Live",
+                d: "Join active seminar rooms as an observer.",
+              },
+              {
+                ic: "CH",
+                t: "Observer Chat",
+                d: "Message the presenter through Node APIs.",
+              },
+              {
+                ic: "WR",
+                t: "Waiting Room",
+                d: "See room status before the host starts.",
+              },
+              {
+                ic: "RT",
+                t: "Real-time Sync",
+                d: "Live participant and session updates.",
+              },
+            ]
+          : [
+              {
+                ic: "RM",
+                t: "Presenter Lobby",
+                d: "Create a real room before starting AI.",
+              },
+              {
+                ic: "AI",
+                t: "AI Greeting",
+                d: "Use backend TTS from the Python response.",
+              },
+              {
+                ic: "OB",
+                t: "Observer Join",
+                d: "Share a real room link backed by MongoDB.",
+              },
+              {
+                ic: "RP",
+                t: "Session Report",
+                d: "End with clean seminar feedback.",
+              },
+            ];
 
-  const needsLaunchMic = seminarMode !== "create" && (seminarMode !== "session" || sessionSubMode !== "observer");
+  const needsLaunchMic =
+    seminarMode !== "create" &&
+    (seminarMode !== "session" || sessionSubMode !== "observer");
 
   async function handleCreateSubmit() {
     setJoining(true);
@@ -3029,26 +5415,41 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
         await new Promise((resolve) => setTimeout(resolve, 170));
         setJoinProgress(progress);
       }
-      const selectedUnit = availableUnits.find((item) => item.id === selectedUnitId);
-      const candidate = getCandidateContext(user || { firstName: name, lastName: "" });
+      const selectedUnit = availableUnits.find(
+        (item) => item.id === selectedUnitId,
+      );
+      const candidate = getCandidateContext(
+        user || { firstName: name, lastName: "" },
+      );
       const pptPayload = {
         student_id: String(candidate.candidateId || "student"),
         board: String(selectedUnit?.board || "CBSE"),
         class_number: String(selectedUnit?.standard || "10"),
         chapter: Number(selectedUnit?.unitNumber || 1),
         title: finalTopic,
-        subject: selectedUnit?.subject || selectedSubjectLabel || subject || null,
+        subject:
+          selectedUnit?.subject || selectedSubjectLabel || subject || null,
         term: selectedUnit?.term || null,
         deck_ref: null,
-        tool: "gslides" as const,
+        tool: "gslides",
       };
 
       const startSlidesSession = () => startSeminarPptSession(pptPayload);
       let pptSession = await startSlidesSession();
 
-      if (pptSession?.status === "needs_connection" && pptSession?.authorization_url) {
-        window.open(pptSession.authorization_url, "_blank", "noopener,noreferrer");
-        toast$("Google connection opened. Complete it in the new tab; we'll continue automatically.", "info");
+      if (
+        pptSession?.status === "needs_connection" &&
+        pptSession?.authorization_url
+      ) {
+        window.open(
+          pptSession.authorization_url,
+          "_blank",
+          "noopener,noreferrer",
+        );
+        toast$(
+          "Google connection opened. Complete it in the new tab; we'll continue automatically.",
+          "info",
+        );
         for (let attempt = 0; attempt < 40; attempt += 1) {
           await new Promise((resolve) => setTimeout(resolve, 3000));
           pptSession = await startSlidesSession();
@@ -3057,7 +5458,9 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
       }
 
       if (pptSession?.status === "needs_connection") {
-        throw new Error("Google connection is still pending. Complete the Google authorization tab, then try Create with AI again.");
+        throw new Error(
+          "Google connection is still pending. Complete the Google authorization tab, then try Create with AI again.",
+        );
       }
 
       if (!pptSession?.session_id || !pptSession?.edit_url) {
@@ -3088,9 +5491,15 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
       setCreateDocLink(pptSession.edit_url);
       setShowCreateLinkModal(true);
       window.open(pptSession.edit_url, "_blank", "noopener,noreferrer");
-      toast$("Google Slides deck is ready. Open the GradeUp Copilot add-on inside Slides.", "success");
+      toast$(
+        "Google Slides deck is ready. Open the GradeUp Copilot add-on inside Slides.",
+        "success",
+      );
     } catch (error) {
-      toast$(getErrorMessage(error, "Unable to create the AI seminar file."), "error");
+      toast$(
+        getErrorMessage(error, "Unable to create the AI seminar file."),
+        "error",
+      );
     } finally {
       setJoining(false);
       setJoinProgress(0);
@@ -3100,8 +5509,15 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
   function openCreateDoc(event) {
     event?.preventDefault?.();
     if (!createDocConfig) return;
-    const externalEditUrl = createDocConfig.editUrl || createDocConfig.edit_url || createDocConfig.link;
-    if (externalEditUrl && /^https?:\/\//i.test(externalEditUrl) && /docs\.google\.com\/presentation/i.test(externalEditUrl)) {
+    const externalEditUrl =
+      createDocConfig.editUrl ||
+      createDocConfig.edit_url ||
+      createDocConfig.link;
+    if (
+      externalEditUrl &&
+      /^https?:\/\//i.test(externalEditUrl) &&
+      /docs\.google\.com\/presentation/i.test(externalEditUrl)
+    ) {
       window.open(externalEditUrl, "_blank", "noopener,noreferrer");
       return;
     }
@@ -3113,7 +5529,10 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
   async function handleRequestLaunchMic() {
     const nextStream = await request();
     if (!nextStream) {
-      toast$("Microphone permission is required to enter the seminar room.", "error");
+      toast$(
+        "Microphone permission is required to enter the seminar room.",
+        "error",
+      );
       return;
     }
     toast$("Microphone ready", "success");
@@ -3121,7 +5540,10 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
 
   async function handleLaunchMicContinue() {
     if (needsLaunchMic && !micReady) {
-      toast$("Please allow and enable your microphone before continuing.", "warn");
+      toast$(
+        "Please allow and enable your microphone before continuing.",
+        "warn",
+      );
       return;
     }
     await handleJoin();
@@ -3135,11 +5557,19 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
         setJoinProgress(progress);
       }
 
-      const candidate = getCandidateContext(user || { firstName: name, lastName: "" });
+      const candidate = getCandidateContext(
+        user || { firstName: name, lastName: "" },
+      );
 
       if (seminarMode === "session" && sessionSubMode === "observer") {
-        const sessionId = selectedSession?.sessionId || selectedSession?.id || parseSeminarSessionId(joinId);
-        if (!sessionId) throw new Error("Enter a valid seminar link or choose a live session.");
+        const sessionId =
+          selectedSession?.sessionId ||
+          selectedSession?.id ||
+          parseSeminarSessionId(joinId);
+        if (!sessionId)
+          throw new Error(
+            "Enter a valid seminar link or choose a live session.",
+          );
         const joinedSession = await joinSeminarSession({
           sessionId,
           candidateId: candidate.candidateId,
@@ -3153,10 +5583,18 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
           role: "Observer",
           subject: joinedSession?.subject || selectedSession?.subject || "",
           unit: joinedSession?.unit || selectedSession?.unit || "",
-          topic: joinedSession?.topic || joinedSession?.liveSession?.topic || selectedSession?.topic || selectedSession?.title || "",
+          topic:
+            joinedSession?.topic ||
+            joinedSession?.liveSession?.topic ||
+            selectedSession?.topic ||
+            selectedSession?.title ||
+            "",
           invitees: [...invitees],
           roomId: sessionId,
-          roomLink: joinedSession?.shareLink || selectedSession?.roomLink || genRoomLink(sessionId),
+          roomLink:
+            joinedSession?.shareLink ||
+            selectedSession?.roomLink ||
+            genRoomLink(sessionId),
           stream: null,
           micOn: false,
           date: scheduledInfo?.date,
@@ -3183,7 +5621,28 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
           candidateId: candidate.candidateId,
           candidateName: candidate.candidateName,
           topic: finalTopic,
+          visibility: sessionVisibility as "public" | "school" | "class" | "private",
         });
+        const createdSessionId = room?.session_id || room?.sessionId || roomId.current;
+        const createdJoinUrl = room?.shareLink || room?.liveSession?.shareLink || roomLink;
+        if (shareToCommunity && sessionVisibility !== "private") {
+          try {
+            await shareSessionToCommunity({
+              sessionType: "seminar",
+              sessionId: createdSessionId,
+              topic: finalTopic,
+              title: finalTopic,
+              createdBy: name || candidate.candidateName,
+              joinUrl: createdJoinUrl,
+              status: "waiting",
+              participantCount: 1,
+              source: "seminar_setup",
+              visibility: sessionVisibility as "public" | "school" | "class" | "private",
+            });
+          } catch (error) {
+            console.warn("Failed to share seminar to community", error);
+          }
+        }
         onLaunch({
           name,
           candidateId: candidate.candidateId,
@@ -3193,15 +5652,16 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
           unit,
           topic: finalTopic,
           invitees: [...invitees],
-          roomLink,
+          roomLink: createdJoinUrl,
           stream,
           micOn: true,
           date: scheduledInfo?.date,
           time: scheduledInfo?.time,
           unitId: selectedUnitId,
-          roomId: room?.session_id || room?.sessionId || roomId.current,
-          sessionId: room?.session_id || room?.sessionId || roomId.current,
+           roomId: createdSessionId,
+          sessionId: createdSessionId,
           liveSession: room?.liveSession || null,
+          visibility: sessionVisibility,
           initialFacilitatorMessage: "",
           seminarMode: "session",
           sessionSubMode: "presenter",
@@ -3210,7 +5670,9 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
         return;
       }
 
-      const selectedUnit = availableUnits.find((item) => item.id === selectedUnitId);
+      const selectedUnit = availableUnits.find(
+        (item) => item.id === selectedUnitId,
+      );
       console.log("startSeminar called", {
         mode: sessionSubMode === "demo" ? "demo" : "practice",
         candidateId: candidate.candidateId,
@@ -3231,7 +5693,7 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
         unitName: selectedUnit?.unitTitle || selectedUnit?.unitLabel || unit,
         mode: sessionSubMode === "demo" ? "demo" : "practice",
         session_mode: sessionSubMode === "demo" ? "demo" : "practice",
-        file: sessionSubMode === "demo" ? (setupFile || undefined) : undefined,
+        file: sessionSubMode === "demo" ? setupFile || undefined : undefined,
       });
       console.log("startSeminar success", {
         sessionId: liveSession?.session_id || liveSession?.sessionId || "",
@@ -3254,13 +5716,20 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
         unitId: selectedUnitId,
         sessionId: liveSession?.session_id || liveSession?.sessionId || "",
         liveSession: liveSession?.liveSession || null,
-        initialFacilitatorMessage: liveSession?.ai_greeting || liveSession?.message || liveSession?.opening_statement || "",
+        initialFacilitatorMessage:
+          liveSession?.ai_greeting ||
+          liveSession?.message ||
+          liveSession?.opening_statement ||
+          "",
         seminarMode: "prepare",
         sessionSubMode: sessionSubMode,
         setupFile: setupFile || null,
       });
     } catch (error) {
-      toast$(getErrorMessage(error, "Unable to launch the seminar flow."), "error");
+      toast$(
+        getErrorMessage(error, "Unable to launch the seminar flow."),
+        "error",
+      );
     } finally {
       setJoining(false);
       setShowConfirm(false);
@@ -3271,32 +5740,62 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
   return (
     <div className="sp-setup route-enter">
       <div className="sp-left">
-        <div className="sp-grid-lines" /><div className="sp-glow1" /><div className="sp-glow2" />
+        <div className="sp-grid-lines" />
+        <div className="sp-glow1" />
+        <div className="sp-glow2" />
         <div className="sp-left-inner">
-          <div className="sp-logo"><div className="sp-logo-ico">🎓</div><span className="sp-logo-name">SeminarArena</span></div>
-          <div className="sp-badge"><div className="sp-badge-dot" />Seminar Setup</div>
-          <h2 className="sp-h1">Your stage,<br/><span className="hl">your seminar.</span></h2>
-          <p className="sp-desc">Switch between AI preparation, presenter session mode, and observer join flow without losing the real API-backed seminar behavior.</p>
+          <div className="sp-logo">
+            <div className="sp-logo-ico">
+              <SeminarIcon name="graduation" />
+            </div>
+            <span className="sp-logo-name">SeminarArena</span>
+          </div>
+          <div className="sp-badge">
+            <div className="sp-badge-dot" />
+            Seminar Setup
+          </div>
+          <h2 className="sp-h1">
+            Your stage,
+            <br />
+            <span className="hl">your seminar.</span>
+          </h2>
+          <p className="sp-desc">
+            Switch between AI preparation, presenter session mode, and observer
+            join flow without losing the real API-backed seminar behavior.
+          </p>
           <div className="sp-features">
-  {leftFeatures.map((feature, index) => (
-  <div
-    key={feature.t}
-    className="sp-feat"
-    style={{ animationDelay: `${0.1 + index * 0.06}s` }}
-  >
-    <div className="sp-feat-ic">{feature.ic}</div>
-    <div>
-      <div className="sp-feat-t">{feature.t}</div>
-      <div className="sp-feat-d">{feature.d}</div>
-    </div>
-  </div>
-))}
+            {leftFeatures.map((feature, index) => (
+              <div
+                key={feature.t}
+                className="sp-feat"
+                style={{ animationDelay: `${0.1 + index * 0.06}s` }}
+              >
+                <div className="sp-feat-ic">
+                  <SeminarIcon name={feature.ic} />
+                </div>
+                <div>
+                  <div className="sp-feat-t">{feature.t}</div>
+                  <div className="sp-feat-d">{feature.d}</div>
+                </div>
+              </div>
+            ))}
           </div>
           {(subject || finalTopic) && (
             <div className="ctx-chip">
               <div className="ctx-chip-lbl">Session Context</div>
-              {subject && <div className="ctx-chip-val">{selectedSubjectLabel}{unit ? ` · ${unit}` : ""}</div>}
-              {finalTopic && <div className="ctx-chip-sub">{finalTopic.length > 44 ? `${finalTopic.slice(0, 44)}…` : finalTopic}</div>}
+              {subject && (
+                <div className="ctx-chip-val">
+                  {selectedSubjectLabel}
+                  {unit ? ` · ${unit}` : ""}
+                </div>
+              )}
+              {finalTopic && (
+                <div className="ctx-chip-sub">
+                  {finalTopic.length > 44
+                    ? `${finalTopic.slice(0, 44)}…`
+                    : finalTopic}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -3305,15 +5804,58 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
       <div className="sp-right">
         <div className="sp-right-scroll">
           <div className="sp-right-inner">
-            {onBack && <button className="back-btn" onClick={onBack}>← Back</button>}
-            <h2 className="setup-h">🎓 Seminar Setup</h2>
-            <p className="setup-sub">Choose your setup path first. Prepare, create a seminar file with AI, or run a live seminar session.</p>
+            {onBack && (
+              <button className="back-btn" onClick={onBack}>
+                ← Back
+              </button>
+            )}
+            <h2 className="setup-h">
+              <SeminarIcon name="graduation" /> Seminar Setup
+            </h2>
+            <p className="setup-sub">
+              Choose your setup path first. Prepare, create a seminar file with
+              AI, or run a live seminar session.
+            </p>
             <div className="sec-div">Choose Mode</div>
             <div className="module-grid fi">
-              {[{ id: "prepare", ic: "🤖", t: "Prepare with AI", d: "AI coach helps you rehearse, build outline, transcribe speech and practice demo." }, { id: "create", ic: "📄", t: "Create with AI", d: "Generate an editable seminar file with a Docs-style editor and AI chat." }, { id: "session", ic: "🔴", t: "Seminar Session", d: "Start or join a live seminar with AI moderator, screen share & full report." }].map((item) => (
-                <div key={item.id} className={`module-card${seminarMode === item.id ? " sel" : ""}`} onClick={() => { setSeminarMode(item.id); setSessionSubMode(""); setCreateDocLink(""); setCreateDocConfig(null); setShowCreateLinkModal(false); }}>
-                  <div className="mod-ic">{item.ic}</div>
-                  <div><div className="mod-title">{item.t}</div><div className="mod-desc">{item.d}</div></div>
+              {[
+                // {
+                //   id: "prepare",
+                //   ic: "ai",
+                //   t: "Prepare with AI",
+                //   d: "AI coach helps you rehearse, build outline, transcribe speech and practice demo.",
+                // },
+                {
+                  id: "create",
+                  ic: "file",
+                  t: "Create with AI",
+                  d: "Generate an editable seminar file with a Docs-style editor and AI chat.",
+                },
+                {
+                  id: "session",
+                  ic: "presentation",
+                  t: "Seminar Session",
+                  d: "Start or join a live seminar with AI moderator, screen share & full report.",
+                },
+              ].map((item) => (
+                <div
+                  key={item.id}
+                  className={`module-card${seminarMode === item.id ? " sel" : ""}`}
+                  onClick={() => {
+                    setSeminarMode(item.id);
+                    setSessionSubMode("");
+                    setCreateDocLink("");
+                    setCreateDocConfig(null);
+                    setShowCreateLinkModal(false);
+                  }}
+                >
+                  <div className="mod-ic">
+                    <SeminarIcon name={item.ic} />
+                  </div>
+                  <div>
+                    <div className="mod-title">{item.t}</div>
+                    <div className="mod-desc">{item.d}</div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -3322,13 +5864,32 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
               <>
                 <div className="sec-div">Choose Preparation Type</div>
                 <div className="submode-grid fi">
-                  <div className={`submode-card${sessionSubMode === "practice" ? " sel" : ""}`} onClick={() => setSessionSubMode("practice")}>
-                    <div className="submode-ic">🤖</div><div className="submode-title">Prepare with AI for Seminar</div>
-                    <div className="submode-desc">Rehearse, ask questions, build notes, then end preparation.</div>
+                  <div
+                    className={`submode-card${sessionSubMode === "practice" ? " sel" : ""}`}
+                    onClick={() => setSessionSubMode("practice")}
+                  >
+                    <div className="submode-ic">
+                      <SeminarIcon name="ai" />
+                    </div>
+                    <div className="submode-title">
+                      Prepare with AI for Seminar
+                    </div>
+                    <div className="submode-desc">
+                      Rehearse, ask questions, build notes, then end
+                      preparation.
+                    </div>
                   </div>
-                  <div className={`submode-card${sessionSubMode === "demo" ? " sel" : ""}`} onClick={() => setSessionSubMode("demo")}>
-                    <div className="submode-ic">▶️</div><div className="submode-title">Demo Session</div>
-                    <div className="submode-desc">Upload your file here and present directly to AI.</div>
+                  <div
+                    className={`submode-card${sessionSubMode === "demo" ? " sel" : ""}`}
+                    onClick={() => setSessionSubMode("demo")}
+                  >
+                    <div className="submode-ic">
+                      <SeminarIcon name="play" />
+                    </div>
+                    <div className="submode-title">Demo Session</div>
+                    <div className="submode-desc">
+                      Upload your file here and present directly to AI.
+                    </div>
                   </div>
                 </div>
               </>
@@ -3338,13 +5899,29 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
               <>
                 <div className="sec-div">I want to…</div>
                 <div className="submode-grid fi">
-                  <div className={`submode-card${sessionSubMode === "presenter" ? " sel" : ""}`} onClick={() => setSessionSubMode("presenter")}>
-                    <div className="submode-ic">🎙️</div><div className="submode-title">Present a Seminar</div>
-                    <div className="submode-desc">Start a room, share your screen, deliver your seminar.</div>
+                  <div
+                    className={`submode-card${sessionSubMode === "presenter" ? " sel" : ""}`}
+                    onClick={() => setSessionSubMode("presenter")}
+                  >
+                    <div className="submode-ic">
+                      <SeminarIcon name="mic" />
+                    </div>
+                    <div className="submode-title">Present a Seminar</div>
+                    <div className="submode-desc">
+                      Start a room, share your screen, deliver your seminar.
+                    </div>
                   </div>
-                  <div className={`submode-card${sessionSubMode === "observer" ? " sel" : ""}`} onClick={() => setSessionSubMode("observer")}>
-                    <div className="submode-ic">👁️</div><div className="submode-title">Join as Observer</div>
-                    <div className="submode-desc">Watch live seminars, ask questions in chat.</div>
+                  <div
+                    className={`submode-card${sessionSubMode === "observer" ? " sel" : ""}`}
+                    onClick={() => setSessionSubMode("observer")}
+                  >
+                    <div className="submode-ic">
+                      <SeminarIcon name="eye" />
+                    </div>
+                    <div className="submode-title">Join as Observer</div>
+                    <div className="submode-desc">
+                      Watch live seminars, ask questions in chat.
+                    </div>
                   </div>
                 </div>
               </>
@@ -3354,28 +5931,104 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
               <>
                 <div className="sec-div">Join a Session</div>
                 <div className="obs-join-section">
-                  <div className="obs-join-title">🔗 Join with Room Link or ID</div>
+                  <div className="obs-join-title">
+                    🔗 Join with Room Link or ID
+                  </div>
                   <div className="obs-join-input-row">
-                    <input className="finput" placeholder="Paste room link or enter Room ID…" style={{ flex: 1 }} value={joinId} onChange={(event) => setJoinId(event.target.value)} />
-                    <button className="btn-s" onClick={() => { const parsed = parseSeminarSessionId(joinId); if (parsed) { setJoinId(parsed); toast$("Room ID ready", "info"); } }}>Use Link</button>
+                    <input
+                      className="finput"
+                      placeholder="Paste room link or enter Room ID…"
+                      style={{ flex: 1 }}
+                      value={joinId}
+                      onChange={(event) => setJoinId(event.target.value)}
+                    />
+                    <button
+                      className="btn-s"
+                      onClick={() => {
+                        const parsed = parseSeminarSessionId(joinId);
+                        if (parsed) {
+                          setJoinId(parsed);
+                          toast$("Room ID ready", "info");
+                        }
+                      }}
+                    >
+                      Use Link
+                    </button>
                   </div>
                   <div className="obs-join-or">or</div>
-                  <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--t2)", marginBottom: 8 }}>📡 Live & Upcoming Sessions</div>
-                  {onlineSessions.length === 0 ? <div className="ongoing-empty">No active sessions. Check back soon.</div> : (
+                  <div
+                    style={{
+                      fontSize: 10.5,
+                      fontWeight: 700,
+                      color: "var(--t2)",
+                      marginBottom: 8,
+                    }}
+                  >
+                    📡 Live & Upcoming Sessions
+                  </div>
+                  {onlineSessions.length === 0 ? (
+                    <div className="ongoing-empty">
+                      No active sessions. Check back soon.
+                    </div>
+                  ) : (
                     <div className="ongoing-list">
                       {onlineSessions.map((session) => {
                         const sessionKey = session.sessionId || session.id;
-                        const selectedKey = selectedSession?.sessionId || selectedSession?.id;
+                        const selectedKey =
+                          selectedSession?.sessionId || selectedSession?.id;
                         const isActive = session.status === "active";
                         return (
-                          <div key={sessionKey} className={`ongoing-card${selectedKey === sessionKey ? " sel" : ""}`} onClick={() => setSelectedSession(selectedKey === sessionKey ? null : session)}>
-                            <div className="ongoing-live-dot" style={{ background: isActive ? "var(--red)" : "var(--amb)" }} />
+                          <div
+                            key={sessionKey}
+                            className={`ongoing-card${selectedKey === sessionKey ? " sel" : ""}`}
+                            onClick={() =>
+                              setSelectedSession(
+                                selectedKey === sessionKey ? null : session,
+                              )
+                            }
+                          >
+                            <div
+                              className="ongoing-live-dot"
+                              style={{
+                                background: isActive
+                                  ? "var(--red)"
+                                  : "var(--amb)",
+                              }}
+                            />
                             <div className="ongoing-info">
-                              <div className="ongoing-topic">{session.topic || session.title || "Seminar Session"}</div>
-                              <div className="ongoing-meta">📚 {session.subject || "—"}{session.unit ? ` · ${session.unit}` : ""} · {session.presenterName || session.hostCandidateName ? `by ${session.presenterName || session.hostCandidateName} · ` : ""}{isActive ? "🔴 Live now" : `📅 ${session.date || ""} ${session.time || ""}`}</div>
+                              <div className="ongoing-topic">
+                                {session.topic ||
+                                  session.title ||
+                                  "Seminar Session"}
+                              </div>
+                              <div className="ongoing-meta">
+                                📚 {session.subject || "—"}
+                                {session.unit
+                                  ? ` · ${session.unit}`
+                                  : ""} ·{" "}
+                                {session.presenterName ||
+                                session.hostCandidateName
+                                  ? `by ${session.presenterName || session.hostCandidateName} · `
+                                  : ""}
+                                {isActive
+                                  ? "🔴 Live now"
+                                  : `📅 ${session.date || ""} ${session.time || ""}`}
+                              </div>
                             </div>
-                            <div className="ongoing-count" style={{ background: isActive ? "rgba(229,62,62,.1)" : "rgba(246,166,35,.1)", color: isActive ? "var(--red)" : "var(--amb)" }}>
-                              {isActive ? (session.observerCount ? `${session.observerCount} 👁` : "● LIVE") : "⏰"}
+                            <div
+                              className="ongoing-count"
+                              style={{
+                                background: isActive
+                                  ? "rgba(229,62,62,.1)"
+                                  : "rgba(246,166,35,.1)",
+                                color: isActive ? "var(--red)" : "var(--amb)",
+                              }}
+                            >
+                              {isActive
+                                ? session.observerCount
+                                  ? `${session.observerCount} 👁`
+                                  : "● LIVE"
+                                : "⏰"}
                             </div>
                           </div>
                         );
@@ -3384,100 +6037,413 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
                   )}
                 </div>
                 <div className="sec-div">Your Name</div>
-                <div className="fi"><label className="fl">Display Name</label><input className="finput" placeholder="e.g. Alex (Observer)" value={name} onChange={(event) => setName(event.target.value)} maxLength={40} /></div>
-                <div style={{ marginTop: 14, marginBottom: 10 }}><button className="btn-p" onClick={() => setShowConfirm(true)} disabled={!canJoinObserver || !name.trim()}>👁️ Join as Observer</button></div>
+                <div className="fi">
+                  <label className="fl">Display Name</label>
+                  <input
+                    className="finput"
+                    placeholder="e.g. Alex (Observer)"
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    maxLength={40}
+                  />
+                </div>
+                <div style={{ marginTop: 14, marginBottom: 10 }}>
+                  <button
+                    className="btn-p"
+                    onClick={() => setShowConfirm(true)}
+                    disabled={!canJoinObserver || !name.trim()}
+                  >
+                    👁️ Join as Observer
+                  </button>
+                </div>
               </>
             )}
 
-            {(seminarMode === "create" || (seminarMode === "prepare" && hasPrepareSubMode) || (seminarMode === "session" && sessionSubMode === "presenter")) && (
+            {(seminarMode === "create" ||
+              (seminarMode === "prepare" && hasPrepareSubMode) ||
+              (seminarMode === "session" &&
+                sessionSubMode === "presenter")) && (
               <>
                 <div className="sec-div">Your Identity</div>
-                <div className="fi"><label className="fl">Your Name</label><input className="finput" placeholder="e.g. Alex Johnson" value={name} onChange={(event) => setName(event.target.value)} maxLength={40} /></div>
+                <div className="fi">
+                  <label className="fl">Your Name</label>
+                  <input
+                    className="finput"
+                    placeholder="e.g. Alex Johnson"
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    maxLength={40}
+                  />
+                </div>
                 <div className="sec-div">Academic Context</div>
                 <div className="fi-row fi">
-                  <div><label className="fl">Subject</label>
-                    <select className="finput" value={subject} onChange={(event) => { setSubject(event.target.value); setUnit(""); setSelectedUnitId(""); setTopic(""); }}>
+                  <div>
+                    <label className="fl">Subject</label>
+                    <select
+                      className="finput"
+                      value={subject}
+                      onChange={(event) => {
+                        setSubject(event.target.value);
+                        setUnit("");
+                        setSelectedUnitId("");
+                        setTopic("");
+                      }}
+                    >
                       <option value="">Select subject…</option>
-                      {subjectCatalog.map((item) => <option key={item.subjectGroupKey} value={item.subjectGroupKey}>{item.title}</option>)}
+                      {subjectCatalog.map((item) => (
+                        <option
+                          key={item.subjectGroupKey}
+                          value={item.subjectGroupKey}
+                        >
+                          {item.title}
+                        </option>
+                      ))}
                     </select>
                   </div>
-                  <div><label className="fl">Unit / Module</label>
-                    <select className="finput" value={selectedUnitId} onChange={(event) => { const nextId = event.target.value; setSelectedUnitId(nextId); const selectedUnit = availableUnits.find((item) => item.id === nextId); setUnit(selectedUnit?.unitTitle || selectedUnit?.unitLabel || ""); setTopic(""); }} disabled={!subject}>
-                      <option value="">{subject ? "Select unit…" : "Subject first"}</option>
-                      {availableUnits.map((item) => <option key={item.id} value={item.id}>{item.unitTitle || item.unitLabel}</option>)}
+                  <div>
+                    <label className="fl">Unit / Module</label>
+                    <select
+                      className="finput"
+                      value={selectedUnitId}
+                      onChange={(event) => {
+                        const nextId = event.target.value;
+                        setSelectedUnitId(nextId);
+                        const selectedUnit = availableUnits.find(
+                          (item) => item.id === nextId,
+                        );
+                        setUnit(
+                          selectedUnit?.unitTitle ||
+                            selectedUnit?.unitLabel ||
+                            "",
+                        );
+                        setTopic("");
+                      }}
+                      disabled={!subject}
+                    >
+                      <option value="">
+                        {subject ? "Select unit…" : "Subject first"}
+                      </option>
+                      {availableUnits.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.unitTitle || item.unitLabel}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>
                 <div className="sec-div">Seminar Topic</div>
                 <div className="fi">
-                  <select className="finput" value={topic} onChange={(event) => setTopic(event.target.value)} disabled={!selectedUnitId}>
-                    <option value="">{selectedUnitId ? "Select a topic…" : "Select unit first"}</option>
-                    {structuredSectionsLoading && <option value="" disabled>Loading book sections…</option>}
-                    {topicOptions.map((item) => <option key={item} value={item}>{item}</option>)}
-                    {!structuredSectionsLoading && !topicOptions.length && subject && <option value="" disabled>No data available</option>}
-                    <option value="__custom__">✏️ Custom topic…</option>
+                  <select
+                    className="finput"
+                    value={topic}
+                    onChange={(event) => setTopic(event.target.value)}
+                    disabled={!selectedUnitId}
+                  >
+                    <option value="">
+                      {selectedUnitId ? "Select a topic…" : "Select unit first"}
+                    </option>
+                    {structuredSectionsLoading && (
+                      <option value="" disabled>
+                        Loading book sections…
+                      </option>
+                    )}
+                    {topicOptions.map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
+                    {!structuredSectionsLoading &&
+                      !topicOptions.length &&
+                      subject && (
+                        <option value="" disabled>
+                          No data available
+                        </option>
+                      )}
+                    <option value="__custom__">Custom topic...</option>
                   </select>
                 </div>
-                {topic === "__custom__" && <div className="fi"><input className="finput" placeholder="Enter your seminar topic…" value={custom} onChange={(event) => setCustom(event.target.value)} /></div>}
+                {topic === "__custom__" && (
+                  <div className="fi">
+                    <input
+                      className="finput"
+                      placeholder="Enter your seminar topic…"
+                      value={custom}
+                      onChange={(event) => setCustom(event.target.value)}
+                    />
+                  </div>
+                )}
 
-                {seminarMode === "session" && sessionSubMode === "presenter" && (
-                  <>
-                    <div className="sec-div">Session Timing</div>
-                    <div className="timing-grid fi">
-                      {[{ id: "instant", ic: "⚡", t: "Start Now", d: "Launch immediately" }, { id: "schedule", ic: "📅", t: "Schedule", d: "Plan for a future date" }].map((item) => (
-                        <div key={item.id} className={`timing-card${seminarType === item.id ? " sel" : ""}`} onClick={() => setSeminarType(item.id)}>
-                          <div className="timing-ic">{item.ic}</div><div><div className="timing-title">{item.t}</div><div className="timing-desc">{item.d}</div></div>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="sec-div">Invite Observers</div>
-                    <div className="obs-join-input-row" style={{ marginBottom: 10 }}>
-                      <input className="finput" placeholder="Add observer email or name…" style={{ flex: 1 }} value={inviteInput} onChange={(event) => setInviteInput(event.target.value)} />
-                      <button className="btn-s" onClick={addInvitee}>Add</button>
-                    </div>
-                    {invitees.length > 0 && <div style={{ marginBottom: 10, display: "flex", flexDirection: "column", gap: 6 }}>
-                      {invitees.map((invitee) => (
-                        <div key={invitee.id} className="invite-row">
-                          <div className="invite-av" style={{ background: invitee.color }}>{invitee.value.slice(0, 1).toUpperCase()}</div>
-                          <div className="invite-info">
-                            <div className="invite-name">{invitee.value}</div>
-                            <div className="invite-type">{invitee.type === "email" ? "Email invite" : "Link invite"}</div>
+                {seminarMode === "session" &&
+                  sessionSubMode === "presenter" && (
+                    <>
+                      <div className="sec-div">Session Timing</div>
+                      <div className="timing-grid fi">
+                        {[
+                          {
+                            id: "instant",
+                            ic: "zap",
+                            t: "Start Now",
+                            d: "Launch immediately",
+                          },
+                          {
+                            id: "schedule",
+                            ic: "calendar",
+                            t: "Schedule",
+                            d: "Plan for a future date",
+                          },
+                        ].map((item) => (
+                          <div
+                            key={item.id}
+                            className={`timing-card${seminarType === item.id ? " sel" : ""}`}
+                            onClick={() => setSeminarType(item.id)}
+                          >
+                            <div className="timing-ic">
+                              <SeminarIcon name={item.ic} />
+                            </div>
+                            <div>
+                              <div className="timing-title">{item.t}</div>
+                              <div className="timing-desc">{item.d}</div>
+                            </div>
                           </div>
-                          <div className={`invite-status ${invitee.status === "sent" ? "inv-sent" : "inv-pending"}`}>{invitee.status}</div>
-                          <button className="invite-rm" onClick={() => setInvitees((current) => current.filter((item) => item.id !== invitee.id))}>×</button>
-                        </div>
-                      ))}
-                    </div>}
-                    {seminarType === "schedule" && <div style={{ padding: "11px 13px", borderRadius: 11, background: "rgba(0,195,122,.04)", border: "1.5px solid rgba(0,195,122,.16)", marginBottom: 10 }}>
-                      {!scheduled ? (
-                        <>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--t1)", marginBottom: 5 }}>📅 Schedule & publish to community</div>
-                          <div style={{ fontSize: 11, color: "var(--t2)", marginBottom: 8 }}>Observers in your group will see and can join.</div>
-                          <button className="btn-s" style={{ width: "100%", justifyContent: "center" }} onClick={() => setShowSchedule(true)}>📅 Set Date & Time</button>
-                        </>
-                      ) : (
-                        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                          <span style={{ fontSize: 20 }}>✅</span>
-                          <div style={{ flex: 1 }}><div style={{ fontSize: 11.5, fontWeight: 800, color: "var(--em)" }}>Scheduled & Published</div><div style={{ fontSize: 10.5, color: "var(--t2)" }}>📅 {scheduledInfo?.date} at {scheduledInfo?.time}</div></div>
-                          <button className="btn-s" style={{ fontSize: 10.5, padding: "3px 8px" }} onClick={() => { setScheduled(false); setShowSchedule(true); }}>Edit</button>
+                        ))}
+                      </div>
+                      <div className="sec-div">Invite Observers</div>
+                      <div
+                        className="obs-join-input-row"
+                        style={{ marginBottom: 10 }}
+                      >
+                        <input
+                          className="finput"
+                          placeholder="Add observer email or name…"
+                          style={{ flex: 1 }}
+                          value={inviteInput}
+                          onChange={(event) =>
+                            setInviteInput(event.target.value)
+                          }
+                        />
+                        <button className="btn-s" onClick={addInvitee}>
+                          Add
+                        </button>
+                      </div>
+                      {invitees.length > 0 && (
+                        <div
+                          style={{
+                            marginBottom: 10,
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 6,
+                          }}
+                        >
+                          {invitees.map((invitee) => (
+                            <div key={invitee.id} className="invite-row">
+                              <div
+                                className="invite-av"
+                                style={{ background: invitee.color }}
+                              >
+                                {invitee.value.slice(0, 1).toUpperCase()}
+                              </div>
+                              <div className="invite-info">
+                                <div className="invite-name">
+                                  {invitee.value}
+                                </div>
+                                <div className="invite-type">
+                                  {invitee.type === "email"
+                                    ? "Email invite"
+                                    : "Link invite"}
+                                </div>
+                              </div>
+                              <div
+                                className={`invite-status ${invitee.status === "sent" ? "inv-sent" : "inv-pending"}`}
+                              >
+                                {invitee.status}
+                              </div>
+                              <button
+                                className="invite-rm"
+                                onClick={() =>
+                                  setInvitees((current) =>
+                                    current.filter(
+                                      (item) => item.id !== invitee.id,
+                                    ),
+                                  )
+                                }
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
                         </div>
                       )}
-                    </div>}
-                    <div className="link-box">
-                      <div className="link-lbl">🔗 Your Room Link — Share with Observers</div>
-                      <div className="link-row"><span className="link-val">{roomLink}</span><button className="copy-btn" onClick={copyLink}>{copied ? "✓ Copied" : "Copy"}</button></div>
-                    </div>
-                  </>
-                )}
-                {((seminarMode === "session" && sessionSubMode === "presenter") || (seminarMode === "prepare" && sessionSubMode === "demo")) && (
+                      {seminarType === "schedule" && (
+                        <div
+                          style={{
+                            padding: "11px 13px",
+                            borderRadius: 11,
+                            background: "rgba(0,195,122,.04)",
+                            border: "1.5px solid rgba(0,195,122,.16)",
+                            marginBottom: 10,
+                          }}
+                        >
+                          {!scheduled ? (
+                            <>
+                              <div
+                                style={{
+                                  fontSize: 12,
+                                  fontWeight: 700,
+                                  color: "var(--t1)",
+                                  marginBottom: 5,
+                                }}
+                              >
+                                📅 Schedule & publish to community
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: 11,
+                                  color: "var(--t2)",
+                                  marginBottom: 8,
+                                }}
+                              >
+                                Observers in your group will see and can join.
+                              </div>
+                              <button
+                                className="btn-s"
+                                style={{
+                                  width: "100%",
+                                  justifyContent: "center",
+                                }}
+                                onClick={() => setShowSchedule(true)}
+                              >
+                                📅 Set Date & Time
+                              </button>
+                            </>
+                          ) : (
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 9,
+                              }}
+                            >
+                              <span style={{ fontSize: 20 }}>✅</span>
+                              <div style={{ flex: 1 }}>
+                                <div
+                                  style={{
+                                    fontSize: 11.5,
+                                    fontWeight: 800,
+                                    color: "var(--em)",
+                                  }}
+                                >
+                                  Scheduled & Published
+                                </div>
+                                <div
+                                  style={{ fontSize: 10.5, color: "var(--t2)" }}
+                                >
+                                  📅 {scheduledInfo?.date} at{" "}
+                                  {scheduledInfo?.time}
+                                </div>
+                              </div>
+                              <button
+                                className="btn-s"
+                                style={{ fontSize: 10.5, padding: "3px 8px" }}
+                                onClick={() => {
+                                  setScheduled(false);
+                                  setShowSchedule(true);
+                                }}
+                              >
+                                Edit
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      <div className="sec-div">Session Visibility</div>
+                      <div className="fi">
+                        <select
+                          className="finput"
+                          value={sessionVisibility}
+                          onChange={(event) =>
+                            setSessionVisibility(event.target.value)
+                          }
+                        >
+                          <option value="public">Access to all</option>
+                          <option value="school">Only to school</option>
+                          <option value="class">Only to class</option>
+                          <option value="private">Private - invited only</option>
+                        </select>
+                      </div>
+                      <label
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 9,
+                          padding: "11px 13px",
+                          borderRadius: 11,
+                          background: "rgba(0,195,122,.04)",
+                          border: "1.5px solid rgba(0,195,122,.14)",
+                          color: "var(--t1)",
+                          fontSize: 12,
+                          fontWeight: 800,
+                          cursor: "pointer",
+                          marginBottom: 10,
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={shareToCommunity}
+                          disabled={sessionVisibility === "private"}
+                          onChange={(event) =>
+                            setShareToCommunity(event.target.checked)
+                          }
+                        />
+                        {sessionVisibility === "private"
+                          ? "Share to Community disabled for private sessions"
+                          : "Share to Community"}
+                      </label>
+                      <div className="link-box">
+                        <div className="link-lbl">
+                          🔗 Invite link will be generated after the seminar room is created
+                        </div>
+                        <div style={{ fontSize: 11, color: "var(--t2)", marginTop: 4 }}>
+                          You can send the seminar card to a group or email observers from the waiting room.
+                        </div>
+                      </div>
+                    </>
+                  )}
+                {((seminarMode === "session" &&
+                  sessionSubMode === "presenter") ||
+                  (seminarMode === "prepare" && sessionSubMode === "demo")) && (
                   <>
                     <div className="sec-div">Upload Presentation File</div>
-                    <div style={{ padding: "12px", borderRadius: 12, background: "var(--surf2)", border: "1px dashed var(--bdr)", marginBottom: 4, color: "var(--t1)" }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: "var(--t2)", marginBottom: 7 }}>📎 PDF / PPT / PPTX — {seminarMode==="prepare"?"Required for demo.":"Optional."} Sent to AI when session starts.</div>
+                    <div
+                      style={{
+                        padding: "12px",
+                        borderRadius: 12,
+                        background: "var(--surf2)",
+                        border: "1px dashed var(--bdr)",
+                        marginBottom: 4,
+                        color: "var(--t1)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          color: "var(--t2)",
+                          marginBottom: 7,
+                        }}
+                      >
+                        📎 PDF / PPT / PPTX —{" "}
+                        {seminarMode === "prepare"
+                          ? "Required for demo."
+                          : "Optional."}{" "}
+                        Sent to AI when session starts.
+                      </div>
                       <input
                         type="file"
                         accept=".pdf,.ppt,.pptx"
-                        onChange={e => { if (e.target.files && e.target.files[0]) setSetupFile(e.target.files[0]); }}
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files[0])
+                            setSetupFile(e.target.files[0]);
+                        }}
                         style={{
                           width: "100%",
                           padding: "8px",
@@ -3488,7 +6454,17 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
                           color: "var(--t1)",
                         }}
                       />
-                      {setupFile && <div style={{ marginTop: 6, fontSize: 11, color: "var(--em)" }}>✅ {setupFile.name}</div>}
+                      {setupFile && (
+                        <div
+                          style={{
+                            marginTop: 6,
+                            fontSize: 11,
+                            color: "var(--em)",
+                          }}
+                        >
+                          ✅ {setupFile.name}
+                        </div>
+                      )}
                     </div>
                   </>
                 )}
@@ -3496,15 +6472,63 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
                   <div className="steps">
                     {activeSteps.map((step, index) => {
                       const done = step.done;
-                      const prev = activeSteps.slice(0, index).every((item) => item.done);
+                      const prev = activeSteps
+                        .slice(0, index)
+                        .every((item) => item.done);
                       const act = !done && prev;
-                      return <div key={index} className={`step-r ${done ? "done" : act ? "act" : "pend"}`}><div className="step-num">{done ? "✓" : index + 1}</div><div className="step-lbl">{step.label}</div></div>;
+                      return (
+                        <div
+                          key={index}
+                          className={`step-r ${done ? "done" : act ? "act" : "pend"}`}
+                        >
+                          <div className="step-num">
+                            {done ? "✓" : index + 1}
+                          </div>
+                          <div className="step-lbl">{step.label}</div>
+                        </div>
+                      );
                     })}
                   </div>
-                  <button className="btn-p" onClick={() => seminarMode === "create" ? handleCreateSubmit() : setShowConfirm(true)} disabled={joining || !canLaunch || (seminarType === "schedule" && !scheduled)}>
-                    {joining && seminarMode === "create" ? <><span className="loader-spin" />Creating {joinProgress > 0 ? `${joinProgress}%` : ""}</> : seminarMode === "create" ? "📄 Submit & Create with AI" : seminarMode === "prepare" ? (sessionSubMode === "demo" ? "▶️ Launch Demo Session" : "🤖 Start AI Preparation") : sessionSubMode === "observer" ? "👁️ Join as Observer" : "🎙️ Launch Seminar Room"}
+                  <button
+                    className="btn-p"
+                    onClick={() =>
+                      seminarMode === "create"
+                        ? handleCreateSubmit()
+                        : setShowConfirm(true)
+                    }
+                    disabled={
+                      joining ||
+                      !canLaunch ||
+                      (seminarType === "schedule" && !scheduled)
+                    }
+                  >
+                    {joining && seminarMode === "create" ? (
+                      <>
+                        <span className="loader-spin" />
+                        Creating {joinProgress > 0 ? `${joinProgress}%` : ""}
+                      </>
+                    ) : seminarMode === "create" ? (
+                      "📄 Submit & Create with AI"
+                    ) : seminarMode === "prepare" ? (
+                      sessionSubMode === "demo" ? (
+                        "▶️ Launch Demo Session"
+                      ) : (
+                        "🤖 Start AI Preparation"
+                      )
+                    ) : sessionSubMode === "observer" ? (
+                      "👁️ Join as Observer"
+                    ) : (
+                      "🎙️ Launch Seminar Room"
+                    )}
                   </button>
-                  {seminarMode === "create" && joinProgress > 0 && <div className="lo-progress"><div className="lo-progress-fill" style={{ width: `${joinProgress}%` }} /></div>}
+                  {seminarMode === "create" && joinProgress > 0 && (
+                    <div className="lo-progress">
+                      <div
+                        className="lo-progress-fill"
+                        style={{ width: `${joinProgress}%` }}
+                      />
+                    </div>
+                  )}
                 </div>
               </>
             )}
@@ -3513,36 +6537,149 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
         </div>
       </div>
 
-      {showSchedule && <ScheduleSeminarModal config={{ topic: finalTopic, subject: selectedSubjectLabel || subject, unit, roomLink }} onSchedule={(info) => { setScheduledInfo(info); setScheduled(true); setShowSchedule(false); toast$("📅 Seminar scheduled & published!", "success"); }} onClose={() => setShowSchedule(false)} />}
+      {showSchedule && (
+        <ScheduleSeminarModal
+          config={{
+            topic: finalTopic,
+            subject: selectedSubjectLabel || subject,
+            unit,
+            roomLink,
+          }}
+          onSchedule={(info) => {
+            setScheduledInfo(info);
+            setScheduled(true);
+            setShowSchedule(false);
+            toast$("📅 Seminar scheduled & published!", "success");
+          }}
+          onClose={() => setShowSchedule(false)}
+        />
+      )}
       {showCreateLinkModal && createDocLink && (
         <div className="overlay">
-          <div className="modal" style={{ maxWidth: 460, background: "#0c1422", border: "1px solid rgba(255,255,255,.1)" }}>
-            <div className="mh" style={{ borderColor: "rgba(255,255,255,.08)" }}>
-              <span className="mh-title" style={{ color: "#fff" }}>AI file is ready</span>
-              <button className="mh-close" onClick={() => setShowCreateLinkModal(false)} style={{ borderColor: "rgba(255,255,255,.1)", background: "rgba(255,255,255,.06)", color: "rgba(255,255,255,.65)" }}>x</button>
+          <div
+            className="modal"
+            style={{
+              maxWidth: 460,
+              background: "#0c1422",
+              border: "1px solid rgba(255,255,255,.1)",
+            }}
+          >
+            <div
+              className="mh"
+              style={{ borderColor: "rgba(255,255,255,.08)" }}
+            >
+              <span className="mh-title" style={{ color: "#fff" }}>
+                AI file is ready
+              </span>
+              <button
+                className="mh-close"
+                onClick={() => setShowCreateLinkModal(false)}
+                style={{
+                  borderColor: "rgba(255,255,255,.1)",
+                  background: "rgba(255,255,255,.06)",
+                  color: "rgba(255,255,255,.65)",
+                }}
+              >
+                x
+              </button>
             </div>
             <div className="mb" style={{ background: "#0c1422" }}>
-              <div style={{ padding: "13px 14px", borderRadius: 13, background: "rgba(0,195,122,.08)", border: "1px solid rgba(0,195,122,.22)", color: "#5ee3b7", fontSize: 12.5, fontWeight: 800, marginBottom: 12 }}>
-                Your Google Slides deck is ready. Open the GradeUp Copilot add-on inside Slides to chat and edit.
+              <div
+                style={{
+                  padding: "13px 14px",
+                  borderRadius: 13,
+                  background: "rgba(0,195,122,.08)",
+                  border: "1px solid rgba(0,195,122,.22)",
+                  color: "#5ee3b7",
+                  fontSize: 12.5,
+                  fontWeight: 800,
+                  marginBottom: 12,
+                }}
+              >
+                Your Google Slides deck is ready. Open the GradeUp Copilot
+                add-on inside Slides to chat and edit.
               </div>
-              <div className="link-row" style={{ background: "rgba(255,255,255,.04)", borderColor: "rgba(255,255,255,.1)" }}>
-                <a className="link-val" href={createDocLink} onClick={openCreateDoc} style={{ color: "#5ee3b7", textDecoration: "none" }}>{createDocLink}</a>
-                <button className="copy-btn" onClick={() => { navigator.clipboard.writeText(createDocLink); toast$("Link copied", "success"); }}>Copy</button>
+              <div
+                className="link-row"
+                style={{
+                  background: "rgba(255,255,255,.04)",
+                  borderColor: "rgba(255,255,255,.1)",
+                }}
+              >
+                <a
+                  className="link-val"
+                  href={createDocLink}
+                  onClick={openCreateDoc}
+                  style={{ color: "#5ee3b7", textDecoration: "none" }}
+                >
+                  {createDocLink}
+                </a>
+                <button
+                  className="copy-btn"
+                  onClick={() => {
+                    navigator.clipboard.writeText(createDocLink);
+                    toast$("Link copied", "success");
+                  }}
+                >
+                  Copy
+                </button>
               </div>
-              {createDocConfig && inferCreateArtifact(createDocConfig).hasFile && (
-                <div style={{ marginTop: 10, fontSize: 11.5, lineHeight: 1.6, color: "rgba(255,255,255,.5)" }}>
-                  Attached file detected: {inferCreateArtifact(createDocConfig).label}. The next page will open it in the previewer.
-                </div>
-              )}
+              {createDocConfig &&
+                inferCreateArtifact(createDocConfig).hasFile && (
+                  <div
+                    style={{
+                      marginTop: 10,
+                      fontSize: 11.5,
+                      lineHeight: 1.6,
+                      color: "rgba(255,255,255,.5)",
+                    }}
+                  >
+                    Attached file detected:{" "}
+                    {inferCreateArtifact(createDocConfig).label}. The next page
+                    will open it in the previewer.
+                  </div>
+                )}
               {createDocConfig?.sessionId && (
-                <div style={{ marginTop: 10, fontSize: 11.5, lineHeight: 1.6, color: "rgba(255,255,255,.5)" }}>
-                  In Google Slides, use Extensions &gt; GradeUp Slides Copilot &gt; Open Copilot. The sidebar will detect this deck automatically after the Apps Script update.
+                <div
+                  style={{
+                    marginTop: 10,
+                    fontSize: 11.5,
+                    lineHeight: 1.6,
+                    color: "rgba(255,255,255,.5)",
+                  }}
+                >
+                  In Google Slides, use Extensions &gt; GradeUp Slides Copilot
+                  &gt; Open Copilot. The sidebar will detect this deck
+                  automatically after the Apps Script update.
                 </div>
               )}
             </div>
-            <div className="mf" style={{ borderColor: "rgba(255,255,255,.08)", background: "#0c1422" }}>
-              <button className="btn-s" onClick={() => setShowCreateLinkModal(false)} style={{ background: "rgba(255,255,255,.04)", borderColor: "rgba(255,255,255,.1)", color: "rgba(255,255,255,.65)" }}>Stay here</button>
-              <a className="create-open-link" href={createDocLink} onClick={openCreateDoc} style={{ marginTop: 0, width: "auto", padding: "8px 14px" }}>Open Slides</a>
+            <div
+              className="mf"
+              style={{
+                borderColor: "rgba(255,255,255,.08)",
+                background: "#0c1422",
+              }}
+            >
+              <button
+                className="btn-s"
+                onClick={() => setShowCreateLinkModal(false)}
+                style={{
+                  background: "rgba(255,255,255,.04)",
+                  borderColor: "rgba(255,255,255,.1)",
+                  color: "rgba(255,255,255,.65)",
+                }}
+              >
+                Stay here
+              </button>
+              <a
+                className="create-open-link"
+                href={createDocLink}
+                onClick={openCreateDoc}
+                style={{ marginTop: 0, width: "auto", padding: "8px 14px" }}
+              >
+                Open Slides
+              </a>
             </div>
           </div>
         </div>
@@ -3551,28 +6688,71 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
       {showConfirm && (
         <div className="overlay">
           {needsLaunchMic ? (
-            <div className="modal dark" style={{ maxWidth: 440, background: "#0c1422", border: "1px solid rgba(255,255,255,.1)" }}>
+            <div
+              className="modal dark"
+              style={{
+                maxWidth: 440,
+                background: "#0c1422",
+                border: "1px solid rgba(255,255,255,.1)",
+              }}
+            >
               <div className="mh">
-                <span className="mh-title" style={{ color: "#fff" }}>Mic Permission Required</span>
+                <span className="mh-title" style={{ color: "#fff" }}>
+                  Mic Permission Required
+                </span>
                 <button
                   className="mh-close"
-                  style={{ borderColor: "rgba(255,255,255,.1)", background: "rgba(255,255,255,.06)", color: "rgba(255,255,255,.6)" }}
+                  style={{
+                    borderColor: "rgba(255,255,255,.1)",
+                    background: "rgba(255,255,255,.06)",
+                    color: "rgba(255,255,255,.6)",
+                  }}
                   onClick={() => {
                     stopMic();
                     setShowConfirm(false);
-                    toast$("Microphone permission is required to enter the seminar room.", "warn");
+                    toast$(
+                      "Microphone permission is required to enter the seminar room.",
+                      "warn",
+                    );
                   }}
                   disabled={joining}
                 >
                   x
                 </button>
               </div>
-              <div className="mb" style={{ padding: "16px 20px", background: "#0c1422" }}>
-                <div style={{ padding: "12px 14px", borderRadius: 13, background: "rgba(99,102,241,.08)", border: "1px solid rgba(99,102,241,.18)", marginBottom: 14, color: "#fff", fontSize: 12.5, lineHeight: 1.7 }}>
-                  We need microphone access before you can enter the seminar room. This lets the seminar use your live mic, show your speaking state, and keep the room synced.
+              <div
+                className="mb"
+                style={{ padding: "16px 20px", background: "#0c1422" }}
+              >
+                <div
+                  style={{
+                    padding: "12px 14px",
+                    borderRadius: 13,
+                    background: "rgba(99,102,241,.08)",
+                    border: "1px solid rgba(99,102,241,.18)",
+                    marginBottom: 14,
+                    color: "#fff",
+                    fontSize: 12.5,
+                    lineHeight: 1.7,
+                  }}
+                >
+                  We need microphone access before you can enter the seminar
+                  room. This lets the seminar use your live mic, show your
+                  speaking state, and keep the room synced.
                 </div>
                 {finalTopic && (
-                  <div style={{ padding: "9px 11px", borderRadius: 9, background: "rgba(45,156,219,.06)", border: "1px solid rgba(45,156,219,.2)", marginBottom: 12, fontSize: 11.5, fontWeight: 600, color: "var(--sky)" }}>
+                  <div
+                    style={{
+                      padding: "9px 11px",
+                      borderRadius: 9,
+                      background: "rgba(45,156,219,.06)",
+                      border: "1px solid rgba(45,156,219,.2)",
+                      marginBottom: 12,
+                      fontSize: 11.5,
+                      fontWeight: 600,
+                      color: "var(--sky)",
+                    }}
+                  >
                     {`🎓 Topic: ${finalTopic}`}
                   </div>
                 )}
@@ -3585,17 +6765,66 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
                   onToggle={() => setMicEnabled(!micEnabled)}
                   error={micError}
                 />
-                <div style={{ fontSize: 12, color: perm === "denied" ? "#fecaca" : "rgba(255,255,255,.65)", lineHeight: 1.6 }}>
+                <div
+                  style={{
+                    fontSize: 12,
+                    color:
+                      perm === "denied" ? "#fecaca" : "rgba(255,255,255,.65)",
+                    lineHeight: 1.6,
+                  }}
+                >
                   {perm === "denied" || micError
-                    ? micError || "Microphone access was denied. Please allow it in your browser settings or retry permission, then continue."
+                    ? micError ||
+                      "Microphone access was denied. Please allow it in your browser settings or retry permission, then continue."
                     : "Press the permission button first. Continue unlocks only after mic access is granted."}
                 </div>
               </div>
-              <div className="mf" style={{ borderColor: "rgba(255,255,255,.08)", background: "#0c1422", flexDirection: "column", gap: 8 }}>
-                <button className="btn-p" onClick={handleLaunchMicContinue} disabled={joining || !micReady} style={{ fontSize: 14 }}>
-                  {joining ? <><span className="loader-spin" />{joinProgress > 0 ? `Loading ${joinProgress}%` : "Joining..."}</> : micReady ? (seminarMode === "prepare" ? (sessionSubMode === "demo" ? "Continue to Demo Session" : "Continue to AI Preparation") : "Continue to Seminar Room") : perm === "requesting" ? "Waiting for Mic..." : "Enable Mic to Continue"}
+              <div
+                className="mf"
+                style={{
+                  borderColor: "rgba(255,255,255,.08)",
+                  background: "#0c1422",
+                  flexDirection: "column",
+                  gap: 8,
+                }}
+              >
+                <button
+                  className="btn-p"
+                  onClick={handleLaunchMicContinue}
+                  disabled={joining || !micReady}
+                  style={{ fontSize: 14 }}
+                >
+                  {joining ? (
+                    <>
+                      <span className="loader-spin" />
+                      {joinProgress > 0
+                        ? `Loading ${joinProgress}%`
+                        : "Joining..."}
+                    </>
+                  ) : micReady ? (
+                    seminarMode === "prepare" ? (
+                      sessionSubMode === "demo" ? (
+                        "Continue to Demo Session"
+                      ) : (
+                        "Continue to AI Preparation"
+                      )
+                    ) : (
+                      "Continue to Seminar Room"
+                    )
+                  ) : perm === "requesting" ? (
+                    "Waiting for Mic..."
+                  ) : (
+                    "Enable Mic to Continue"
+                  )}
                 </button>
-                {joinProgress > 0 && <div className="lo-progress"><div className="lo-progress-fill" style={{ width: `${joinProgress}%` }} /></div>}
+                {joinProgress > 0 && (
+                  <div className="lo-progress">
+                    <div
+                      className="lo-progress-fill"
+                      style={{ width: `${joinProgress}%` }}
+                    />
+                  </div>
+                )}
                 <button
                   className="btn-s"
                   onClick={() => {
@@ -3603,36 +6832,170 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
                     setShowConfirm(false);
                   }}
                   disabled={joining}
-                  style={{ width: "100%", justifyContent: "center", background: "rgba(255,255,255,.04)", borderColor: "rgba(255,255,255,.1)", color: "rgba(255,255,255,.5)" }}
+                  style={{
+                    width: "100%",
+                    justifyContent: "center",
+                    background: "rgba(255,255,255,.04)",
+                    borderColor: "rgba(255,255,255,.1)",
+                    color: "rgba(255,255,255,.5)",
+                  }}
                 >
                   Cancel
                 </button>
               </div>
             </div>
           ) : (
-          <div className="modal" style={{ maxWidth: 340, background: "#0c1422", border: "1px solid rgba(255,255,255,.1)" }}>
-            <div style={{ background: "linear-gradient(135deg,#060e1c,#081a10)", padding: "20px 18px", textAlign: "center" }}>
-              <div style={{ fontSize: 38, marginBottom: 8 }}>{seminarMode === "prepare" ? "🤖" : sessionSubMode === "observer" ? "👁️" : "🎓"}</div>
-              <div style={{ fontSize: 14, fontWeight: 800, color: "#fff", marginBottom: 2 }}>{name}</div>
-              <div style={{ fontSize: 10.5, color: "rgba(255,255,255,.4)" }}>{seminarMode === "prepare" ? (sessionSubMode === "demo" ? "Launching Demo Session" : "Launching AI Preparation") : sessionSubMode === "observer" ? "Joining as Observer" : "Preparing Seminar Room"}</div>
+            <div
+              className="modal"
+              style={{
+                maxWidth: 340,
+                background: "#0c1422",
+                border: "1px solid rgba(255,255,255,.1)",
+              }}
+            >
+              <div
+                style={{
+                  background: "linear-gradient(135deg,#060e1c,#081a10)",
+                  padding: "20px 18px",
+                  textAlign: "center",
+                }}
+              >
+                <div style={{ fontSize: 38, marginBottom: 8 }}>
+                  {seminarMode === "prepare"
+                    ? "🤖"
+                    : sessionSubMode === "observer"
+                      ? "👁️"
+                      : "🎓"}
+                </div>
+                <div
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 800,
+                    color: "#fff",
+                    marginBottom: 2,
+                  }}
+                >
+                  {name}
+                </div>
+                <div style={{ fontSize: 10.5, color: "rgba(255,255,255,.4)" }}>
+                  {seminarMode === "prepare"
+                    ? sessionSubMode === "demo"
+                      ? "Launching Demo Session"
+                      : "Launching AI Preparation"
+                    : sessionSubMode === "observer"
+                      ? "Joining as Observer"
+                      : "Preparing Seminar Room"}
+                </div>
+              </div>
+              <div className="mb" style={{ background: "#0c1422" }}>
+                {(selectedSession || finalTopic) && (
+                  <div
+                    style={{
+                      padding: "9px 11px",
+                      borderRadius: 9,
+                      background: "rgba(45,156,219,.06)",
+                      border: "1px solid rgba(45,156,219,.2)",
+                      marginBottom: 9,
+                      fontSize: 11.5,
+                      fontWeight: 600,
+                      color: "var(--sky)",
+                    }}
+                  >
+                    {sessionSubMode === "observer"
+                      ? `👁️ Joining: ${selectedSession?.topic || selectedSession?.title || parseSeminarSessionId(joinId)}`
+                      : `🎓 Topic: ${finalTopic}`}
+                  </div>
+                )}
+                {(seminarMode !== "session" ||
+                  sessionSubMode !== "observer") && (
+                  <button
+                    className={`perm-btn ${perm === "granted" ? "granted" : perm === "denied" ? "denied" : "req"}`}
+                    style={{
+                      width: "100%",
+                      justifyContent: "center",
+                      fontSize: 13,
+                      padding: "10px",
+                    }}
+                    onClick={request}
+                    disabled={perm === "requesting" || perm === "granted"}
+                  >
+                    <span style={{ fontSize: 18 }}>
+                      {perm === "granted"
+                        ? "🎤"
+                        : perm === "denied"
+                          ? "⚠️"
+                          : "🎙️"}
+                    </span>
+                    {perm === "granted"
+                      ? "Microphone Active"
+                      : perm === "requesting"
+                        ? "Checking microphone..."
+                        : "Allow microphone"}
+                  </button>
+                )}
+              </div>
+              <div
+                className="mf"
+                style={{
+                  borderColor: "rgba(255,255,255,.08)",
+                  background: "#0c1422",
+                  flexDirection: "column",
+                  gap: 7,
+                }}
+              >
+                <button
+                  className="btn-p"
+                  onClick={handleJoin}
+                  disabled={
+                    joining ||
+                    ((seminarMode !== "session" ||
+                      sessionSubMode !== "observer") &&
+                      perm !== "granted")
+                  }
+                >
+                  {joining ? (
+                    <>
+                      <span className="loader-spin" />
+                      {joinProgress > 0
+                        ? `Loading ${joinProgress}%`
+                        : "Joining…"}
+                    </>
+                  ) : seminarMode === "prepare" ? (
+                    sessionSubMode === "demo" ? (
+                      "▶️ Enter Demo Session"
+                    ) : (
+                      "🤖 Enter AI Preparation"
+                    )
+                  ) : sessionSubMode === "observer" ? (
+                    "👁️ Enter as Observer"
+                  ) : (
+                    "🎙️ Enter Seminar Room"
+                  )}
+                </button>
+                {joinProgress > 0 && (
+                  <div className="lo-progress">
+                    <div
+                      className="lo-progress-fill"
+                      style={{ width: `${joinProgress}%` }}
+                    />
+                  </div>
+                )}
+                <button
+                  className="btn-s"
+                  onClick={() => setShowConfirm(false)}
+                  disabled={joining}
+                  style={{
+                    width: "100%",
+                    justifyContent: "center",
+                    background: "rgba(255,255,255,.04)",
+                    borderColor: "rgba(255,255,255,.1)",
+                    color: "rgba(255,255,255,.5)",
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
-            <div className="mb" style={{ background: "#0c1422" }}>
-              {(selectedSession || finalTopic) && <div style={{ padding: "9px 11px", borderRadius: 9, background: "rgba(45,156,219,.06)", border: "1px solid rgba(45,156,219,.2)", marginBottom: 9, fontSize: 11.5, fontWeight: 600, color: "var(--sky)" }}>
-                {sessionSubMode === "observer" ? `👁️ Joining: ${selectedSession?.topic || selectedSession?.title || parseSeminarSessionId(joinId)}` : `🎓 Topic: ${finalTopic}`}
-              </div>}
-              {(seminarMode !== "session" || sessionSubMode !== "observer") && <button className={`perm-btn ${perm === "granted" ? "granted" : perm === "denied" ? "denied" : "req"}`} style={{ width: "100%", justifyContent: "center", fontSize: 13, padding: "10px" }} onClick={request} disabled={perm === "requesting" || perm === "granted"}>
-                <span style={{ fontSize: 18 }}>{perm === "granted" ? "🎤" : perm === "denied" ? "⚠️" : "🎙️"}</span>
-                {perm === "granted" ? "Microphone Active" : perm === "requesting" ? "Checking microphone..." : "Allow microphone"}
-              </button>}
-            </div>
-            <div className="mf" style={{ borderColor: "rgba(255,255,255,.08)", background: "#0c1422", flexDirection: "column", gap: 7 }}>
-              <button className="btn-p" onClick={handleJoin} disabled={joining || ((seminarMode !== "session" || sessionSubMode !== "observer") && perm !== "granted")}>
-                {joining ? <><span className="loader-spin" />{joinProgress > 0 ? `Loading ${joinProgress}%` : "Joining…"}</> : seminarMode === "prepare" ? (sessionSubMode === "demo" ? "▶️ Enter Demo Session" : "🤖 Enter AI Preparation") : sessionSubMode === "observer" ? "👁️ Enter as Observer" : "🎙️ Enter Seminar Room"}
-              </button>
-              {joinProgress > 0 && <div className="lo-progress"><div className="lo-progress-fill" style={{ width: `${joinProgress}%` }} /></div>}
-              <button className="btn-s" onClick={() => setShowConfirm(false)} disabled={joining} style={{ width: "100%", justifyContent: "center", background: "rgba(255,255,255,.04)", borderColor: "rgba(255,255,255,.1)", color: "rgba(255,255,255,.5)" }}>Cancel</button>
-            </div>
-          </div>
           )}
         </div>
       )}
@@ -3641,11 +7004,11 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
   );
 }
 
-function PrepareWithAIRoom({config,onEnd}) {
-  const timer=usePausableTimer();
+function PrepareWithAIRoom({ config, onEnd }) {
+  const timer = usePausableTimer();
   const PRACTICE_SILENCE_MS = 4500;
   const DEMO_HELP_SILENCE_MS = 10000;
-  
+
   // Setup Flow State
   const [setupPhase, setSetupPhase] = useState("session"); // session for all
   const [demoPreviewModal, setDemoPreviewModal] = useState(false);
@@ -3653,180 +7016,236 @@ function PrepareWithAIRoom({config,onEnd}) {
   const [chatOptions, setChatOptions] = useState([]);
   const [actionLoader, setActionLoader] = useState(null);
 
-  const [demoReady,setDemoReady]=useState(false);
-  const [demoMode,setDemoMode]=useState(false);
-  const [demoTimer,setDemoTimer]=useState(0);
-  const [demoRunning,setDemoRunning]=useState(false);
-  const [micOn,setMicOn]=useState(false);
-  const localStreamRef=useRef(null);
-  const [sessionId,setSessionId]=useState(config.sessionId || "");
-  const [activeSeminarMode,setActiveSeminarMode]=useState(config.sessionSubMode === "demo" ? "demo" : "practice");
-  const [speechRecording,setSpeechRecording]=useState(false);
-  const [speechProcessing,setSpeechProcessing]=useState(false);
-  const [requestingGuide,setRequestingGuide]=useState(false);
-  const [showHelpPrompt,setShowHelpPrompt]=useState(false);
-  const [guideStatusText,setGuideStatusText]=useState("");
-  const [pendingGuideTranscript,setPendingGuideTranscript]=useState("");
-  const [endingSession,setEndingSession]=useState(false);
-  const [greetingState,setGreetingState]=useState("preparing");
+  const [demoReady, setDemoReady] = useState(false);
+  const [demoMode, setDemoMode] = useState(false);
+  const [demoTimer, setDemoTimer] = useState(0);
+  const [demoRunning, setDemoRunning] = useState(false);
+  const [micOn, setMicOn] = useState(false);
+  const localStreamRef = useRef(null);
+  const [sessionId, setSessionId] = useState(config.sessionId || "");
+  const [activeSeminarMode, setActiveSeminarMode] = useState(
+    config.sessionSubMode === "demo" ? "demo" : "practice",
+  );
+  const [speechRecording, setSpeechRecording] = useState(false);
+  const [speechProcessing, setSpeechProcessing] = useState(false);
+  const [requestingGuide, setRequestingGuide] = useState(false);
+  const [showHelpPrompt, setShowHelpPrompt] = useState(false);
+  const [guideStatusText, setGuideStatusText] = useState("");
+  const [pendingGuideTranscript, setPendingGuideTranscript] = useState("");
+  const [endingSession, setEndingSession] = useState(false);
+  const [greetingState, setGreetingState] = useState("preparing");
   // Presentation/Screen share state
-  const [presentMode,setPresentMode]=useState(false); // true = big screen + strip layout
-  const [isScreenSharing,setIsScreenSharing]=useState(false);
-  const [presentAnalysis,setPresentAnalysis]=useState(""); // AI analysis of presentation
-  const [presentAnalysisInterval,setPresentAnalysisIntervalRef]=useState(null);
-  const [panelOpen,setPanelOpen]=useState(true);
-  const [activePanel,setActivePanel]=useState("chat");
-  const [showReactions,setShowReactions]=useState(false);
-  const [reaction,setReaction]=useState(null);
-  const [aiInput,setAiInput]=useState("");
-  const [voiceListening,setVoiceListening]=useState(false);
-  const [isAITyping,setIsAITyping]=useState(false);
-  const [exchanges,setExchanges]=useState(0);
-  const [messages,setMessages]=useState([]);
-  const [notes,setNotes]=useState([
-    {id:1,n:1,q:"What structure should my seminar follow?",a:"OUTLINE:\n1. Opening Hook — bold question or statistic\n2. Thesis Statement — one clear sentence\n3. Argument 1 — strongest point + evidence\n4. Argument 2 — case study angle\n5. Argument 3 — nuance or complexity\n6. Counterarguments — acknowledge & rebut\n7. Conclusion — restate thesis, call to action",open:false},
-    {id:2,n:2,q:"What are key delivery tips?",a:"DELIVERY TIPS:\n• Speak at 100–120 wpm — don't rush\n• Pause after key claims — silence is powerful\n• Vary your tone to maintain engagement\n• Make eye contact with different parts of the audience\n• Use transitions: 'Building on that…' / 'On the other hand…'\n• End with a direct question to the audience",open:false},
+  const [presentMode, setPresentMode] = useState(false); // true = big screen + strip layout
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [presentAnalysis, setPresentAnalysis] = useState(""); // AI analysis of presentation
+  const [presentAnalysisInterval, setPresentAnalysisIntervalRef] =
+    useState(null);
+  const [panelOpen, setPanelOpen] = useState(true);
+  const [activePanel, setActivePanel] = useState("chat");
+  const [showReactions, setShowReactions] = useState(false);
+  const [reaction, setReaction] = useState(null);
+  const [aiInput, setAiInput] = useState("");
+  const [voiceListening, setVoiceListening] = useState(false);
+  const [isAITyping, setIsAITyping] = useState(false);
+  const [exchanges, setExchanges] = useState(0);
+  const [messages, setMessages] = useState([]);
+  const [notes, setNotes] = useState([
+    {
+      id: 1,
+      n: 1,
+      q: "What structure should my seminar follow?",
+      a: "OUTLINE:\n1. Opening Hook — bold question or statistic\n2. Thesis Statement — one clear sentence\n3. Argument 1 — strongest point + evidence\n4. Argument 2 — case study angle\n5. Argument 3 — nuance or complexity\n6. Counterarguments — acknowledge & rebut\n7. Conclusion — restate thesis, call to action",
+      open: false,
+    },
+    {
+      id: 2,
+      n: 2,
+      q: "What are key delivery tips?",
+      a: "DELIVERY TIPS:\n• Speak at 100–120 wpm — don't rush\n• Pause after key claims — silence is powerful\n• Vary your tone to maintain engagement\n• Make eye contact with different parts of the audience\n• Use transitions: 'Building on that…' / 'On the other hand…'\n• End with a direct question to the audience",
+      open: false,
+    },
   ]);
-  const [noteCount,setNoteCount]=useState(3);
-  const [isStudentSpeaking,setIsStudentSpeaking]=useState(false);
-  const [liveTranscript,setLiveTranscript]=useState("");
-  const [transcriptHistory,setTranscriptHistory]=useState([]);
-  const [showEnd,setShowEnd]=useState(false);
-  const [showAnalysis,setShowAnalysis]=useState(false);
+  const [noteCount, setNoteCount] = useState(3);
+  const [isStudentSpeaking, setIsStudentSpeaking] = useState(false);
+  const [liveTranscript, setLiveTranscript] = useState("");
+  const [transcriptHistory, setTranscriptHistory] = useState([]);
+  const [showEnd, setShowEnd] = useState(false);
+  const [showAnalysis, setShowAnalysis] = useState(false);
 
-  const [aiSuggestion,setAiSuggestion]=useState(null);
-  const [aiPausedForSuggestion,setAiPausedForSuggestion]=useState(false);
-  const lastSpeechTimeRef=useRef(Date.now());
-  const stuckCheckRef=useRef(null);
-  const resumeCountdownRef=useRef(null);
-  const [resumeCountdown,setResumeCountdown]=useState(0);
+  const [aiSuggestion, setAiSuggestion] = useState(null);
+  const [aiPausedForSuggestion, setAiPausedForSuggestion] = useState(false);
+  const lastSpeechTimeRef = useRef(Date.now());
+  const stuckCheckRef = useRef(null);
+  const resumeCountdownRef = useRef(null);
+  const [resumeCountdown, setResumeCountdown] = useState(0);
 
-  const chatEndRef=useRef(null);
-  const aiVoice=useAIVoice();
-  const speech=useSpeechRecognition();
-  const voiceAsk=useSpeechRecognition();
-  const demoIntervalRef=useRef(null);
-  const presentAnalysisRef=useRef(null);
-  const speechRecorderRef=useRef(null);
-  const speechChunksRef=useRef([]);
-  const speechAudioContextRef=useRef(null);
-  const speechAnalyserRef=useRef(null);
-  const speechSilenceRef=useRef(null);
-  const speechDetectedRef=useRef(false);
-  const lastSpeechAtRef=useRef(null);
-  const speechStopReasonRef=useRef("manual-submit");
-  const initialGreetingPlayedRef=useRef(false);
-  const prepareRoomMountedRef=useRef(false);
-  const greetingTimeoutRef=useRef(null);
-  const captureStartingRef=useRef(false);
-  const latestTranscriptHistoryRef=useRef([]);
-  const manualSpeakRequestedRef=useRef(false);
-  const micPreferenceRef=useRef(false);
-  const lastSubmittedTranscriptRef=useRef({ text:"", at:0 });
-  const {show:toast$,node:toastNode}=useToast();
-  const speakAiReplyRef=useRef(null);
-  const triggerAISuggestionRef=useRef(()=>{});
-  const roomToastRef=useRef(toast$);
-  const voiceAskStopRef=useRef(voiceAsk.stop);
-  const aiCancelRef=useRef(aiVoice.cancel);
-  const roomStreamRef=useRef(config.stream);
+  const chatEndRef = useRef(null);
+  const aiVoice = useAIVoice();
+  const speech = useSpeechRecognition();
+  const voiceAsk = useSpeechRecognition();
+  const demoIntervalRef = useRef(null);
+  const presentAnalysisRef = useRef(null);
+  const speechRecorderRef = useRef(null);
+  const speechChunksRef = useRef([]);
+  const speechAudioContextRef = useRef(null);
+  const speechAnalyserRef = useRef(null);
+  const speechSilenceRef = useRef(null);
+  const speechDetectedRef = useRef(false);
+  const lastSpeechAtRef = useRef(null);
+  const speechStopReasonRef = useRef("manual-submit");
+  const initialGreetingPlayedRef = useRef(false);
+  const prepareRoomMountedRef = useRef(false);
+  const greetingTimeoutRef = useRef(null);
+  const captureStartingRef = useRef(false);
+  const latestTranscriptHistoryRef = useRef([]);
+  const manualSpeakRequestedRef = useRef(false);
+  const micPreferenceRef = useRef(false);
+  const lastSubmittedTranscriptRef = useRef({ text: "", at: 0 });
+  const { show: toast$, node: toastNode } = useToast();
+  const speakAiReplyRef = useRef(null);
+  const triggerAISuggestionRef = useRef(() => {});
+  const roomToastRef = useRef(toast$);
+  const voiceAskStopRef = useRef(voiceAsk.stop);
+  const aiCancelRef = useRef(aiVoice.cancel);
+  const roomStreamRef = useRef(config.stream);
   const isPracticeMode = activeSeminarMode === "practice";
   const isGreetingPending = greetingState !== "ready";
-  const isAiResponsePending = !isGreetingPending && (speechProcessing || requestingGuide || Boolean(guideStatusText)) && !aiVoice.isSpeaking;
+  const isAiResponsePending =
+    !isGreetingPending &&
+    (speechProcessing || requestingGuide || Boolean(guideStatusText)) &&
+    !aiVoice.isSpeaking;
   const roomLoaderTitle = isGreetingPending
-    ? (greetingState === "speaking" ? "AI greeting in progress..." : "Preparing AI greeting...")
+    ? greetingState === "speaking"
+      ? "AI greeting in progress..."
+      : "Preparing AI greeting..."
     : speechProcessing
       ? "Preparing AI response..."
       : requestingGuide
         ? "Preparing AI guidance..."
         : "Connecting to AI speaker...";
   const roomLoaderText = isGreetingPending
-    ? (greetingState === "speaking" ? "Please listen while the AI coach opens the session. Your microphone will unlock right after this greeting." : "Connecting to the AI speaker and getting your seminar coach ready.")
+    ? greetingState === "speaking"
+      ? "Please listen while the AI coach opens the session. Your microphone will unlock right after this greeting."
+      : "Connecting to the AI speaker and getting your seminar coach ready."
     : speechProcessing
       ? "Processing your speech and drafting the next AI response."
       : guideStatusText || "Getting the AI reply ready for playback.";
   const micStatusText = isGreetingPending
-    ? (greetingState === "speaking" ? "AI greeting in progress. Your microphone will unlock when it finishes." : "Preparing AI greeting and connecting to the speaker...")
+    ? greetingState === "speaking"
+      ? "AI greeting in progress. Your microphone will unlock when it finishes."
+      : "Preparing AI greeting and connecting to the speaker..."
     : isAiResponsePending
       ? "AI is preparing a spoken response. Your microphone will unlock when it is ready."
       : aiVoice.isSpeaking
-      ? "AI is speaking. Your microphone is muted for now."
-      : speechProcessing
-        ? "Processing your speech and preparing an AI response."
-        : speechRecording
-          ? (isPracticeMode ? "Listening now. Click Mute Mic to submit your response." : "Listening now. Click Stop Speak when you finish.")
-          : micOn
-            ? (isPracticeMode ? "Microphone is live. Start speaking when you are ready, or click Mute Mic to submit." : "Microphone ready. Click Start Speak when you want to talk.")
-            : "Microphone muted. Unmute it when you are ready to speak.";
+        ? "AI is speaking. Your microphone is muted for now."
+        : speechProcessing
+          ? "Processing your speech and preparing an AI response."
+          : speechRecording
+            ? isPracticeMode
+              ? "Listening now. Click Mute Mic to submit your response."
+              : "Listening now. Click Stop Speak when you finish."
+            : micOn
+              ? isPracticeMode
+                ? "Microphone is live. Start speaking when you are ready, or click Mute Mic to submit."
+                : "Microphone ready. Click Start Speak when you want to talk."
+              : "Microphone muted. Unmute it when you are ready to speak.";
 
-  useEffect(()=>{chatEndRef.current?.scrollIntoView({behavior:"smooth"});},[messages]);
-  useEffect(()=>{latestTranscriptHistoryRef.current = transcriptHistory;},[transcriptHistory]);
-  useEffect(()=>{roomToastRef.current = toast$;},[toast$]);
-  useEffect(()=>{voiceAskStopRef.current = voiceAsk.stop;},[voiceAsk.stop]);
-  useEffect(()=>{aiCancelRef.current = aiVoice.cancel;},[aiVoice.cancel]);
-  useEffect(()=>{roomStreamRef.current = config.stream;},[config.stream]);
-useEffect(()=>{
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+  useEffect(() => {
+    latestTranscriptHistoryRef.current = transcriptHistory;
+  }, [transcriptHistory]);
+  useEffect(() => {
+    roomToastRef.current = toast$;
+  }, [toast$]);
+  useEffect(() => {
+    voiceAskStopRef.current = voiceAsk.stop;
+  }, [voiceAsk.stop]);
+  useEffect(() => {
+    aiCancelRef.current = aiVoice.cancel;
+  }, [aiVoice.cancel]);
+  useEffect(() => {
+    roomStreamRef.current = config.stream;
+  }, [config.stream]);
+  useEffect(() => {
     prepareRoomMountedRef.current = true;
     // Request mic on mount so stream is always available
-    navigator.mediaDevices.getUserMedia({ audio: true, video: false })
-      .then((stream)=>{
-        if(!prepareRoomMountedRef.current){ stream.getTracks().forEach(t=>t.stop()); return; }
+    navigator.mediaDevices
+      .getUserMedia({ audio: true, video: false })
+      .then((stream) => {
+        if (!prepareRoomMountedRef.current) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
         localStreamRef.current = stream;
         // mute tracks until user explicitly unmutes
-        stream.getAudioTracks().forEach(t=>{ t.enabled = false; });
+        stream.getAudioTracks().forEach((t) => {
+          t.enabled = false;
+        });
       })
-      .catch(()=>{ console.warn("[PrepareRoom] mic permission denied or unavailable"); });
-    return ()=>{
+      .catch(() => {
+        console.warn("[PrepareRoom] mic permission denied or unavailable");
+      });
+    return () => {
       prepareRoomMountedRef.current = false;
-      if(greetingTimeoutRef.current){
+      if (greetingTimeoutRef.current) {
         clearTimeout(greetingTimeoutRef.current);
         greetingTimeoutRef.current = null;
       }
       captureStartingRef.current = false;
       // stop local stream on unmount
-      localStreamRef.current?.getTracks().forEach(t=>t.stop());
+      localStreamRef.current?.getTracks().forEach((t) => t.stop());
       localStreamRef.current = null;
     };
-  },[]);
+  }, []);
 
-  const setMicEnabled = useCallback((enabled)=>{
-    micPreferenceRef.current = enabled;
-    setMicOn(enabled);
-    const s = localStreamRef.current || config.stream;
-    if(s && typeof s.getAudioTracks==="function"){
-      s.getAudioTracks().forEach(track=>{ track.enabled = enabled; });
-    }
-  },[config.stream]);
+  const setMicEnabled = useCallback(
+    (enabled) => {
+      micPreferenceRef.current = enabled;
+      setMicOn(enabled);
+      const s = localStreamRef.current || config.stream;
+      if (s && typeof s.getAudioTracks === "function") {
+        s.getAudioTracks().forEach((track) => {
+          track.enabled = enabled;
+        });
+      }
+    },
+    [config.stream],
+  );
 
-  const cleanupSpeechDetection = useCallback(()=>{
-    if(speechSilenceRef.current){
+  const cleanupSpeechDetection = useCallback(() => {
+    if (speechSilenceRef.current) {
       clearInterval(speechSilenceRef.current);
-      speechSilenceRef.current=null;
+      speechSilenceRef.current = null;
     }
-    speechAnalyserRef.current=null;
-    if(speechAudioContextRef.current){
-      speechAudioContextRef.current.close().catch(()=>null);
-      speechAudioContextRef.current=null;
+    speechAnalyserRef.current = null;
+    if (speechAudioContextRef.current) {
+      speechAudioContextRef.current.close().catch(() => null);
+      speechAudioContextRef.current = null;
     }
-    speechDetectedRef.current=false;
-    lastSpeechAtRef.current=null;
+    speechDetectedRef.current = false;
+    lastSpeechAtRef.current = null;
     setIsStudentSpeaking(false);
-  },[]);
+  }, []);
 
-  const stopSpeechCapture = useCallback((reason="manual-submit")=>{
-    if(!speechRecorderRef.current) return;
-    speechStopReasonRef.current = reason;
-    const recorder = speechRecorderRef.current;
-    speechRecorderRef.current = null;
-    captureStartingRef.current = false;
-    cleanupSpeechDetection();
-    setSpeechRecording(false);
-    setSpeechProcessing(true);
-    recorder.stop();
-  },[cleanupSpeechDetection]);
+  const stopSpeechCapture = useCallback(
+    (reason = "manual-submit") => {
+      if (!speechRecorderRef.current) return;
+      speechStopReasonRef.current = reason;
+      const recorder = speechRecorderRef.current;
+      speechRecorderRef.current = null;
+      captureStartingRef.current = false;
+      cleanupSpeechDetection();
+      setSpeechRecording(false);
+      setSpeechProcessing(true);
+      recorder.stop();
+    },
+    [cleanupSpeechDetection],
+  );
 
-  const beginSpeechCapture = useCallback(()=>{
-    if(
+  const beginSpeechCapture = useCallback(() => {
+    if (
       !prepareRoomMountedRef.current ||
       !sessionId ||
       !micPreferenceRef.current ||
@@ -3837,82 +7256,109 @@ useEffect(()=>{
       timer.isPaused ||
       speechRecorderRef.current ||
       captureStartingRef.current
-    ){
+    ) {
       return;
     }
-    const localStream = localStreamRef.current instanceof MediaStream ? localStreamRef.current : (config.stream instanceof MediaStream ? config.stream : null);
+    const localStream =
+      localStreamRef.current instanceof MediaStream
+        ? localStreamRef.current
+        : config.stream instanceof MediaStream
+          ? config.stream
+          : null;
     const audioTrack = localStream?.getAudioTracks?.()[0];
-    if(!audioTrack){
-      toast$("Microphone is not available. Please allow mic access and try again.","warn");
+    if (!audioTrack) {
+      toast$(
+        "Microphone is not available. Please allow mic access and try again.",
+        "warn",
+      );
       return;
     }
     audioTrack.enabled = true;
     const recordingStream = new MediaStream([audioTrack]);
     const mimeTypes = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
-    const supportedMimeType = mimeTypes.find((value)=>typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported?.(value));
+    const supportedMimeType = mimeTypes.find(
+      (value) =>
+        typeof MediaRecorder !== "undefined" &&
+        MediaRecorder.isTypeSupported?.(value),
+    );
     let recorder;
     captureStartingRef.current = true;
-    try{
-      recorder = supportedMimeType ? new MediaRecorder(recordingStream,{ mimeType: supportedMimeType }) : new MediaRecorder(recordingStream);
-    } catch(error){
+    try {
+      recorder = supportedMimeType
+        ? new MediaRecorder(recordingStream, { mimeType: supportedMimeType })
+        : new MediaRecorder(recordingStream);
+    } catch (error) {
       captureStartingRef.current = false;
-      toast$("Your browser could not start seminar voice recording.","error");
+      toast$("Your browser could not start seminar voice recording.", "error");
       return;
     }
     speechRecorderRef.current = recorder;
     speechChunksRef.current = [];
     setGuideStatusText("");
     setShowHelpPrompt(false);
-    recorder.ondataavailable = (event)=>{
-      if(event.data.size>0){
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
         speechChunksRef.current.push(event.data);
       }
     };
-    recorder.onstop = async ()=>{
+    recorder.onstop = async () => {
       console.log("recording stopped", { reason: speechStopReasonRef.current });
       captureStartingRef.current = false;
       cleanupSpeechDetection();
       setSpeechRecording(false);
       const blobType = supportedMimeType || recorder.mimeType || "audio/webm";
-      const audioBlob = new Blob(speechChunksRef.current,{ type: blobType });
+      const audioBlob = new Blob(speechChunksRef.current, { type: blobType });
       speechChunksRef.current = [];
-      if(!audioBlob.size){
+      if (!audioBlob.size) {
         setSpeechProcessing(false);
         return;
       }
       setSpeechProcessing(true);
-      try{
+      try {
         const response = await transcribeDebateAudio(audioBlob);
         const transcriptText = String(response?.text || "").trim();
         console.log("transcript ready", { transcript: transcriptText });
-        if(transcriptText){
+        if (transcriptText) {
           lastSpeechTimeRef.current = Date.now();
-          setTranscriptHistory((current)=>[...current, transcriptText].slice(-40));
+          setTranscriptHistory((current) =>
+            [...current, transcriptText].slice(-40),
+          );
           setLiveTranscript(transcriptText);
-          setMessages((current)=>[...current,{ from:"me", text: transcriptText }]);
-          setExchanges((value)=>value+1);
+          setMessages((current) => [
+            ...current,
+            { from: "me", text: transcriptText },
+          ]);
+          setExchanges((value) => value + 1);
         }
         const stopReason = speechStopReasonRef.current;
-        if(stopReason === "help-prompt"){
+        if (stopReason === "help-prompt") {
           setAiPausedForSuggestion(true);
-          setPendingGuideTranscript(transcriptText || latestTranscriptHistoryRef.current.join("\n"));
+          setPendingGuideTranscript(
+            transcriptText || latestTranscriptHistoryRef.current.join("\n"),
+          );
           setShowHelpPrompt(true);
           return;
         }
-        if(!transcriptText){
-          toast$("No speech detected in the last segment.","warn");
+        if (!transcriptText) {
+          toast$("No speech detected in the last segment.", "warn");
           return;
         }
-        if(
+        if (
           lastSubmittedTranscriptRef.current.text === transcriptText &&
           Date.now() - lastSubmittedTranscriptRef.current.at < 8000
-        ){
+        ) {
           setGuideStatusText("");
           return;
         }
-        lastSubmittedTranscriptRef.current = { text: transcriptText, at: Date.now() };
+        lastSubmittedTranscriptRef.current = {
+          text: transcriptText,
+          at: Date.now(),
+        };
         setGuideStatusText("AI is ready to help. Please wait...");
-        console.log("respondSeminar called", { sessionId, transcript: transcriptText });
+        console.log("respondSeminar called", {
+          sessionId,
+          transcript: transcriptText,
+        });
         const seminarReply = await respondSeminar({
           sessionId,
           transcript: transcriptText,
@@ -3926,37 +7372,44 @@ useEffect(()=>{
           seminarReply?.message ||
           seminarReply?.guidance ||
           seminarReply?.answer;
-        if(aiReply){
+        if (aiReply) {
           setAiPausedForSuggestion(false);
-          setMessages((current)=>[...current,{ from:"ai", text: aiReply }]);
-          setExchanges((value)=>value+1);
+          setMessages((current) => [...current, { from: "ai", text: aiReply }]);
+          setExchanges((value) => value + 1);
           addNote(
-            transcriptText.length > 55 ? `${transcriptText.slice(0,55)}…` : transcriptText,
-            aiReply
+            transcriptText.length > 55
+              ? `${transcriptText.slice(0, 55)}…`
+              : transcriptText,
+            aiReply,
           );
           setGuideStatusText("");
-    speakAiReplyRef.current?.(aiReply, { resumeCapture: activeSeminarMode === "demo" });
+          speakAiReplyRef.current?.(aiReply, {
+            resumeCapture: activeSeminarMode === "demo",
+          });
         } else {
           setGuideStatusText("");
         }
-      } catch(error){
+      } catch (error) {
         setGuideStatusText("");
-        toast$(getErrorMessage(error, "Unable to process seminar speech right now."),"error");
+        toast$(
+          getErrorMessage(error, "Unable to process seminar speech right now."),
+          "error",
+        );
       } finally {
         setSpeechProcessing(false);
       }
     };
-    recorder.onerror = ()=>{
+    recorder.onerror = () => {
       captureStartingRef.current = false;
       speechRecorderRef.current = null;
       cleanupSpeechDetection();
       setSpeechRecording(false);
       setSpeechProcessing(false);
-      toast$("Seminar voice recording failed to start.","error");
+      toast$("Seminar voice recording failed to start.", "error");
     };
-    try{
+    try {
       recorder.start(250);
-    } catch(error){
+    } catch (error) {
       captureStartingRef.current = false;
       speechRecorderRef.current = null;
       cleanupSpeechDetection();
@@ -3966,7 +7419,7 @@ useEffect(()=>{
       return;
     }
     setSpeechRecording(true);
-    try{
+    try {
       const audioContext = new AudioContext();
       const analyser = audioContext.createAnalyser();
       analyser.fftSize = 2048;
@@ -3978,16 +7431,16 @@ useEffect(()=>{
       speechDetectedRef.current = false;
       lastSpeechAtRef.current = Date.now();
       const samples = new Uint8Array(analyser.fftSize);
-      speechSilenceRef.current = setInterval(()=>{
-        if(!speechAnalyserRef.current) return;
+      speechSilenceRef.current = setInterval(() => {
+        if (!speechAnalyserRef.current) return;
         speechAnalyserRef.current.getByteTimeDomainData(samples);
         let peak = 0;
-        for(let index = 0; index < samples.length; index += 1){
+        for (let index = 0; index < samples.length; index += 1) {
           const amplitude = Math.abs(samples[index] - 128);
-          if(amplitude > peak) peak = amplitude;
+          if (amplitude > peak) peak = amplitude;
         }
         const detectedSpeech = peak > 8;
-        if(detectedSpeech){
+        if (detectedSpeech) {
           speechDetectedRef.current = true;
           lastSpeechAtRef.current = Date.now();
           lastSpeechTimeRef.current = Date.now();
@@ -3995,21 +7448,28 @@ useEffect(()=>{
           return;
         }
         setIsStudentSpeaking(false);
-        if(!lastSpeechAtRef.current){
+        if (!lastSpeechAtRef.current) {
           lastSpeechAtRef.current = Date.now();
         }
-        const silenceThreshold = activeSeminarMode === "demo" ? DEMO_HELP_SILENCE_MS : PRACTICE_SILENCE_MS;
-        if(Date.now() - lastSpeechAtRef.current >= silenceThreshold){
-          console.log("silence detected", { mode: activeSeminarMode, threshold: silenceThreshold });
-          speechStopReasonRef.current = activeSeminarMode === "demo" ? "help-prompt" : "auto-submit";
-          if(activeSeminarMode === "practice"){
+        const silenceThreshold =
+          activeSeminarMode === "demo"
+            ? DEMO_HELP_SILENCE_MS
+            : PRACTICE_SILENCE_MS;
+        if (Date.now() - lastSpeechAtRef.current >= silenceThreshold) {
+          console.log("silence detected", {
+            mode: activeSeminarMode,
+            threshold: silenceThreshold,
+          });
+          speechStopReasonRef.current =
+            activeSeminarMode === "demo" ? "help-prompt" : "auto-submit";
+          if (activeSeminarMode === "practice") {
             setMicEnabled(false);
           }
           setSpeechProcessing(true);
           speechRecorderRef.current?.stop();
           speechRecorderRef.current = null;
         }
-      },500);
+      }, 500);
     } catch {
       captureStartingRef.current = false;
       speechRecorderRef.current = null;
@@ -4020,31 +7480,43 @@ useEffect(()=>{
       activeSeminarMode === "demo"
         ? "Listening... we will offer help after 10 seconds of silence."
         : "Listening... your speech will be submitted after 4.5 seconds of silence.",
-      "info"
+      "info",
     );
-  },[activeSeminarMode, aiVoice.isSpeaking, cleanupSpeechDetection, config.stream, isGreetingPending, sessionId, setMicEnabled, speechProcessing, speechRecording, timer.isPaused, toast$]);
+  }, [
+    activeSeminarMode,
+    aiVoice.isSpeaking,
+    cleanupSpeechDetection,
+    config.stream,
+    isGreetingPending,
+    sessionId,
+    setMicEnabled,
+    speechProcessing,
+    speechRecording,
+    timer.isPaused,
+    toast$,
+  ]);
 
-  const handleMuteUnmutePractice = useCallback(()=>{
-    if(isGreetingPending){
-      toast$("Please wait until the AI greeting finishes.","info");
+  const handleMuteUnmutePractice = useCallback(() => {
+    if (isGreetingPending) {
+      toast$("Please wait until the AI greeting finishes.", "info");
       return;
     }
-    if(aiVoice.isSpeaking){
-      toast$("AI is speaking right now. Please wait.","info");
+    if (aiVoice.isSpeaking) {
+      toast$("AI is speaking right now. Please wait.", "info");
       return;
     }
-    if(speechProcessing){
-      toast$("AI is still thinking. Please wait a moment.","info");
+    if (speechProcessing) {
+      toast$("AI is still thinking. Please wait a moment.", "info");
       return;
     }
-    if(!micOn){
+    if (!micOn) {
       console.log("mic unmuted");
       manualSpeakRequestedRef.current = true;
       setMicEnabled(true);
       beginSpeechCapture();
       return;
     }
-    if(speechRecording){
+    if (speechRecording) {
       console.log("recording stopped", { reason: "manual-submit" });
       manualSpeakRequestedRef.current = false;
       setMicEnabled(false);
@@ -4052,9 +7524,19 @@ useEffect(()=>{
       return;
     }
     setMicEnabled(false);
-  },[aiVoice.isSpeaking, beginSpeechCapture, isGreetingPending, micOn, setMicEnabled, speechProcessing, speechRecording, stopSpeechCapture, toast$]);
+  }, [
+    aiVoice.isSpeaking,
+    beginSpeechCapture,
+    isGreetingPending,
+    micOn,
+    setMicEnabled,
+    speechProcessing,
+    speechRecording,
+    stopSpeechCapture,
+    toast$,
+  ]);
 
-  const handleMainMicToggle = useCallback(()=>{
+  const handleMainMicToggle = useCallback(() => {
     if (isGreetingPending) {
       toast$("Please wait until the AI greeting finishes.", "info");
       return;
@@ -4070,135 +7552,191 @@ useEffect(()=>{
       !micOn
         ? "Microphone unmuted. You can start speaking now."
         : "Microphone muted.",
-      !micOn ? "success" : "warn"
+      !micOn ? "success" : "warn",
     );
-  },[isGreetingPending, micOn, setMicEnabled, speechRecording, toast$]);
+  }, [isGreetingPending, micOn, setMicEnabled, speechRecording, toast$]);
 
-  const handleMicButtonClick = isPracticeMode ? handleMuteUnmutePractice : handleMainMicToggle;
+  const handleMicButtonClick = isPracticeMode
+    ? handleMuteUnmutePractice
+    : handleMainMicToggle;
 
-  const speakAiReply = useCallback((text, options = {})=>{
-    if(!text) return;
-    const resumeCapture = Boolean(options?.resumeCapture);
-    const isGreeting = Boolean(options?.isGreeting);
-    const unlockMicOnDone = Boolean(options?.unlockMicOnDone);
-    const shouldRestoreMic = !isPracticeMode && (micPreferenceRef.current || resumeCapture);
-    setMicEnabled(false);
-    if(isGreeting){
-      setGreetingState("connecting");
-    }
-    aiVoice.speak(text, ()=>{
-      if(isGreeting){
-        console.log("greeting speak ended");
-      } else {
-        console.log("AI response speaking ended");
+  const speakAiReply = useCallback(
+    (text, options = {}) => {
+      if (!text) return;
+      const resumeCapture = Boolean(options?.resumeCapture);
+      const isGreeting = Boolean(options?.isGreeting);
+      const unlockMicOnDone = Boolean(options?.unlockMicOnDone);
+      const shouldRestoreMic =
+        !isPracticeMode && (micPreferenceRef.current || resumeCapture);
+      setMicEnabled(false);
+      if (isGreeting) {
+        setGreetingState("connecting");
       }
-      if(isGreeting){
-        setGreetingState("ready");
-      }
-if(unlockMicOnDone || shouldRestoreMic){
-        setMicEnabled(true);
-      }
-      if(resumeCapture && sessionId && !speechRecording && !speechProcessing && !timer.isPaused){
-        if(manualSpeakRequestedRef.current || activeSeminarMode === "demo"){
-          micPreferenceRef.current = true;
-          beginSpeechCapture();
-        }
-      }
-       },{
-      onStart: ()=>{
-        lastSpeechTimeRef.current = Date.now();
-        if(isGreeting){
-          console.log("greeting speak started");
-          setGreetingState("speaking");
-        } else {
-          console.log("AI response speaking started");
-        }
-      },
-    });
-  },[aiVoice, beginSpeechCapture, isPracticeMode, sessionId, setMicEnabled, speechProcessing, speechRecording, timer.isPaused]);
+      aiVoice.speak(
+        text,
+        () => {
+          if (isGreeting) {
+            console.log("greeting speak ended");
+          } else {
+            console.log("AI response speaking ended");
+          }
+          if (isGreeting) {
+            setGreetingState("ready");
+          }
+          if (unlockMicOnDone || shouldRestoreMic) {
+            setMicEnabled(true);
+          }
+          if (
+            resumeCapture &&
+            sessionId &&
+            !speechRecording &&
+            !speechProcessing &&
+            !timer.isPaused
+          ) {
+            if (
+              manualSpeakRequestedRef.current ||
+              activeSeminarMode === "demo"
+            ) {
+              micPreferenceRef.current = true;
+              beginSpeechCapture();
+            }
+          }
+        },
+        {
+          onStart: () => {
+            lastSpeechTimeRef.current = Date.now();
+            if (isGreeting) {
+              console.log("greeting speak started");
+              setGreetingState("speaking");
+            } else {
+              console.log("AI response speaking started");
+            }
+          },
+        },
+      );
+    },
+    [
+      aiVoice,
+      beginSpeechCapture,
+      isPracticeMode,
+      sessionId,
+      setMicEnabled,
+      speechProcessing,
+      speechRecording,
+      timer.isPaused,
+    ],
+  );
 
-  useEffect(()=>{
+  useEffect(() => {
     speakAiReplyRef.current = speakAiReply;
-  },[speakAiReply]);
+  }, [speakAiReply]);
 
-useEffect(()=>{
+  useEffect(() => {
     setGreetingState("connecting");
-    roomToastRef.current(activeSeminarMode === "demo" ? "Connecting to your AI seminar coach..." : "Preparing your AI seminar coach...", "info");
+    roomToastRef.current(
+      activeSeminarMode === "demo"
+        ? "Connecting to your AI seminar coach..."
+        : "Preparing your AI seminar coach...",
+      "info",
+    );
     const greeting =
       config.initialFacilitatorMessage ||
-      `Welcome to your seminar session on "${config.topic}"${config.subject?` (${config.subject}${config.unit?` - ${config.unit}`:""})`:""}. I'm your AI Coach. Would you like step-by-step instructions on how to present effectively?`;
-    setMessages([{ from:"ai", text: greeting }]);
-    if(!initialGreetingPlayedRef.current){
+      `Welcome to your seminar session on "${config.topic}"${config.subject ? ` (${config.subject}${config.unit ? ` - ${config.unit}` : ""})` : ""}. I'm your AI Coach. Would you like step-by-step instructions on how to present effectively?`;
+    setMessages([{ from: "ai", text: greeting }]);
+    if (!initialGreetingPlayedRef.current) {
       initialGreetingPlayedRef.current = true;
-      console.log("[greeting] prepareRoomMountedRef.current =", prepareRoomMountedRef.current);
-      speakAiReplyRef.current(greeting,{ resumeCapture: false, isGreeting: true, unlockMicOnDone: false });
+      console.log(
+        "[greeting] prepareRoomMountedRef.current =",
+        prepareRoomMountedRef.current,
+      );
+      speakAiReplyRef.current(greeting, {
+        resumeCapture: false,
+        isGreeting: true,
+        unlockMicOnDone: false,
+      });
     }
-    return()=>{
-      if(greetingTimeoutRef.current){
+    return () => {
+      if (greetingTimeoutRef.current) {
         clearTimeout(greetingTimeoutRef.current);
         greetingTimeoutRef.current = null;
       }
       voiceAskStopRef.current?.();
       aiCancelRef.current?.();
       cleanupSpeechDetection();
-      if(speechRecorderRef.current){
-        try { speechRecorderRef.current.stop(); } catch {}
+      if (speechRecorderRef.current) {
+        try {
+          speechRecorderRef.current.stop();
+        } catch {}
         speechRecorderRef.current = null;
       }
-      if(demoIntervalRef.current)clearInterval(demoIntervalRef.current);
-      if(stuckCheckRef.current)clearInterval(stuckCheckRef.current);
-      if(resumeCountdownRef.current)clearInterval(resumeCountdownRef.current);
-      if(presentAnalysisRef.current)clearInterval(presentAnalysisRef.current);
-      if(roomStreamRef.current&&typeof roomStreamRef.current.getTracks==="function")roomStreamRef.current.getTracks().forEach(t=>t.stop());
+      if (demoIntervalRef.current) clearInterval(demoIntervalRef.current);
+      if (stuckCheckRef.current) clearInterval(stuckCheckRef.current);
+      if (resumeCountdownRef.current) clearInterval(resumeCountdownRef.current);
+      if (presentAnalysisRef.current) clearInterval(presentAnalysisRef.current);
+      if (
+        roomStreamRef.current &&
+        typeof roomStreamRef.current.getTracks === "function"
+      )
+        roomStreamRef.current.getTracks().forEach((t) => t.stop());
     };
-  },[]);
+  }, []);
 
   // Demo timer
-  useEffect(()=>{
-    if(!demoRunning){return;}
-    const id=setInterval(()=>setDemoTimer(t=>t+1),1000);
-    demoIntervalRef.current=id;return()=>clearInterval(id);
-  },[demoRunning]);
-
-  // AI stuck detection — only during demo
-  useEffect(()=>{
-    if(!demoMode||!demoRunning){
-      if(stuckCheckRef.current)clearInterval(stuckCheckRef.current);
+  useEffect(() => {
+    if (!demoRunning) {
       return;
     }
-    stuckCheckRef.current=setInterval(()=>{
-      const silentFor=(Date.now()-lastSpeechTimeRef.current)/1000;
-    if(silentFor>=20&&!aiPausedForSuggestion&&activeSeminarMode==="demo"&&!aiVoice.isSpeaking){
+    const id = setInterval(() => setDemoTimer((t) => t + 1), 1000);
+    demoIntervalRef.current = id;
+    return () => clearInterval(id);
+  }, [demoRunning]);
+
+  // AI stuck detection — only during demo
+  useEffect(() => {
+    if (!demoMode || !demoRunning) {
+      if (stuckCheckRef.current) clearInterval(stuckCheckRef.current);
+      return;
+    }
+    stuckCheckRef.current = setInterval(() => {
+      const silentFor = (Date.now() - lastSpeechTimeRef.current) / 1000;
+      if (
+        silentFor >= 20 &&
+        !aiPausedForSuggestion &&
+        activeSeminarMode === "demo" &&
+        !aiVoice.isSpeaking
+      ) {
         triggerAISuggestionRef.current();
       }
-    },3000);
-    return()=>{if(stuckCheckRef.current)clearInterval(stuckCheckRef.current);};
-  },[activeSeminarMode,demoMode,demoRunning,aiPausedForSuggestion]);
+    }, 3000);
+    return () => {
+      if (stuckCheckRef.current) clearInterval(stuckCheckRef.current);
+    };
+  }, [activeSeminarMode, demoMode, demoRunning, aiPausedForSuggestion]);
 
-  useEffect(()=>{
-    if(showHelpPrompt){
+  useEffect(() => {
+    if (showHelpPrompt) {
       setAiPausedForSuggestion(true);
       return;
     }
-    if(!resumeCountdown){
+    if (!resumeCountdown) {
       setAiPausedForSuggestion(false);
     }
-  },[resumeCountdown,showHelpPrompt]);
+  }, [resumeCountdown, showHelpPrompt]);
 
-  useEffect(()=>{
-    if(!micOn){
+  useEffect(() => {
+    if (!micOn) {
       manualSpeakRequestedRef.current = false;
     }
-  },[micOn]);
+  }, [micOn]);
 
-  useEffect(()=>{
-    if(isPracticeMode && activePanel !== "chat"){
+  useEffect(() => {
+    if (isPracticeMode && activePanel !== "chat") {
       setActivePanel("chat");
     }
-  },[activePanel, isPracticeMode]);
+  }, [activePanel, isPracticeMode]);
 
- function triggerAISuggestion(){
-    if(speechRecorderRef.current){
+  function triggerAISuggestion() {
+    if (speechRecorderRef.current) {
       stopSpeechCapture("help-prompt");
     }
     setDemoRunning(false);
@@ -4210,7 +7748,7 @@ useEffect(()=>{
 
   triggerAISuggestionRef.current = triggerAISuggestion;
 
-  function handleAISuggestionDismiss(){
+  function handleAISuggestionDismiss() {
     setAiSuggestion(null);
     setAiPausedForSuggestion(false);
     setPendingGuideTranscript("");
@@ -4221,149 +7759,260 @@ useEffect(()=>{
     beginSpeechCapture();
   }
 
-  function handleManualResume(){
-    if(resumeCountdownRef.current)clearInterval(resumeCountdownRef.current);
+  function handleManualResume() {
+    if (resumeCountdownRef.current) clearInterval(resumeCountdownRef.current);
     setResumeCountdown(0);
     setAiSuggestion(null);
     setAiPausedForSuggestion(false);
     setDemoRunning(true);
     timer.resume();
-    lastSpeechTimeRef.current=Date.now();
-    setMessages(m=>[...m,{from:"system",text:"▶ Session resumed — continue your presentation"}]);
-    toast$("▶ Session resumed","success");
+    lastSpeechTimeRef.current = Date.now();
+    setMessages((m) => [
+      ...m,
+      {
+        from: "system",
+        text: "▶ Session resumed — continue your presentation",
+      },
+    ]);
+    toast$("▶ Session resumed", "success");
   }
 
-  function addNote(q, a){
-    setNoteCount(c=>{
+  function addNote(q, a) {
+    setNoteCount((c) => {
       const newC = c + 1;
-      setNotes(prev=>[{id:newC, n:newC, q, a, open:false}, ...prev]);
+      setNotes((prev) => [{ id: newC, n: newC, q, a, open: false }, ...prev]);
       return newC;
     });
   }
 
-  function getAIReply(q){
-    const lower=q.toLowerCase();
-    if(lower.includes("ready")||lower.includes("perfect")||lower.includes("skip"))return "APPROVE_FILE_CMD";
-    if(lower.includes("outline")||lower.includes("structure"))return AI_RESPONSES.outline;
-    if(lower.includes("question")||lower.includes("audience"))return AI_RESPONSES.questions;
-    if(lower.includes("example")||lower.includes("evidence"))return AI_RESPONSES.examples;
-    if(lower.includes("script")||lower.includes("opening"))return AI_RESPONSES.script;
-    if(lower.includes("feedback")||lower.includes("demo")||lower.includes("how am i"))return AI_RESPONSES.feedback;
-    
-    if(demoMode && setupPhase === "session") {
-       return `Based on your PDF, you should consider elaborating on the core concepts here. Keep going, you're doing great!`;
+  function getAIReply(q) {
+    const lower = q.toLowerCase();
+    if (
+      lower.includes("ready") ||
+      lower.includes("perfect") ||
+      lower.includes("skip")
+    )
+      return "APPROVE_FILE_CMD";
+    if (lower.includes("outline") || lower.includes("structure"))
+      return AI_RESPONSES.outline;
+    if (lower.includes("question") || lower.includes("audience"))
+      return AI_RESPONSES.questions;
+    if (lower.includes("example") || lower.includes("evidence"))
+      return AI_RESPONSES.examples;
+    if (lower.includes("script") || lower.includes("opening"))
+      return AI_RESPONSES.script;
+    if (
+      lower.includes("feedback") ||
+      lower.includes("demo") ||
+      lower.includes("how am i")
+    )
+      return AI_RESPONSES.feedback;
+
+    if (demoMode && setupPhase === "session") {
+      return `Based on your PDF, you should consider elaborating on the core concepts here. Keep going, you're doing great!`;
     }
-    return `For "${config.topic}":\n\n1. Ground your argument in peer-reviewed evidence\n2. Use a real-world case study relevant to ${config.subject||"your subject"}\n3. Anticipate objections and address them proactively\n4. End with a clear, memorable closing statement\n\nWould you like me to draft any specific section?`;
+    return `For "${config.topic}":\n\n1. Ground your argument in peer-reviewed evidence\n2. Use a real-world case study relevant to ${config.subject || "your subject"}\n3. Anticipate objections and address them proactively\n4. End with a clear, memorable closing statement\n\nWould you like me to draft any specific section?`;
   }
 
-  async function sendAIRequest(text=aiInput){
-  const q=text.trim();if(!q)return;
-    setMessages(m=>[...m,{from:"me",text:q}]);setAiInput("");setIsAITyping(true);setExchanges(x=>x+1);
-    try{
+  async function sendAIRequest(text = aiInput) {
+    const q = text.trim();
+    if (!q) return;
+    setMessages((m) => [...m, { from: "me", text: q }]);
+    setAiInput("");
+    setIsAITyping(true);
+    setExchanges((x) => x + 1);
+    try {
       const response = await respondSeminar({ sessionId, message: q });
-      const reply = response?.ai_response || response?.response || response?.reply || response?.message || response?.guidance || response?.answer;
-      if(reply){
-        setMessages(m=>[...m,{from:"ai",text:reply}]);
-        addNote(q.length>55?`${q.slice(0,55)}…`:q,reply);
-        setExchanges(x=>x+1);
+      const reply =
+        response?.ai_response ||
+        response?.response ||
+        response?.reply ||
+        response?.message ||
+        response?.guidance ||
+        response?.answer;
+      if (reply) {
+        setMessages((m) => [...m, { from: "ai", text: reply }]);
+        addNote(q.length > 55 ? `${q.slice(0, 55)}…` : q, reply);
+        setExchanges((x) => x + 1);
       } else {
-        toast$("The seminar AI did not return a reply.","warn");
+        toast$("The seminar AI did not return a reply.", "warn");
       }
-    } catch(error){
-      toast$(getErrorMessage(error, "Unable to reach the seminar AI right now."),"error");
+    } catch (error) {
+      toast$(
+        getErrorMessage(error, "Unable to reach the seminar AI right now."),
+        "error",
+      );
     } finally {
       setIsAITyping(false);
     }
   }
 
-  function sendAI(text=aiInput){
-    const q=text.trim();if(!q)return;
-    setMessages(m=>[...m,{from:"me",text:q}]);setAiInput("");setIsAITyping(true);setExchanges(x=>x+1);
-    setTimeout(()=>{
-      const reply=getAIReply(q);
-      setIsAITyping(false);
-      setMessages(m=>[...m,{from:"ai",text:reply}]);
-      addNote(q.length>55?q.slice(0,55)+"…":q,reply);
-       setExchanges(x=>x+1);
-    },900+Math.random()*400);
+  function sendAI(text = aiInput) {
+    const q = text.trim();
+    if (!q) return;
+    setMessages((m) => [...m, { from: "me", text: q }]);
+    setAiInput("");
+    setIsAITyping(true);
+    setExchanges((x) => x + 1);
+    setTimeout(
+      () => {
+        const reply = getAIReply(q);
+        setIsAITyping(false);
+        setMessages((m) => [...m, { from: "ai", text: reply }]);
+        addNote(q.length > 55 ? q.slice(0, 55) + "…" : q, reply);
+        setExchanges((x) => x + 1);
+      },
+      900 + Math.random() * 400,
+    );
   }
 
   function handleChatOption(action) {
     if (action === "tutoring") {
       setChatOptions([]);
-      setMessages(m=>[...m, {from:"me", text:"Show me how to present step-by-step."}, {from:"ai", text:"Here are the steps to present effectively:\n1. Hook your audience with a strong opening.\n2. Introduce the core topic clearly.\n3. Present your points with evidence.\n4. Conclude with a memorable statement.\n\nNow, do you want to prepare your presentation file, or go straight to the seminar session?"}]);
-      setChatOptions([
-         {label: "Prepare Presentation File", action: "prepare_file"},
-         {label: "Take to Seminar Session", action: "go_session"}
+      setMessages((m) => [
+        ...m,
+        { from: "me", text: "Show me how to present step-by-step." },
+        {
+          from: "ai",
+          text: "Here are the steps to present effectively:\n1. Hook your audience with a strong opening.\n2. Introduce the core topic clearly.\n3. Present your points with evidence.\n4. Conclude with a memorable statement.\n\nNow, do you want to prepare your presentation file, or go straight to the seminar session?",
+        },
       ]);
-      
+      setChatOptions([
+        { label: "Prepare Presentation File", action: "prepare_file" },
+        { label: "Take to Seminar Session", action: "go_session" },
+      ]);
     } else if (action === "prepare_file") {
-      setChatOptions([{label: "Take to Seminar Session", action: "go_session"}]);
+      setChatOptions([
+        { label: "Take to Seminar Session", action: "go_session" },
+      ]);
       setSetupPhase("preparing");
-      setMessages(m=>[...m, {from:"me", text:"I want to prepare my presentation file."}, {from:"ai", text:"Great! Let's prepare your presentation. What is the main theme you want to focus on? You can use the chat or voice to brainstorm with me."}]);
-      
+      setMessages((m) => [
+        ...m,
+        { from: "me", text: "I want to prepare my presentation file." },
+        {
+          from: "ai",
+          text: "Great! Let's prepare your presentation. What is the main theme you want to focus on? You can use the chat or voice to brainstorm with me.",
+        },
+      ]);
     } else if (action === "go_session") {
       setChatOptions([]);
       setSetupPhase("session");
-      setMessages(m=>[...m, {from:"me", text:"Take me to the seminar session."}, {from:"ai", text:"You are now in the seminar session. The controls at the bottom are unlocked. You can start your demo or present your screen!"}]);
-      
+      setMessages((m) => [
+        ...m,
+        { from: "me", text: "Take me to the seminar session." },
+        {
+          from: "ai",
+          text: "You are now in the seminar session. The controls at the bottom are unlocked. You can start your demo or present your screen!",
+        },
+      ]);
+
       toast$("Seminar Session Controls Unlocked", "success");
     }
   }
 
-  function toggleVoiceAsk(){
-    if(voiceListening){voiceAsk.stop();setVoiceListening(false);if(voiceAsk.transcript.trim()){sendAIRequest(voiceAsk.transcript.trim());}toast$("Voice captured","info");}
-    else{setVoiceListening(true);voiceAsk.start(finalText=>{voiceAsk.stop();setVoiceListening(false);sendAIRequest(finalText);toast$("Voice sent to AI","success");});toast$("🎙️ Listening — speak your question","info");}
-  }
-
-  // ─── SCREEN SHARE / PRESENT ───────────────────────────────────────────────
-  async function startPresenting(){
-    try {
-      await navigator.mediaDevices.getDisplayMedia({video:true,audio:false});
-      setIsScreenSharing(true);
-      setPresentMode(true);
-      setPanelOpen(false); // more stage space
-      setMessages(m=>[...m,{from:"system",text:"🖥️ Presentation started — AI is now analysing your screen content"},{from:"ai",text:"Your screen is now shared. I'll analyse your presentation layout, slide structure, and provide live coaching tips. Speak naturally and I'll track your delivery too!"}]);
-      addNote("Presentation started","AI is now monitoring your screen share for layout, slide flow, and delivery coaching.");
-      toast$("🖥️ Presenting — AI analysing your slides","success");
-      // Start periodic AI analysis of presentation
-      const interval=setInterval(()=>{
-        const tip=AI_PRESENTATION_ANALYSIS[Math.floor(Math.random()*AI_PRESENTATION_ANALYSIS.length)];
-        setPresentAnalysis(tip);
-        // Add to chat every few cycles
-        if(Math.random()>0.6){
-          setMessages(m=>[...m,{from:"ai",text:`🖥️ ${tip}`}]);
-        }
-      },8000);
-      presentAnalysisRef.current=interval;
-    } catch {
-      toast$("Screen share cancelled","warn");
+  function toggleVoiceAsk() {
+    if (voiceListening) {
+      voiceAsk.stop();
+      setVoiceListening(false);
+      if (voiceAsk.transcript.trim()) {
+        sendAIRequest(voiceAsk.transcript.trim());
+      }
+      toast$("Voice captured", "info");
+    } else {
+      setVoiceListening(true);
+      voiceAsk.start((finalText) => {
+        voiceAsk.stop();
+        setVoiceListening(false);
+        sendAIRequest(finalText);
+        toast$("Voice sent to AI", "success");
+      });
+      toast$("🎙️ Listening — speak your question", "info");
     }
   }
 
-  function stopPresenting(){
+  // ─── SCREEN SHARE / PRESENT ───────────────────────────────────────────────
+  async function startPresenting() {
+    try {
+      await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: false,
+      });
+      setIsScreenSharing(true);
+      setPresentMode(true);
+      setPanelOpen(false); // more stage space
+      setMessages((m) => [
+        ...m,
+        {
+          from: "system",
+          text: "🖥️ Presentation started — AI is now analysing your screen content",
+        },
+        {
+          from: "ai",
+          text: "Your screen is now shared. I'll analyse your presentation layout, slide structure, and provide live coaching tips. Speak naturally and I'll track your delivery too!",
+        },
+      ]);
+      addNote(
+        "Presentation started",
+        "AI is now monitoring your screen share for layout, slide flow, and delivery coaching.",
+      );
+      toast$("🖥️ Presenting — AI analysing your slides", "success");
+      // Start periodic AI analysis of presentation
+      const interval = setInterval(() => {
+        const tip =
+          AI_PRESENTATION_ANALYSIS[
+            Math.floor(Math.random() * AI_PRESENTATION_ANALYSIS.length)
+          ];
+        setPresentAnalysis(tip);
+        // Add to chat every few cycles
+        if (Math.random() > 0.6) {
+          setMessages((m) => [...m, { from: "ai", text: `🖥️ ${tip}` }]);
+        }
+      }, 8000);
+      presentAnalysisRef.current = interval;
+    } catch {
+      toast$("Screen share cancelled", "warn");
+    }
+  }
+
+  function stopPresenting() {
     setIsScreenSharing(false);
     setPresentMode(false);
     setPresentAnalysis("");
-    if(presentAnalysisRef.current)clearInterval(presentAnalysisRef.current);
-    setMessages(m=>[...m,{from:"system",text:"🖥️ Presentation ended"},{from:"ai",text:"Presentation session ended. Would you like a summary of coaching notes, or shall we review your delivery feedback?"}]);
-    toast$("Screen share ended","info");
+    if (presentAnalysisRef.current) clearInterval(presentAnalysisRef.current);
+    setMessages((m) => [
+      ...m,
+      { from: "system", text: "🖥️ Presentation ended" },
+      {
+        from: "ai",
+        text: "Presentation session ended. Would you like a summary of coaching notes, or shall we review your delivery feedback?",
+      },
+    ]);
+    toast$("Screen share ended", "info");
   }
 
   // ─── Demo Mode ────────────────────────────────────────────────────────────
-  function enterDemoReadyState(){
-    if(timer.isPaused){toast$("Resume session first","warn");return;}
+  function enterDemoReadyState() {
+    if (timer.isPaused) {
+      toast$("Resume session first", "warn");
+      return;
+    }
     if (config.sessionSubMode === "demo" || config.setupFile) {
       startPreconfiguredDemo();
     } else {
       setDemoReady(true);
-      toast$("▶️ Click 'Start Demo Now' to begin your presentation practice","info");
+      toast$(
+        "▶️ Click 'Start Demo Now' to begin your presentation practice",
+        "info",
+      );
     }
   }
 
-  function startPreconfiguredDemo(){
-    if(config.sessionSubMode === "demo" && !demoFile){
-      toast$("Presentation file is missing. Please go back and upload the file in demo setup.","warn");
+  function startPreconfiguredDemo() {
+    if (config.sessionSubMode === "demo" && !demoFile) {
+      toast$(
+        "Presentation file is missing. Please go back and upload the file in demo setup.",
+        "warn",
+      );
       return;
     }
     setDemoReady(false);
@@ -4372,113 +8021,180 @@ useEffect(()=>{
     setDemoTimer(0);
     setActiveSeminarMode("demo");
     lastSpeechTimeRef.current = Date.now();
-    const msg = config.initialFacilitatorMessage || `Demo mode activated for "${config.topic}". Begin your seminar when you are ready.`;
-    setMessages(m=>[...m,{from:"system",text:"▶️ Demo Mode Started — Present now"},{from:"ai",text:msg}]);
-    addNote("Demo mode started",`Source file: ${demoFile?.name || "pre-uploaded"}`);
-    if(speakAiReplyRef.current) speakAiReplyRef.current(msg,{ resumeCapture: true });
+    const msg =
+      config.initialFacilitatorMessage ||
+      `Demo mode activated for "${config.topic}". Begin your seminar when you are ready.`;
+    setMessages((m) => [
+      ...m,
+      { from: "system", text: "▶️ Demo Mode Started — Present now" },
+      { from: "ai", text: msg },
+    ]);
+    addNote(
+      "Demo mode started",
+      `Source file: ${demoFile?.name || "pre-uploaded"}`,
+    );
+    if (speakAiReplyRef.current)
+      speakAiReplyRef.current(msg, { resumeCapture: true });
     micPreferenceRef.current = true;
     setMicOn(true);
-    toast$("▶️ Demo started — speak freely","info");
+    toast$("▶️ Demo started — speak freely", "info");
     setPanelOpen(false);
   }
 
-  function actuallyStartDemo(){
-    setActionLoader({label: "Uploading File", sublabel: `Analysing presentation file and preparing AI...`});
+  function actuallyStartDemo() {
+    setActionLoader({
+      label: "Uploading File",
+      sublabel: `Analysing presentation file and preparing AI...`,
+    });
     setTimeout(() => {
       setActionLoader(null);
       setDemoReady(false);
-      setDemoMode(true);setDemoRunning(true);setDemoTimer(0);
-      lastSpeechTimeRef.current=Date.now();
-      const msg=`Demo mode activated! I have analysed your file. Present your seminar on "${config.topic}" as if to a live audience. I'm analysing: introduction clarity, argument structure, evidence usage, transitions, and closing impact. Speak naturally — go ahead!`;
-      setMessages(m=>[...m,{from:"system",text:"▶️ Demo Mode Started — Present now"},{from:"ai",text:msg}]);
-      addNote("Demo mode started","I am now evaluating: clarity, structure, evidence, transitions, and closing impact based on your file.");
+      setDemoMode(true);
+      setDemoRunning(true);
+      setDemoTimer(0);
+      lastSpeechTimeRef.current = Date.now();
+      const msg = `Demo mode activated! I have analysed your file. Present your seminar on "${config.topic}" as if to a live audience. I'm analysing: introduction clarity, argument structure, evidence usage, transitions, and closing impact. Speak naturally — go ahead!`;
+      setMessages((m) => [
+        ...m,
+        { from: "system", text: "▶️ Demo Mode Started — Present now" },
+        { from: "ai", text: msg },
+      ]);
+      addNote(
+        "Demo mode started",
+        "I am now evaluating: clarity, structure, evidence, transitions, and closing impact based on your file.",
+      );
       aiVoice.speak("Demo mode active. Please begin your presentation.");
-      toast$("▶️ Demo started — speak freely","info");
+      toast$("▶️ Demo started — speak freely", "info");
       setPanelOpen(false);
     }, 3000);
   }
 
-  function cancelDemoReady(){setDemoReady(false);}
+  function cancelDemoReady() {
+    setDemoReady(false);
+  }
 
-  function pauseDemo(){
+  function pauseDemo() {
     setDemoRunning(false);
-    toast$("⏸ Demo paused","warn");
+    toast$("⏸ Demo paused", "warn");
   }
 
-  function resumeDemo(){
-    if(timer.isPaused){toast$("Resume main session first","warn");return;}
+  function resumeDemo() {
+    if (timer.isPaused) {
+      toast$("Resume main session first", "warn");
+      return;
+    }
     setDemoRunning(true);
-    lastSpeechTimeRef.current=Date.now();
-    toast$("▶ Demo resumed","success");
+    lastSpeechTimeRef.current = Date.now();
+    toast$("▶ Demo resumed", "success");
   }
 
-  function stopDemo(){
-    setDemoMode(false);setDemoRunning(false);
-    if(demoIntervalRef.current)clearInterval(demoIntervalRef.current);
-    if(stuckCheckRef.current)clearInterval(stuckCheckRef.current);
-    setAiSuggestion(null);setAiPausedForSuggestion(false);
-    if(resumeCountdownRef.current)clearInterval(resumeCountdownRef.current);
+  function stopDemo() {
+    setDemoMode(false);
+    setDemoRunning(false);
+    if (demoIntervalRef.current) clearInterval(demoIntervalRef.current);
+    if (stuckCheckRef.current) clearInterval(stuckCheckRef.current);
+    setAiSuggestion(null);
+    setAiPausedForSuggestion(false);
+    if (resumeCountdownRef.current) clearInterval(resumeCountdownRef.current);
     setResumeCountdown(0);
-    const full=transcriptHistory.join(" ");
-    const score=70+Math.floor(Math.random()*25);
-    const ds=`${String(Math.floor(demoTimer/60)).padStart(2,"0")}:${String(demoTimer%60).padStart(2,"0")}`;
-    const fa=`Demo Complete (${ds})\n\n${full.length>20?`Detected: "${full.slice(0,60)}…"\n\n`:""}✅ Confident opening detected\n✅ Main argument identifiable\n⚠️ Add more quantitative evidence\n⚠️ Strengthen your closing\n💡 Score: ${score}/100 — keep practising!`;
-    setMessages(m=>[...m,{from:"system",text:"🏁 Demo Complete"},{from:"ai",text:fa}]);
-    addNote("Demo feedback",fa);
-    setPanelOpen(true);setActivePanel("chat");
-    toast$(`🏁 Demo ended — score: ${score}/100`,"success");
+    const full = transcriptHistory.join(" ");
+    const score = 70 + Math.floor(Math.random() * 25);
+    const ds = `${String(Math.floor(demoTimer / 60)).padStart(2, "0")}:${String(demoTimer % 60).padStart(2, "0")}`;
+    const fa = `Demo Complete (${ds})\n\n${full.length > 20 ? `Detected: "${full.slice(0, 60)}…"\n\n` : ""}✅ Confident opening detected\n✅ Main argument identifiable\n⚠️ Add more quantitative evidence\n⚠️ Strengthen your closing\n💡 Score: ${score}/100 — keep practising!`;
+    setMessages((m) => [
+      ...m,
+      { from: "system", text: "🏁 Demo Complete" },
+      { from: "ai", text: fa },
+    ]);
+    addNote("Demo feedback", fa);
+    setPanelOpen(true);
+    setActivePanel("chat");
+    toast$(`🏁 Demo ended — score: ${score}/100`, "success");
   }
 
-  function handlePauseSession(){
+  function handlePauseSession() {
     timer.pause();
-    if(demoRunning)setDemoRunning(false);
-    aiVoice.cancel();speech.stop();
-    toast$("⏸ Session paused","warn");
+    if (demoRunning) setDemoRunning(false);
+    aiVoice.cancel();
+    speech.stop();
+    toast$("⏸ Session paused", "warn");
   }
 
-  function handleResumeSession(){
+  function handleResumeSession() {
     timer.resume();
-    lastSpeechTimeRef.current=Date.now();
-    toast$("▶ Session resumed","success");
-    if(config.stream){
-      speech.start(finalText=>{
-        lastSpeechTimeRef.current=Date.now();
-        setTranscriptHistory(h=>[...h,finalText].slice(-20));
+    lastSpeechTimeRef.current = Date.now();
+    toast$("▶ Session resumed", "success");
+    if (config.stream) {
+      speech.start((finalText) => {
+        lastSpeechTimeRef.current = Date.now();
+        setTranscriptHistory((h) => [...h, finalText].slice(-20));
         setIsStudentSpeaking(true);
-        setTimeout(()=>setIsStudentSpeaking(false),1800);
+        setTimeout(() => setIsStudentSpeaking(false), 1800);
       });
     }
   }
 
-  function sendReaction(emoji){setShowReactions(false);const k=Date.now();setReaction({emoji,k});setTimeout(()=>setReaction(null),2400);}
-
-  function handleDownloadPDF(){
-    downloadSessionPDF({config,timer:timer.display,transcriptHistory,notes,messages});
-    toast$("📥 Report downloaded!","success");
+  function sendReaction(emoji) {
+    setShowReactions(false);
+    const k = Date.now();
+    setReaction({ emoji, k });
+    setTimeout(() => setReaction(null), 2400);
   }
 
-  function handleEnd(){
-    speech.stop();voiceAsk.stop();aiVoice.cancel();
-    if(demoIntervalRef.current)clearInterval(demoIntervalRef.current);
-    if(stuckCheckRef.current)clearInterval(stuckCheckRef.current);
-    if(resumeCountdownRef.current)clearInterval(resumeCountdownRef.current);
-    if(presentAnalysisRef.current)clearInterval(presentAnalysisRef.current);
-    if(config.stream&&typeof config.stream.getTracks==="function")config.stream.getTracks().forEach(t=>t.stop());
-    onEnd({modeType:"prepare",timer:timer.display,topic:config.topic,subject:config.subject,unit:config.unit,participants:1,exchanges,presenterName:config.name,transcriptHistory,notes,messages});
+  function handleDownloadPDF() {
+    downloadSessionPDF({
+      config,
+      timer: timer.display,
+      transcriptHistory,
+      notes,
+      messages,
+    });
+    toast$("📥 Report downloaded!", "success");
   }
 
-  async function actuallyStartDemoLive(){
-    if(!demoFile){
-      toast$("Upload a PDF or PPT file before starting demo mode.","warn");
+  function handleEnd() {
+    speech.stop();
+    voiceAsk.stop();
+    aiVoice.cancel();
+    if (demoIntervalRef.current) clearInterval(demoIntervalRef.current);
+    if (stuckCheckRef.current) clearInterval(stuckCheckRef.current);
+    if (resumeCountdownRef.current) clearInterval(resumeCountdownRef.current);
+    if (presentAnalysisRef.current) clearInterval(presentAnalysisRef.current);
+    if (config.stream && typeof config.stream.getTracks === "function")
+      config.stream.getTracks().forEach((t) => t.stop());
+    onEnd({
+      modeType: "prepare",
+      timer: timer.display,
+      topic: config.topic,
+      subject: config.subject,
+      unit: config.unit,
+      participants: 1,
+      exchanges,
+      presenterName: config.name,
+      transcriptHistory,
+      notes,
+      messages,
+    });
+  }
+
+  async function actuallyStartDemoLive() {
+    if (!demoFile) {
+      toast$("Upload a PDF or PPT file before starting demo mode.", "warn");
       return;
     }
-    if(!config.unitId){
-      toast$("Unit information is missing for demo mode.","error");
+    if (!config.unitId) {
+      toast$("Unit information is missing for demo mode.", "error");
       return;
     }
-    const candidate = getCandidateContext({ firstName: config.name || "Guest", lastName: "" });
-    setActionLoader({label:"Preparing Demo", sublabel:`Analysing ${demoFile.name} and launching AI demo...`});
-    try{
+    const candidate = getCandidateContext({
+      firstName: config.name || "Guest",
+      lastName: "",
+    });
+    setActionLoader({
+      label: "Preparing Demo",
+      sublabel: `Analysing ${demoFile.name} and launching AI demo...`,
+    });
+    try {
       const selectedUnit = null;
       const response = await startSeminar({
         unitId: config.unitId,
@@ -4489,7 +8205,8 @@ useEffect(()=>{
         unitNumber: selectedUnit?.unitNumber ?? undefined,
         board: selectedUnit?.board || undefined,
         classNumber: selectedUnit?.standard || undefined,
-        unitName: selectedUnit?.unitTitle || selectedUnit?.unitLabel || config.unit,
+        unitName:
+          selectedUnit?.unitTitle || selectedUnit?.unitLabel || config.unit,
         mode: "demo",
         session_mode: "demo",
         file: demoFile,
@@ -4500,7 +8217,8 @@ useEffect(()=>{
       setDemoRunning(true);
       setDemoTimer(0);
       setActiveSeminarMode("demo");
-      const nextSessionId = response?.session_id || response?.sessionId || sessionId;
+      const nextSessionId =
+        response?.session_id || response?.sessionId || sessionId;
       setSessionId(nextSessionId);
       lastSpeechTimeRef.current = Date.now();
       const msg =
@@ -4508,143 +8226,182 @@ useEffect(()=>{
         response?.message ||
         response?.opening_statement ||
         `Demo mode activated for "${config.topic}". Begin your seminar when you are ready.`;
-      setMessages(m=>[...m,{from:"system",text:"▶️ Demo Mode Started — Present now"},{from:"ai",text:msg}]);
-      addNote("Demo mode started",`Source file: ${demoFile.name}`);
-speakAiReply(msg,{ resumeCapture: true });
-            speakAiReply(msg,{ resumeCapture: true });
+      setMessages((m) => [
+        ...m,
+        { from: "system", text: "▶️ Demo Mode Started — Present now" },
+        { from: "ai", text: msg },
+      ]);
+      addNote("Demo mode started", `Source file: ${demoFile.name}`);
+      speakAiReply(msg, { resumeCapture: true });
+      speakAiReply(msg, { resumeCapture: true });
       micPreferenceRef.current = true;
       setMicOn(true);
-      toast$("▶️ Demo started — speak freely","info");
+      toast$("▶️ Demo started — speak freely", "info");
       setPanelOpen(false);
-    } catch(error){
+    } catch (error) {
       setActionLoader(null);
-      toast$(getErrorMessage(error, "Unable to start demo mode right now."),"error");
+      toast$(
+        getErrorMessage(error, "Unable to start demo mode right now."),
+        "error",
+      );
     }
   }
 
-  function pauseDemoLive(){
+  function pauseDemoLive() {
     setDemoRunning(false);
-    if(speechRecording){
+    if (speechRecording) {
       stopSpeechCapture("manual-submit");
     }
-    toast$("⏸ Demo paused","warn");
+    toast$("⏸ Demo paused", "warn");
   }
 
-  function resumeDemoLive(){
-    if(timer.isPaused){toast$("Resume main session first","warn");return;}
+  function resumeDemoLive() {
+    if (timer.isPaused) {
+      toast$("Resume main session first", "warn");
+      return;
+    }
     setDemoRunning(true);
-    lastSpeechTimeRef.current=Date.now();
-    toast$("▶ Demo resumed","success");
+    lastSpeechTimeRef.current = Date.now();
+    toast$("▶ Demo resumed", "success");
   }
 
-  function stopDemoLive(){
+  function stopDemoLive() {
     setDemoMode(false);
     setDemoRunning(false);
-    if(speechRecording){
+    if (speechRecording) {
       stopSpeechCapture("manual-submit");
     }
-    if(demoIntervalRef.current)clearInterval(demoIntervalRef.current);
-    if(stuckCheckRef.current)clearInterval(stuckCheckRef.current);
+    if (demoIntervalRef.current) clearInterval(demoIntervalRef.current);
+    if (stuckCheckRef.current) clearInterval(stuckCheckRef.current);
     setAiSuggestion(null);
     setAiPausedForSuggestion(false);
-    if(resumeCountdownRef.current)clearInterval(resumeCountdownRef.current);
+    if (resumeCountdownRef.current) clearInterval(resumeCountdownRef.current);
     setResumeCountdown(0);
-    setMessages(m=>[...m,{from:"system",text:"🏁 Demo practice complete"},{from:"ai",text:"Your demo practice is complete. Use End Call when you want GradeUp AI to generate the final session feedback."}]);
+    setMessages((m) => [
+      ...m,
+      { from: "system", text: "🏁 Demo practice complete" },
+      {
+        from: "ai",
+        text: "Your demo practice is complete. Use End Call when you want GradeUp AI to generate the final session feedback.",
+      },
+    ]);
     setPanelOpen(true);
     setActivePanel("chat");
-    toast$("🏁 Demo complete — end the call for final feedback","success");
+    toast$("🏁 Demo complete — end the call for final feedback", "success");
   }
 
-  function handlePauseSessionLive(){
+  function handlePauseSessionLive() {
     timer.pause();
-    if(demoRunning)setDemoRunning(false);
+    if (demoRunning) setDemoRunning(false);
     aiVoice.cancel();
-    if(speechRecording){
+    if (speechRecording) {
       stopSpeechCapture("manual-submit");
     }
-    toast$("⏸ Session paused","warn");
+    toast$("⏸ Session paused", "warn");
   }
 
-  function handleResumeSessionLive(){
+  function handleResumeSessionLive() {
     timer.resume();
-    lastSpeechTimeRef.current=Date.now();
-    toast$("▶ Session resumed","success");
+    lastSpeechTimeRef.current = Date.now();
+    toast$("▶ Session resumed", "success");
   }
 
-  async function requestSeminarHelp(){
-    if(!sessionId || requestingGuide) return;
+  async function requestSeminarHelp() {
+    if (!sessionId || requestingGuide) return;
     setRequestingGuide(true);
     setShowHelpPrompt(false);
     setAiPausedForSuggestion(false);
     setGuideStatusText("AI is ready to help. Please wait...");
     const transcript = pendingGuideTranscript || transcriptHistory.join("\n");
-    try{
+    try {
       const response = transcript
-        ? await respondSeminar({ sessionId, transcript, silenceSeconds: activeSeminarMode === "practice" ? 120 : 10 })
+        ? await respondSeminar({
+            sessionId,
+            transcript,
+            silenceSeconds: activeSeminarMode === "practice" ? 120 : 10,
+          })
         : await guideSeminar(sessionId);
-      const guideText = response?.ai_response || response?.guidance || response?.message || response?.response || response?.reply;
-      if(!guideText){
+      const guideText =
+        response?.ai_response ||
+        response?.guidance ||
+        response?.message ||
+        response?.response ||
+        response?.reply;
+      if (!guideText) {
         throw new Error("No guidance was returned.");
       }
-      setMessages(m=>[...m,{from:"ai",text:guideText}]);
-      setExchanges(x=>x+1);
-        setGuideStatusText("");
+      setMessages((m) => [...m, { from: "ai", text: guideText }]);
+      setExchanges((x) => x + 1);
+      setGuideStatusText("");
       setPendingGuideTranscript("");
       setAiSuggestion(null);
       setDemoRunning(true);
       timer.resume();
       lastSpeechTimeRef.current = Date.now();
-      speakAiReply(guideText,{ resumeCapture: true });
-    } catch(error){
+      speakAiReply(guideText, { resumeCapture: true });
+    } catch (error) {
       setGuideStatusText("");
-      toast$(getErrorMessage(error, "Unable to fetch seminar guidance."),"error");
+      toast$(
+        getErrorMessage(error, "Unable to fetch seminar guidance."),
+        "error",
+      );
     } finally {
       setRequestingGuide(false);
     }
   }
 
-  async function handleEndSession(){
-    if(endingSession) return;
+  async function handleEndSession() {
+    if (endingSession) return;
     setEndingSession(true);
     voiceAsk.stop();
     aiVoice.cancel();
-    if(demoIntervalRef.current)clearInterval(demoIntervalRef.current);
-    if(stuckCheckRef.current)clearInterval(stuckCheckRef.current);
-    if(resumeCountdownRef.current)clearInterval(resumeCountdownRef.current);
-    if(presentAnalysisRef.current)clearInterval(presentAnalysisRef.current);
-    if(speechRecording){
+    if (demoIntervalRef.current) clearInterval(demoIntervalRef.current);
+    if (stuckCheckRef.current) clearInterval(stuckCheckRef.current);
+    if (resumeCountdownRef.current) clearInterval(resumeCountdownRef.current);
+    if (presentAnalysisRef.current) clearInterval(presentAnalysisRef.current);
+    if (speechRecording) {
       stopSpeechCapture("manual-submit");
     }
     cleanupSpeechDetection();
-    if(config.stream&&typeof config.stream.getTracks==="function")config.stream.getTracks().forEach(t=>t.stop());
+    if (config.stream && typeof config.stream.getTracks === "function")
+      config.stream.getTracks().forEach((t) => t.stop());
     let endResponse = null;
-    try{
-      if(sessionId){
+    try {
+      if (sessionId) {
         endResponse = await endSeminarWithTranscript({
           sessionId,
           transcript: transcriptHistory.join("\n"),
         });
       }
-    } catch(error){
-      toast$(getErrorMessage(error, "Unable to end the seminar cleanly."),"error");
+    } catch (error) {
+      toast$(
+        getErrorMessage(error, "Unable to end the seminar cleanly."),
+        "error",
+      );
     }
-    const endScores = endResponse?.scores || endResponse?.data?.scores || endResponse?.data?.feedback?.scores || {};
-    const endSession = endResponse?.liveSession || endResponse?.data?.liveSession || {};
+    const endScores =
+      endResponse?.scores ||
+      endResponse?.data?.scores ||
+      endResponse?.data?.feedback?.scores ||
+      {};
+    const endSession =
+      endResponse?.liveSession || endResponse?.data?.liveSession || {};
     onEnd({
-      modeType:"prepare",
+      modeType: "prepare",
       sessionId,
-      timer:timer.display,
+      timer: timer.display,
       topic: config.topic || endSession?.topic,
       subject: config.subject || endSession?.subject,
       unit: config.unit || endSession?.unit,
-      participants:1,
+      participants: 1,
       exchanges,
       presenterName: config.name || endSession?.hostCandidateName,
       transcriptHistory,
       notes,
       messages,
       scores: endScores,
-      topicsCovered: endResponse?.topics_covered || endResponse?.data?.topics_covered || [],
+      topicsCovered:
+        endResponse?.topics_covered || endResponse?.data?.topics_covered || [],
       hintsUsed: endResponse?.hints_used ?? endResponse?.data?.hints_used ?? 0,
       turns: endSession?.turns || [],
       feedback: endScores,
@@ -4652,631 +8409,1647 @@ speakAiReply(msg,{ resumeCapture: true });
     });
   }
 
-  const demoTimerStr=`${String(Math.floor(demoTimer/60)).padStart(2,"0")}:${String(demoTimer%60).padStart(2,"0")}`;
-  const presenterColor=avColor(config.name);
-  const isAiPaused=aiPausedForSuggestion||resumeCountdown>0;
+  const demoTimerStr = `${String(Math.floor(demoTimer / 60)).padStart(2, "0")}:${String(demoTimer % 60).padStart(2, "0")}`;
+  const presenterColor = avColor(config.name);
+  const isAiPaused = aiPausedForSuggestion || resumeCountdown > 0;
 
   return (
     <div className="prep-page">
-      {actionLoader && <PageLoader label={actionLoader.label} sublabel={actionLoader.sublabel} steps={[]} />}
+      {actionLoader && (
+        <PageLoader
+          label={actionLoader.label}
+          sublabel={actionLoader.sublabel}
+          steps={[]}
+        />
+      )}
       {/* TOP BAR */}
       <div className="prep-bar">
-        <button className="prep-bar-logo"><div className="prep-bar-logo-ic">🎓</div><span>SeminarArena</span></button>
-        <div className="prep-bar-div"/>
-        <div className="prep-bar-topic"><strong>{config.subject&&`${config.subject}${config.unit?` · ${config.unit}`:""} · `}</strong>{config.topic}</div>
-        {demoMode&&<div className={`prep-pill ${demoRunning?"pp-demo":"pp-paused"}`}>{demoRunning?`▶️ DEMO ${demoTimerStr}`:`⏸ DEMO PAUSED ${demoTimerStr}`}</div>}
-        {isScreenSharing&&!demoMode&&<div className="prep-pill" style={{background:"rgba(229,62,62,.12)",borderColor:"rgba(229,62,62,.22)",color:"var(--red)",animation:"recBlink 1.4s infinite"}}>🖥️ PRESENTING</div>}
-        {!demoMode&&!isScreenSharing&&<div className="prep-pill pp-mode">🤖 AI Coach</div>}
-        <div className={`prep-pill ${timer.isPaused?"pp-paused":"pp-timer"}`}>{timer.isPaused?"⏸ PAUSED":timer.display}</div>
-        <button className="prep-bar-end" onClick={()=>setShowEnd(true)}>End</button>
+        <button className="prep-bar-logo">
+          <div className="prep-bar-logo-ic">
+            <SeminarIcon name="graduation" />
+          </div>
+          <span>SeminarArena</span>
+        </button>
+        <div className="prep-bar-div" />
+        <div className="prep-bar-topic">
+          <strong>
+            {config.subject &&
+              `${config.subject}${config.unit ? ` · ${config.unit}` : ""} · `}
+          </strong>
+          {config.topic}
+        </div>
+        {demoMode && (
+          <div className={`prep-pill ${demoRunning ? "pp-demo" : "pp-paused"}`}>
+            {demoRunning
+              ? `▶️ DEMO ${demoTimerStr}`
+              : `⏸ DEMO PAUSED ${demoTimerStr}`}
+          </div>
+        )}
+        {isScreenSharing && !demoMode && (
+          <div
+            className="prep-pill"
+            style={{
+              background: "rgba(229,62,62,.12)",
+              borderColor: "rgba(229,62,62,.22)",
+              color: "var(--red)",
+              animation: "recBlink 1.4s infinite",
+            }}
+          >
+            🖥️ PRESENTING
+          </div>
+        )}
+        {!demoMode && !isScreenSharing && (
+          <div className="prep-pill pp-mode">🤖 AI Coach</div>
+        )}
+        <div
+          className={`prep-pill ${timer.isPaused ? "pp-paused" : "pp-timer"}`}
+        >
+          {timer.isPaused ? "⏸ PAUSED" : timer.display}
+        </div>
+        <button className="prep-bar-end" onClick={() => setShowEnd(true)}>
+          End
+        </button>
       </div>
 
       {/* AI auto-paused banner */}
-      {isAiPaused&&(
+      {isAiPaused && (
         <div className="ai-pause-banner">
-          <span style={{fontSize:16}}>🤖</span>
+          <span style={{ fontSize: 16 }}>🤖</span>
           <span className="ai-pause-banner-text">
-            {resumeCountdown>0
-              ?`AI paused your session — resuming in ${resumeCountdown}s…`
-              :"Session paused by AI — review the suggestion in chat"}
+            {resumeCountdown > 0
+              ? `AI paused your session — resuming in ${resumeCountdown}s…`
+              : "Session paused by AI — review the suggestion in chat"}
           </span>
-          <button className="ai-pause-resume-btn" onClick={handleManualResume}>▶ Resume Now</button>
+          <button className="ai-pause-resume-btn" onClick={handleManualResume}>
+            ▶ Resume Now
+          </button>
         </div>
       )}
 
-      {(isGreetingPending || isAiResponsePending || aiVoice.isSpeaking || setupPhase === "session") && (
-        <div style={{margin:"0 auto 8px",width:"fit-content",maxWidth:"90%",padding:"4px 12px",borderRadius:20,background:(isGreetingPending || isAiResponsePending)?"linear-gradient(135deg,rgba(45,156,219,.16),rgba(0,195,122,.12))":"rgba(255,255,255,.04)",border:(isGreetingPending || isAiResponsePending)?"1px solid rgba(126,211,247,.28)":"1px solid rgba(255,255,255,.08)",display:"flex",alignItems:"center",gap:8,boxShadow:"var(--sh2)"}}>
-          <div style={{width:20,height:20,borderRadius:"50%",display:"grid",placeItems:"center",background:(isGreetingPending || isAiResponsePending)?"rgba(126,211,247,.14)":"rgba(0,195,122,.12)",color:(isGreetingPending || isAiResponsePending)?"#7ed3f7":"#5ee3b7",fontSize:10,fontWeight:900}}>
-            {greetingState === "speaking" ? "AI" : (isGreetingPending || isAiResponsePending) ? "…" : "🎤"}
+      {(isGreetingPending ||
+        isAiResponsePending ||
+        aiVoice.isSpeaking ||
+        setupPhase === "session") && (
+        <div
+          style={{
+            margin: "0 auto 8px",
+            width: "fit-content",
+            maxWidth: "90%",
+            padding: "4px 12px",
+            borderRadius: 20,
+            background:
+              isGreetingPending || isAiResponsePending
+                ? "linear-gradient(135deg,rgba(45,156,219,.16),rgba(0,195,122,.12))"
+                : "rgba(255,255,255,.04)",
+            border:
+              isGreetingPending || isAiResponsePending
+                ? "1px solid rgba(126,211,247,.28)"
+                : "1px solid rgba(255,255,255,.08)",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            boxShadow: "var(--sh2)",
+          }}
+        >
+          <div
+            style={{
+              width: 20,
+              height: 20,
+              borderRadius: "50%",
+              display: "grid",
+              placeItems: "center",
+              background:
+                isGreetingPending || isAiResponsePending
+                  ? "rgba(126,211,247,.14)"
+                  : "rgba(0,195,122,.12)",
+              color:
+                isGreetingPending || isAiResponsePending
+                  ? "#7ed3f7"
+                  : "#5ee3b7",
+              fontSize: 10,
+              fontWeight: 900,
+            }}
+          >
+            {greetingState === "speaking"
+              ? "AI"
+              : isGreetingPending || isAiResponsePending
+                ? "…"
+                : "🎤"}
           </div>
-          <div style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:6}}>
-            <div style={{fontSize:11,fontWeight:800,color:"#fff",whiteSpace:"nowrap"}}>
-              {greetingState === "speaking" ? "AI Speaking" : isGreetingPending ? "Connecting AI" : isAiResponsePending ? "Preparing AI" : "Microphone"}
+          <div
+            style={{
+              flex: 1,
+              minWidth: 0,
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 800,
+                color: "#fff",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {greetingState === "speaking"
+                ? "AI Speaking"
+                : isGreetingPending
+                  ? "Connecting AI"
+                  : isAiResponsePending
+                    ? "Preparing AI"
+                    : "Microphone"}
             </div>
-            <div style={{fontSize:11,color:"rgba(255,255,255,.68)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{micStatusText}</div>
+            <div
+              style={{
+                fontSize: 11,
+                color: "rgba(255,255,255,.68)",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {micStatusText}
+            </div>
           </div>
-          {(isGreetingPending || isAiResponsePending || aiVoice.isSpeaking) && <SoundAnalyser active color={greetingState === "speaking" ? "#7ed3f7" : "#5ee3b7"} bars={3} size={12}/>}
+          {(isGreetingPending || isAiResponsePending || aiVoice.isSpeaking) && (
+            <SoundAnalyser
+              active
+              color={greetingState === "speaking" ? "#7ed3f7" : "#5ee3b7"}
+              bars={3}
+              size={12}
+            />
+          )}
         </div>
       )}
       {/* MAIN BODY */}
-      <div className={`prep-body ${panelOpen?"panel-open":"panel-closed"}`}>
+      <div className={`prep-body ${panelOpen ? "panel-open" : "panel-closed"}`}>
         <div className="prep-main-area">
-
           {/* ─── STAGE: Present Mode (big screen + strip) ─── */}
           {presentMode ? (
             <div className="prep-presenter-stage">
               <div className="prep-ss-area">
-                {isScreenSharing?(
+                {isScreenSharing ? (
                   <>
                     <div className="prep-ss-active-label">
-                      <div className="prep-ss-active-dot"/>
+                      <div className="prep-ss-active-dot" />
                       Screen Sharing Active — AI Analysing
                     </div>
-                    <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:12,color:"rgba(255,255,255,.35)"}}>
-                      <span style={{fontSize:52}}>🖥️</span>
-                      <span style={{fontSize:13,fontWeight:700}}>Your screen is being shared</span>
-                      <span style={{fontSize:11,color:"rgba(255,255,255,.25)",textAlign:"center",maxWidth:260,lineHeight:1.6}}>AI is monitoring your presentation layout, slide flow, and delivery.</span>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        gap: 12,
+                        color: "rgba(255,255,255,.35)",
+                      }}
+                    >
+                      <span style={{ fontSize: 52 }}>🖥️</span>
+                      <span style={{ fontSize: 13, fontWeight: 700 }}>
+                        Your screen is being shared
+                      </span>
+                      <span
+                        style={{
+                          fontSize: 11,
+                          color: "rgba(255,255,255,.25)",
+                          textAlign: "center",
+                          maxWidth: 260,
+                          lineHeight: 1.6,
+                        }}
+                      >
+                        AI is monitoring your presentation layout, slide flow,
+                        and delivery.
+                      </span>
                     </div>
                     {/* AI analysis overlay */}
-                    {presentAnalysis&&(
+                    {presentAnalysis && (
                       <div className="ai-analysis-overlay">
-                        <div className="aao-label"><div className="aao-dot"/>AI Presentation Coach</div>
+                        <div className="aao-label">
+                          <div className="aao-dot" />
+                          AI Presentation Coach
+                        </div>
                         <div className="aao-text">{presentAnalysis}</div>
                       </div>
                     )}
                   </>
-                ):(
+                ) : (
                   <div className="prep-ss-placeholder">
-                    <div style={{fontSize:52,opacity:.18}}>🖥️</div>
-                    <div style={{fontSize:13,fontWeight:700}}>No screen shared yet</div>
-                    <button style={{marginTop:14,padding:"9px 20px",borderRadius:10,background:"var(--grad)",border:"none",cursor:"pointer",fontSize:13,fontWeight:700,color:"#fff"}} onClick={startPresenting}>
+                    <div style={{ fontSize: 52, opacity: 0.18 }}>🖥️</div>
+                    <div style={{ fontSize: 13, fontWeight: 700 }}>
+                      No screen shared yet
+                    </div>
+                    <button
+                      style={{
+                        marginTop: 14,
+                        padding: "9px 20px",
+                        borderRadius: 10,
+                        background: "var(--grad)",
+                        border: "none",
+                        cursor: "pointer",
+                        fontSize: 13,
+                        fontWeight: 700,
+                        color: "#fff",
+                      }}
+                      onClick={startPresenting}
+                    >
                       🖥️ Start Screen Share
                     </button>
                   </div>
                 )}
                 {/* Demo badge on presenter mode */}
-                {demoMode&&!demoReady&&(
+                {demoMode && !demoReady && (
                   <div className="prep-demo-badge">
-                    <div className="prep-demo-badge-dot" style={{animationPlayState:demoRunning?"running":"paused"}}/>
-                    <span className="prep-demo-badge-text">⏺ {demoRunning?`DEMO ${demoTimerStr} — AI Analysing`:`DEMO PAUSED ${demoTimerStr}`}</span>
+                    <div
+                      className="prep-demo-badge-dot"
+                      style={{
+                        animationPlayState: demoRunning ? "running" : "paused",
+                      }}
+                    />
+                    <span className="prep-demo-badge-text">
+                      ⏺{" "}
+                      {demoRunning
+                        ? `DEMO ${demoTimerStr} — AI Analysing`
+                        : `DEMO PAUSED ${demoTimerStr}`}
+                    </span>
                   </div>
                 )}
                 {/* Paused overlay */}
-                {timer.isPaused&&!isAiPaused&&(
+                {timer.isPaused && !isAiPaused && (
                   <div className="paused-overlay">
-                    <div className="paused-badge"><span style={{fontSize:20}}>⏸</span> Session Paused</div>
-                    <div className="paused-sub">Your session is paused. Resume to continue.</div>
-                    <button className="paused-resume-btn" onClick={handleResumeSessionLive}>▶ Resume Session</button>
+                    <div className="paused-badge">
+                      <span style={{ fontSize: 20 }}>⏸</span> Session Paused
+                    </div>
+                    <div className="paused-sub">
+                      Your session is paused. Resume to continue.
+                    </div>
+                    <button
+                      className="paused-resume-btn"
+                      onClick={handleResumeSessionLive}
+                    >
+                      ▶ Resume Session
+                    </button>
                   </div>
                 )}
                 {/* AI stuck banner */}
-                           {aiSuggestion&&!resumeCountdown&&(
-                  <div className="ai-suggestion-banner" style={{flexDirection:"column",gap:10,minWidth:300}}>
-                    <div style={{display:"flex",gap:10,alignItems:"center"}}>
+                {aiSuggestion && !resumeCountdown && (
+                  <div
+                    className="ai-suggestion-banner"
+                    style={{ flexDirection: "column", gap: 10, minWidth: 300 }}
+                  >
+                    <div
+                      style={{ display: "flex", gap: 10, alignItems: "center" }}
+                    >
                       <div className="ai-icon">🤖</div>
                       <div className="ai-content">
-                        <div className="ai-label">AI Coach — You seem stuck</div>
-                        <div className="ai-text">You've been silent for a while. Need help with your next point?</div>
+                        <div className="ai-label">
+                          AI Coach — You seem stuck
+                        </div>
+                        <div className="ai-text">
+                          You've been silent for a while. Need help with your
+                          next point?
+                        </div>
                       </div>
                     </div>
-                    <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-                      <button className="ai-close" style={{width:"auto",padding:"4px 12px",fontSize:11,fontWeight:700}} onClick={handleAISuggestionDismiss}>Resume</button>
-                      <button style={{padding:"4px 14px",borderRadius:6,border:"none",background:"rgba(255,255,255,.9)",color:"#030a14",fontSize:11,fontWeight:800,cursor:"pointer"}} onClick={requestSeminarHelp} disabled={requestingGuide}>{requestingGuide?"Preparing…":"Help me"}</button>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        justifyContent: "flex-end",
+                      }}
+                    >
+                      <button
+                        className="ai-close"
+                        style={{
+                          width: "auto",
+                          padding: "4px 12px",
+                          fontSize: 11,
+                          fontWeight: 700,
+                        }}
+                        onClick={handleAISuggestionDismiss}
+                      >
+                        Resume
+                      </button>
+                      <button
+                        style={{
+                          padding: "4px 14px",
+                          borderRadius: 6,
+                          border: "none",
+                          background: "rgba(255,255,255,.9)",
+                          color: "#030a14",
+                          fontSize: 11,
+                          fontWeight: 800,
+                          cursor: "pointer",
+                        }}
+                        onClick={requestSeminarHelp}
+                        disabled={requestingGuide}
+                      >
+                        {requestingGuide ? "Preparing…" : "Help me"}
+                      </button>
                     </div>
                   </div>
                 )}
                 {/* Countdown */}
-                {resumeCountdown>0&&(
-                  <div className="ai-suggestion-banner" style={{background:"linear-gradient(135deg,rgba(0,195,122,.92),rgba(45,156,219,.9))"}}>
+                {resumeCountdown > 0 && (
+                  <div
+                    className="ai-suggestion-banner"
+                    style={{
+                      background:
+                        "linear-gradient(135deg,rgba(0,195,122,.92),rgba(45,156,219,.9))",
+                    }}
+                  >
                     <div className="ai-icon">▶</div>
                     <div className="ai-content">
                       <div className="ai-label">Resuming in…</div>
-                      <div className="ai-text" style={{fontSize:20,fontWeight:900}}>{resumeCountdown}s — get ready to continue</div>
+                      <div
+                        className="ai-text"
+                        style={{ fontSize: 20, fontWeight: 900 }}
+                      >
+                        {resumeCountdown}s — get ready to continue
+                      </div>
                     </div>
-                    <button className="ai-close" onClick={handleManualResume}>✓</button>
+                    <button className="ai-close" onClick={handleManualResume}>
+                      ✓
+                    </button>
                   </div>
                 )}
                 {/* Reaction */}
-                {reaction&&<div key={reaction.k} style={{position:"absolute",top:"40%",left:"50%",transform:"translate(-50%,-50%)",fontSize:44,animation:"rPop 2s forwards",pointerEvents:"none",zIndex:7}}>{reaction.emoji}</div>}
+                {reaction && (
+                  <div
+                    key={reaction.k}
+                    style={{
+                      position: "absolute",
+                      top: "40%",
+                      left: "50%",
+                      transform: "translate(-50%,-50%)",
+                      fontSize: 44,
+                      animation: "rPop 2s forwards",
+                      pointerEvents: "none",
+                      zIndex: 7,
+                    }}
+                  >
+                    {reaction.emoji}
+                  </div>
+                )}
                 {/* Panel toggle */}
-                <button className="panel-toggle-fab" onClick={()=>setPanelOpen(p=>!p)}>{panelOpen?"›":"‹"}</button>
+                <button
+                  className="panel-toggle-fab"
+                  onClick={() => setPanelOpen((p) => !p)}
+                >
+                  {panelOpen ? "›" : "‹"}
+                </button>
               </div>
 
               {/* Participant strip at bottom */}
               <div className="prep-strip">
                 {/* You tile */}
-                <div className={`prep-strip-tile${isStudentSpeaking&&!timer.isPaused?" speaking":""}`}>
-                  <div className="prep-strip-av" style={{width:36,height:36,fontSize:14,background:`${presenterColor}22`,color:presenterColor}}>{avInit(config.name)}</div>
-                  {isStudentSpeaking&&!timer.isPaused&&<div style={{position:"absolute",top:5,right:5}}><SoundAnalyser active color="#5ee3b7" bars={4} size={14}/></div>}
+                <div
+                  className={`prep-strip-tile${isStudentSpeaking && !timer.isPaused ? " speaking" : ""}`}
+                >
+                  <div
+                    className="prep-strip-av"
+                    style={{
+                      width: 36,
+                      height: 36,
+                      fontSize: 14,
+                      background: `${presenterColor}22`,
+                      color: presenterColor,
+                    }}
+                  >
+                    {avInit(config.name)}
+                  </div>
+                  {isStudentSpeaking && !timer.isPaused && (
+                    <div style={{ position: "absolute", top: 5, right: 5 }}>
+                      <SoundAnalyser
+                        active
+                        color="#5ee3b7"
+                        bars={4}
+                        size={14}
+                      />
+                    </div>
+                  )}
                   <div className="prep-strip-ov">
                     <span className="prep-strip-name">{config.name}</span>
-                    <span style={{fontSize:9,background:"rgba(0,195,122,.85)",color:"#000",padding:"1px 5px",borderRadius:3,fontWeight:800}}>YOU</span>
+                    <span
+                      style={{
+                        fontSize: 9,
+                        background: "rgba(0,195,122,.85)",
+                        color: "#000",
+                        padding: "1px 5px",
+                        borderRadius: 3,
+                        fontWeight: 800,
+                      }}
+                    >
+                      YOU
+                    </span>
                   </div>
                 </div>
                 {/* AI tile */}
-                <div className={`prep-strip-tile${aiVoice.isSpeaking&&!timer.isPaused?" speaking-ai":""}`}>
-                  <div style={{fontSize:20}}>🤖</div>
-                  {aiVoice.isSpeaking&&!timer.isPaused&&<div style={{position:"absolute",top:5,right:5}}><SoundAnalyser active color="#7ed3f7" bars={4} size={14}/></div>}
+                <div
+                  className={`prep-strip-tile${aiVoice.isSpeaking && !timer.isPaused ? " speaking-ai" : ""}`}
+                >
+                  <div style={{ fontSize: 20 }}>🤖</div>
+                  {aiVoice.isSpeaking && !timer.isPaused && (
+                    <div style={{ position: "absolute", top: 5, right: 5 }}>
+                      <SoundAnalyser
+                        active
+                        color="#7ed3f7"
+                        bars={4}
+                        size={14}
+                      />
+                    </div>
+                  )}
                   <div className="prep-strip-ov">
                     <span className="prep-strip-name">AI Coach</span>
-                    <span style={{fontSize:9,background:"rgba(45,156,219,.85)",color:"#000",padding:"1px 5px",borderRadius:3,fontWeight:800}}>AI</span>
+                    <span
+                      style={{
+                        fontSize: 9,
+                        background: "rgba(45,156,219,.85)",
+                        color: "#000",
+                        padding: "1px 5px",
+                        borderRadius: 3,
+                        fontWeight: 800,
+                      }}
+                    >
+                      AI
+                    </span>
                   </div>
                 </div>
               </div>
 
               {/* Live transcript bar in present mode */}
-              {!timer.isPaused&&(liveTranscript||transcriptHistory.length>0)&&(
-                <div className="live-transcript-bar">
-                  <div className="lt-label"><div className="lt-dot"/>Live Voice</div>
-                  <div className="lt-text">{liveTranscript||transcriptHistory[transcriptHistory.length-1]||""}</div>
-                </div>
-              )}
+              {!timer.isPaused &&
+                (liveTranscript || transcriptHistory.length > 0) && (
+                  <div className="live-transcript-bar">
+                    <div className="lt-label">
+                      <div className="lt-dot" />
+                      Live Voice
+                    </div>
+                    <div className="lt-text">
+                      {liveTranscript ||
+                        transcriptHistory[transcriptHistory.length - 1] ||
+                        ""}
+                    </div>
+                  </div>
+                )}
             </div>
           ) : (
             /* ─── STAGE: Normal 2-tile mode ─── */
             <div className="prep-stage">
-              <div className="prep-tiles-grid" style={{marginTop: "auto"}}>
+              <div className="prep-tiles-grid" style={{ marginTop: "auto" }}>
                 {/* You tile */}
-                <div className={`prep-tile${isStudentSpeaking&&!timer.isPaused?" speaking":""}`}>
+                <div
+                  className={`prep-tile${isStudentSpeaking && !timer.isPaused ? " speaking" : ""}`}
+                >
                   <div className="prep-tile-you-badge">YOU</div>
-                  <div className="prep-tile-av" style={{background:`${presenterColor}22`,color:presenterColor}}>{avInit(config.name)}</div>
+                  <div
+                    className="prep-tile-av"
+                    style={{
+                      background: `${presenterColor}22`,
+                      color: presenterColor,
+                    }}
+                  >
+                    {avInit(config.name)}
+                  </div>
                   <div className="prep-tile-name">{config.name}</div>
                   <div className="prep-tile-role">Student · Presenter</div>
-                  {isStudentSpeaking&&!timer.isPaused&&(
-                    <div className="prep-tile-analyser"><SoundAnalyser active color="#5ee3b7" bars={5} size={14}/></div>
+                  {isStudentSpeaking && !timer.isPaused && (
+                    <div className="prep-tile-analyser">
+                      <SoundAnalyser
+                        active
+                        color="#5ee3b7"
+                        bars={5}
+                        size={14}
+                      />
+                    </div>
                   )}
-                  {!micOn&&<div className="prep-tile-muted">🔇</div>}
+                  {!micOn && <div className="prep-tile-muted">🔇</div>}
                 </div>
                 {/* AI tile */}
-                <div className={`prep-tile${aiVoice.isSpeaking&&!timer.isPaused?" speaking-ai":""}`}>
+                <div
+                  className={`prep-tile${aiVoice.isSpeaking && !timer.isPaused ? " speaking-ai" : ""}`}
+                >
                   <div className="prep-tile-ai-badge">AI</div>
                   <div className="prep-tile-ai-icon">🤖</div>
                   <div className="prep-tile-name">AI Coach</div>
                   <div className="prep-tile-role">Powered by GradeUp</div>
-                  {aiVoice.isSpeaking&&!timer.isPaused&&(
-                    <div className="prep-tile-analyser"><SoundAnalyser active color="#7ed3f7" bars={5} size={14}/></div>
+                  {aiVoice.isSpeaking && !timer.isPaused && (
+                    <div className="prep-tile-analyser">
+                      <SoundAnalyser
+                        active
+                        color="#7ed3f7"
+                        bars={5}
+                        size={14}
+                      />
+                    </div>
                   )}
-                  {isAITyping&&!aiVoice.isSpeaking&&!timer.isPaused&&(
-                    <div className="prep-tile-typing">{[0,1,2].map(i=><div key={i} className="prep-tile-typing-dot" style={{animationDelay:`${i*.22}s`}}/>)}</div>
+                  {isAITyping && !aiVoice.isSpeaking && !timer.isPaused && (
+                    <div className="prep-tile-typing">
+                      {[0, 1, 2].map((i) => (
+                        <div
+                          key={i}
+                          className="prep-tile-typing-dot"
+                          style={{ animationDelay: `${i * 0.22}s` }}
+                        />
+                      ))}
+                    </div>
                   )}
                 </div>
               </div>
 
               {/* Demo READY overlay */}
-              {demoReady&&(
+              {demoReady && (
                 <div className="demo-ready-banner">
                   <div className="demo-ready-inner">
                     <div className="demo-ready-icon">▶️</div>
                     <div className="demo-ready-title">Ready to Demo?</div>
-                    <div className="demo-ready-desc" style={{marginBottom: 15}}>
-                      Upload your presentation file first, then tap "Start Demo Now". The timer will begin and AI will analyse your live presentation of:<br/>
-                      <strong style={{color:"#5ee3b7"}}>"{config.topic}"</strong><br/>
-                      Speak naturally — deliver your seminar as if to a real audience.
-                    </div>
-                    
-                    <div style={{background:"rgba(0,0,0,.2)", padding: "12px", borderRadius: "8px", marginBottom: "15px", border: "1px solid rgba(255,255,255,.1)"}}>
-                       <div style={{fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,.7)", marginBottom: 8, textAlign: "left"}}>1. Upload File (Required)</div>
-                       <input type="file" accept=".pdf,.ppt,.pptx" onChange={e => {
-                           if(e.target.files && e.target.files[0]) setDemoFile(e.target.files[0]);
-                       }} style={{width: "100%", padding: "10px", background: "rgba(255,255,255,.05)", border: "1px dashed rgba(255,255,255,.2)", borderRadius: "8px", color: "white", fontSize: 13}} />
-                       {demoFile && <div style={{marginTop: 8, fontSize: 12, color: "#5ee3b7", textAlign: "left"}}>✅ Selected: {demoFile.name}</div>}
+                    <div
+                      className="demo-ready-desc"
+                      style={{ marginBottom: 15 }}
+                    >
+                      Upload your presentation file first, then tap "Start Demo
+                      Now". The timer will begin and AI will analyse your live
+                      presentation of:
+                      <br />
+                      <strong style={{ color: "#5ee3b7" }}>
+                        "{config.topic}"
+                      </strong>
+                      <br />
+                      Speak naturally — deliver your seminar as if to a real
+                      audience.
                     </div>
 
-                    <button className="demo-start-btn" onClick={actuallyStartDemoLive} disabled={!demoFile} style={{opacity: demoFile ? 1 : 0.5}}>
+                    <div
+                      style={{
+                        background: "rgba(0,0,0,.2)",
+                        padding: "12px",
+                        borderRadius: "8px",
+                        marginBottom: "15px",
+                        border: "1px solid rgba(255,255,255,.1)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: "rgba(255,255,255,.7)",
+                          marginBottom: 8,
+                          textAlign: "left",
+                        }}
+                      >
+                        1. Upload File (Required)
+                      </div>
+                      <input
+                        type="file"
+                        accept=".pdf,.ppt,.pptx"
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files[0])
+                            setDemoFile(e.target.files[0]);
+                        }}
+                        style={{
+                          width: "100%",
+                          padding: "10px",
+                          background: "rgba(255,255,255,.05)",
+                          border: "1px dashed rgba(255,255,255,.2)",
+                          borderRadius: "8px",
+                          color: "white",
+                          fontSize: 13,
+                        }}
+                      />
+                      {demoFile && (
+                        <div
+                          style={{
+                            marginTop: 8,
+                            fontSize: 12,
+                            color: "#5ee3b7",
+                            textAlign: "left",
+                          }}
+                        >
+                          ✅ Selected: {demoFile.name}
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      className="demo-start-btn"
+                      onClick={actuallyStartDemoLive}
+                      disabled={!demoFile}
+                      style={{ opacity: demoFile ? 1 : 0.5 }}
+                    >
                       <span>▶️</span> Start Demo Now
                     </button>
-                    <div style={{marginTop:10}}>
-                      <button onClick={cancelDemoReady} style={{background:"none",border:"none",cursor:"pointer",color:"rgba(255,255,255,.4)",fontSize:11,fontWeight:600,fontFamily:"var(--font)"}}>Cancel</button>
+                    <div style={{ marginTop: 10 }}>
+                      <button
+                        onClick={cancelDemoReady}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          cursor: "pointer",
+                          color: "rgba(255,255,255,.4)",
+                          fontSize: 11,
+                          fontWeight: 600,
+                          fontFamily: "var(--font)",
+                        }}
+                      >
+                        Cancel
+                      </button>
                     </div>
                   </div>
                 </div>
               )}
 
               {/* Demo running badge */}
-              {demoMode&&!demoReady&&(
+              {demoMode && !demoReady && (
                 <div className="prep-demo-badge">
-                  <div className="prep-demo-badge-dot" style={{animationPlayState:demoRunning?"running":"paused"}}/>
-                  <span className="prep-demo-badge-text">⏺ {demoRunning?`DEMO ${demoTimerStr} — AI Analysing`:`DEMO PAUSED ${demoTimerStr}`}</span>
+                  <div
+                    className="prep-demo-badge-dot"
+                    style={{
+                      animationPlayState: demoRunning ? "running" : "paused",
+                    }}
+                  />
+                  <span className="prep-demo-badge-text">
+                    ⏺{" "}
+                    {demoRunning
+                      ? `DEMO ${demoTimerStr} — AI Analysing`
+                      : `DEMO PAUSED ${demoTimerStr}`}
+                  </span>
                 </div>
               )}
 
               {/* Paused overlay */}
-              {timer.isPaused&&!isAiPaused&&(
+              {timer.isPaused && !isAiPaused && (
                 <div className="paused-overlay">
-                  <div className="paused-badge"><span style={{fontSize:20}}>⏸</span> Session Paused</div>
-                  <div className="paused-sub">Your session is paused. Resume to continue from where you left off.</div>
-                  <button className="paused-resume-btn" onClick={handleResumeSessionLive}>▶ Resume Session</button>
+                  <div className="paused-badge">
+                    <span style={{ fontSize: 20 }}>⏸</span> Session Paused
+                  </div>
+                  <div className="paused-sub">
+                    Your session is paused. Resume to continue from where you
+                    left off.
+                  </div>
+                  <button
+                    className="paused-resume-btn"
+                    onClick={handleResumeSessionLive}
+                  >
+                    ▶ Resume Session
+                  </button>
                 </div>
               )}
 
               {/* AI stuck suggestion banner */}
-             {aiSuggestion&&!resumeCountdown&&(
-                <div className="ai-suggestion-banner" style={{flexDirection:"column",gap:10,minWidth:300}}>
-                  <div style={{display:"flex",gap:10,alignItems:"center"}}>
+              {aiSuggestion && !resumeCountdown && (
+                <div
+                  className="ai-suggestion-banner"
+                  style={{ flexDirection: "column", gap: 10, minWidth: 300 }}
+                >
+                  <div
+                    style={{ display: "flex", gap: 10, alignItems: "center" }}
+                  >
                     <div className="ai-icon">🤖</div>
                     <div className="ai-content">
                       <div className="ai-label">AI Coach — You seem stuck</div>
-                      <div className="ai-text">You've been silent for a while. Need help with your next point?</div>
+                      <div className="ai-text">
+                        You've been silent for a while. Need help with your next
+                        point?
+                      </div>
                     </div>
                   </div>
-                  <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-                    <button className="ai-close" style={{width:"auto",padding:"4px 12px",fontSize:11,fontWeight:700}} onClick={handleAISuggestionDismiss}>Resume</button>
-                    <button style={{padding:"4px 14px",borderRadius:6,border:"none",background:"rgba(255,255,255,.9)",color:"#030a14",fontSize:11,fontWeight:800,cursor:"pointer"}} onClick={requestSeminarHelp} disabled={requestingGuide}>{requestingGuide?"Preparing…":"Help me"}</button>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      justifyContent: "flex-end",
+                    }}
+                  >
+                    <button
+                      className="ai-close"
+                      style={{
+                        width: "auto",
+                        padding: "4px 12px",
+                        fontSize: 11,
+                        fontWeight: 700,
+                      }}
+                      onClick={handleAISuggestionDismiss}
+                    >
+                      Resume
+                    </button>
+                    <button
+                      style={{
+                        padding: "4px 14px",
+                        borderRadius: 6,
+                        border: "none",
+                        background: "rgba(255,255,255,.9)",
+                        color: "#030a14",
+                        fontSize: 11,
+                        fontWeight: 800,
+                        cursor: "pointer",
+                      }}
+                      onClick={requestSeminarHelp}
+                      disabled={requestingGuide}
+                    >
+                      {requestingGuide ? "Preparing…" : "Help me"}
+                    </button>
                   </div>
                 </div>
               )}
 
               {/* Countdown */}
-              {resumeCountdown>0&&(
-                <div className="ai-suggestion-banner" style={{background:"linear-gradient(135deg,rgba(0,195,122,.92),rgba(45,156,219,.9))"}}>
+              {resumeCountdown > 0 && (
+                <div
+                  className="ai-suggestion-banner"
+                  style={{
+                    background:
+                      "linear-gradient(135deg,rgba(0,195,122,.92),rgba(45,156,219,.9))",
+                  }}
+                >
                   <div className="ai-icon">▶</div>
                   <div className="ai-content">
                     <div className="ai-label">Resuming in…</div>
-                    <div className="ai-text" style={{fontSize:20,fontWeight:900}}>{resumeCountdown}s — get ready to continue</div>
+                    <div
+                      className="ai-text"
+                      style={{ fontSize: 20, fontWeight: 900 }}
+                    >
+                      {resumeCountdown}s — get ready to continue
+                    </div>
                   </div>
-                  <button className="ai-close" onClick={handleManualResume}>✓</button>
+                  <button className="ai-close" onClick={handleManualResume}>
+                    ✓
+                  </button>
                 </div>
               )}
 
               {/* Reaction */}
-              {reaction&&<div key={reaction.k} style={{position:"absolute",top:"40%",left:"50%",transform:"translate(-50%,-50%)",fontSize:44,animation:"rPop 2s forwards",pointerEvents:"none",zIndex:7}}>{reaction.emoji}</div>}
+              {reaction && (
+                <div
+                  key={reaction.k}
+                  style={{
+                    position: "absolute",
+                    top: "40%",
+                    left: "50%",
+                    transform: "translate(-50%,-50%)",
+                    fontSize: 44,
+                    animation: "rPop 2s forwards",
+                    pointerEvents: "none",
+                    zIndex: 7,
+                  }}
+                >
+                  {reaction.emoji}
+                </div>
+              )}
 
               {/* Live Transcript */}
-              {!timer.isPaused&&(
+              {!timer.isPaused && (
                 <div className="prep-live-transcript">
-                  <div className="plt-label"><div className="plt-dot"/>Live Voice Transcript</div>
+                  <div className="plt-label">
+                    <div className="plt-dot" />
+                    Live Voice Transcript
+                  </div>
                   <div className="plt-text">
-                    {liveTranscript?<>{liveTranscript}<span className="plt-cursor"/></>
-                      :transcriptHistory.length>0?<>{transcriptHistory[transcriptHistory.length-1]}<span className="plt-cursor"/></>
-                      :<span className="plt-empty">Start speaking to see your live transcript…</span>}
+                    {liveTranscript ? (
+                      <>
+                        {liveTranscript}
+                        <span className="plt-cursor" />
+                      </>
+                    ) : transcriptHistory.length > 0 ? (
+                      <>
+                        {transcriptHistory[transcriptHistory.length - 1]}
+                        <span className="plt-cursor" />
+                      </>
+                    ) : (
+                      <span className="plt-empty">
+                        Start speaking to see your live transcript…
+                      </span>
+                    )}
                   </div>
                 </div>
               )}
 
               {/* Panel toggle fab */}
-              <button className="panel-toggle-fab" onClick={()=>setPanelOpen(p=>!p)} title={panelOpen?"Close panel":"Open panel"}>
-                {panelOpen?"›":"‹"}
+              <button
+                className="panel-toggle-fab"
+                onClick={() => setPanelOpen((p) => !p)}
+                title={panelOpen ? "Close panel" : "Open panel"}
+              >
+                {panelOpen ? "›" : "‹"}
               </button>
             </div>
           )}
 
           {/* CTRL BAR */}
           {setupPhase === "session" && (
-          <div className="prep-ctrl-bar">
-            <div className="prep-ctrl-user-info">
-              <div className="prep-ctrl-av" style={{background:`${presenterColor}22`,color:presenterColor}}>{avInit(config.name)}</div>
-              <div className="prep-ctrl-details">
-                <div className="prep-ctrl-name">{config.name}</div>
-                <div className="prep-ctrl-sub">{config.subject}{config.unit?` · ${config.unit}`:""}</div>
+            <div className="prep-ctrl-bar">
+              <div className="prep-ctrl-user-info">
+                <div
+                  className="prep-ctrl-av"
+                  style={{
+                    background: `${presenterColor}22`,
+                    color: presenterColor,
+                  }}
+                >
+                  {avInit(config.name)}
+                </div>
+                <div className="prep-ctrl-details">
+                  <div className="prep-ctrl-name">{config.name}</div>
+                  <div className="prep-ctrl-sub">
+                    {config.subject}
+                    {config.unit ? ` · ${config.unit}` : ""}
+                  </div>
+                </div>
+              </div>
+
+              <div className="prep-ctrl-center">
+                {!isPracticeMode && (
+                  <div style={{ position: "relative" }}>
+                    <button
+                      className={`cbtn${showReactions ? " hi" : ""}`}
+                      onClick={() => setShowReactions((r) => !r)}
+                    >
+                      <span className="cbtn-ic">😊</span>
+                      <span>React</span>
+                    </button>
+
+                    {showReactions && (
+                      <div className="react-pop">
+                        {REACTIONS.map((r) => (
+                          <button
+                            key={r}
+                            className="react-em"
+                            onClick={() => sendReaction(r)}
+                          >
+                            {r}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <button
+                  className={`cbtn ${micOn ? "on" : "off"}`}
+                  disabled={
+                    isGreetingPending || aiVoice.isSpeaking || speechProcessing
+                  }
+                  onClick={handleMicButtonClick}
+                >
+                  <span className="cbtn-ic">{micOn ? "🎤" : "🔇"}</span>
+                  <span>{micOn ? "Mute Mic" : "Unmute Mic"}</span>
+                </button>
+
+                {/* Mic */}
+                {!isPracticeMode && (
+                  <button
+                    className={`cbtn ${speechRecording ? "on" : micOn ? "hi" : "off"}`}
+                    disabled={
+                      isGreetingPending ||
+                      !micOn ||
+                      aiVoice.isSpeaking ||
+                      speechProcessing ||
+                      timer.isPaused
+                    }
+                    onClick={() => {
+                      if (isGreetingPending) {
+                        toast$(
+                          "Please wait until the AI greeting finishes.",
+                          "info",
+                        );
+                        return;
+                      }
+
+                      if (speechRecording) {
+                        manualSpeakRequestedRef.current = false;
+                        stopSpeechCapture("manual-submit");
+                        toast$("Speech captured and sent to AI.", "info");
+                        return;
+                      }
+
+                      if (!micOn) {
+                        toast$("Unmute the microphone first.", "warn");
+                        return;
+                      }
+
+                      if (aiVoice.isSpeaking) {
+                        toast$(
+                          "Please wait until AI finishes speaking.",
+                          "info",
+                        );
+                        return;
+                      }
+
+                      if (timer.isPaused) {
+                        toast$("Resume session first.", "warn");
+                        return;
+                      }
+
+                      manualSpeakRequestedRef.current = true;
+                      beginSpeechCapture();
+                    }}
+                  >
+                    <span className="cbtn-ic">{micOn ? "🎤" : "🔇"}</span>
+                    {speechRecording && isStudentSpeaking && !timer.isPaused ? (
+                      <div className="cbtn-analyser">
+                        <SoundAnalyser
+                          active
+                          color="#5ee3b7"
+                          bars={4}
+                          size={12}
+                        />
+                      </div>
+                    ) : (
+                      <span>
+                        {speechRecording ? "Stop Speak" : "Start Speak"}
+                      </span>
+                    )}
+                  </button>
+                )}
+
+                {/* Screen Share / Present Button */}
+                {!isPracticeMode &&
+                  (!presentMode && !isScreenSharing ? (
+                    <button
+                      className="cbtn hi"
+                      onClick={startPresenting}
+                      disabled={timer.isPaused}
+                    >
+                      <span className="cbtn-ic">🖥️</span>
+                      <span>Present</span>
+                    </button>
+                  ) : (
+                    <button className="cbtn off" onClick={stopPresenting}>
+                      <span className="cbtn-ic">⏹</span>
+                      <span>Stop</span>
+                    </button>
+                  ))}
+
+                {/* Demo controls — appear only after demo starts */}
+                {!isPracticeMode && !demoMode && !demoReady && (
+                  <button
+                    className="cbtn em"
+                    onClick={enterDemoReadyState}
+                    disabled={timer.isPaused}
+                  >
+                    <span className="cbtn-ic">▶</span>
+                    <span>Start Demo</span>
+                  </button>
+                )}
+
+                {!isPracticeMode && demoReady && (
+                  <button className="cbtn em" onClick={actuallyStartDemoLive}>
+                    <span className="cbtn-ic">▶</span>
+                    <span>Start!</span>
+                  </button>
+                )}
+
+                {!isPracticeMode && demoMode && demoRunning && !isAiPaused && (
+                  <>
+                    <button className="cbtn pause-btn" onClick={pauseDemoLive}>
+                      <span className="cbtn-ic">⏸</span>
+                      <span>Pause</span>
+                    </button>
+                    <button className="cbtn rec" onClick={stopDemoLive}>
+                      <span className="cbtn-ic">🏁</span>
+                      <span>End Demo</span>
+                    </button>
+                  </>
+                )}
+
+                {!isPracticeMode && demoMode && !demoRunning && !isAiPaused && (
+                  <>
+                    <button
+                      className="cbtn em"
+                      onClick={resumeDemoLive}
+                      disabled={timer.isPaused}
+                    >
+                      <span className="cbtn-ic">▶</span>
+                      <span>Resume</span>
+                    </button>
+                    <button className="cbtn rec" onClick={stopDemoLive}>
+                      <span className="cbtn-ic">🏁</span>
+                      <span>Stop</span>
+                    </button>
+                  </>
+                )}
+
+                {isAiPaused && (
+                  <button className="cbtn em" onClick={handleManualResume}>
+                    <span className="cbtn-ic">▶</span>
+                    <span>Resume</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="prep-ctrl-right">
+                {/* Panel tabs */}
+                <button
+                  className={`cbtn${activePanel === "chat" && panelOpen ? " hi" : ""}`}
+                  onClick={() => {
+                    setActivePanel("chat");
+                    setPanelOpen(true);
+                  }}
+                >
+                  <span className="cbtn-ic">🤖</span>
+                  <span>Chat</span>
+                </button>
+                {!isPracticeMode && (
+                  <button
+                    className={`cbtn${activePanel === "notes" && panelOpen ? " hi" : ""}`}
+                    onClick={() => {
+                      setActivePanel("notes");
+                      setPanelOpen(true);
+                    }}
+                  >
+                    <span className="cbtn-ic">📋</span>
+                    <span>Notes</span>
+                  </button>
+                )}
+                {!isPracticeMode && (
+                  <button
+                    className={`cbtn${activePanel === "actions" && panelOpen ? " hi" : ""}`}
+                    onClick={() => {
+                      setActivePanel("actions");
+                      setPanelOpen(true);
+                    }}
+                  >
+                    <span className="cbtn-ic">⚡</span>
+                    <span>Quick</span>
+                  </button>
+                )}
+                <button
+                  className="end-room-btn"
+                  onClick={() => setShowEnd(true)}
+                >
+                  End
+                </button>
               </div>
             </div>
-
-        <div className="prep-ctrl-center">
-  {!isPracticeMode && (
-    <div style={{ position: "relative" }}>
-      <button
-        className={`cbtn${showReactions ? " hi" : ""}`}
-        onClick={() => setShowReactions((r) => !r)}
-      >
-        <span className="cbtn-ic">😊</span>
-        <span>React</span>
-      </button>
-
-      {showReactions && (
-        <div className="react-pop">
-          {REACTIONS.map((r) => (
-            <button
-              key={r}
-              className="react-em"
-              onClick={() => sendReaction(r)}
-            >
-              {r}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )}
-
-  <button
-    className={`cbtn ${micOn ? "on" : "off"}`}
-    disabled={isGreetingPending || aiVoice.isSpeaking || speechProcessing}
-    onClick={handleMicButtonClick}
-  >
-    <span className="cbtn-ic">{micOn ? "🎤" : "🔇"}</span>
-    <span>{micOn ? "Mute Mic" : "Unmute Mic"}</span>
-  </button>
-
-  {/* Mic */}
-  {!isPracticeMode && (
-    <button
-      className={`cbtn ${speechRecording ? "on" : micOn ? "hi" : "off"}`}
-      disabled={
-        isGreetingPending ||
-        !micOn ||
-        aiVoice.isSpeaking ||
-        speechProcessing ||
-        timer.isPaused
-      }
-      onClick={() => {
-        if (isGreetingPending) {
-          toast$("Please wait until the AI greeting finishes.", "info");
-          return;
-        }
-
-        if (speechRecording) {
-          manualSpeakRequestedRef.current = false;
-          stopSpeechCapture("manual-submit");
-          toast$("Speech captured and sent to AI.", "info");
-          return;
-        }
-
-        if (!micOn) {
-          toast$("Unmute the microphone first.", "warn");
-          return;
-        }
-
-        if (aiVoice.isSpeaking) {
-          toast$("Please wait until AI finishes speaking.", "info");
-          return;
-        }
-
-        if (timer.isPaused) {
-          toast$("Resume session first.", "warn");
-          return;
-        }
-
-        manualSpeakRequestedRef.current = true;
-        beginSpeechCapture();
-      }}
-    >
-      <span className="cbtn-ic">{micOn ? "🎤" : "🔇"}</span>
-      {speechRecording && isStudentSpeaking && !timer.isPaused ? (
-        <div className="cbtn-analyser">
-          <SoundAnalyser active color="#5ee3b7" bars={4} size={12} />
-        </div>
-      ) : (
-        <span>{speechRecording ? "Stop Speak" : "Start Speak"}</span>
-      )}
-    </button>
-  )}
-
-  {/* Screen Share / Present Button */}
-  {!isPracticeMode &&
-    (!presentMode && !isScreenSharing ? (
-      <button className="cbtn hi" onClick={startPresenting} disabled={timer.isPaused}>
-        <span className="cbtn-ic">🖥️</span>
-        <span>Present</span>
-      </button>
-    ) : (
-      <button className="cbtn off" onClick={stopPresenting}>
-        <span className="cbtn-ic">⏹</span>
-        <span>Stop</span>
-      </button>
-    ))}
-
-  {/* Demo controls — appear only after demo starts */}
-  {!isPracticeMode && !demoMode && !demoReady && (
-    <button className="cbtn em" onClick={enterDemoReadyState} disabled={timer.isPaused}>
-      <span className="cbtn-ic">▶</span>
-      <span>Start Demo</span>
-    </button>
-  )}
-
-  {!isPracticeMode && demoReady && (
-    <button className="cbtn em" onClick={actuallyStartDemoLive}>
-      <span className="cbtn-ic">▶</span>
-      <span>Start!</span>
-    </button>
-  )}
-
-  {!isPracticeMode && demoMode && demoRunning && !isAiPaused && (
-    <>
-      <button className="cbtn pause-btn" onClick={pauseDemoLive}>
-        <span className="cbtn-ic">⏸</span>
-        <span>Pause</span>
-      </button>
-      <button className="cbtn rec" onClick={stopDemoLive}>
-        <span className="cbtn-ic">🏁</span>
-        <span>End Demo</span>
-      </button>
-    </>
-  )}
-
-  {!isPracticeMode && demoMode && !demoRunning && !isAiPaused && (
-    <>
-      <button className="cbtn em" onClick={resumeDemoLive} disabled={timer.isPaused}>
-        <span className="cbtn-ic">▶</span>
-        <span>Resume</span>
-      </button>
-      <button className="cbtn rec" onClick={stopDemoLive}>
-        <span className="cbtn-ic">🏁</span>
-        <span>Stop</span>
-      </button>
-    </>
-  )}
-
-  {isAiPaused && (
-    <button className="cbtn em" onClick={handleManualResume}>
-      <span className="cbtn-ic">▶</span>
-      <span>Resume</span>
-    </button>
-  )}
-</div>
-
-            <div className="prep-ctrl-right">
-               {/* Panel tabs */}
-              <button className={`cbtn${activePanel==="chat"&&panelOpen?" hi":""}`} onClick={()=>{setActivePanel("chat");setPanelOpen(true);}}><span className="cbtn-ic">🤖</span><span>Chat</span></button>
-              {!isPracticeMode&&<button className={`cbtn${activePanel==="notes"&&panelOpen?" hi":""}`} onClick={()=>{setActivePanel("notes");setPanelOpen(true);}}><span className="cbtn-ic">📋</span><span>Notes</span></button>}
-              {!isPracticeMode&&<button className={`cbtn${activePanel==="actions"&&panelOpen?" hi":""}`} onClick={()=>{setActivePanel("actions");setPanelOpen(true);}}><span className="cbtn-ic">⚡</span><span>Quick</span></button>}
-              <button className="end-room-btn" onClick={()=>setShowEnd(true)}>End</button>
-            </div>
-          </div>
           )}
         </div>
-        {!panelOpen&&(
+        {!panelOpen && (
           <button
             type="button"
-            onClick={()=>{setActivePanel("chat");setPanelOpen(true);}}
-            style={{position:"absolute",right:18,bottom:92,zIndex:14,display:"flex",alignItems:"center",gap:8,padding:"10px 14px",borderRadius:14,border:"1px solid rgba(126,211,247,.24)",background:"rgba(8,14,26,.92)",color:"#fff",fontWeight:800,cursor:"pointer",boxShadow:"0 14px 28px rgba(0,0,0,.28)"}}
+            onClick={() => {
+              setActivePanel("chat");
+              setPanelOpen(true);
+            }}
+            style={{
+              position: "absolute",
+              right: 18,
+              bottom: 92,
+              zIndex: 14,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "10px 14px",
+              borderRadius: 14,
+              border: "1px solid rgba(126,211,247,.24)",
+              background: "rgba(8,14,26,.92)",
+              color: "#fff",
+              fontWeight: 800,
+              cursor: "pointer",
+              boxShadow: "0 14px 28px rgba(0,0,0,.28)",
+            }}
             title="Open AI chat"
           >
-            <span style={{fontSize:16}}>☰</span>
+            <span style={{ fontSize: 16 }}>☰</span>
             <span>Open Chat</span>
           </button>
         )}
 
         {/* RIGHT SIDE PANEL */}
-        {panelOpen&&(
+        {panelOpen && (
           <div className="prep-side-panel">
             <div className="prep-panel-header">
               <div className="prep-panel-tabs">
-                {(isPracticeMode ? [{id:"chat",ic:"🤖",lbl:"AI Chat"}] : [{id:"chat",ic:"🤖",lbl:"AI Chat"},{id:"notes",ic:"📋",lbl:"Notes"},{id:"actions",ic:"⚡",lbl:"Quick"}]).map(t=>(
-                  <button key={t.id} className={`prep-ptab${activePanel===t.id?" active":""}`} onClick={()=>setActivePanel(t.id)}>
-                    <span style={{fontSize:13}}>{t.ic}</span><span>{t.lbl}</span>
+                {(isPracticeMode
+                  ? [{ id: "chat", ic: "🤖", lbl: "AI Chat" }]
+                  : [
+                      { id: "chat", ic: "🤖", lbl: "AI Chat" },
+                      { id: "notes", ic: "📋", lbl: "Notes" },
+                      { id: "actions", ic: "⚡", lbl: "Quick" },
+                    ]
+                ).map((t) => (
+                  <button
+                    key={t.id}
+                    className={`prep-ptab${activePanel === t.id ? " active" : ""}`}
+                    onClick={() => setActivePanel(t.id)}
+                  >
+                    <span style={{ display: "inline-flex" }}>
+                      <SeminarIcon name={t.ic} size={13} />
+                    </span>
+                    <span>{t.lbl}</span>
                   </button>
                 ))}
               </div>
-              <button className="prep-panel-close" onClick={()=>setPanelOpen(false)}>✕</button>
+              <button
+                className="prep-panel-close"
+                onClick={() => setPanelOpen(false)}
+              >
+                ✕
+              </button>
             </div>
 
             {/* AI CHAT */}
-            {activePanel==="chat"&&(
-              <div style={{display:"flex",flexDirection:"column",height:"100%",minHeight:0,overflow:"hidden"}}>
-                <div className="prep-panel-scroll" style={{flex:1}}>
+            {activePanel === "chat" && (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  height: "100%",
+                  minHeight: 0,
+                  overflow: "hidden",
+                }}
+              >
+                <div className="prep-panel-scroll" style={{ flex: 1 }}>
                   <div className="prep-ai-msgs">
-                    {messages.map((m,i)=>{
-                      if(m.from==="system")return(<div key={i} style={{display:"flex",justifyContent:"center",width:"100%",marginBottom:4}}><div className="prep-ai-bubble system-style">{m.text}</div></div>);
-                      return(<div key={i} className={`prep-ai-msg ${m.from==="ai"?"from-ai":"from-me"}`}>
-                        <div className={`prep-ai-bubble-av ${m.from==="ai"?"ai-side":"me-side"}`}>{m.from==="ai"?"🤖":avInit(config.name)}</div>
-                        <div className={`prep-ai-bubble ${m.from==="ai"?"ai-style":"me-style"}`} style={{whiteSpace:"pre-line"}}>{m.text}</div>
-                      </div>);
+                    {messages.map((m, i) => {
+                      if (m.from === "system")
+                        return (
+                          <div
+                            key={i}
+                            style={{
+                              display: "flex",
+                              justifyContent: "center",
+                              width: "100%",
+                              marginBottom: 4,
+                            }}
+                          >
+                            <div className="prep-ai-bubble system-style">
+                              {m.text}
+                            </div>
+                          </div>
+                        );
+                      return (
+                        <div
+                          key={i}
+                          className={`prep-ai-msg ${m.from === "ai" ? "from-ai" : "from-me"}`}
+                        >
+                          <div
+                            className={`prep-ai-bubble-av ${m.from === "ai" ? "ai-side" : "me-side"}`}
+                          >
+                            {m.from === "ai" ? "🤖" : avInit(config.name)}
+                          </div>
+                          <div
+                            className={`prep-ai-bubble ${m.from === "ai" ? "ai-style" : "me-style"}`}
+                            style={{ whiteSpace: "pre-line" }}
+                          >
+                            {m.text}
+                          </div>
+                        </div>
+                      );
                     })}
-                    {isAITyping&&<div className="prep-ai-msg from-ai"><div className="prep-ai-bubble-av ai-side">🤖</div><div className="prep-ai-typing">{[0,1,2].map(i=><div key={i} className="prep-ai-typing-dot" style={{animationDelay:`${i*.22}s`}}/>)}</div></div>}
-                    
+                    {isAITyping && (
+                      <div className="prep-ai-msg from-ai">
+                        <div className="prep-ai-bubble-av ai-side">🤖</div>
+                        <div className="prep-ai-typing">
+                          {[0, 1, 2].map((i) => (
+                            <div
+                              key={i}
+                              className="prep-ai-typing-dot"
+                              style={{ animationDelay: `${i * 0.22}s` }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Chat Options Row */}
                     {chatOptions.length > 0 && (
-                      <div style={{display:"flex", gap: 8, padding: "10px", flexWrap: "wrap", borderTop: "1px solid rgba(255,255,255,.07)", marginTop: "10px"}}>
-                        {chatOptions.map(opt => (
-                           <button key={opt.action} onClick={() => handleChatOption(opt.action)} style={{padding: "8px 14px", borderRadius: 20, background: "rgba(45,156,219,.15)", border: "1px solid rgba(45,156,219,.3)", color: "var(--sky)", fontSize: 12, fontWeight: 700, cursor: "pointer"}}>
-                             {opt.label}
-                           </button>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          padding: "10px",
+                          flexWrap: "wrap",
+                          borderTop: "1px solid rgba(255,255,255,.07)",
+                          marginTop: "10px",
+                        }}
+                      >
+                        {chatOptions.map((opt) => (
+                          <button
+                            key={opt.action}
+                            onClick={() => handleChatOption(opt.action)}
+                            style={{
+                              padding: "8px 14px",
+                              borderRadius: 20,
+                              background: "rgba(45,156,219,.15)",
+                              border: "1px solid rgba(45,156,219,.3)",
+                              color: "var(--sky)",
+                              fontSize: 12,
+                              fontWeight: 700,
+                              cursor: "pointer",
+                            }}
+                          >
+                            {opt.label}
+                          </button>
                         ))}
                       </div>
                     )}
 
-                    <div ref={chatEndRef}/>
+                    <div ref={chatEndRef} />
                   </div>
                 </div>
                 <div className="prep-ai-speaking-row">
-                  {aiVoice.isSpeaking?<><SoundAnalyser active color="#7ed3f7" bars={5} size={18}/><span className="prep-ai-speaking-text">AI Coach speaking…</span></>
-                    :<span className="prep-ai-speaking-text" style={{color:"rgba(255,255,255,.2)"}}>AI Coach ready</span>}
+                  {aiVoice.isSpeaking ? (
+                    <>
+                      <SoundAnalyser
+                        active
+                        color="#7ed3f7"
+                        bars={5}
+                        size={18}
+                      />
+                      <span className="prep-ai-speaking-text">
+                        AI Coach speaking…
+                      </span>
+                    </>
+                  ) : (
+                    <span
+                      className="prep-ai-speaking-text"
+                      style={{ color: "rgba(255,255,255,.2)" }}
+                    >
+                      AI Coach ready
+                    </span>
+                  )}
                 </div>
-                {!isPracticeMode&&<div className="quick-prompts">
-                  {["Outline","Script","Questions","Examples","Feedback"].map(qp=>(
-                    <button key={qp} className="quick-p" onClick={()=>sendAIRequest(qp)}>{qp}</button>
-                  ))}
-                </div>}
+                {!isPracticeMode && (
+                  <div className="quick-prompts">
+                    {[
+                      "Outline",
+                      "Script",
+                      "Questions",
+                      "Examples",
+                      "Feedback",
+                    ].map((qp) => (
+                      <button
+                        key={qp}
+                        className="quick-p"
+                        onClick={() => sendAIRequest(qp)}
+                      >
+                        {qp}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <div className="prep-ai-input-area">
-                  {voiceListening&&(
-                    <div style={{display:"flex",alignItems:"center",gap:7,padding:"5px 8px",marginBottom:6,borderRadius:8,background:"rgba(229,62,62,.1)",border:"1px solid rgba(229,62,62,.3)"}}>
-                      <div style={{width:6,height:6,borderRadius:"50%",background:"var(--red)",animation:"recBlink 1s infinite"}}/>
-                      <span style={{fontSize:10,fontWeight:700,color:"var(--red)",flex:1}}>Listening… tap mic to send</span>
-                      <SoundAnalyser active color="#e53e3e" bars={4} size={14}/>
+                  {voiceListening && (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 7,
+                        padding: "5px 8px",
+                        marginBottom: 6,
+                        borderRadius: 8,
+                        background: "rgba(229,62,62,.1)",
+                        border: "1px solid rgba(229,62,62,.3)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: 6,
+                          height: 6,
+                          borderRadius: "50%",
+                          background: "var(--red)",
+                          animation: "recBlink 1s infinite",
+                        }}
+                      />
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          color: "var(--red)",
+                          flex: 1,
+                        }}
+                      >
+                        Listening… tap mic to send
+                      </span>
+                      <SoundAnalyser
+                        active
+                        color="#e53e3e"
+                        bars={4}
+                        size={14}
+                      />
                     </div>
                   )}
                   <div className="prep-ai-input-row">
-                    <button className={`prep-ai-voice-btn${voiceListening?" listening":""}`} onClick={toggleVoiceAsk}>
-                      {voiceListening?"⏹":"🎙️"}
+                    <button
+                      className={`prep-ai-voice-btn${voiceListening ? " listening" : ""}`}
+                      onClick={toggleVoiceAsk}
+                    >
+                      {voiceListening ? "⏹" : "🎙️"}
                     </button>
-                    <textarea className="prep-ai-input" placeholder="Ask AI coach (or use 🎙️ to speak)…" value={voiceListening?(voiceAsk.transcript||""):aiInput}
-                      onChange={e=>{if(!voiceListening)setAiInput(e.target.value);}}
-                      onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendAIRequest();}}}
-                      rows={1} readOnly={voiceListening}
+                    <textarea
+                      className="prep-ai-input"
+                      placeholder="Ask AI coach (or use 🎙️ to speak)…"
+                      value={
+                        voiceListening ? voiceAsk.transcript || "" : aiInput
+                      }
+                      onChange={(e) => {
+                        if (!voiceListening) setAiInput(e.target.value);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          sendAIRequest();
+                        }
+                      }}
+                      rows={1}
+                      readOnly={voiceListening}
                     />
-                    <button className="prep-ai-send" onClick={()=>sendAIRequest()} disabled={isAITyping||(!aiInput.trim()&&!voiceListening)}>➤</button>
+                    <button
+                      className="prep-ai-send"
+                      onClick={() => sendAIRequest()}
+                      disabled={
+                        isAITyping || (!aiInput.trim() && !voiceListening)
+                      }
+                    >
+                      ➤
+                    </button>
                   </div>
                 </div>
               </div>
             )}
 
             {/* NOTES */}
-            {activePanel==="notes"&&(
-              <div style={{display:"flex",flexDirection:"column",height:"100%",overflow:"hidden"}}>
+            {activePanel === "notes" && (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  height: "100%",
+                  overflow: "hidden",
+                }}
+              >
                 <div className="prep-notes-header">
                   <span className="prep-notes-title">📋 AI Notes & Q&A</span>
                   <span className="prep-notes-count">{notes.length} notes</span>
                 </div>
-                <div className="prep-panel-scroll" style={{flex:1}}>
-                  {notes.length===0?<div style={{padding:20,textAlign:"center",fontSize:11,color:"rgba(255,255,255,.25)"}}>No notes yet.</div>
-                    :<div className="prep-faq-list">{notes.map(note=>(
-                      <div key={note.id} className="prep-faq-item">
-                        <div className="prep-faq-q" onClick={()=>toggleNote(note.id)}>
-                          <div style={{flex:1}}><div className="prep-faq-num">Note {note.n}</div><div className="prep-faq-q-text">{note.q}</div></div>
-                          <span className={`prep-faq-chevron${note.open?" open":""}`}>▼</span>
+                <div className="prep-panel-scroll" style={{ flex: 1 }}>
+                  {notes.length === 0 ? (
+                    <div
+                      style={{
+                        padding: 20,
+                        textAlign: "center",
+                        fontSize: 11,
+                        color: "rgba(255,255,255,.25)",
+                      }}
+                    >
+                      No notes yet.
+                    </div>
+                  ) : (
+                    <div className="prep-faq-list">
+                      {notes.map((note) => (
+                        <div key={note.id} className="prep-faq-item">
+                          <div
+                            className="prep-faq-q"
+                            onClick={() => toggleNote(note.id)}
+                          >
+                            <div style={{ flex: 1 }}>
+                              <div className="prep-faq-num">Note {note.n}</div>
+                              <div className="prep-faq-q-text">{note.q}</div>
+                            </div>
+                            <span
+                              className={`prep-faq-chevron${note.open ? " open" : ""}`}
+                            >
+                              ▼
+                            </span>
+                          </div>
+                          {note.open && (
+                            <div className="prep-faq-a">{note.a}</div>
+                          )}
                         </div>
-                        {note.open&&<div className="prep-faq-a">{note.a}</div>}
-                      </div>
-                    ))}</div>
-                  }
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <div style={{padding:"8px 10px",borderTop:"1px solid rgba(255,255,255,.07)",flexShrink:0}}>
-                  <button className="prep-action-btn" style={{marginBottom:0}} onClick={handleDownloadPDF}>📥 Download All Notes</button>
+                <div
+                  style={{
+                    padding: "8px 10px",
+                    borderTop: "1px solid rgba(255,255,255,.07)",
+                    flexShrink: 0,
+                  }}
+                >
+                  <button
+                    className="prep-action-btn"
+                    style={{ marginBottom: 0 }}
+                    onClick={handleDownloadPDF}
+                  >
+                    📥 Download All Notes
+                  </button>
                 </div>
               </div>
             )}
 
             {/* QUICK ACTIONS */}
-            {activePanel==="actions"&&(
+            {activePanel === "actions" && (
               <div className="prep-panel-scroll">
                 <div className="prep-actions-panel">
-                  <div style={{fontSize:9,fontWeight:800,textTransform:"uppercase",letterSpacing:".07em",color:"rgba(255,255,255,.25)",marginBottom:8,paddingBottom:6,borderBottom:"1px solid rgba(255,255,255,.07)"}}>Quick AI Requests</div>
-                  {[{ic:"📋",label:"Generate Full Outline",prompt:"Generate a complete seminar outline"},
-                    {ic:"📝",label:"Write Opening Script",prompt:"Write an opening script for my seminar"},
-                    {ic:"❓",label:"Predict Audience Questions",prompt:"Predict the audience questions I may face"},
-                    {ic:"💡",label:"Find Strong Examples",prompt:"Give me strong examples and evidence to use"},
-                    {ic:"⚠️",label:"Anticipate Objections",prompt:"What are the main objections to my argument"},
-                    {ic:"🔚",label:"Write Closing Statement",prompt:"Write a strong closing statement for my seminar"},
-                    {ic:"📊",label:"Add Statistics",prompt:"Suggest key statistics I should include"},
-                    {ic:"🔄",label:"Write Transition Lines",prompt:"Give me smooth transition lines between sections"},
-                  ].map((a,i)=>(
-                    <button key={i} className="prep-action-btn" onClick={()=>{sendAIRequest(a.prompt);setActivePanel("chat");setPanelOpen(true);}}>{a.ic} {a.label}</button>
+                  <div
+                    style={{
+                      fontSize: 9,
+                      fontWeight: 800,
+                      textTransform: "uppercase",
+                      letterSpacing: ".07em",
+                      color: "rgba(255,255,255,.25)",
+                      marginBottom: 8,
+                      paddingBottom: 6,
+                      borderBottom: "1px solid rgba(255,255,255,.07)",
+                    }}
+                  >
+                    Quick AI Requests
+                  </div>
+                  {[
+                    {
+                      ic: "📋",
+                      label: "Generate Full Outline",
+                      prompt: "Generate a complete seminar outline",
+                    },
+                    {
+                      ic: "📝",
+                      label: "Write Opening Script",
+                      prompt: "Write an opening script for my seminar",
+                    },
+                    {
+                      ic: "❓",
+                      label: "Predict Audience Questions",
+                      prompt: "Predict the audience questions I may face",
+                    },
+                    {
+                      ic: "💡",
+                      label: "Find Strong Examples",
+                      prompt: "Give me strong examples and evidence to use",
+                    },
+                    {
+                      ic: "⚠️",
+                      label: "Anticipate Objections",
+                      prompt: "What are the main objections to my argument",
+                    },
+                    {
+                      ic: "🔚",
+                      label: "Write Closing Statement",
+                      prompt: "Write a strong closing statement for my seminar",
+                    },
+                    {
+                      ic: "📊",
+                      label: "Add Statistics",
+                      prompt: "Suggest key statistics I should include",
+                    },
+                    {
+                      ic: "🔄",
+                      label: "Write Transition Lines",
+                      prompt:
+                        "Give me smooth transition lines between sections",
+                    },
+                  ].map((a, i) => (
+                    <button
+                      key={i}
+                      className="prep-action-btn"
+                      onClick={() => {
+                        sendAIRequest(a.prompt);
+                        setActivePanel("chat");
+                        setPanelOpen(true);
+                      }}
+                    >
+                      {a.ic} {a.label}
+                    </button>
                   ))}
 
                   {setupPhase === "session" && (
                     <>
-                      <div style={{fontSize:9,fontWeight:800,textTransform:"uppercase",letterSpacing:".07em",color:"rgba(255,255,255,.25)",margin:"12px 0 8px",paddingTop:10,borderTop:"1px solid rgba(255,255,255,.07)"}}>Present / Screen Share</div>
-                      {!presentMode&&!isScreenSharing?(
-                        <button className="prep-action-btn primary" onClick={startPresenting}>🖥️ Share Screen & Present</button>
-                      ):(
-                        <button className="prep-action-btn pause-active" onClick={stopPresenting}>⏹ Stop Presenting</button>
+                      <div
+                        style={{
+                          fontSize: 9,
+                          fontWeight: 800,
+                          textTransform: "uppercase",
+                          letterSpacing: ".07em",
+                          color: "rgba(255,255,255,.25)",
+                          margin: "12px 0 8px",
+                          paddingTop: 10,
+                          borderTop: "1px solid rgba(255,255,255,.07)",
+                        }}
+                      >
+                        Present / Screen Share
+                      </div>
+                      {!presentMode && !isScreenSharing ? (
+                        <button
+                          className="prep-action-btn primary"
+                          onClick={startPresenting}
+                        >
+                          🖥️ Share Screen & Present
+                        </button>
+                      ) : (
+                        <button
+                          className="prep-action-btn pause-active"
+                          onClick={stopPresenting}
+                        >
+                          ⏹ Stop Presenting
+                        </button>
                       )}
 
-                      <div style={{fontSize:9,fontWeight:800,textTransform:"uppercase",letterSpacing:".07em",color:"rgba(255,255,255,.25)",margin:"12px 0 8px",paddingTop:10,borderTop:"1px solid rgba(255,255,255,.07)"}}>Demo Controls</div>
-                      {!demoMode&&!demoReady&&(
-                        <button className="prep-action-btn primary" onClick={()=>enterDemoReadyState()}>▶️ Start Demo</button>
+                      <div
+                        style={{
+                          fontSize: 9,
+                          fontWeight: 800,
+                          textTransform: "uppercase",
+                          letterSpacing: ".07em",
+                          color: "rgba(255,255,255,.25)",
+                          margin: "12px 0 8px",
+                          paddingTop: 10,
+                          borderTop: "1px solid rgba(255,255,255,.07)",
+                        }}
+                      >
+                        Demo Controls
+                      </div>
+                      {!demoMode && !demoReady && (
+                        <button
+                          className="prep-action-btn primary"
+                          onClick={() => enterDemoReadyState()}
+                        >
+                          ▶️ Start Demo
+                        </button>
                       )}
-                      {demoReady&&(
-                        <><button className="prep-action-btn primary" onClick={actuallyStartDemoLive}>▶ Start Demo Now</button>
-                        <button className="prep-action-btn" onClick={cancelDemoReady}>✕ Cancel Demo</button></>
+                      {demoReady && (
+                        <>
+                          <button
+                            className="prep-action-btn primary"
+                            onClick={actuallyStartDemoLive}
+                          >
+                            ▶ Start Demo Now
+                          </button>
+                          <button
+                            className="prep-action-btn"
+                            onClick={cancelDemoReady}
+                          >
+                            ✕ Cancel Demo
+                          </button>
+                        </>
                       )}
-                      {demoMode&&demoRunning&&!isAiPaused&&(
-                        <><button className="prep-action-btn pause-active" onClick={pauseDemoLive}>⏸ Pause Demo</button>
-                        <button className="prep-action-btn demo-active" onClick={()=>stopDemoLive()}>🏁 End Demo & Get Feedback</button></>
+                      {demoMode && demoRunning && !isAiPaused && (
+                        <>
+                          <button
+                            className="prep-action-btn pause-active"
+                            onClick={pauseDemoLive}
+                          >
+                            ⏸ Pause Demo
+                          </button>
+                          <button
+                            className="prep-action-btn demo-active"
+                            onClick={() => stopDemoLive()}
+                          >
+                            🏁 End Demo & Get Feedback
+                          </button>
+                        </>
                       )}
-                      {demoMode&&!demoRunning&&!isAiPaused&&(
-                        <><button className="prep-action-btn primary" onClick={resumeDemoLive}>▶ Resume Demo</button>
-                        <button className="prep-action-btn demo-active" onClick={()=>stopDemoLive()}>🏁 End Demo & Get Feedback</button></>
+                      {demoMode && !demoRunning && !isAiPaused && (
+                        <>
+                          <button
+                            className="prep-action-btn primary"
+                            onClick={resumeDemoLive}
+                          >
+                            ▶ Resume Demo
+                          </button>
+                          <button
+                            className="prep-action-btn demo-active"
+                            onClick={() => stopDemoLive()}
+                          >
+                            🏁 End Demo & Get Feedback
+                          </button>
+                        </>
                       )}
-                      {isAiPaused&&(
-                        <button className="prep-action-btn primary" onClick={handleManualResume}>▶ Resume Now</button>
+                      {isAiPaused && (
+                        <button
+                          className="prep-action-btn primary"
+                          onClick={handleManualResume}
+                        >
+                          ▶ Resume Now
+                        </button>
                       )}
                     </>
                   )}
 
-                  <div style={{fontSize:9,fontWeight:800,textTransform:"uppercase",letterSpacing:".07em",color:"rgba(255,255,255,.25)",margin:"12px 0 8px",paddingTop:10,borderTop:"1px solid rgba(255,255,255,.07)"}}>Session</div>
-                  <button className="prep-action-btn" onClick={handleDownloadPDF}>📥 Download Session Report</button>
-                  <button className="prep-action-btn" onClick={()=>setShowAnalysis(true)}>📊 View Performance Report</button>
+                  <div
+                    style={{
+                      fontSize: 9,
+                      fontWeight: 800,
+                      textTransform: "uppercase",
+                      letterSpacing: ".07em",
+                      color: "rgba(255,255,255,.25)",
+                      margin: "12px 0 8px",
+                      paddingTop: 10,
+                      borderTop: "1px solid rgba(255,255,255,.07)",
+                    }}
+                  >
+                    Session
+                  </div>
+                  <button
+                    className="prep-action-btn"
+                    onClick={handleDownloadPDF}
+                  >
+                    📥 Download Session Report
+                  </button>
+                  <button
+                    className="prep-action-btn"
+                    onClick={() => setShowAnalysis(true)}
+                  >
+                    📊 View Performance Report
+                  </button>
                 </div>
               </div>
             )}
@@ -5284,22 +10057,100 @@ speakAiReply(msg,{ resumeCapture: true });
         )}
       </div>
 
-      {showAnalysis&&<AnalysisModal topic={config.topic} subject={config.subject} unit={config.unit} timer={timer.display} exchanges={exchanges} presenterName={config.name} onClose={()=>setShowAnalysis(false)} onDownload={handleDownloadPDF}/>}
+      {showAnalysis && (
+        <AnalysisModal
+          topic={config.topic}
+          subject={config.subject}
+          unit={config.unit}
+          timer={timer.display}
+          exchanges={exchanges}
+          presenterName={config.name}
+          onClose={() => setShowAnalysis(false)}
+          onDownload={handleDownloadPDF}
+        />
+      )}
 
-      {showEnd&&(
-        <div className="overlay" onClick={()=>setShowEnd(false)}>
-          <div className="modal" style={{maxWidth:360,background:"#0c1422",border:"1px solid rgba(255,255,255,.1)"}} onClick={e=>e.stopPropagation()}>
-            <div style={{background:"linear-gradient(135deg,#060e1c,#08180e)",padding:"22px 18px",textAlign:"center"}}>
-              <div style={{fontSize:40,marginBottom:9}}>🏁</div>
-              <div style={{fontSize:14,fontWeight:800,color:"#fff",marginBottom:4}}>End preparation session?</div>
-              <div style={{fontSize:12,color:"rgba(255,255,255,.38)",lineHeight:1.7}}>Duration: <strong style={{color:"#5ee3b7"}}>{timer.display}</strong><br/>{exchanges} AI exchanges · {notes.length} notes saved</div>
+      {showEnd && (
+        <div className="overlay" onClick={() => setShowEnd(false)}>
+          <div
+            className="modal"
+            style={{
+              maxWidth: 360,
+              background: "#0c1422",
+              border: "1px solid rgba(255,255,255,.1)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                background: "linear-gradient(135deg,#060e1c,#08180e)",
+                padding: "22px 18px",
+                textAlign: "center",
+              }}
+            >
+              <div style={{ fontSize: 40, marginBottom: 9 }}>🏁</div>
+              <div
+                style={{
+                  fontSize: 14,
+                  fontWeight: 800,
+                  color: "#fff",
+                  marginBottom: 4,
+                }}
+              >
+                End preparation session?
+              </div>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "rgba(255,255,255,.38)",
+                  lineHeight: 1.7,
+                }}
+              >
+                Duration:{" "}
+                <strong style={{ color: "#5ee3b7" }}>{timer.display}</strong>
+                <br />
+                {exchanges} AI exchanges · {notes.length} notes saved
+              </div>
             </div>
-            <div style={{padding:"10px 16px",borderBottom:"1px solid rgba(255,255,255,.07)"}}>
-              <button className="prep-action-btn" style={{marginBottom:0}} onClick={()=>handleDownloadPDF()}>📥 Download Session Report First</button>
+            <div
+              style={{
+                padding: "10px 16px",
+                borderBottom: "1px solid rgba(255,255,255,.07)",
+              }}
+            >
+              <button
+                className="prep-action-btn"
+                style={{ marginBottom: 0 }}
+                onClick={() => handleDownloadPDF()}
+              >
+                📥 Download Session Report First
+              </button>
             </div>
-            <div className="mf" style={{borderColor:"rgba(255,255,255,.08)",background:"#0c1422"}}>
-              <button className="btn-s" style={{background:"rgba(255,255,255,.04)",borderColor:"rgba(255,255,255,.1)",color:"rgba(255,255,255,.5)"}} onClick={()=>setShowEnd(false)}>Keep Going</button>
-              <button className="btn-d" onClick={handleEndSession} disabled={endingSession}>{endingSession?"Ending...":"End Session"}</button>
+            <div
+              className="mf"
+              style={{
+                borderColor: "rgba(255,255,255,.08)",
+                background: "#0c1422",
+              }}
+            >
+              <button
+                className="btn-s"
+                style={{
+                  background: "rgba(255,255,255,.04)",
+                  borderColor: "rgba(255,255,255,.1)",
+                  color: "rgba(255,255,255,.5)",
+                }}
+                onClick={() => setShowEnd(false)}
+              >
+                Keep Going
+              </button>
+              <button
+                className="btn-d"
+                onClick={handleEndSession}
+                disabled={endingSession}
+              >
+                {endingSession ? "Ending..." : "End Session"}
+              </button>
             </div>
           </div>
         </div>
@@ -5332,8 +10183,24 @@ speakAiReply(msg,{ resumeCapture: true });
           </div>
         </div>
       )} */}
-      {guideStatusText&&(
-        <div style={{position:"fixed",bottom:20,right:20,zIndex:760,maxWidth:320,padding:"11px 14px",borderRadius:12,background:"rgba(16,185,129,.12)",border:"1px solid rgba(16,185,129,.28)",color:"#d1fae5",fontSize:12.5,fontWeight:700,boxShadow:"var(--sh2)"}}>
+      {guideStatusText && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 20,
+            right: 20,
+            zIndex: 760,
+            maxWidth: 320,
+            padding: "11px 14px",
+            borderRadius: 12,
+            background: "rgba(16,185,129,.12)",
+            border: "1px solid rgba(16,185,129,.28)",
+            color: "#d1fae5",
+            fontSize: 12.5,
+            fontWeight: 700,
+            boxShadow: "var(--sh2)",
+          }}
+        >
           {guideStatusText}
         </div>
       )}
@@ -5348,10 +10215,17 @@ function mapSeminarTurnsToMessages(session, currentUserName = "") {
   return turns
     .filter((turn) => {
       const type = String(turn?.turnType || "");
-      return type === "chat" || type === "chat_response" || type === "greeting" || type === "ai_response";
+      return (
+        type === "chat" ||
+        type === "chat_response" ||
+        type === "greeting" ||
+        type === "ai_response"
+      );
     })
     .map((turn) => {
-      const sender = turn?.speakerName || (turn?.role === "assistant" ? "AI Moderator" : "Participant");
+      const sender =
+        turn?.speakerName ||
+        (turn?.role === "assistant" ? "AI Moderator" : "Participant");
       const own = currentUserName && sender === currentUserName;
       return {
         id: turn?.id || `${sender}-${turn?.createdAt || Date.now()}`,
@@ -5364,23 +10238,27 @@ function mapSeminarTurnsToMessages(session, currentUserName = "") {
 }
 
 function getPendingSeminarSpeakRequests(session) {
-  const requests = Array.isArray(session?.metadata?.speakRequests) ? session.metadata.speakRequests : [];
+  const requests = Array.isArray(session?.metadata?.speakRequests)
+    ? session.metadata.speakRequests
+    : [];
   return requests.filter((item) => item?.status === "pending");
 }
 
 function isSeminarParticipantApproved(session, participantId) {
-  const participant = (session?.participants || []).find((item) => String(item.id) === String(participantId));
+  const participant = (session?.participants || []).find(
+    (item) => String(item.id) === String(participantId),
+  );
   return participant?.status === "approved_to_speak";
 }
 
-function LiveKitVideoTrack({track, className = "ss-video"}) {
+function LiveKitVideoTrack({ track, className = "ss-video" }) {
   const containerRef = useRef(null);
 
-  useEffect(()=>{
+  useEffect(() => {
     const container = containerRef.current;
-    if(!container || !track) return;
+    if (!container || !track) return;
     let element = null;
-    try{
+    try {
       element = track.attach();
       element.className = className;
       element.autoplay = true;
@@ -5392,29 +10270,42 @@ function LiveKitVideoTrack({track, className = "ss-video"}) {
         source: track.source,
         kind: track.kind,
       });
-    } catch(error){
-      console.error("[SeminarPage][SCREEN] failed to attach video track", error);
+    } catch (error) {
+      console.error(
+        "[SeminarPage][SCREEN] failed to attach video track",
+        error,
+      );
     }
-    return ()=>{
-      try{
-        if(element) track.detach(element);
+    return () => {
+      try {
+        if (element) track.detach(element);
         element?.remove?.();
         container.replaceChildren();
-      } catch(error){
-        console.warn("[SeminarPage][SCREEN] failed to detach video track", error);
+      } catch (error) {
+        console.warn(
+          "[SeminarPage][SCREEN] failed to detach video track",
+          error,
+        );
       }
     };
-  },[track, className]);
+  }, [track, className]);
 
-  return <div ref={containerRef} style={{position:"absolute",inset:0,width:"100%",height:"100%"}} />;
+  return (
+    <div
+      ref={containerRef}
+      style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+    />
+  );
 }
 
 function attachLiveKitScreenTrack(track, ownerLabel = "screen") {
-  const container = document.querySelector(".room-page .room-body .grid-area .ss-area");
-  if(!container || !track) return () => {};
+  const container = document.querySelector(
+    ".room-page .room-body .grid-area .ss-area",
+  );
+  if (!container || !track) return () => {};
 
   let element = null;
-  try{
+  try {
     element = track.attach();
     element.className = "ss-video";
     element.autoplay = true;
@@ -5431,192 +10322,777 @@ function attachLiveKitScreenTrack(track, ownerLabel = "screen") {
       source: track.source,
       kind: track.kind,
     });
-  } catch(error){
-    console.error("[SeminarPage][SCREEN] failed to render LiveKit screen track", { ownerLabel, error });
+  } catch (error) {
+    console.error(
+      "[SeminarPage][SCREEN] failed to render LiveKit screen track",
+      { ownerLabel, error },
+    );
   }
 
   return () => {
-    try{
-      if(element) track.detach(element);
+    try {
+      if (element) track.detach(element);
       element?.remove?.();
       container.classList.remove("lk-screen-active");
-      console.log("[SeminarPage][SCREEN] LiveKit screen track removed", { ownerLabel });
-    } catch(error){
-      console.warn("[SeminarPage][SCREEN] failed to remove LiveKit screen track", { ownerLabel, error });
+      console.log("[SeminarPage][SCREEN] LiveKit screen track removed", {
+        ownerLabel,
+      });
+    } catch (error) {
+      console.warn(
+        "[SeminarPage][SCREEN] failed to remove LiveKit screen track",
+        { ownerLabel, error },
+      );
     }
   };
 }
 
-function PresenterRoomLegacy({config,onEnd}) {
-  const timer=useTimer(true);
-  const [panelTab,setPanelTab]=useState(null);
-  const [messages,setMessages]=useState([]);const [chatInput,setChatInput]=useState("");
-  const [micOn,setMicOn]=useState(true);const [isRecording,setIsRecording]=useState(false);
-  const [screenSharing,setScreenSharing]=useState(false);
-  const [showEnd,setShowEnd]=useState(false);const [showAnalysis,setShowAnalysis]=useState(false);
-  const [showReactions,setShowReactions]=useState(false);const [reaction,setReaction]=useState(null);
-  const [exchangeCount,setExchangeCount]=useState(0);const [liveTranscript,setLiveTranscript]=useState("");
-  const [aiSummaryLines,setAiSummaryLines]=useState(["Session started — AI Moderator is listening.","Waiting for screen share to begin."]);
-  const [aiTyping,setAiTyping]=useState(false);const [observerCount,setObserverCount]=useState(Math.floor(Math.random()*4));
-  const [isSpeaking,setIsSpeaking]=useState(false);
-  const chatEndRef=useRef(null);const aiIntervalRef=useRef(null);
-  const aiVoice=useAIVoice();const speech=useSpeechRecognition();
-  const {show:toast$,node:toastNode}=useToast();
-  const presenterColor=avColor(config.name);
+function PresenterRoomLegacy({ config, onEnd }) {
+  const timer = useTimer(true);
+  const [panelTab, setPanelTab] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [chatInput, setChatInput] = useState("");
+  const [micOn, setMicOn] = useState(true);
+  const [isRecording, setIsRecording] = useState(false);
+  const [screenSharing, setScreenSharing] = useState(false);
+  const [showEnd, setShowEnd] = useState(false);
+  const [showAnalysis, setShowAnalysis] = useState(false);
+  const [showReactions, setShowReactions] = useState(false);
+  const [reaction, setReaction] = useState(null);
+  const [exchangeCount, setExchangeCount] = useState(0);
+  const [liveTranscript, setLiveTranscript] = useState("");
+  const [aiSummaryLines, setAiSummaryLines] = useState([
+    "Session started — AI Moderator is listening.",
+    "Waiting for screen share to begin.",
+  ]);
+  const [aiTyping, setAiTyping] = useState(false);
+  const [observerCount, setObserverCount] = useState(
+    Math.floor(Math.random() * 4),
+  );
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const chatEndRef = useRef(null);
+  const aiIntervalRef = useRef(null);
+  const aiVoice = useAIVoice();
+  const speech = useSpeechRecognition();
+  const { show: toast$, node: toastNode } = useToast();
+  const presenterColor = avColor(config.name);
 
-  useEffect(()=>{chatEndRef.current?.scrollIntoView({behavior:"smooth"});},[messages]);
-  function addMsg(sender,text,type){setMessages(ms=>[...ms,{sender,text,type,time:Date.now()}]);setExchangeCount(c=>c+1);}
-
-  useEffect(()=>{
-    if(config.stream&&typeof config.stream.getTracks==="function")speech.start(ft=>{setLiveTranscript(ft);setIsSpeaking(true);setTimeout(()=>{setLiveTranscript("");setIsSpeaking(false);},5000);});
-    const intro=`Welcome to your seminar on "${config.topic}"${config.subject?` — ${config.subject}`:""}! I'm your AI Moderator. Share your screen and begin whenever you're ready.`;
-    setTimeout(()=>{addMsg("AI Moderator",intro,"ai");setAiTyping(true);setTimeout(()=>{setAiTyping(false);aiVoice.speak(intro.slice(0,120));},600);},1000);
-    aiIntervalRef.current=setInterval(()=>{
-      if(Math.random()>0.6&&!aiVoice.isSpeaking){const tip=["Excellent point! Let's explore how your audience might counter this.","Building on that — has anyone considered the long-term implications?","Remember to pace yourself — let your key points breathe.","You're covering the topic well. Try to invite questions."][Math.floor(Math.random()*4)];addMsg("AI Moderator",tip,"ai");setAiSummaryLines(l=>[...l,tip].slice(-8));}
-      if(Math.random()>0.7)setObserverCount(c=>Math.min(c+1,20));
-    },25000);
-    return()=>{if(aiIntervalRef.current)clearInterval(aiIntervalRef.current);aiVoice.cancel();speech.stop();if(config.stream&&typeof config.stream.getTracks==="function")config.stream.getTracks().forEach(t=>t.stop());};
-  },[]);
-
-  useEffect(()=>{if(speech.transcript){setLiveTranscript(speech.transcript);setIsSpeaking(true);}},[speech.transcript]);
-
-  async function toggleScreen(){
-    if(screenSharing){setScreenSharing(false);toast$("🖥 Screen sharing stopped","warn");return;}
-    try{await navigator.mediaDevices.getDisplayMedia({video:true});setScreenSharing(true);toast$("🖥 Screen sharing started","success");addMsg("AI Moderator","Screen sharing active. Observers can see your content — begin when ready!","ai");}
-    catch{toast$("Screen share cancelled","warn");}
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+  function addMsg(sender, text, type) {
+    setMessages((ms) => [...ms, { sender, text, type, time: Date.now() }]);
+    setExchangeCount((c) => c + 1);
   }
 
-  function sendMsg(text){if(!text.trim())return;addMsg(config.name,text.trim());setChatInput("");}
-  function sendReaction(emoji){setShowReactions(false);const k=Date.now();setReaction({emoji,k});setTimeout(()=>setReaction(null),2400);}
-  function handleEnd(){
-    if(aiIntervalRef.current)clearInterval(aiIntervalRef.current);aiVoice.cancel();speech.stop();
-    if(config.stream&&typeof config.stream.getTracks==="function")config.stream.getTracks().forEach(t=>t.stop());
-    onEnd({timer,topic:config.topic,subject:config.subject,unit:config.unit,participants:1,exchanges:exchangeCount,presenterName:config.name});
+  useEffect(() => {
+    if (config.stream && typeof config.stream.getTracks === "function")
+      speech.start((ft) => {
+        setLiveTranscript(ft);
+        setIsSpeaking(true);
+        setTimeout(() => {
+          setLiveTranscript("");
+          setIsSpeaking(false);
+        }, 5000);
+      });
+    const intro = `Welcome to your seminar on "${config.topic}"${config.subject ? ` — ${config.subject}` : ""}! I'm your AI Moderator. Share your screen and begin whenever you're ready.`;
+    setTimeout(() => {
+      addMsg("AI Moderator", intro, "ai");
+      setAiTyping(true);
+      setTimeout(() => {
+        setAiTyping(false);
+        aiVoice.speak(intro.slice(0, 120));
+      }, 600);
+    }, 1000);
+    aiIntervalRef.current = setInterval(() => {
+      if (Math.random() > 0.6 && !aiVoice.isSpeaking) {
+        const tip = [
+          "Excellent point! Let's explore how your audience might counter this.",
+          "Building on that — has anyone considered the long-term implications?",
+          "Remember to pace yourself — let your key points breathe.",
+          "You're covering the topic well. Try to invite questions.",
+        ][Math.floor(Math.random() * 4)];
+        addMsg("AI Moderator", tip, "ai");
+        setAiSummaryLines((l) => [...l, tip].slice(-8));
+      }
+      if (Math.random() > 0.7) setObserverCount((c) => Math.min(c + 1, 20));
+    }, 25000);
+    return () => {
+      if (aiIntervalRef.current) clearInterval(aiIntervalRef.current);
+      aiVoice.cancel();
+      speech.stop();
+      if (config.stream && typeof config.stream.getTracks === "function")
+        config.stream.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  useEffect(() => {
+    if (speech.transcript) {
+      setLiveTranscript(speech.transcript);
+      setIsSpeaking(true);
+    }
+  }, [speech.transcript]);
+
+  async function toggleScreen() {
+    if (screenSharing) {
+      setScreenSharing(false);
+      toast$("🖥 Screen sharing stopped", "warn");
+      return;
+    }
+    try {
+      await navigator.mediaDevices.getDisplayMedia({ video: true });
+      setScreenSharing(true);
+      toast$("🖥 Screen sharing started", "success");
+      addMsg(
+        "AI Moderator",
+        "Screen sharing active. Observers can see your content — begin when ready!",
+        "ai",
+      );
+    } catch {
+      toast$("Screen share cancelled", "warn");
+    }
   }
-  const fmt=d=>new Date(d).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+
+  function sendMsg(text) {
+    if (!text.trim()) return;
+    addMsg(config.name, text.trim());
+    setChatInput("");
+  }
+  function sendReaction(emoji) {
+    setShowReactions(false);
+    const k = Date.now();
+    setReaction({ emoji, k });
+    setTimeout(() => setReaction(null), 2400);
+  }
+  function handleEnd() {
+    if (aiIntervalRef.current) clearInterval(aiIntervalRef.current);
+    aiVoice.cancel();
+    speech.stop();
+    if (config.stream && typeof config.stream.getTracks === "function")
+      config.stream.getTracks().forEach((t) => t.stop());
+    onEnd({
+      timer,
+      topic: config.topic,
+      subject: config.subject,
+      unit: config.unit,
+      participants: 1,
+      exchanges: exchangeCount,
+      presenterName: config.name,
+    });
+  }
+  const fmt = (d) =>
+    new Date(d).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
   return (
     <div className="room-page">
-      {isRecording&&<div style={{position:"fixed",top:58,right:12,background:"rgba(229,62,62,.9)",borderRadius:7,padding:"3px 10px",fontSize:11,fontWeight:800,color:"#fff",zIndex:200,animation:"recBlink 1.4s infinite",fontFamily:"var(--mono)"}}>⏺ REC {timer}</div>}
+      {isRecording && (
+        <div
+          style={{
+            position: "fixed",
+            top: 58,
+            right: 12,
+            background: "rgba(229,62,62,.9)",
+            borderRadius: 7,
+            padding: "3px 10px",
+            fontSize: 11,
+            fontWeight: 800,
+            color: "#fff",
+            zIndex: 200,
+            animation: "recBlink 1.4s infinite",
+            fontFamily: "var(--mono)",
+          }}
+        >
+          ⏺ REC {timer}
+        </div>
+      )}
       <div className="room-bar">
-        <div className="room-logo"><div className="room-logo-ic">🎓</div>SeminarArena</div>
-        <div className="room-divider"/>
-        <div className="room-topic"><strong>{config.subject&&`${config.subject}${config.unit?` · ${config.unit}`:""} · `}</strong>{config.topic}</div>
+        <div className="room-logo">
+          <div className="room-logo-ic">
+            <SeminarIcon name="graduation" />
+          </div>
+          SeminarArena
+        </div>
+        <div className="room-divider" />
+        <div className="room-topic">
+          <strong>
+            {config.subject &&
+              `${config.subject}${config.unit ? ` · ${config.unit}` : ""} · `}
+          </strong>
+          {config.topic}
+        </div>
         <div className="r-pill rp-timer">{timer}</div>
-        {isRecording&&<div className="r-pill rp-rec"><div className="rp-rec-dot"/>REC</div>}
+        {isRecording && (
+          <div className="r-pill rp-rec">
+            <div className="rp-rec-dot" />
+            REC
+          </div>
+        )}
         <div className="r-pill rp-ai">🤖 AI Mod</div>
-        <div className="r-pill" style={{background:"rgba(0,195,122,.1)",borderColor:"rgba(0,195,122,.2)",color:"#5ee3b7"}}>👁 {observerCount}</div>
-        <button className="rbar-end-btn" onClick={()=>setShowEnd(true)}>✕ End</button>
+        <div
+          className="r-pill"
+          style={{
+            background: "rgba(0,195,122,.1)",
+            borderColor: "rgba(0,195,122,.2)",
+            color: "#5ee3b7",
+          }}
+        >
+          👁 {observerCount}
+        </div>
+        <button className="rbar-end-btn" onClick={() => setShowEnd(true)}>
+          ✕ End
+        </button>
       </div>
       <div className="room-body">
         <div className="grid-area">
           <div className="ss-area">
-            {!screenSharing?(<div className="ss-placeholder"><div style={{fontSize:52,opacity:.18}}>🖥️</div><div style={{fontSize:13,fontWeight:700}}>Screen not shared yet</div><button style={{marginTop:14,padding:"9px 20px",borderRadius:10,background:"var(--grad)",border:"none",cursor:"pointer",fontSize:13,fontWeight:700,color:"#fff"}} onClick={toggleScreen}>🖥️ Start Screen Share</button></div>)
-              :(<><div className="ss-active-label"><div className="ss-active-dot"/>Screen Sharing Active · {observerCount} watching</div><div style={{fontSize:11,color:"rgba(255,255,255,.3)"}}>Your screen is shared</div></>)}
-            {reaction&&<div key={reaction.k} style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",fontSize:46,animation:"rPop 2s forwards",pointerEvents:"none",zIndex:5}}>{reaction.emoji}</div>}
+            {!screenSharing ? (
+              <div className="ss-placeholder">
+                <div style={{ fontSize: 52, opacity: 0.18 }}>🖥️</div>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>
+                  Screen not shared yet
+                </div>
+                <button
+                  style={{
+                    marginTop: 14,
+                    padding: "9px 20px",
+                    borderRadius: 10,
+                    background: "var(--grad)",
+                    border: "none",
+                    cursor: "pointer",
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color: "#fff",
+                  }}
+                  onClick={toggleScreen}
+                >
+                  🖥️ Start Screen Share
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="ss-active-label">
+                  <div className="ss-active-dot" />
+                  Screen Sharing Active · {observerCount} watching
+                </div>
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,.3)" }}>
+                  Your screen is shared
+                </div>
+              </>
+            )}
+            {reaction && (
+              <div
+                key={reaction.k}
+                style={{
+                  position: "absolute",
+                  top: "50%",
+                  left: "50%",
+                  transform: "translate(-50%,-50%)",
+                  fontSize: 46,
+                  animation: "rPop 2s forwards",
+                  pointerEvents: "none",
+                  zIndex: 5,
+                }}
+              >
+                {reaction.emoji}
+              </div>
+            )}
           </div>
           <div className="presenter-strip">
-            <div className="strip-tile" style={{border:`1.5px solid ${presenterColor}44`}}>
-              <div className="strip-av" style={{background:presenterColor+"22",color:presenterColor}}>{avInit(config.name)}</div>
-              {isSpeaking&&<div style={{position:"absolute",top:5,right:5}}><SoundAnalyser active color="#5ee3b7" bars={4} size={16}/></div>}
-              <div className="strip-ov"><span className="strip-name">{config.name}</span><span style={{fontSize:9}}>{micOn?"🎤":"🔇"}</span></div>
-              <div style={{position:"absolute",top:5,left:5,fontSize:9,fontWeight:800,padding:"1px 5px",borderRadius:4,background:"rgba(0,195,122,.85)",color:"#000"}}>YOU</div>
-            </div>
-            <div className="strip-tile" style={{border:"1.5px solid rgba(45,156,219,.3)"}}>
-              <div style={{fontSize:24}}>🤖</div>
-              {aiTyping&&<div style={{position:"absolute",top:5,right:5,display:"flex",gap:2}}>{[0,1,2].map(i=><div key={i} style={{width:4,height:4,borderRadius:"50%",background:"#7ed3f7",animation:"dotPulse .8s ease-in-out infinite",animationDelay:`${i*.22}s`}}/>)}</div>}
-              <div className="strip-ov"><span className="strip-name">AI Moderator</span><span style={{fontSize:9}}>🎙️</span></div>
-              <div style={{position:"absolute",top:5,left:5,fontSize:9,fontWeight:800,padding:"1px 5px",borderRadius:4,background:"rgba(45,156,219,.85)",color:"#000"}}>AI</div>
-            </div>
-            {observerCount>0&&(<div className="strip-tile"><div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}><div style={{fontSize:20}}>👁️</div><div style={{fontSize:16,fontWeight:900,color:"rgba(255,255,255,.6)"}}>{observerCount}</div></div><div className="strip-ov"><span className="strip-name">Observers</span></div></div>)}
-          </div>
-          {(speech.isListening||liveTranscript)&&(<div className="live-transcript-bar"><div className="lt-label"><div className="lt-dot"/>Live Transcript</div><div className="lt-text">{liveTranscript||"Listening…"}</div></div>)}
-          <div className="ctrl-bar">
-            <div className="cg">
-              <button className={`cbtn ${micOn?"on":"off"}`} onClick={()=>{const n=!micOn;setMicOn(n);if(config.stream&&typeof config.stream.getTracks==="function"){config.stream.getAudioTracks().forEach(t=>t.enabled=n);}toast$(n?"🎤 Mic enabled":"🔇 Mic muted",n?"info":"warn");}}>
-                <span className="cbtn-ic">{micOn?"🎤":"🔇"}</span><span>{micOn?"Mute":"Unmute"}</span>
-              </button>
-              <button className={`cbtn${screenSharing?" hi":""}`} onClick={toggleScreen}><span className="cbtn-ic">🖥</span><span>{screenSharing?"Stop":"Share"}</span></button>
-              <div style={{position:"relative"}}>
-                <button className={`cbtn${showReactions?" hi":""}`} onClick={()=>setShowReactions(r=>!r)}><span className="cbtn-ic">😊</span><span>React</span></button>
-                {showReactions&&<div className="react-pop">{REACTIONS.map(r=><button key={r} className="react-em" onClick={()=>sendReaction(r)}>{r}</button>)}</div>}
+            <div
+              className="strip-tile"
+              style={{ border: `1.5px solid ${presenterColor}44` }}
+            >
+              <div
+                className="strip-av"
+                style={{
+                  background: presenterColor + "22",
+                  color: presenterColor,
+                }}
+              >
+                {avInit(config.name)}
+              </div>
+              {isSpeaking && (
+                <div style={{ position: "absolute", top: 5, right: 5 }}>
+                  <SoundAnalyser active color="#5ee3b7" bars={4} size={16} />
+                </div>
+              )}
+              <div className="strip-ov">
+                <span className="strip-name">{config.name}</span>
+                <span style={{ fontSize: 9 }}>{micOn ? "🎤" : "🔇"}</span>
+              </div>
+              <div
+                style={{
+                  position: "absolute",
+                  top: 5,
+                  left: 5,
+                  fontSize: 9,
+                  fontWeight: 800,
+                  padding: "1px 5px",
+                  borderRadius: 4,
+                  background: "rgba(0,195,122,.85)",
+                  color: "#000",
+                }}
+              >
+                YOU
               </div>
             </div>
-            <div className="cg">
-              <button className={`cbtn${isRecording?" rec":""}`} onClick={()=>{setIsRecording(r=>!r);toast$(isRecording?"⏹ Stopped":"🔴 Recording…",isRecording?"warn":"info");}}>
-                <span className="cbtn-ic">⏺</span><span>{isRecording?"Stop":"Record"}</span>
-              </button>
-              <button className="cbtn em" onClick={()=>setShowAnalysis(true)}><span className="cbtn-ic">📊</span><span>Report</span></button>
+            <div
+              className="strip-tile"
+              style={{ border: "1.5px solid rgba(45,156,219,.3)" }}
+            >
+              <div style={{ fontSize: 24 }}>🤖</div>
+              {aiTyping && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: 5,
+                    right: 5,
+                    display: "flex",
+                    gap: 2,
+                  }}
+                >
+                  {[0, 1, 2].map((i) => (
+                    <div
+                      key={i}
+                      style={{
+                        width: 4,
+                        height: 4,
+                        borderRadius: "50%",
+                        background: "#7ed3f7",
+                        animation: "dotPulse .8s ease-in-out infinite",
+                        animationDelay: `${i * 0.22}s`,
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+              <div className="strip-ov">
+                <span className="strip-name">AI Moderator</span>
+                <span style={{ fontSize: 9 }}>🎙️</span>
+              </div>
+              <div
+                style={{
+                  position: "absolute",
+                  top: 5,
+                  left: 5,
+                  fontSize: 9,
+                  fontWeight: 800,
+                  padding: "1px 5px",
+                  borderRadius: 4,
+                  background: "rgba(45,156,219,.85)",
+                  color: "#000",
+                }}
+              >
+                AI
+              </div>
             </div>
-            <div className="cg">
-              <button className={`cbtn${panelTab==="chat"?" hi":""}`} onClick={()=>setPanelTab(p=>p==="chat"?null:"chat")}><span className="cbtn-ic">💬</span><span>Chat</span></button>
-              <button className={`cbtn${panelTab==="ai"?" hi":""}`} onClick={()=>setPanelTab(p=>p==="ai"?null:"ai")}><span className="cbtn-ic">🤖</span><span>AI Notes</span></button>
-              <button className="end-room-btn-sm" onClick={()=>setShowEnd(true)}>End Session</button>
-            </div>
-          </div>
-        </div>
-        {panelTab&&(
-          <div className="side-panel">
-
-            <div className="panel-tabs">
-              {[{id:"chat",ic:"💬",lbl:"Chat"},{id:"ai",ic:"🤖",lbl:"AI Notes"}].map(t=>(
-                <button key={t.id} className={`ptab${panelTab===t.id?" active":""}`} onClick={()=>setPanelTab(t.id)}><span style={{fontSize:12}}>{t.ic}</span><span>{t.lbl}</span></button>
-              ))}
-              <button className="ptab-close" onClick={()=>setPanelTab(null)}>✕</button>
-            </div>
-            {panelTab==="chat"&&(
-              <div style={{display:"flex",flexDirection:"column",height:"100%",minHeight:0}}>
-                <div className="pscroll" style={{flex:1}}>
-                  <div className="chat-msgs">
-                    {messages.length===0&&<div className="chat-empty">No messages yet.<br/>Observer questions appear here.</div>}
-                    {messages.map((m,i)=>{const own=m.sender===config.name;const isAI=m.type==="ai";return(<div key={i} className={`chat-msg${own?" own":""}`}>
-                      {!own&&<div className="chat-av-s" style={{background:isAI?"rgba(45,156,219,.2)":"rgba(255,255,255,.08)",color:isAI?"#7ed3f7":"rgba(255,255,255,.5)"}}>{isAI?"🤖":m.sender[0]?.toUpperCase()}</div>}
-                      <div className="chat-bw">
-                        {!own&&<span className="chat-sender">{m.sender}</span>}
-                        <div className={`chat-bubble ${own?"b-own":isAI?"":"b-o"}`} style={isAI?{background:"rgba(45,156,219,.09)",border:"1px solid rgba(45,156,219,.15)",color:"#d0e8ff",borderRadius:"3px 9px 9px 9px"}:{}}>{m.text}</div>
-                        <span className="chat-t">{fmt(m.time)}</span>
-                      </div>
-                    </div>);})}
-                    <div ref={chatEndRef}/>
+            {observerCount > 0 && (
+              <div className="strip-tile">
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: 4,
+                  }}
+                >
+                  <div style={{ fontSize: 20 }}>👁️</div>
+                  <div
+                    style={{
+                      fontSize: 16,
+                      fontWeight: 900,
+                      color: "rgba(255,255,255,.6)",
+                    }}
+                  >
+                    {observerCount}
                   </div>
                 </div>
-                <div className="chat-ia">
-                  <textarea className="chat-inp" placeholder="Reply to observers…" value={chatInput} onChange={e=>setChatInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMsg(chatInput);}}} rows={1}/>
-                  <button className="chat-send" onClick={()=>sendMsg(chatInput)}>➤</button>
+                <div className="strip-ov">
+                  <span className="strip-name">Observers</span>
                 </div>
               </div>
             )}
-            {panelTab==="ai"&&(
+          </div>
+          {(speech.isListening || liveTranscript) && (
+            <div className="live-transcript-bar">
+              <div className="lt-label">
+                <div className="lt-dot" />
+                Live Transcript
+              </div>
+              <div className="lt-text">{liveTranscript || "Listening…"}</div>
+            </div>
+          )}
+          <div className="ctrl-bar">
+            <div className="cg">
+              <button
+                className={`cbtn ${micOn ? "on" : "off"}`}
+                onClick={() => {
+                  const n = !micOn;
+                  setMicOn(n);
+                  if (
+                    config.stream &&
+                    typeof config.stream.getTracks === "function"
+                  ) {
+                    config.stream
+                      .getAudioTracks()
+                      .forEach((t) => (t.enabled = n));
+                  }
+                  toast$(
+                    n ? "🎤 Mic enabled" : "🔇 Mic muted",
+                    n ? "info" : "warn",
+                  );
+                }}
+              >
+                <span className="cbtn-ic">{micOn ? "🎤" : "🔇"}</span>
+                <span>{micOn ? "Mute" : "Unmute"}</span>
+              </button>
+              <button
+                className={`cbtn${screenSharing ? " hi" : ""}`}
+                onClick={toggleScreen}
+              >
+                <span className="cbtn-ic">🖥</span>
+                <span>{screenSharing ? "Stop" : "Share"}</span>
+              </button>
+              <div style={{ position: "relative" }}>
+                <button
+                  className={`cbtn${showReactions ? " hi" : ""}`}
+                  onClick={() => setShowReactions((r) => !r)}
+                >
+                  <span className="cbtn-ic">😊</span>
+                  <span>React</span>
+                </button>
+                {showReactions && (
+                  <div className="react-pop">
+                    {REACTIONS.map((r) => (
+                      <button
+                        key={r}
+                        className="react-em"
+                        onClick={() => sendReaction(r)}
+                      >
+                        {r}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="cg">
+              <button
+                className={`cbtn${isRecording ? " rec" : ""}`}
+                onClick={() => {
+                  setIsRecording((r) => !r);
+                  toast$(
+                    isRecording ? "⏹ Stopped" : "🔴 Recording…",
+                    isRecording ? "warn" : "info",
+                  );
+                }}
+              >
+                <span className="cbtn-ic">⏺</span>
+                <span>{isRecording ? "Stop" : "Record"}</span>
+              </button>
+              <button className="cbtn em" onClick={() => setShowAnalysis(true)}>
+                <span className="cbtn-ic">📊</span>
+                <span>Report</span>
+              </button>
+            </div>
+            <div className="cg">
+              <button
+                className={`cbtn${panelTab === "chat" ? " hi" : ""}`}
+                onClick={() =>
+                  setPanelTab((p) => (p === "chat" ? null : "chat"))
+                }
+              >
+                <span className="cbtn-ic">💬</span>
+                <span>Chat</span>
+              </button>
+              <button
+                className={`cbtn${panelTab === "ai" ? " hi" : ""}`}
+                onClick={() => setPanelTab((p) => (p === "ai" ? null : "ai"))}
+              >
+                <span className="cbtn-ic">🤖</span>
+                <span>AI Notes</span>
+              </button>
+              <button
+                className="end-room-btn-sm"
+                onClick={() => setShowEnd(true)}
+              >
+                End Session
+              </button>
+            </div>
+          </div>
+        </div>
+        {panelTab && (
+          <div className="side-panel">
+            <div className="panel-tabs">
+              {[
+                { id: "chat", ic: "💬", lbl: "Chat" },
+                { id: "ai", ic: "🤖", lbl: "AI Notes" },
+              ].map((t) => (
+                <button
+                  key={t.id}
+                  className={`ptab${panelTab === t.id ? " active" : ""}`}
+                  onClick={() => setPanelTab(t.id)}
+                >
+                  <span style={{ display: "inline-flex" }}>
+                    <SeminarIcon name={t.ic} size={12} />
+                  </span>
+                  <span>{t.lbl}</span>
+                </button>
+              ))}
+              <button className="ptab-close" onClick={() => setPanelTab(null)}>
+                ✕
+              </button>
+            </div>
+            {panelTab === "chat" && (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  height: "100%",
+                  minHeight: 0,
+                }}
+              >
+                <div className="pscroll" style={{ flex: 1 }}>
+                  <div className="chat-msgs">
+                    {messages.length === 0 && (
+                      <div className="chat-empty">
+                        No messages yet.
+                        <br />
+                        Observer questions appear here.
+                      </div>
+                    )}
+                    {messages.map((m, i) => {
+                      const own = m.sender === config.name;
+                      const isAI = m.type === "ai";
+                      return (
+                        <div key={i} className={`chat-msg${own ? " own" : ""}`}>
+                          {!own && (
+                            <div
+                              className="chat-av-s"
+                              style={{
+                                background: isAI
+                                  ? "rgba(45,156,219,.2)"
+                                  : "rgba(255,255,255,.08)",
+                                color: isAI
+                                  ? "#7ed3f7"
+                                  : "rgba(255,255,255,.5)",
+                              }}
+                            >
+                              {isAI ? "🤖" : m.sender[0]?.toUpperCase()}
+                            </div>
+                          )}
+                          <div className="chat-bw">
+                            {!own && (
+                              <span className="chat-sender">{m.sender}</span>
+                            )}
+                            <div
+                              className={`chat-bubble ${own ? "b-own" : isAI ? "" : "b-o"}`}
+                              style={
+                                isAI
+                                  ? {
+                                      background: "rgba(45,156,219,.09)",
+                                      border: "1px solid rgba(45,156,219,.15)",
+                                      color: "#d0e8ff",
+                                      borderRadius: "3px 9px 9px 9px",
+                                    }
+                                  : {}
+                              }
+                            >
+                              {m.text}
+                            </div>
+                            <span className="chat-t">{fmt(m.time)}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <div ref={chatEndRef} />
+                  </div>
+                </div>
+                <div className="chat-ia">
+                  <textarea
+                    className="chat-inp"
+                    placeholder="Reply to observers…"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        sendMsg(chatInput);
+                      }
+                    }}
+                    rows={1}
+                  />
+                  <button
+                    className="chat-send"
+                    onClick={() => sendMsg(chatInput)}
+                  >
+                    ➤
+                  </button>
+                </div>
+              </div>
+            )}
+            {panelTab === "ai" && (
               <div className="pscroll">
                 <div className="ai-sum-pad">
-                  <div style={{padding:"8px 10px",borderRadius:9,background:"rgba(0,195,122,.07)",border:"1px solid rgba(0,195,122,.18)",marginBottom:7}}>
-                    <div style={{fontSize:9,fontWeight:800,textTransform:"uppercase",letterSpacing:".07em",color:"rgba(255,255,255,.28)",marginBottom:4}}>Session Status</div>
-                    <div style={{fontSize:12,fontWeight:700,color:"#5ee3b7",display:"flex",alignItems:"center",gap:6}}><div style={{width:6,height:6,borderRadius:"50%",background:"var(--em)",animation:"pulse 1.5s infinite"}}/>{timer} · {observerCount} observer(s)</div>
+                  <div
+                    style={{
+                      padding: "8px 10px",
+                      borderRadius: 9,
+                      background: "rgba(0,195,122,.07)",
+                      border: "1px solid rgba(0,195,122,.18)",
+                      marginBottom: 7,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 9,
+                        fontWeight: 800,
+                        textTransform: "uppercase",
+                        letterSpacing: ".07em",
+                        color: "rgba(255,255,255,.28)",
+                        marginBottom: 4,
+                      }}
+                    >
+                      Session Status
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: "#5ee3b7",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: 6,
+                          height: 6,
+                          borderRadius: "50%",
+                          background: "var(--em)",
+                          animation: "pulse 1.5s infinite",
+                        }}
+                      />
+                      {timer} · {observerCount} observer(s)
+                    </div>
                   </div>
-                  <div className="ai-sum-card"><div className="ai-sum-lbl">🤖 AI Moderator Notes</div>{aiSummaryLines.map((l,i)=>(
-                    <div key={i} className="ai-sum-val" style={{marginBottom:4,paddingBottom:4,borderBottom:i<aiSummaryLines.length-1?"1px solid rgba(255,255,255,.06)":"none",fontSize:11}}>{i===aiSummaryLines.length-1&&<span><span className="ai-sum-dot"/>Latest: </span>}{l}</div>
-                  ))}</div>
+                  <div className="ai-sum-card">
+                    <div className="ai-sum-lbl">🤖 AI Moderator Notes</div>
+                    {aiSummaryLines.map((l, i) => (
+                      <div
+                        key={i}
+                        className="ai-sum-val"
+                        style={{
+                          marginBottom: 4,
+                          paddingBottom: 4,
+                          borderBottom:
+                            i < aiSummaryLines.length - 1
+                              ? "1px solid rgba(255,255,255,.06)"
+                              : "none",
+                          fontSize: 11,
+                        }}
+                      >
+                        {i === aiSummaryLines.length - 1 && (
+                          <span>
+                            <span className="ai-sum-dot" />
+                            Latest:{" "}
+                          </span>
+                        )}
+                        {l}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
           </div>
         )}
       </div>
-      {showAnalysis&&<AnalysisModal topic={config.topic} subject={config.subject} unit={config.unit} timer={timer} exchanges={exchangeCount} presenterName={config.name} onClose={()=>setShowAnalysis(false)}/>}
-      {showEnd&&(
-        <div className="overlay" onClick={()=>setShowEnd(false)}>
-          <div className="modal" style={{maxWidth:340,background:"#0c1422",border:"1px solid rgba(255,255,255,.1)"}} onClick={e=>e.stopPropagation()}>
-            <div style={{background:"linear-gradient(135deg,#060e1c,#08180e)",padding:"22px 18px",textAlign:"center"}}>
-              <div style={{fontSize:40,marginBottom:9}}>🏁</div>
-              <div style={{fontSize:14,fontWeight:800,color:"#fff",marginBottom:4}}>End seminar session?</div>
-              <div style={{fontSize:12,color:"rgba(255,255,255,.38)",lineHeight:1.7}}>Duration: <strong style={{color:"#5ee3b7"}}>{timer}</strong><br/>{observerCount} observer(s) · {exchangeCount} exchanges</div>
+      {showAnalysis && (
+        <AnalysisModal
+          topic={config.topic}
+          subject={config.subject}
+          unit={config.unit}
+          timer={timer}
+          exchanges={exchangeCount}
+          presenterName={config.name}
+          onClose={() => setShowAnalysis(false)}
+        />
+      )}
+      {showEnd && (
+        <div className="overlay" onClick={() => setShowEnd(false)}>
+          <div
+            className="modal"
+            style={{
+              maxWidth: 340,
+              background: "#0c1422",
+              border: "1px solid rgba(255,255,255,.1)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                background: "linear-gradient(135deg,#060e1c,#08180e)",
+                padding: "22px 18px",
+                textAlign: "center",
+              }}
+            >
+              <div style={{ fontSize: 40, marginBottom: 9 }}>🏁</div>
+              <div
+                style={{
+                  fontSize: 14,
+                  fontWeight: 800,
+                  color: "#fff",
+                  marginBottom: 4,
+                }}
+              >
+                End seminar session?
+              </div>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "rgba(255,255,255,.38)",
+                  lineHeight: 1.7,
+                }}
+              >
+                Duration: <strong style={{ color: "#5ee3b7" }}>{timer}</strong>
+                <br />
+                {observerCount} observer(s) · {exchangeCount} exchanges
+              </div>
             </div>
-            <div style={{padding:"11px 13px",margin:"10px 18px",borderRadius:10,background:"rgba(0,195,122,.06)",border:"1px solid rgba(0,195,122,.16)",fontSize:11.5,fontWeight:600,color:"var(--em)",textAlign:"center"}}>
+            <div
+              style={{
+                padding: "11px 13px",
+                margin: "10px 18px",
+                borderRadius: 10,
+                background: "rgba(0,195,122,.06)",
+                border: "1px solid rgba(0,195,122,.16)",
+                fontSize: 11.5,
+                fontWeight: 600,
+                color: "var(--em)",
+                textAlign: "center",
+              }}
+            >
               🤖 AI will generate your full performance report after ending.
             </div>
-            <div className="mf" style={{borderColor:"rgba(255,255,255,.08)"}}>
-              <button className="btn-s" style={{background:"rgba(255,255,255,.04)",borderColor:"rgba(255,255,255,.1)",color:"rgba(255,255,255,.5)"}} onClick={()=>setShowEnd(false)}>Keep Going</button>
-              <button className="btn-d" onClick={handleEnd}>End &amp; Generate Report</button>
+            <div
+              className="mf"
+              style={{ borderColor: "rgba(255,255,255,.08)" }}
+            >
+              <button
+                className="btn-s"
+                style={{
+                  background: "rgba(255,255,255,.04)",
+                  borderColor: "rgba(255,255,255,.1)",
+                  color: "rgba(255,255,255,.5)",
+                }}
+                onClick={() => setShowEnd(false)}
+              >
+                Keep Going
+              </button>
+              <button className="btn-d" onClick={handleEnd}>
+                End &amp; Generate Report
+              </button>
             </div>
           </div>
         </div>
@@ -5627,36 +11103,45 @@ function PresenterRoomLegacy({config,onEnd}) {
 }
 
 // ─── OBSERVER ROOM ────────────────────────────────────────────────────────────
-function PresenterRoom({config,onEnd}) {
-  const timer=useTimer(true);
-  const [panelTab,setPanelTab]=useState("chat");
-  const [chatInput,setChatInput]=useState("");
-  const [micOn,setMicOn]=useState(Boolean(config.micOn));
-  const [screenSharing,setScreenSharing]=useState(false);
-  const [showEnd,setShowEnd]=useState(false);
-  const [showBackConfirm,setShowBackConfirm]=useState(false);
-  const [showReactions,setShowReactions]=useState(false);
-  const [reaction,setReaction]=useState(null);
-  const [liveSession,setLiveSession]=useState(config.liveSession || null);
-  const [messages,setMessages]=useState([]);
-  const [roomLoading,setRoomLoading]=useState(true);
-  const [roomError,setRoomError]=useState("");
-  const [starting,setStarting]=useState(false);
-  const [ending,setEnding]=useState(false);
-  const [sessionFile,setSessionFile]=useState(config.setupFile || null);
-  const [sendingChat,setSendingChat]=useState(false);
-  const [isHostSpeaking,setIsHostSpeaking]=useState(false);
-  const aiVoice=useAIVoice();
-  const {show:toast$,node:toastNode}=useToast();
-  const presenterColor=avColor(config.name);
-  const chatEndRef=useRef(null);
-  const pollingRef=useRef(null);
-  const completionHandledRef=useRef(false);
-  const greetingPlayedRef=useRef(false);
-  const latestConfigRef=useRef(config);
-  const latestTimerRef=useRef(timer);
-  const latestOnEndRef=useRef(onEnd);
-  const currentCandidateId = String(config.candidateId || config.liveSession?.hostCandidateId || "");
+function PresenterRoom({ config, onEnd }) {
+  const timer = useTimer(true);
+  const [panelTab, setPanelTab] = useState("chat");
+  const [chatInput, setChatInput] = useState("");
+  const [micOn, setMicOn] = useState(Boolean(config.micOn));
+  const [screenSharing, setScreenSharing] = useState(false);
+  const [showEnd, setShowEnd] = useState(false);
+  const [showBackConfirm, setShowBackConfirm] = useState(false);
+  const [showReactions, setShowReactions] = useState(false);
+  const [reaction, setReaction] = useState(null);
+  const [liveSession, setLiveSession] = useState(config.liveSession || null);
+  const [messages, setMessages] = useState([]);
+  const [roomLoading, setRoomLoading] = useState(true);
+  const [roomError, setRoomError] = useState("");
+  const [starting, setStarting] = useState(false);
+  const [ending, setEnding] = useState(false);
+  const [sessionFile, setSessionFile] = useState(config.setupFile || null);
+  const [sendingChat, setSendingChat] = useState(false);
+  const [isHostSpeaking, setIsHostSpeaking] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteMode, setInviteMode] = useState("group");
+  const [selectedInviteGroup, setSelectedInviteGroup] = useState("");
+  const [inviteGroups, setInviteGroups] = useState([]);
+  const [inviteEmails, setInviteEmails] = useState("");
+  const [inviteSending, setInviteSending] = useState(false);
+  const [visibilitySaving, setVisibilitySaving] = useState(false);
+  const aiVoice = useAIVoice();
+  const { show: toast$, node: toastNode } = useToast();
+  const presenterColor = avColor(config.name);
+  const chatEndRef = useRef(null);
+  const pollingRef = useRef(null);
+  const completionHandledRef = useRef(false);
+  const greetingPlayedRef = useRef(false);
+  const latestConfigRef = useRef(config);
+  const latestTimerRef = useRef(timer);
+  const latestOnEndRef = useRef(onEnd);
+  const currentCandidateId = String(
+    config.candidateId || config.liveSession?.hostCandidateId || "",
+  );
   // LiveKit — host mic stream (mic was granted in MicPreviewModal, stored in config.stream)
   const livekitHost = useDebateLivekit({
     sessionId: config.sessionId || "",
@@ -5668,48 +11153,104 @@ function PresenterRoom({config,onEnd}) {
     startMuted: false,
   });
   const isGuestUser = Boolean(config.isGuest);
-const participantList = (liveSession?.participants || []).filter((item)=>!item.isAi);
+  const participantList = (liveSession?.participants || []).filter(
+    (item) => !item.isAi,
+  );
   const STALE_THRESHOLD_MS = 35000;
-  const observerList = participantList.filter((item)=>{
-    if(item.isHost) return false;
-    if(!item.lastSeenAt) return true; // keep if never recorded (legacy)
-    return Date.now() - new Date(item.lastSeenAt).getTime() < STALE_THRESHOLD_MS;
+  const observerList = participantList.filter((item) => {
+    if (item.isHost) return false;
+    if (!item.lastSeenAt) return true; // keep if never recorded (legacy)
+    return (
+      Date.now() - new Date(item.lastSeenAt).getTime() < STALE_THRESHOLD_MS
+    );
   });
   const pendingRequests = getPendingSeminarSpeakRequests(liveSession);
   const pendingRequest = pendingRequests[0] || null;
   const roomStatus = liveSession?.status || "waiting";
   const observerCount = observerList.length;
+  const currentVisibility = liveSession?.visibility || config.visibility || "public";
+  const waitingInviteUrl = liveSession?.shareLink || config.roomLink || genRoomLink(config.sessionId);
+  const waitingInvitePayload = {
+    sessionType: "seminar" as const,
+    sessionId: config.sessionId,
+    topic: config.topic,
+    title: config.topic,
+    createdBy: config.name,
+    joinUrl: waitingInviteUrl,
+    status: roomStatus,
+    participantCount: observerCount + 1,
+    source: "seminar_waiting_room",
+    visibility: currentVisibility,
+  };
 
-  useEffect(()=>{chatEndRef.current?.scrollIntoView({behavior:"smooth"});},[messages]);
-  useEffect(()=>{setMessages(mapSeminarTurnsToMessages(liveSession, config.name));},[liveSession, config.name]);
-  useEffect(()=>{latestConfigRef.current = config;},[config]);
-  useEffect(()=>{latestTimerRef.current = timer;},[timer]);
-  useEffect(()=>{latestOnEndRef.current = onEnd;},[onEnd]);
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+  useEffect(() => {
+    setMessages(mapSeminarTurnsToMessages(liveSession, config.name));
+  }, [liveSession, config.name]);
+  useEffect(() => {
+    latestConfigRef.current = config;
+  }, [config]);
+  useEffect(() => {
+    latestTimerRef.current = timer;
+  }, [timer]);
+  useEffect(() => {
+    latestOnEndRef.current = onEnd;
+  }, [onEnd]);
   useEffect(() => {
     if (livekitHost.connected) {
       console.log("[PresenterRoom] ✅ LiveKit connected successfully");
     } else if (livekitHost.error) {
-      console.error("[PresenterRoom] ❌ LiveKit connection error:", livekitHost.error);
+      console.error(
+        "[PresenterRoom] ❌ LiveKit connection error:",
+        livekitHost.error,
+      );
     } else {
       console.log("[PresenterRoom] 🔄 LiveKit connecting...");
     }
   }, [livekitHost.connected, livekitHost.error]);
-  useEffect(()=>{
-    setScreenSharing(Boolean(livekitHost.isScreenSharing && livekitHost.localScreenShareTrack));
-  },[livekitHost.isScreenSharing, livekitHost.localScreenShareTrack]);
-  useEffect(()=>{
-    if(!livekitHost.localScreenShareTrack) return undefined;
-    return attachLiveKitScreenTrack(livekitHost.localScreenShareTrack, "presenter-local");
-  },[livekitHost.localScreenShareTrack]);
-  const syncSession = useCallback(async (showFullLoader = false)=>{
+  useEffect(() => {
+    let ignore = false;
+    async function loadInviteGroups() {
+      try {
+        const groups = await listGroupChats();
+        if (!ignore) setInviteGroups(groups || []);
+      } catch (error) {
+        if (!ignore) setInviteGroups([]);
+      }
+    }
+    if (inviteOpen && inviteMode === "group") {
+      loadInviteGroups();
+    }
+    return () => {
+      ignore = true;
+    };
+  }, [inviteOpen, inviteMode]);
+  useEffect(() => {
+    setScreenSharing(
+      Boolean(livekitHost.isScreenSharing && livekitHost.localScreenShareTrack),
+    );
+  }, [livekitHost.isScreenSharing, livekitHost.localScreenShareTrack]);
+  useEffect(() => {
+    if (!livekitHost.localScreenShareTrack) return undefined;
+    return attachLiveKitScreenTrack(
+      livekitHost.localScreenShareTrack,
+      "presenter-local",
+    );
+  }, [livekitHost.localScreenShareTrack]);
+  const syncSession = useCallback(async (showFullLoader = false) => {
     const latestConfig = latestConfigRef.current;
-    if(!latestConfig?.sessionId) return;
-    if(showFullLoader) setRoomLoading(true);
-    try{
+    if (!latestConfig?.sessionId) return;
+    if (showFullLoader) setRoomLoading(true);
+    try {
       const session = await getSeminarSession(latestConfig.sessionId);
       setLiveSession(session || null);
       setRoomError("");
-      if((session?.status === "completed" || session?.status === "ending") && !completionHandledRef.current){
+      if (
+        (session?.status === "completed" || session?.status === "ending") &&
+        !completionHandledRef.current
+      ) {
         completionHandledRef.current = true;
         latestOnEndRef.current({
           sessionId: latestConfig.sessionId,
@@ -5717,70 +11258,141 @@ const participantList = (liveSession?.participants || []).filter((item)=>!item.i
           topic: session?.topic || latestConfig.topic,
           subject: session?.subject || latestConfig.subject,
           unit: session?.unit || latestConfig.unit,
-          exchanges: mapSeminarTurnsToMessages(session, latestConfig.name).length,
+          exchanges: mapSeminarTurnsToMessages(session, latestConfig.name)
+            .length,
           presenterName: latestConfig.name,
           modeType: "session",
           isHost: true,
-          feedback: session?.feedback || session?.results || session?.metadata || null,
+          feedback:
+            session?.feedback || session?.results || session?.metadata || null,
           scores: session?.scores || session?.results?.scores || null,
           canViewFeedback: true,
         });
       }
-    } catch(error){
+    } catch (error) {
       setRoomError(error?.message || "Unable to refresh the seminar room.");
     } finally {
-      if(showFullLoader) setRoomLoading(false);
+      if (showFullLoader) setRoomLoading(false);
     }
-  },[]);
+  }, []);
 
-useEffect(()=>{
+  useEffect(() => {
     syncSession(true);
-    pollingRef.current = setInterval(()=>{ syncSession(false).catch(()=>null); },3000);
-    return ()=>{
-      if(pollingRef.current) clearInterval(pollingRef.current);
+    pollingRef.current = setInterval(() => {
+      syncSession(false).catch(() => null);
+    }, 3000);
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current);
       aiVoice.cancel();
-      if(config.stream&&typeof config.stream.getTracks==="function") config.stream.getTracks().forEach((track)=>track.stop());
+      if (config.stream && typeof config.stream.getTracks === "function")
+        config.stream.getTracks().forEach((track) => track.stop());
     };
-  },[]);
+  }, []);
 
   // Ensure mic track is enabled when session goes live, disabled in waiting room
-  useEffect(()=>{
+  useEffect(() => {
     const s = config.stream;
-    if(!s || typeof s.getAudioTracks !== "function") return;
+    if (!s || typeof s.getAudioTracks !== "function") return;
     const isLive = roomStatus === "active";
-    s.getAudioTracks().forEach(t => { t.enabled = isLive && micOn; });
-  },[roomStatus, micOn, config.stream]);
+    s.getAudioTracks().forEach((t) => {
+      t.enabled = isLive && micOn;
+    });
+  }, [roomStatus, micOn, config.stream]);
 
-  useEffect(()=>{
+  async function sendWaitingInvite() {
+    if (!config.sessionId || !waitingInviteUrl) {
+      toast$("Seminar link is not ready yet.", "warn");
+      return;
+    }
+    setInviteSending(true);
+    try {
+      if (inviteMode === "group") {
+        if (!selectedInviteGroup) {
+          toast$("Choose a group to send this seminar card.", "warn");
+          return;
+        }
+        await shareSessionToGroup({
+          ...waitingInvitePayload,
+          sessionType: "seminar",
+          groupId: selectedInviteGroup,
+        });
+        toast$("Seminar card sent to group.", "success");
+      } else {
+        const emails = inviteEmails
+          .split(/[\s,;]+/)
+          .map((item) => item.trim())
+          .filter(Boolean);
+        if (!emails.length) {
+          toast$("Enter at least one email address.", "warn");
+          return;
+        }
+        await sendSessionInviteEmails({
+          ...waitingInvitePayload,
+          sessionType: "seminar",
+          emails,
+        });
+        toast$("Seminar invite email sent.", "success");
+        setInviteEmails("");
+      }
+      setInviteOpen(false);
+    } catch (error) {
+      toast$(
+        getErrorMessage(error, "Unable to send seminar invite."),
+        "error",
+      );
+    } finally {
+      setInviteSending(false);
+    }
+  }
+
+  async function handleVisibilityChange(nextVisibility) {
+    if (!config.sessionId || nextVisibility === currentVisibility) return;
+    setVisibilitySaving(true);
+    try {
+      const updated = await updateSeminarVisibility(config.sessionId, nextVisibility);
+      setLiveSession(updated || null);
+      toast$("Seminar visibility updated.", "success");
+    } catch (error) {
+      toast$(
+        getErrorMessage(error, "Unable to update seminar visibility."),
+        "error",
+      );
+    } finally {
+      setVisibilitySaving(false);
+    }
+  }
+
+  useEffect(() => {
     window.history.pushState({ seminarRoom: true }, "", window.location.href);
-    const handlePopState = ()=>{
+    const handlePopState = () => {
       window.history.pushState({ seminarRoom: true }, "", window.location.href);
       setShowBackConfirm(true);
     };
     window.addEventListener("popstate", handlePopState);
-    return ()=>window.removeEventListener("popstate", handlePopState);
-  },[]);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
-  useEffect(()=>{
-    if(roomStatus === "active" && !greetingPlayedRef.current){
+  useEffect(() => {
+    if (roomStatus === "active" && !greetingPlayedRef.current) {
       const greeting =
         liveSession?.metadata?.ai_greeting ||
         liveSession?.metadata?.message ||
-        liveSession?.turns?.find((turn)=>turn.turnType === "greeting")?.message ||
+        liveSession?.turns?.find((turn) => turn.turnType === "greeting")
+          ?.message ||
         "";
-      if(greeting){
+      if (greeting) {
         greetingPlayedRef.current = true;
         aiVoice.speak(greeting);
       }
     }
-  },[aiVoice.speak, liveSession, roomStatus]);
+  }, [aiVoice.speak, liveSession, roomStatus]);
 
-  async function handleStartRoom(){
+  async function handleStartRoom() {
     setStarting(true);
-    try{
+    try {
       // If host uploaded a file, send it to the seminar start endpoint first
-      if(sessionFile){
-        try{
+      if (sessionFile) {
+        try {
           const formData = new FormData();
           formData.append("file", sessionFile);
           formData.append("sessionId", config.sessionId);
@@ -5789,12 +11401,18 @@ useEffect(()=>{
           formData.append("topic", config.topic);
           formData.append("unitId", config.unitId || "");
           formData.append("mode", "main");
-          await fetch(`${process.env.REACT_APP_API_BASE_URL}/api/v1/seminar/start`, {
-            method: "POST",
-            body: formData,
-          });
-        } catch(fileError){
-          console.warn("[PresenterRoom] file upload during startRoom failed", fileError);
+          await fetch(
+            `${process.env.REACT_APP_API_BASE_URL}/api/v1/seminar/start`,
+            {
+              method: "POST",
+              body: formData,
+            },
+          );
+        } catch (fileError) {
+          console.warn(
+            "[PresenterRoom] file upload during startRoom failed",
+            fileError,
+          );
         }
       }
       const response = await startSeminarRoom({
@@ -5805,33 +11423,42 @@ useEffect(()=>{
         topic: config.topic,
       });
       setLiveSession(response?.liveSession || response || null);
-      toast$("Seminar session started.","success");
-    } catch(error){
-      toast$(getErrorMessage(error, "Unable to start this seminar session."),"error");
+      toast$("Seminar session started.", "success");
+    } catch (error) {
+      toast$(
+        getErrorMessage(error, "Unable to start this seminar session."),
+        "error",
+      );
     } finally {
       setStarting(false);
     }
   }
 
-  async function handleRemoveParticipant(participant){
-    try{
+  async function handleRemoveParticipant(participant) {
+    try {
       const updated = await removeSeminarParticipant({
         sessionId: config.sessionId,
         candidateId: currentCandidateId,
         participantId: participant.id,
       });
       setLiveSession(updated || null);
-      toast$(`${participant.name} was removed from the waiting room.`,"success");
-    } catch(error){
-      toast$(getErrorMessage(error, "Unable to remove this participant."),"error");
+      toast$(
+        `${participant.name} was removed from the waiting room.`,
+        "success",
+      );
+    } catch (error) {
+      toast$(
+        getErrorMessage(error, "Unable to remove this participant."),
+        "error",
+      );
     }
   }
 
-  async function sendMsg(text){
+  async function sendMsg(text) {
     const trimmed = text.trim();
-    if(!trimmed || sendingChat) return;
+    if (!trimmed || sendingChat) return;
     setSendingChat(true);
-    try{
+    try {
       const session = await sendSeminarMessage({
         sessionId: config.sessionId,
         candidateId: currentCandidateId,
@@ -5841,31 +11468,34 @@ useEffect(()=>{
       });
       setChatInput("");
       setLiveSession(session || null);
-    } catch(error){
-      toast$(getErrorMessage(error, "Unable to send this seminar message."),"error");
+    } catch (error) {
+      toast$(
+        getErrorMessage(error, "Unable to send this seminar message."),
+        "error",
+      );
     } finally {
       setSendingChat(false);
     }
   }
 
-  async function toggleScreen(){
-    if(screenSharing){
+  async function toggleScreen() {
+    if (screenSharing) {
       await livekitHost.stopScreenShare();
-      toast$("Screen sharing stopped.","warn");
+      toast$("Screen sharing stopped.", "warn");
       return;
     }
     const started = await livekitHost.startScreenShare();
-    if(started){
-      toast$("Screen sharing started.","success");
-    } else if(livekitHost.error){
-      toast$(livekitHost.error,"error");
+    if (started) {
+      toast$("Screen sharing started.", "success");
+    } else if (livekitHost.error) {
+      toast$(livekitHost.error, "error");
     } else {
-      toast$("Screen share cancelled.","warn");
+      toast$("Screen share cancelled.", "warn");
     }
   }
 
-  async function handleSpeakApproval(request, approved){
-    try{
+  async function handleSpeakApproval(request, approved) {
+    try {
       const session = await respondSeminarSpeakingAccess({
         sessionId: config.sessionId,
         candidateId: currentCandidateId,
@@ -5875,16 +11505,26 @@ useEffect(()=>{
         approved,
       });
       setLiveSession(session || null);
-      toast$(approved ? `${request.participantName} can now speak.` : `${request.participantName} was asked to stay muted.`, approved ? "success" : "warn");
-    } catch(error){
-      toast$(getErrorMessage(error, "Unable to update speaking access."),"error");
+      toast$(
+        approved
+          ? `${request.participantName} can now speak.`
+          : `${request.participantName} was asked to stay muted.`,
+        approved ? "success" : "warn",
+      );
+    } catch (error) {
+      toast$(
+        getErrorMessage(error, "Unable to update speaking access."),
+        "error",
+      );
     }
   }
 
-  async function handleEndRoom(){
+  async function handleEndRoom() {
     setEnding(true);
-    try{
-      const response = await endSeminarWithTranscript({ sessionId: config.sessionId });
+    try {
+      const response = await endSeminarWithTranscript({
+        sessionId: config.sessionId,
+      });
       completionHandledRef.current = true;
       onEnd({
         sessionId: config.sessionId,
@@ -5896,27 +11536,56 @@ useEffect(()=>{
         presenterName: config.name,
         modeType: "session",
         isHost: true,
-        feedback: response?.feedback || response?.data?.feedback || response?.results || response?.data?.results || response?.message || response || null,
-        scores: response?.scores || response?.data?.scores || response?.results?.scores || response?.data?.results?.scores || response?.liveSession?.scores || null,
+        feedback:
+          response?.feedback ||
+          response?.data?.feedback ||
+          response?.results ||
+          response?.data?.results ||
+          response?.message ||
+          response ||
+          null,
+        scores:
+          response?.scores ||
+          response?.data?.scores ||
+          response?.results?.scores ||
+          response?.data?.results?.scores ||
+          response?.liveSession?.scores ||
+          null,
         canViewFeedback: true,
       });
-    } catch(error){
-      toast$(getErrorMessage(error, "Unable to end this seminar session."),"error");
+    } catch (error) {
+      toast$(
+        getErrorMessage(error, "Unable to end this seminar session."),
+        "error",
+      );
     } finally {
       setEnding(false);
     }
   }
 
-  async function handleBackExit(){
+  async function handleBackExit() {
     await handleEndRoom();
     navigateAfterSeminarExit(isGuestUser);
   }
 
-  function sendReaction(emoji){setShowReactions(false);const k=Date.now();setReaction({emoji,k});setTimeout(()=>setReaction(null),2400);}
-  const fmt=(d)=>new Date(d).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+  function sendReaction(emoji) {
+    setShowReactions(false);
+    const k = Date.now();
+    setReaction({ emoji, k });
+    setTimeout(() => setReaction(null), 2400);
+  }
+  const fmt = (d) =>
+    new Date(d).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
-  if(roomLoading){
-    return <div className="room-page"><PageLoader label="Loading seminar room…" sublabel="Syncing live seminar state" /></div>;
+  if (roomLoading) {
+    return (
+      <div className="room-page">
+        <PageLoader
+          label="Loading seminar room…"
+          sublabel="Syncing live seminar state"
+        />
+      </div>
+    );
   }
 
   const waitingRoom = roomStatus !== "active";
@@ -5924,128 +11593,721 @@ useEffect(()=>{
   return (
     <div className="room-page">
       <div className="room-bar">
-        <div className="room-logo"><div className="room-logo-ic">🎓</div>SeminarArena</div>
-        <div className="room-divider"/>
-        <div className="room-topic"><strong>{config.subject&&`${config.subject}${config.unit?` · ${config.unit}`:""} · `}</strong>{config.topic}</div>
-        <div className="r-pill rp-timer">{timer}</div>
-        <div className="r-pill rp-ai" style={!waitingRoom ? {background:"rgba(229,62,62,.12)",borderColor:"rgba(229,62,62,.3)",color:"#fca5a5"} : {}}>
-          {!waitingRoom && <span style={{display:"inline-block",width:7,height:7,borderRadius:"50%",background:"#ef4444",marginRight:5,animation:"pulse 1s infinite",verticalAlign:"middle"}}/>}
-          {waitingRoom ? "🪪 Waiting Room" : "● LIVE"}
-         
+        <div className="room-logo">
+          <div className="room-logo-ic">
+            <SeminarIcon name="graduation" />
+          </div>
+          SeminarArena
         </div>
-        <div className="r-pill" style={{background:"rgba(0,195,122,.1)",borderColor:"rgba(0,195,122,.2)",color:"#5ee3b7"}}>👁 {observerCount}</div>
-        <button className="rbar-end-btn" onClick={()=>setShowBackConfirm(true)}>← Back</button>
+        <div className="room-divider" />
+        <div className="room-topic">
+          <strong>
+            {config.subject &&
+              `${config.subject}${config.unit ? ` · ${config.unit}` : ""} · `}
+          </strong>
+          {config.topic}
+        </div>
+        <div className="r-pill rp-timer">{timer}</div>
+        <div
+          className="r-pill rp-ai"
+          style={
+            !waitingRoom
+              ? {
+                  background: "rgba(229,62,62,.12)",
+                  borderColor: "rgba(229,62,62,.3)",
+                  color: "#fca5a5",
+                }
+              : {}
+          }
+        >
+          {!waitingRoom && (
+            <span
+              style={{
+                display: "inline-block",
+                width: 7,
+                height: 7,
+                borderRadius: "50%",
+                background: "#ef4444",
+                marginRight: 5,
+                animation: "pulse 1s infinite",
+                verticalAlign: "middle",
+              }}
+            />
+          )}
+          {waitingRoom ? "🪪 Waiting Room" : "● LIVE"}
+        </div>
+        <div
+          className="r-pill"
+          style={{
+            background: "rgba(0,195,122,.1)",
+            borderColor: "rgba(0,195,122,.2)",
+            color: "#5ee3b7",
+          }}
+        >
+          👁 {observerCount}
+        </div>
+        <button
+          className="rbar-end-btn"
+          onClick={() => setShowBackConfirm(true)}
+        >
+          ← Back
+        </button>
       </div>
-      {roomError&&<div style={{margin:"12px 16px 0",padding:"10px 12px",borderRadius:10,background:"rgba(229,62,62,.08)",border:"1px solid rgba(229,62,62,.2)",color:"#fecaca",fontSize:12.5}}>{roomError}</div>}
+      {roomError && (
+        <div
+          style={{
+            margin: "12px 16px 0",
+            padding: "10px 12px",
+            borderRadius: 10,
+            background: "rgba(229,62,62,.08)",
+            border: "1px solid rgba(229,62,62,.2)",
+            color: "#fecaca",
+            fontSize: 12.5,
+          }}
+        >
+          {roomError}
+        </div>
+      )}
 
       {waitingRoom ? (
-        <div style={{flex:1,display:"grid",gridTemplateColumns:"1.1fr .9fr",gap:18,padding:18,minHeight:0}}>
-          <div style={{background:"#08111d",border:"1px solid rgba(255,255,255,.08)",borderRadius:20,padding:24,display:"flex",flexDirection:"column",justifyContent:"space-between"}}>
+        <div
+          style={{
+            flex: 1,
+            display: "grid",
+            gridTemplateColumns: "1.1fr .9fr",
+            gap: 18,
+            padding: 18,
+            minHeight: 0,
+          }}
+        >
+          <div
+            style={{
+              background: "#08111d",
+              border: "1px solid rgba(255,255,255,.08)",
+              borderRadius: 20,
+              padding: 24,
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "space-between",
+            }}
+          >
             <div>
-              <div style={{fontSize:12,fontWeight:800,color:"#5ee3b7",textTransform:"uppercase",letterSpacing:".08em",marginBottom:10}}>Presenter Waiting Room</div>
-              <div style={{fontSize:28,fontWeight:900,color:"#fff",lineHeight:1.1,marginBottom:10}}>Your observers are gathering.</div>
-              <div style={{fontSize:13,color:"rgba(255,255,255,.55)",lineHeight:1.8,maxWidth:520}}>Share the room link, wait for participants to join, then start the seminar when you are ready.</div>
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 800,
+                  color: "#5ee3b7",
+                  textTransform: "uppercase",
+                  letterSpacing: ".08em",
+                  marginBottom: 10,
+                }}
+              >
+                Presenter Waiting Room
+              </div>
+              <div
+                style={{
+                  fontSize: 28,
+                  fontWeight: 900,
+                  color: "#fff",
+                  lineHeight: 1.1,
+                  marginBottom: 10,
+                }}
+              >
+                Your observers are gathering.
+              </div>
+              <div
+                style={{
+                  fontSize: 13,
+                  color: "rgba(255,255,255,.55)",
+                  lineHeight: 1.8,
+                  maxWidth: 520,
+                }}
+              >
+                Share the room link, wait for participants to join, then start
+                the seminar when you are ready.
+              </div>
+              <div style={{ marginTop: 16, maxWidth: 340 }}>
+                <label
+                  style={{
+                    display: "block",
+                    fontSize: 10,
+                    fontWeight: 800,
+                    color: "rgba(255,255,255,.42)",
+                    textTransform: "uppercase",
+                    marginBottom: 6,
+                  }}
+                >
+                  Session Visibility
+                </label>
+                <select
+                  className="finput"
+                  value={currentVisibility}
+                  disabled={visibilitySaving}
+                  onChange={(event) => handleVisibilityChange(event.target.value)}
+                  style={{
+                    background: "rgba(255,255,255,.05)",
+                    borderColor: "rgba(255,255,255,.12)",
+                    color: "#fff",
+                  }}
+                >
+                  <option value="public">Access to all</option>
+                  <option value="school">Only to school</option>
+                  <option value="class">Only to class</option>
+                  <option value="private">Private - invited only</option>
+                </select>
+              </div>
             </div>
-            <div className="link-box" style={{marginTop:18,background:"rgba(255,255,255,.03)",borderColor:"rgba(16,185,129,.2)"}}>
-              <div className="link-box-title">🔗 Room Link</div>
-              <div className="link-row"><span className="link-val">{liveSession?.shareLink || config.roomLink}</span><button className="copy-btn" onClick={()=>navigator.clipboard.writeText(liveSession?.shareLink || config.roomLink)}>Copy</button></div>
+            <div
+              className="link-box"
+              style={{
+                marginTop: 18,
+                background: "rgba(255,255,255,.03)",
+                borderColor: "rgba(16,185,129,.2)",
+              }}
+            >
+              <div className="link-box-title">Invite Observers</div>
+              <div style={{ fontSize: 12, color: "rgba(255,255,255,.58)", lineHeight: 1.6, marginBottom: 10 }}>
+                Send this seminar as a group card or email invite. The link is generated for the invite card.
+              </div>
+              <button className="btn-p" style={{ width: "auto" }} onClick={() => setInviteOpen(true)}>
+                Invite
+              </button>
             </div>
           </div>
-          <div style={{background:"var(--surf)",border:"1px solid var(--bdr)",borderRadius:20,padding:18,display:"flex",flexDirection:"column",minHeight:0}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-              <div><div style={{fontSize:14,fontWeight:800,color:"var(--t1)"}}>Joined Users</div><div style={{fontSize:11.5,color:"var(--t2)"}}>{observerList.length} participant(s) waiting</div></div>
-              <button className="btn-s" onClick={()=>syncSession(false)}>Refresh</button>
-            </div>
-            <div style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column",gap:8}}>
-              {observerList.length === 0 ? (
-                <div style={{padding:"14px",borderRadius:14,background:"var(--surf2)",border:"1px solid var(--bdr)",fontSize:12,color:"var(--t2)"}}>No users have joined yet.</div>
-              ) : observerList.map((participant)=>(
-                <div key={participant.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:12,background:"var(--surf2)",border:"1px solid var(--bdr)"}}>
-                  <div className="invite-av" style={{background:avColor(participant.name)}}>{avInit(participant.name)}</div>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:12.5,fontWeight:700,color:"var(--t1)"}}>{participant.name}</div>
-                    <div style={{fontSize:10.5,color:"var(--t2)"}}>Waiting to join seminar</div>
-                  </div>
-                  <button className="btn-d" style={{padding:"7px 10px"}} onClick={()=>handleRemoveParticipant(participant)}>Remove</button>
+          <div
+            style={{
+              background: "var(--surf)",
+              border: "1px solid var(--bdr)",
+              borderRadius: 20,
+              padding: 18,
+              display: "flex",
+              flexDirection: "column",
+              minHeight: 0,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 12,
+              }}
+            >
+              <div>
+                <div
+                  style={{ fontSize: 14, fontWeight: 800, color: "var(--t1)" }}
+                >
+                  Joined Users
                 </div>
-              ))}
+                <div style={{ fontSize: 11.5, color: "var(--t2)" }}>
+                  {observerList.length} participant(s) waiting
+                </div>
+              </div>
+              <button className="btn-s" onClick={() => syncSession(false)}>
+                Refresh
+              </button>
             </div>
-          <div style={{marginTop:14,padding:"12px",borderRadius:12,background:"rgba(255,255,255,.03)",border:"1px dashed rgba(255,255,255,.15)",marginBottom:10}}>
-              <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.5)",marginBottom:7}}>📎 Upload Presentation File (PDF/PPT) — Optional</div>
-              <input type="file" accept=".pdf,.ppt,.pptx" onChange={e=>{if(e.target.files&&e.target.files[0])setSessionFile(e.target.files[0]);}} style={{width:"100%",padding:"8px",background:"rgba(255,255,255,.04)",border:"1px dashed rgba(255,255,255,.18)",borderRadius:"8px",color:"white",fontSize:12}}/>
-              {sessionFile&&<div style={{marginTop:6,fontSize:11,color:"#5ee3b7"}}>✅ {sessionFile.name}</div>}
+            <div
+              style={{
+                flex: 1,
+                overflowY: "auto",
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+              }}
+            >
+              {observerList.length === 0 ? (
+                <div
+                  style={{
+                    padding: "14px",
+                    borderRadius: 14,
+                    background: "var(--surf2)",
+                    border: "1px solid var(--bdr)",
+                    fontSize: 12,
+                    color: "var(--t2)",
+                  }}
+                >
+                  No users have joined yet.
+                </div>
+              ) : (
+                observerList.map((participant) => (
+                  <div
+                    key={participant.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "10px 12px",
+                      borderRadius: 12,
+                      background: "var(--surf2)",
+                      border: "1px solid var(--bdr)",
+                    }}
+                  >
+                    <div
+                      className="invite-av"
+                      style={{ background: avColor(participant.name) }}
+                    >
+                      {avInit(participant.name)}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontSize: 12.5,
+                          fontWeight: 700,
+                          color: "var(--t1)",
+                        }}
+                      >
+                        {participant.name}
+                      </div>
+                      <div style={{ fontSize: 10.5, color: "var(--t2)" }}>
+                        Waiting to join seminar
+                      </div>
+                    </div>
+                    <button
+                      className="btn-d"
+                      style={{ padding: "7px 10px" }}
+                      onClick={() => handleRemoveParticipant(participant)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))
+              )}
             </div>
-            <button className="btn-p" style={{marginTop:4}} onClick={handleStartRoom} disabled={starting || !config.unitId}>{starting ? "Starting Seminar..." : "Start Seminar"}</button>
+            <div
+              style={{
+                marginTop: 14,
+                padding: "12px",
+                borderRadius: 12,
+                background: "rgba(255,255,255,.03)",
+                border: "1px dashed rgba(255,255,255,.15)",
+                marginBottom: 10,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: "rgba(255,255,255,.5)",
+                  marginBottom: 7,
+                }}
+              >
+                📎 Upload Presentation File (PDF/PPT) — Optional
+              </div>
+              <input
+                type="file"
+                accept=".pdf,.ppt,.pptx"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0])
+                    setSessionFile(e.target.files[0]);
+                }}
+                style={{
+                  width: "100%",
+                  padding: "8px",
+                  background: "rgba(255,255,255,.04)",
+                  border: "1px dashed rgba(255,255,255,.18)",
+                  borderRadius: "8px",
+                  color: "white",
+                  fontSize: 12,
+                }}
+              />
+              {sessionFile && (
+                <div style={{ marginTop: 6, fontSize: 11, color: "#5ee3b7" }}>
+                  ✅ {sessionFile.name}
+                </div>
+              )}
+            </div>
+            <button
+              className="btn-p"
+              style={{ marginTop: 4 }}
+              onClick={handleStartRoom}
+              disabled={starting || !config.unitId}
+            >
+              {starting ? "Starting Seminar..." : "Start Seminar"}
+            </button>
           </div>
         </div>
       ) : (
         <div className="room-body">
           <div className="grid-area">
             <div className="ss-area">
-              {!screenSharing?(<div className="ss-placeholder"><div style={{fontSize:52,opacity:.18}}>🖥️</div><div style={{fontSize:13,fontWeight:700}}>Screen not shared yet</div><button style={{marginTop:14,padding:"9px 20px",borderRadius:10,background:"var(--grad)",border:"none",cursor:"pointer",fontSize:13,fontWeight:700,color:"#fff"}} onClick={toggleScreen}>🖥️ Start Screen Share</button></div>)
-                :(<><div className="ss-active-label"><div className="ss-active-dot"/>Screen Sharing Active · {observerCount} watching</div><div style={{fontSize:11,color:"rgba(255,255,255,.3)"}}>Your screen is shared</div></>)}
-              {reaction&&<div key={reaction.k} style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",fontSize:46,animation:"rPop 2s forwards",pointerEvents:"none",zIndex:5}}>{reaction.emoji}</div>}
+              {!screenSharing ? (
+                <div className="ss-placeholder">
+                  <div style={{ fontSize: 52, opacity: 0.18 }}>🖥️</div>
+                  <div style={{ fontSize: 13, fontWeight: 700 }}>
+                    Screen not shared yet
+                  </div>
+                  <button
+                    style={{
+                      marginTop: 14,
+                      padding: "9px 20px",
+                      borderRadius: 10,
+                      background: "var(--grad)",
+                      border: "none",
+                      cursor: "pointer",
+                      fontSize: 13,
+                      fontWeight: 700,
+                      color: "#fff",
+                    }}
+                    onClick={toggleScreen}
+                  >
+                    🖥️ Start Screen Share
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="ss-active-label">
+                    <div className="ss-active-dot" />
+                    Screen Sharing Active · {observerCount} watching
+                  </div>
+                  <div style={{ fontSize: 11, color: "rgba(255,255,255,.3)" }}>
+                    Your screen is shared
+                  </div>
+                </>
+              )}
+              {reaction && (
+                <div
+                  key={reaction.k}
+                  style={{
+                    position: "absolute",
+                    top: "50%",
+                    left: "50%",
+                    transform: "translate(-50%,-50%)",
+                    fontSize: 46,
+                    animation: "rPop 2s forwards",
+                    pointerEvents: "none",
+                    zIndex: 5,
+                  }}
+                >
+                  {reaction.emoji}
+                </div>
+              )}
             </div>
             <div className="presenter-strip">
-              <div className="strip-tile" style={{border:`1.5px solid ${presenterColor}44`}}>
-                <div className="strip-av" style={{background:presenterColor+"22",color:presenterColor}}>{avInit(config.name)}</div>
-                {isHostSpeaking&&<div style={{position:"absolute",top:5,right:5}}><SoundAnalyser active color="#5ee3b7" bars={4} size={16}/></div>}
-                <div className="strip-ov"><span className="strip-name">{config.name}</span><span style={{fontSize:9}}>{micOn?"🎤":"🔇"}</span></div>
-                <div style={{position:"absolute",top:5,left:5,fontSize:9,fontWeight:800,padding:"1px 5px",borderRadius:4,background:"rgba(0,195,122,.85)",color:"#000"}}>HOST</div>
+              <div
+                className="strip-tile"
+                style={{ border: `1.5px solid ${presenterColor}44` }}
+              >
+                <div
+                  className="strip-av"
+                  style={{
+                    background: presenterColor + "22",
+                    color: presenterColor,
+                  }}
+                >
+                  {avInit(config.name)}
+                </div>
+                {isHostSpeaking && (
+                  <div style={{ position: "absolute", top: 5, right: 5 }}>
+                    <SoundAnalyser active color="#5ee3b7" bars={4} size={16} />
+                  </div>
+                )}
+                <div className="strip-ov">
+                  <span className="strip-name">{config.name}</span>
+                  <span style={{ fontSize: 9 }}>{micOn ? "🎤" : "🔇"}</span>
+                </div>
+                <div
+                  style={{
+                    position: "absolute",
+                    top: 5,
+                    left: 5,
+                    fontSize: 9,
+                    fontWeight: 800,
+                    padding: "1px 5px",
+                    borderRadius: 4,
+                    background: "rgba(0,195,122,.85)",
+                    color: "#000",
+                  }}
+                >
+                  HOST
+                </div>
               </div>
-              <div className="strip-tile" style={{border:"1.5px solid rgba(45,156,219,.3)"}}>
-                <div style={{fontSize:24}}>🤖</div>
-                {aiVoice.isSpeaking&&<div style={{position:"absolute",top:5,right:5}}><SoundAnalyser active color="#7ed3f7" bars={4} size={16}/></div>}
-                <div className="strip-ov"><span className="strip-name">AI Moderator</span></div>
+              <div
+                className="strip-tile"
+                style={{ border: "1.5px solid rgba(45,156,219,.3)" }}
+              >
+                <div style={{ fontSize: 24 }}>🤖</div>
+                {aiVoice.isSpeaking && (
+                  <div style={{ position: "absolute", top: 5, right: 5 }}>
+                    <SoundAnalyser active color="#7ed3f7" bars={4} size={16} />
+                  </div>
+                )}
+                <div className="strip-ov">
+                  <span className="strip-name">AI Moderator</span>
+                </div>
               </div>
-              <div className="strip-tile"><div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}><div style={{fontSize:20}}>👁️</div><div style={{fontSize:16,fontWeight:900,color:"rgba(255,255,255,.6)"}}>{observerCount}</div></div><div className="strip-ov"><span className="strip-name">Participants</span></div></div>
+              <div className="strip-tile">
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: 4,
+                  }}
+                >
+                  <div style={{ fontSize: 20 }}>👁️</div>
+                  <div
+                    style={{
+                      fontSize: 16,
+                      fontWeight: 900,
+                      color: "rgba(255,255,255,.6)",
+                    }}
+                  >
+                    {observerCount}
+                  </div>
+                </div>
+                <div className="strip-ov">
+                  <span className="strip-name">Participants</span>
+                </div>
+              </div>
             </div>
             <div className="ctrl-bar">
               <div className="cg">
-                <button className={`cbtn ${micOn?"on":"off"}`} onMouseDown={()=>setIsHostSpeaking(true)} onMouseUp={()=>setIsHostSpeaking(false)} onMouseLeave={()=>setIsHostSpeaking(false)} onClick={()=>{
-                  const next = !micOn;
-                  setMicOn(next);
-                  // Enable/disable the actual audio track on the stream
-                  const s = config.stream;
-                  if(s && typeof s.getAudioTracks === "function"){
-                    s.getAudioTracks().forEach(t => { t.enabled = next; });
-                  }
-                  if(next){ livekitHost?.unmuteLocalAudio?.(); } else { livekitHost?.muteLocalAudio?.(); }
-                }}><span className="cbtn-ic">{micOn?"🎤":"🔇"}</span><span>{micOn?"Mute":"Unmute"}</span></button>
-                <button className={`cbtn${screenSharing?" hi":""}`} onClick={toggleScreen}><span className="cbtn-ic">🖥</span><span>{screenSharing?"Stop":"Share"}</span></button>
-                <div style={{position:"relative"}}><button className={`cbtn${showReactions?" hi":""}`} onClick={()=>setShowReactions((value)=>!value)}><span className="cbtn-ic">😊</span><span>React</span></button>{showReactions&&<div className="react-pop">{REACTIONS.map((item)=><button key={item} className="react-em" onClick={()=>sendReaction(item)}>{item}</button>)}</div>}</div>
+                <button
+                  className={`cbtn ${micOn ? "on" : "off"}`}
+                  onMouseDown={() => setIsHostSpeaking(true)}
+                  onMouseUp={() => setIsHostSpeaking(false)}
+                  onMouseLeave={() => setIsHostSpeaking(false)}
+                  onClick={() => {
+                    const next = !micOn;
+                    setMicOn(next);
+                    // Enable/disable the actual audio track on the stream
+                    const s = config.stream;
+                    if (s && typeof s.getAudioTracks === "function") {
+                      s.getAudioTracks().forEach((t) => {
+                        t.enabled = next;
+                      });
+                    }
+                    if (next) {
+                      livekitHost?.unmuteLocalAudio?.();
+                    } else {
+                      livekitHost?.muteLocalAudio?.();
+                    }
+                  }}
+                >
+                  <span className="cbtn-ic">{micOn ? "🎤" : "🔇"}</span>
+                  <span>{micOn ? "Mute" : "Unmute"}</span>
+                </button>
+                <button
+                  className={`cbtn${screenSharing ? " hi" : ""}`}
+                  onClick={toggleScreen}
+                >
+                  <span className="cbtn-ic">🖥</span>
+                  <span>{screenSharing ? "Stop" : "Share"}</span>
+                </button>
+                <div style={{ position: "relative" }}>
+                  <button
+                    className={`cbtn${showReactions ? " hi" : ""}`}
+                    onClick={() => setShowReactions((value) => !value)}
+                  >
+                    <span className="cbtn-ic">😊</span>
+                    <span>React</span>
+                  </button>
+                  {showReactions && (
+                    <div className="react-pop">
+                      {REACTIONS.map((item) => (
+                        <button
+                          key={item}
+                          className="react-em"
+                          onClick={() => sendReaction(item)}
+                        >
+                          {item}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="cg">
-                <button className={`cbtn${panelTab==="chat"?" hi":""}`} onClick={()=>setPanelTab("chat")}><span className="cbtn-ic">💬</span><span>Chat</span></button>
-                <button className={`cbtn${panelTab==="people"?" hi":""}`} onClick={()=>setPanelTab("people")}><span className="cbtn-ic">👥</span><span>People</span></button>
-                <button className="end-room-btn-sm" onClick={()=>setShowEnd(true)}>End Session</button>
+                <button
+                  className={`cbtn${panelTab === "chat" ? " hi" : ""}`}
+                  onClick={() => setPanelTab("chat")}
+                >
+                  <span className="cbtn-ic">💬</span>
+                  <span>Chat</span>
+                </button>
+                <button
+                  className={`cbtn${panelTab === "people" ? " hi" : ""}`}
+                  onClick={() => setPanelTab("people")}
+                >
+                  <span className="cbtn-ic">👥</span>
+                  <span>People</span>
+                </button>
+                <button
+                  className="end-room-btn-sm"
+                  onClick={() => setShowEnd(true)}
+                >
+                  End Session
+                </button>
               </div>
             </div>
           </div>
-          <div className="side-panel" style={{width:320,minWidth:320}}>
+          <div className="side-panel" style={{ width: 320, minWidth: 320 }}>
             <div className="panel-tabs">
-              {[{id:"chat",ic:"💬",lbl:"Chat"},{id:"people",ic:"👥",lbl:"People"}].map((tab)=><button key={tab.id} className={`ptab${panelTab===tab.id?" active":""}`} onClick={()=>setPanelTab(tab.id)}><span style={{fontSize:12}}>{tab.ic}</span><span>{tab.lbl}</span></button>)}
+              {[
+                { id: "chat", ic: "💬", lbl: "Chat" },
+                { id: "people", ic: "👥", lbl: "People" },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  className={`ptab${panelTab === tab.id ? " active" : ""}`}
+                  onClick={() => setPanelTab(tab.id)}
+                >
+                  <span style={{ display: "inline-flex" }}>
+                    <SeminarIcon name={tab.ic} size={12} />
+                  </span>
+                  <span>{tab.lbl}</span>
+                </button>
+              ))}
             </div>
-            {panelTab==="chat"&&(
-              <div style={{display:"flex",flexDirection:"column",height:"100%",minHeight:0}}>
-                <div className="pscroll" style={{flex:1}}>
+            {panelTab === "chat" && (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  height: "100%",
+                  minHeight: 0,
+                }}
+              >
+                <div className="pscroll" style={{ flex: 1 }}>
                   <div className="chat-msgs">
-                    {messages.length===0&&<div className="chat-empty">No chat messages yet.<br/>Participant questions will appear here.</div>}
-                    {messages.map((m)=>{const own=m.sender===config.name;const isAI=m.type==="ai";return(<div key={m.id} className={`chat-msg${own?" own":""}`}>{!own&&<div className="chat-av-s" style={{background:isAI?"rgba(45,156,219,.2)":"rgba(255,255,255,.08)",color:isAI?"#7ed3f7":"rgba(255,255,255,.5)"}}>{isAI?"🤖":m.sender[0]?.toUpperCase()}</div>}<div className="chat-bw">{!own&&<span className="chat-sender">{m.sender}</span>}<div className={`chat-bubble ${own?"b-own":isAI?"":"b-o"}`} style={isAI?{background:"rgba(45,156,219,.09)",border:"1px solid rgba(45,156,219,.15)",color:"#d0e8ff",borderRadius:"3px 9px 9px 9px"}:{}}>{m.text}</div><span className="chat-t">{fmt(m.time)}</span></div></div>);})}
-                    <div ref={chatEndRef}/>
+                    {messages.length === 0 && (
+                      <div className="chat-empty">
+                        No chat messages yet.
+                        <br />
+                        Participant questions will appear here.
+                      </div>
+                    )}
+                    {messages.map((m) => {
+                      const own = m.sender === config.name;
+                      const isAI = m.type === "ai";
+                      return (
+                        <div
+                          key={m.id}
+                          className={`chat-msg${own ? " own" : ""}`}
+                        >
+                          {!own && (
+                            <div
+                              className="chat-av-s"
+                              style={{
+                                background: isAI
+                                  ? "rgba(45,156,219,.2)"
+                                  : "rgba(255,255,255,.08)",
+                                color: isAI
+                                  ? "#7ed3f7"
+                                  : "rgba(255,255,255,.5)",
+                              }}
+                            >
+                              {isAI ? "🤖" : m.sender[0]?.toUpperCase()}
+                            </div>
+                          )}
+                          <div className="chat-bw">
+                            {!own && (
+                              <span className="chat-sender">{m.sender}</span>
+                            )}
+                            <div
+                              className={`chat-bubble ${own ? "b-own" : isAI ? "" : "b-o"}`}
+                              style={
+                                isAI
+                                  ? {
+                                      background: "rgba(45,156,219,.09)",
+                                      border: "1px solid rgba(45,156,219,.15)",
+                                      color: "#d0e8ff",
+                                      borderRadius: "3px 9px 9px 9px",
+                                    }
+                                  : {}
+                              }
+                            >
+                              {m.text}
+                            </div>
+                            <span className="chat-t">{fmt(m.time)}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <div ref={chatEndRef} />
                   </div>
                 </div>
                 <div className="chat-ia">
-                  <textarea className="chat-inp" placeholder="Reply to participants…" value={chatInput} onChange={(event)=>setChatInput(event.target.value)} onKeyDown={(event)=>{if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();sendMsg(chatInput);}}} rows={1}/>
-                  <button className="chat-send" onClick={()=>sendMsg(chatInput)} disabled={sendingChat}>➤</button>
+                  <textarea
+                    className="chat-inp"
+                    placeholder="Reply to participants…"
+                    value={chatInput}
+                    onChange={(event) => setChatInput(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault();
+                        sendMsg(chatInput);
+                      }
+                    }}
+                    rows={1}
+                  />
+                  <button
+                    className="chat-send"
+                    onClick={() => sendMsg(chatInput)}
+                    disabled={sendingChat}
+                  >
+                    ➤
+                  </button>
                 </div>
               </div>
             )}
-            {panelTab==="people"&&(
+            {panelTab === "people" && (
               <div className="pscroll">
-                <div style={{padding:"7px 10px 2px",fontSize:9,fontWeight:800,textTransform:"uppercase",letterSpacing:".07em",color:"rgba(255,255,255,.2)"}}>Session Users</div>
+                <div
+                  style={{
+                    padding: "7px 10px 2px",
+                    fontSize: 9,
+                    fontWeight: 800,
+                    textTransform: "uppercase",
+                    letterSpacing: ".07em",
+                    color: "rgba(255,255,255,.2)",
+                  }}
+                >
+                  Session Users
+                </div>
                 <div className="p-list">
-                  {[{name:config.name,role:"🎙️ Host",color:presenterColor,speaking:isHostSpeaking},...observerList.map((participant)=>({name:participant.name,role:participant.status==="approved_to_speak"?"🎤 Approved":"👤 Participant",color:avColor(participant.name),speaking:false}))].map((person,index)=><div key={`${person.name}-${index}`} className="p-row"><div className="p-av" style={{background:person.color+"20",color:person.color}}>{avInit(person.name)}</div><div className="p-info"><div className="p-name">{person.name}</div><div className="p-role">{person.role}</div></div>{person.speaking&&<SoundAnalyser active color={person.color} bars={4} size={16}/>}</div>)}
+                  {[
+                    {
+                      name: config.name,
+                      role: "🎙️ Host",
+                      color: presenterColor,
+                      speaking: isHostSpeaking,
+                    },
+                    ...observerList.map((participant) => ({
+                      name: participant.name,
+                      role:
+                        participant.status === "approved_to_speak"
+                          ? "🎤 Approved"
+                          : "👤 Participant",
+                      color: avColor(participant.name),
+                      speaking: false,
+                    })),
+                  ].map((person, index) => (
+                    <div key={`${person.name}-${index}`} className="p-row">
+                      <div
+                        className="p-av"
+                        style={{
+                          background: person.color + "20",
+                          color: person.color,
+                        }}
+                      >
+                        {avInit(person.name)}
+                      </div>
+                      <div className="p-info">
+                        <div className="p-name">{person.name}</div>
+                        <div className="p-role">{person.role}</div>
+                      </div>
+                      {person.speaking && (
+                        <SoundAnalyser
+                          active
+                          color={person.color}
+                          bars={4}
+                          size={16}
+                        />
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
@@ -6054,28 +12316,244 @@ useEffect(()=>{
       )}
       {pendingRequest && !waitingRoom && (
         <div className="overlay">
-          <div className="modal" style={{maxWidth:360}} onClick={(event)=>event.stopPropagation()}>
-            <div className="mh"><div className="mh-title">Speaking Request</div></div>
-            <div className="mb" style={{fontSize:13,color:"var(--t2)",lineHeight:1.8}}><strong style={{color:"var(--t1)"}}>{pendingRequest.participantName}</strong> wants to speak.</div>
-            <div className="mf"><button className="btn-s" onClick={()=>handleSpeakApproval(pendingRequest,false)}>Keep Muted</button><button className="btn-p" style={{width:"auto"}} onClick={()=>handleSpeakApproval(pendingRequest,true)}>Allow</button></div>
+          <div
+            className="modal"
+            style={{ maxWidth: 360 }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mh">
+              <div className="mh-title">Speaking Request</div>
+            </div>
+            <div
+              className="mb"
+              style={{ fontSize: 13, color: "var(--t2)", lineHeight: 1.8 }}
+            >
+              <strong style={{ color: "var(--t1)" }}>
+                {pendingRequest.participantName}
+              </strong>{" "}
+              wants to speak.
+            </div>
+            <div className="mf">
+              <button
+                className="btn-s"
+                onClick={() => handleSpeakApproval(pendingRequest, false)}
+              >
+                Keep Muted
+              </button>
+              <button
+                className="btn-p"
+                style={{ width: "auto" }}
+                onClick={() => handleSpeakApproval(pendingRequest, true)}
+              >
+                Allow
+              </button>
+            </div>
           </div>
         </div>
       )}
-      {showEnd&&(
-        <div className="overlay" onClick={()=>setShowEnd(false)}>
-          <div className="modal" style={{maxWidth:360,background:"#0c1422",border:"1px solid rgba(255,255,255,.1)"}} onClick={(event)=>event.stopPropagation()}>
-            <div style={{background:"linear-gradient(135deg,#060e1c,#08180e)",padding:"22px 18px",textAlign:"center"}}><div style={{fontSize:40,marginBottom:9}}>🏁</div><div style={{fontSize:14,fontWeight:800,color:"#fff",marginBottom:4}}>End seminar session?</div><div style={{fontSize:12,color:"rgba(255,255,255,.38)",lineHeight:1.7}}>Duration: <strong style={{color:"#5ee3b7"}}>{timer}</strong><br/>{observerCount} participant(s)</div></div>
-            <div style={{padding:"11px 13px",margin:"10px 18px",borderRadius:10,background:"rgba(0,195,122,.06)",border:"1px solid rgba(0,195,122,.16)",fontSize:11.5,fontWeight:600,color:"var(--em)",textAlign:"center"}}>Only the host will see AI feedback after this session ends.</div>
-            <div className="mf" style={{borderColor:"rgba(255,255,255,.08)"}}><button className="btn-s" style={{background:"rgba(255,255,255,.04)",borderColor:"rgba(255,255,255,.1)",color:"rgba(255,255,255,.5)"}} onClick={()=>setShowEnd(false)}>Keep Going</button><button className="btn-d" onClick={handleEndRoom} disabled={ending}>{ending ? "Ending..." : "End Seminar"}</button></div>
+      {inviteOpen && (
+        <div className="overlay" onClick={() => setInviteOpen(false)}>
+          <div
+            className="modal"
+            style={{ maxWidth: 430 }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mh">
+              <div className="mh-title">Invite to Seminar</div>
+              <button
+                className="mh-close"
+                onClick={() => setInviteOpen(false)}
+              >
+                x
+              </button>
+            </div>
+            <div
+              className="mb"
+              style={{ display: "flex", flexDirection: "column", gap: 12 }}
+            >
+              <div
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: 12,
+                  background: "rgba(0,195,122,.06)",
+                  border: "1px solid rgba(0,195,122,.16)",
+                  color: "var(--t1)",
+                  fontSize: 12,
+                  lineHeight: 1.6,
+                }}
+              >
+                <strong>{config.topic || "Seminar session"}</strong>
+                <br />
+                Created by {config.name || "Presenter"} · {observerCount} participant(s) waiting
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <button
+                  className="btn-s"
+                  onClick={() => setInviteMode("group")}
+                  style={inviteMode === "group" ? { borderColor: "var(--em)", color: "var(--em)" } : {}}
+                >
+                  Send to group
+                </button>
+                <button
+                  className="btn-s"
+                  onClick={() => setInviteMode("email")}
+                  style={inviteMode === "email" ? { borderColor: "var(--em)", color: "var(--em)" } : {}}
+                >
+                  Send email
+                </button>
+              </div>
+              {inviteMode === "group" ? (
+                <select
+                  className="finput"
+                  value={selectedInviteGroup}
+                  onChange={(event) => setSelectedInviteGroup(event.target.value)}
+                >
+                  <option value="">Select group</option>
+                  {inviteGroups.map((group) => (
+                    <option key={group.id} value={group.id}>
+                      {group.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <textarea
+                  className="finput"
+                  rows={3}
+                  value={inviteEmails}
+                  onChange={(event) => setInviteEmails(event.target.value)}
+                  placeholder="student1@example.com, student2@example.com"
+                />
+              )}
+            </div>
+            <div className="mf">
+              <button className="btn-s" onClick={() => setInviteOpen(false)}>
+                Cancel
+              </button>
+              <button
+                className="btn-p"
+                style={{ width: "auto" }}
+                onClick={sendWaitingInvite}
+                disabled={inviteSending}
+              >
+                {inviteSending ? "Sending..." : "Send"}
+              </button>
+            </div>
           </div>
         </div>
       )}
-      {showBackConfirm&&(
-        <div className="overlay" onClick={()=>setShowBackConfirm(false)}>
-          <div className="modal" style={{maxWidth:340}} onClick={(event)=>event.stopPropagation()}>
-            <div className="mh"><div className="mh-title">Leave Seminar?</div></div>
-            <div className="mb" style={{fontSize:13,color:"var(--t2)",lineHeight:1.8}}>Going back will end the meeting for everyone in this seminar room.</div>
-            <div className="mf"><button className="btn-s" onClick={()=>setShowBackConfirm(false)}>Cancel</button><button className="btn-d" onClick={handleBackExit} disabled={ending}>{ending ? "Leaving..." : "Leave & End"}</button></div>
+      {showEnd && (
+        <div className="overlay" onClick={() => setShowEnd(false)}>
+          <div
+            className="modal"
+            style={{
+              maxWidth: 360,
+              background: "#0c1422",
+              border: "1px solid rgba(255,255,255,.1)",
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div
+              style={{
+                background: "linear-gradient(135deg,#060e1c,#08180e)",
+                padding: "22px 18px",
+                textAlign: "center",
+              }}
+            >
+              <div style={{ fontSize: 40, marginBottom: 9 }}>🏁</div>
+              <div
+                style={{
+                  fontSize: 14,
+                  fontWeight: 800,
+                  color: "#fff",
+                  marginBottom: 4,
+                }}
+              >
+                End seminar session?
+              </div>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "rgba(255,255,255,.38)",
+                  lineHeight: 1.7,
+                }}
+              >
+                Duration: <strong style={{ color: "#5ee3b7" }}>{timer}</strong>
+                <br />
+                {observerCount} participant(s)
+              </div>
+            </div>
+            <div
+              style={{
+                padding: "11px 13px",
+                margin: "10px 18px",
+                borderRadius: 10,
+                background: "rgba(0,195,122,.06)",
+                border: "1px solid rgba(0,195,122,.16)",
+                fontSize: 11.5,
+                fontWeight: 600,
+                color: "var(--em)",
+                textAlign: "center",
+              }}
+            >
+              Only the host will see AI feedback after this session ends.
+            </div>
+            <div
+              className="mf"
+              style={{ borderColor: "rgba(255,255,255,.08)" }}
+            >
+              <button
+                className="btn-s"
+                style={{
+                  background: "rgba(255,255,255,.04)",
+                  borderColor: "rgba(255,255,255,.1)",
+                  color: "rgba(255,255,255,.5)",
+                }}
+                onClick={() => setShowEnd(false)}
+              >
+                Keep Going
+              </button>
+              <button
+                className="btn-d"
+                onClick={handleEndRoom}
+                disabled={ending}
+              >
+                {ending ? "Ending..." : "End Seminar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showBackConfirm && (
+        <div className="overlay" onClick={() => setShowBackConfirm(false)}>
+          <div
+            className="modal"
+            style={{ maxWidth: 340 }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mh">
+              <div className="mh-title">Leave Seminar?</div>
+            </div>
+            <div
+              className="mb"
+              style={{ fontSize: 13, color: "var(--t2)", lineHeight: 1.8 }}
+            >
+              Going back will end the meeting for everyone in this seminar room.
+            </div>
+            <div className="mf">
+              <button
+                className="btn-s"
+                onClick={() => setShowBackConfirm(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn-d"
+                onClick={handleBackExit}
+                disabled={ending}
+              >
+                {ending ? "Leaving..." : "Leave & End"}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -6084,116 +12562,479 @@ useEffect(()=>{
   );
 }
 
-function ObserverRoomLegacy({config,onEnd}) {
-  const timer=useTimer(true);const session=config.joinSession;
-  const [panelTab,setPanelTab]=useState("chat");
-  const [messages,setMessages]=useState([{sender:"AI Moderator",text:`Welcome, ${config.name}! You've joined as an observer for "${session?.title||config.topic||"the seminar"}". Watch, ask questions in chat, or raise your hand.`,type:"ai",time:Date.now()}]);
-  const [chatInput,setChatInput]=useState("");const [micOn,setMicOn]=useState(false);
-  const [handRaised,setHandRaised]=useState(false);const [showEnd,setShowEnd]=useState(false);
-  const [presenterSpeaking,setPresenterSpeaking]=useState(false);const [exchangeCount,setExchangeCount]=useState(0);
-  const [reaction,setReaction]=useState(null);const [showReactions,setShowReactions]=useState(false);
-  const chatEndRef=useRef(null);const aiVoice=useAIVoice();const {show:toast$,node:toastNode}=useToast();
-  const presenterName=session?.presenterName||session?.title?.split(" ")[0]||"Presenter";
-  const presenterColor=avColor(presenterName);
+function ObserverRoomLegacy({ config, onEnd }) {
+  const timer = useTimer(true);
+  const session = config.joinSession;
+  const [panelTab, setPanelTab] = useState("chat");
+  const [messages, setMessages] = useState([
+    {
+      sender: "AI Moderator",
+      text: `Welcome, ${config.name}! You've joined as an observer for "${session?.title || config.topic || "the seminar"}". Watch, ask questions in chat, or raise your hand.`,
+      type: "ai",
+      time: Date.now(),
+    },
+  ]);
+  const [chatInput, setChatInput] = useState("");
+  const [micOn, setMicOn] = useState(false);
+  const [handRaised, setHandRaised] = useState(false);
+  const [showEnd, setShowEnd] = useState(false);
+  const [presenterSpeaking, setPresenterSpeaking] = useState(false);
+  const [exchangeCount, setExchangeCount] = useState(0);
+  const [reaction, setReaction] = useState(null);
+  const [showReactions, setShowReactions] = useState(false);
+  const chatEndRef = useRef(null);
+  const aiVoice = useAIVoice();
+  const { show: toast$, node: toastNode } = useToast();
+  const presenterName =
+    session?.presenterName || session?.title?.split(" ")[0] || "Presenter";
+  const presenterColor = avColor(presenterName);
 
-  useEffect(()=>{chatEndRef.current?.scrollIntoView({behavior:"smooth"});},[messages]);
-  useEffect(()=>{
-    const id=setInterval(()=>{setPresenterSpeaking(v=>!v);if(Math.random()>0.75){const sims=[{sender:"AI Moderator",text:"The presenter is making a strong argument here. Feel free to ask questions.",type:"ai"},{sender:presenterName,text:"Does anyone have questions about this point?",type:"presenter"},{sender:"AI Moderator",text:"Key point: consider the long-term implications of this stance.",type:"ai"}];const m=sims[Math.floor(Math.random()*sims.length)];setMessages(ms=>[...ms,{...m,time:Date.now()}]);}},5000+Math.random()*6000);
-    return()=>{clearInterval(id);aiVoice.cancel();};
-  },[]);
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+  useEffect(() => {
+    const id = setInterval(
+      () => {
+        setPresenterSpeaking((v) => !v);
+        if (Math.random() > 0.75) {
+          const sims = [
+            {
+              sender: "AI Moderator",
+              text: "The presenter is making a strong argument here. Feel free to ask questions.",
+              type: "ai",
+            },
+            {
+              sender: presenterName,
+              text: "Does anyone have questions about this point?",
+              type: "presenter",
+            },
+            {
+              sender: "AI Moderator",
+              text: "Key point: consider the long-term implications of this stance.",
+              type: "ai",
+            },
+          ];
+          const m = sims[Math.floor(Math.random() * sims.length)];
+          setMessages((ms) => [...ms, { ...m, time: Date.now() }]);
+        }
+      },
+      5000 + Math.random() * 6000,
+    );
+    return () => {
+      clearInterval(id);
+      aiVoice.cancel();
+    };
+  }, []);
 
-  function addMsg(sender,text,type){setMessages(ms=>[...ms,{sender,text,type,time:Date.now()}]);setExchangeCount(c=>c+1);}
-  function sendMsg(){if(!chatInput.trim())return;addMsg(config.name,chatInput.trim());setChatInput("");if(Math.random()>0.5){setTimeout(()=>addMsg("AI Moderator","Great question! The presenter will address this shortly.","ai"),1800);}}
-  function toggleMic(){if(!micOn){navigator.mediaDevices.getUserMedia({audio:true}).then(()=>{setMicOn(true);toast$("🎤 Mic active","success");}).catch(()=>toast$("Mic permission denied","error"));}else{setMicOn(false);toast$("🔇 Mic muted","warn");}}
-  function toggleHand(){const n=!handRaised;setHandRaised(n);if(n){addMsg("AI Moderator",`${config.name} has raised their hand. Presenter, please acknowledge.`,"ai");toast$("✋ Hand raised","warn");}else toast$("Hand lowered","info");}
-  function sendReaction(emoji){setShowReactions(false);const k=Date.now();setReaction({emoji,k});setTimeout(()=>setReaction(null),2400);}
-  const fmt=d=>new Date(d).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+  function addMsg(sender, text, type) {
+    setMessages((ms) => [...ms, { sender, text, type, time: Date.now() }]);
+    setExchangeCount((c) => c + 1);
+  }
+  function sendMsg() {
+    if (!chatInput.trim()) return;
+    addMsg(config.name, chatInput.trim());
+    setChatInput("");
+    if (Math.random() > 0.5) {
+      setTimeout(
+        () =>
+          addMsg(
+            "AI Moderator",
+            "Great question! The presenter will address this shortly.",
+            "ai",
+          ),
+        1800,
+      );
+    }
+  }
+  function toggleMic() {
+    if (!micOn) {
+      navigator.mediaDevices
+        .getUserMedia({ audio: true })
+        .then(() => {
+          setMicOn(true);
+          toast$("🎤 Mic active", "success");
+        })
+        .catch(() => toast$("Mic permission denied", "error"));
+    } else {
+      setMicOn(false);
+      toast$("🔇 Mic muted", "warn");
+    }
+  }
+  function toggleHand() {
+    const n = !handRaised;
+    setHandRaised(n);
+    if (n) {
+      addMsg(
+        "AI Moderator",
+        `${config.name} has raised their hand. Presenter, please acknowledge.`,
+        "ai",
+      );
+      toast$("✋ Hand raised", "warn");
+    } else toast$("Hand lowered", "info");
+  }
+  function sendReaction(emoji) {
+    setShowReactions(false);
+    const k = Date.now();
+    setReaction({ emoji, k });
+    setTimeout(() => setReaction(null), 2400);
+  }
+  const fmt = (d) =>
+    new Date(d).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
   return (
     <div className="room-page">
       <div className="room-bar">
-        <div className="room-logo"><div className="room-logo-ic">🎓</div>SeminarArena</div>
-        <div className="room-divider"/>
-        <div className="room-topic"><strong>Observing: </strong>{session?.title||config.topic||"Seminar Session"}</div>
+        <div className="room-logo">
+          <div className="room-logo-ic">
+            <SeminarIcon name="graduation" />
+          </div>
+          SeminarArena
+        </div>
+        <div className="room-divider" />
+        <div className="room-topic">
+          <strong>Observing: </strong>
+          {session?.title || config.topic || "Seminar Session"}
+        </div>
         <div className="r-pill rp-timer">{timer}</div>
         <div className="r-pill rp-ai">👁️ Observer</div>
-        <button className="rbar-end-btn" onClick={()=>setShowEnd(true)}>Leave</button>
+        <button className="rbar-end-btn" onClick={() => setShowEnd(true)}>
+          Leave
+        </button>
       </div>
       <div className="room-body">
         <div className="grid-area">
           <div className="ss-area">
-            <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:10,color:"rgba(255,255,255,.2)",flex:1,width:"100%"}}>
-              <div style={{fontSize:52,opacity:.18}}>🖥️</div>
-              <div style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,.4)"}}>Presenter's Screen</div>
-              <div style={{fontSize:11,textAlign:"center",maxWidth:220,lineHeight:1.6,color:"rgba(255,255,255,.25)"}}>The presenter's screen appears here once they start sharing.</div>
-              {presenterSpeaking&&(<div style={{display:"flex",alignItems:"center",gap:8,padding:"5px 12px",borderRadius:8,background:"rgba(0,195,122,.09)",border:"1px solid rgba(0,195,122,.2)",marginTop:8}}><SoundAnalyser active color="#5ee3b7" bars={6} size={20}/><span style={{fontSize:11,fontWeight:700,color:"#5ee3b7"}}>Presenter speaking…</span></div>)}
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 10,
+                color: "rgba(255,255,255,.2)",
+                flex: 1,
+                width: "100%",
+              }}
+            >
+              <div style={{ fontSize: 52, opacity: 0.18 }}>🖥️</div>
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: "rgba(255,255,255,.4)",
+                }}
+              >
+                Presenter's Screen
+              </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  textAlign: "center",
+                  maxWidth: 220,
+                  lineHeight: 1.6,
+                  color: "rgba(255,255,255,.25)",
+                }}
+              >
+                The presenter's screen appears here once they start sharing.
+              </div>
+              {presenterSpeaking && (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "5px 12px",
+                    borderRadius: 8,
+                    background: "rgba(0,195,122,.09)",
+                    border: "1px solid rgba(0,195,122,.2)",
+                    marginTop: 8,
+                  }}
+                >
+                  <SoundAnalyser active color="#5ee3b7" bars={6} size={20} />
+                  <span
+                    style={{ fontSize: 11, fontWeight: 700, color: "#5ee3b7" }}
+                  >
+                    Presenter speaking…
+                  </span>
+                </div>
+              )}
             </div>
-            {reaction&&<div key={reaction.k} style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",fontSize:44,animation:"rPop 2s forwards",pointerEvents:"none",zIndex:5}}>{reaction.emoji}</div>}
+            {reaction && (
+              <div
+                key={reaction.k}
+                style={{
+                  position: "absolute",
+                  top: "50%",
+                  left: "50%",
+                  transform: "translate(-50%,-50%)",
+                  fontSize: 44,
+                  animation: "rPop 2s forwards",
+                  pointerEvents: "none",
+                  zIndex: 5,
+                }}
+              >
+                {reaction.emoji}
+              </div>
+            )}
           </div>
           <div className="presenter-strip">
-            <div className="strip-tile" style={{border:`1.5px solid ${presenterColor}44`}}>
-              <div className="strip-av" style={{background:presenterColor+"22",color:presenterColor}}>{avInit(presenterName)}</div>
-              {presenterSpeaking&&<div style={{position:"absolute",top:5,right:5}}><SoundAnalyser active color="#5ee3b7" bars={4} size={16}/></div>}
-              <div className="strip-ov"><span className="strip-name">{presenterName}</span></div>
+            <div
+              className="strip-tile"
+              style={{ border: `1.5px solid ${presenterColor}44` }}
+            >
+              <div
+                className="strip-av"
+                style={{
+                  background: presenterColor + "22",
+                  color: presenterColor,
+                }}
+              >
+                {avInit(presenterName)}
+              </div>
+              {presenterSpeaking && (
+                <div style={{ position: "absolute", top: 5, right: 5 }}>
+                  <SoundAnalyser active color="#5ee3b7" bars={4} size={16} />
+                </div>
+              )}
+              <div className="strip-ov">
+                <span className="strip-name">{presenterName}</span>
+              </div>
             </div>
-            <div className="strip-tile" style={{border:"1.5px solid rgba(45,156,219,.3)"}}>
-              <div style={{fontSize:22}}>🤖</div>
-              <div className="strip-ov"><span className="strip-name">AI Mod</span></div>
+            <div
+              className="strip-tile"
+              style={{ border: "1.5px solid rgba(45,156,219,.3)" }}
+            >
+              <div style={{ fontSize: 22 }}>🤖</div>
+              <div className="strip-ov">
+                <span className="strip-name">AI Mod</span>
+              </div>
             </div>
           </div>
           <div className="ctrl-bar">
             <div className="cg">
-              <button className={`cbtn ${micOn?"on":"off"}`} onClick={toggleMic}><span className="cbtn-ic">{micOn?"🎤":"🔇"}</span><span>{micOn?"Mute":"Speak"}</span></button>
-              <button className={`cbtn${handRaised?" am":""}`} onClick={toggleHand}><span className="cbtn-ic">✋</span><span>{handRaised?"Lower":"Raise"}</span></button>
-              <div style={{position:"relative"}}>
-                <button className={`cbtn${showReactions?" hi":""}`} onClick={()=>setShowReactions(r=>!r)}><span className="cbtn-ic">😊</span><span>React</span></button>
-                {showReactions&&<div className="react-pop">{REACTIONS.map(r=><button key={r} className="react-em" onClick={()=>sendReaction(r)}>{r}</button>)}</div>}
+              <button
+                className={`cbtn ${micOn ? "on" : "off"}`}
+                onClick={toggleMic}
+              >
+                <span className="cbtn-ic">{micOn ? "🎤" : "🔇"}</span>
+                <span>{micOn ? "Mute" : "Speak"}</span>
+              </button>
+              <button
+                className={`cbtn${handRaised ? " am" : ""}`}
+                onClick={toggleHand}
+              >
+                <span className="cbtn-ic">✋</span>
+                <span>{handRaised ? "Lower" : "Raise"}</span>
+              </button>
+              <div style={{ position: "relative" }}>
+                <button
+                  className={`cbtn${showReactions ? " hi" : ""}`}
+                  onClick={() => setShowReactions((r) => !r)}
+                >
+                  <span className="cbtn-ic">😊</span>
+                  <span>React</span>
+                </button>
+                {showReactions && (
+                  <div className="react-pop">
+                    {REACTIONS.map((r) => (
+                      <button
+                        key={r}
+                        className="react-em"
+                        onClick={() => sendReaction(r)}
+                      >
+                        {r}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
             <div className="cg">
-              <button className={`cbtn${panelTab==="chat"?" hi":""}`} onClick={()=>setPanelTab("chat")}><span className="cbtn-ic">💬</span><span>Chat</span></button>
-              <button className={`cbtn${panelTab==="people"?" hi":""}`} onClick={()=>setPanelTab("people")}><span className="cbtn-ic">👥</span><span>People</span></button>
-              <button className="end-room-btn-sm" style={{background:"rgba(229,62,62,.8)"}} onClick={()=>setShowEnd(true)}>Leave</button>
+              <button
+                className={`cbtn${panelTab === "chat" ? " hi" : ""}`}
+                onClick={() => setPanelTab("chat")}
+              >
+                <span className="cbtn-ic">💬</span>
+                <span>Chat</span>
+              </button>
+              <button
+                className={`cbtn${panelTab === "people" ? " hi" : ""}`}
+                onClick={() => setPanelTab("people")}
+              >
+                <span className="cbtn-ic">👥</span>
+                <span>People</span>
+              </button>
+              <button
+                className="end-room-btn-sm"
+                style={{ background: "rgba(229,62,62,.8)" }}
+                onClick={() => setShowEnd(true)}
+              >
+                Leave
+              </button>
             </div>
           </div>
         </div>
-        <div className="side-panel" style={{width:280,minWidth:280}}>
+        <div className="side-panel" style={{ width: 280, minWidth: 280 }}>
           <div className="panel-tabs">
-            {[{id:"chat",ic:"💬",lbl:"Chat"},{id:"people",ic:"👥",lbl:"People"}].map(t=>(
-              <button key={t.id} className={`ptab${panelTab===t.id?" active":""}`} onClick={()=>setPanelTab(t.id)}><span style={{fontSize:12}}>{t.ic}</span><span>{t.lbl}</span></button>
+            {[
+              { id: "chat", ic: "💬", lbl: "Chat" },
+              { id: "people", ic: "👥", lbl: "People" },
+            ].map((t) => (
+              <button
+                key={t.id}
+                className={`ptab${panelTab === t.id ? " active" : ""}`}
+                onClick={() => setPanelTab(t.id)}
+              >
+                <span style={{ display: "inline-flex" }}>
+                  <SeminarIcon name={t.ic} size={12} />
+                </span>
+                <span>{t.lbl}</span>
+              </button>
             ))}
           </div>
-          {panelTab==="chat"&&(
-            <div style={{display:"flex",flexDirection:"column",height:"100%",minHeight:0}}>
-              <div className="pscroll" style={{flex:1}}>
+          {panelTab === "chat" && (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                height: "100%",
+                minHeight: 0,
+              }}
+            >
+              <div className="pscroll" style={{ flex: 1 }}>
                 <div className="chat-msgs">
-                  {messages.map((m,i)=>{const own=m.sender===config.name;const isAI=m.type==="ai";return(<div key={i} className={`chat-msg${own?" own":""}`}>
-                    {!own&&<div className="chat-av-s" style={{background:isAI?"rgba(45,156,219,.2)":"rgba(255,255,255,.08)",color:isAI?"#7ed3f7":"rgba(255,255,255,.5)"}}>{isAI?"🤖":m.sender[0]?.toUpperCase()}</div>}
-                    <div className="chat-bw">
-                      {!own&&<span className="chat-sender">{m.sender}</span>}
-                      <div className={`chat-bubble ${own?"b-own":""}`} style={isAI?{background:"rgba(45,156,219,.09)",border:"1px solid rgba(45,156,219,.15)",color:"#d0e8ff",borderRadius:"3px 9px 9px 9px"}:!own?{background:"rgba(255,255,255,.07)",color:"#e8ecf2",border:"1px solid rgba(255,255,255,.07)",borderRadius:"3px 9px 9px 9px"}:{}}>{m.text}</div>
-                      <span className="chat-t">{fmt(m.time)}</span>
-                    </div>
-                  </div>);})}
-                  <div ref={chatEndRef}/>
+                  {messages.map((m, i) => {
+                    const own = m.sender === config.name;
+                    const isAI = m.type === "ai";
+                    return (
+                      <div key={i} className={`chat-msg${own ? " own" : ""}`}>
+                        {!own && (
+                          <div
+                            className="chat-av-s"
+                            style={{
+                              background: isAI
+                                ? "rgba(45,156,219,.2)"
+                                : "rgba(255,255,255,.08)",
+                              color: isAI ? "#7ed3f7" : "rgba(255,255,255,.5)",
+                            }}
+                          >
+                            {isAI ? "🤖" : m.sender[0]?.toUpperCase()}
+                          </div>
+                        )}
+                        <div className="chat-bw">
+                          {!own && (
+                            <span className="chat-sender">{m.sender}</span>
+                          )}
+                          <div
+                            className={`chat-bubble ${own ? "b-own" : ""}`}
+                            style={
+                              isAI
+                                ? {
+                                    background: "rgba(45,156,219,.09)",
+                                    border: "1px solid rgba(45,156,219,.15)",
+                                    color: "#d0e8ff",
+                                    borderRadius: "3px 9px 9px 9px",
+                                  }
+                                : !own
+                                  ? {
+                                      background: "rgba(255,255,255,.07)",
+                                      color: "#e8ecf2",
+                                      border: "1px solid rgba(255,255,255,.07)",
+                                      borderRadius: "3px 9px 9px 9px",
+                                    }
+                                  : {}
+                            }
+                          >
+                            {m.text}
+                          </div>
+                          <span className="chat-t">{fmt(m.time)}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div ref={chatEndRef} />
                 </div>
               </div>
               <div className="chat-ia">
-                <textarea className="chat-inp" placeholder="Ask a question…" value={chatInput} onChange={e=>setChatInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMsg();}}} rows={1}/>
-                <button className="chat-send" onClick={sendMsg}>➤</button>
+                <textarea
+                  className="chat-inp"
+                  placeholder="Ask a question…"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      sendMsg();
+                    }
+                  }}
+                  rows={1}
+                />
+                <button className="chat-send" onClick={sendMsg}>
+                  ➤
+                </button>
               </div>
             </div>
           )}
-          {panelTab==="people"&&(
+          {panelTab === "people" && (
             <div className="pscroll">
-              <div style={{padding:"7px 10px 2px",fontSize:9,fontWeight:800,textTransform:"uppercase",letterSpacing:".07em",color:"rgba(255,255,255,.2)"}}>In this session</div>
+              <div
+                style={{
+                  padding: "7px 10px 2px",
+                  fontSize: 9,
+                  fontWeight: 800,
+                  textTransform: "uppercase",
+                  letterSpacing: ".07em",
+                  color: "rgba(255,255,255,.2)",
+                }}
+              >
+                In this session
+              </div>
               <div className="p-list">
-                {[{name:presenterName,role:"🎙️ Presenter",color:presenterColor,speaking:presenterSpeaking},{name:"AI Moderator",role:"🤖 AI Moderator",color:"#2d9cdb",speaking:false},{name:config.name,role:"👁️ Observer (You)",color:avColor(config.name),speaking:micOn}].map((p,i)=>(
+                {[
+                  {
+                    name: presenterName,
+                    role: "🎙️ Presenter",
+                    color: presenterColor,
+                    speaking: presenterSpeaking,
+                  },
+                  {
+                    name: "AI Moderator",
+                    role: "🤖 AI Moderator",
+                    color: "#2d9cdb",
+                    speaking: false,
+                  },
+                  {
+                    name: config.name,
+                    role: "👁️ Observer (You)",
+                    color: avColor(config.name),
+                    speaking: micOn,
+                  },
+                ].map((p, i) => (
                   <div key={i} className="p-row">
-                    <div className="p-av" style={{background:p.color+"20",color:p.color}}>{p.name==="AI Moderator"?"🤖":avInit(p.name)}</div>
-                    <div className="p-info"><div className="p-name">{p.name}</div><div className="p-role">{p.role}{p.speaking?" 🔊":""}</div></div>
-                    {p.speaking&&<SoundAnalyser active color={p.color} bars={4} size={16}/>}
-                    {handRaised&&p.name===config.name&&<span style={{fontSize:11}}>✋</span>}
+                    <div
+                      className="p-av"
+                      style={{ background: p.color + "20", color: p.color }}
+                    >
+                      {p.name === "AI Moderator" ? "🤖" : avInit(p.name)}
+                    </div>
+                    <div className="p-info">
+                      <div className="p-name">{p.name}</div>
+                      <div className="p-role">
+                        {p.role}
+                        {p.speaking ? " 🔊" : ""}
+                      </div>
+                    </div>
+                    {p.speaking && (
+                      <SoundAnalyser
+                        active
+                        color={p.color}
+                        bars={4}
+                        size={16}
+                      />
+                    )}
+                    {handRaised && p.name === config.name && (
+                      <span style={{ fontSize: 11 }}>✋</span>
+                    )}
                   </div>
                 ))}
               </div>
@@ -6201,13 +13042,65 @@ function ObserverRoomLegacy({config,onEnd}) {
           )}
         </div>
       </div>
-      {showEnd&&(
-        <div className="overlay" onClick={()=>setShowEnd(false)}>
-          <div className="modal" style={{maxWidth:320,background:"#0c1422",border:"1px solid rgba(255,255,255,.1)"}} onClick={e=>e.stopPropagation()}>
-            <div style={{padding:"22px 18px",textAlign:"center"}}><div style={{fontSize:38,marginBottom:8}}>👋</div><div style={{fontSize:13.5,fontWeight:800,color:"#fff",marginBottom:4}}>Leave seminar?</div><div style={{fontSize:11.5,color:"rgba(255,255,255,.38)"}}>You've been observing for {timer}</div></div>
-            <div className="mf" style={{borderColor:"rgba(255,255,255,.08)"}}>
-              <button className="btn-s" style={{background:"rgba(255,255,255,.04)",borderColor:"rgba(255,255,255,.1)",color:"rgba(255,255,255,.5)"}} onClick={()=>setShowEnd(false)}>Stay</button>
-              <button className="btn-d" onClick={()=>onEnd({timer,topic:session?.title||config.topic,subject:session?.subject||"",unit:session?.unit||"",participants:0,exchanges:exchangeCount,presenterName,modeType:"observer"})}>Leave Session</button>
+      {showEnd && (
+        <div className="overlay" onClick={() => setShowEnd(false)}>
+          <div
+            className="modal"
+            style={{
+              maxWidth: 320,
+              background: "#0c1422",
+              border: "1px solid rgba(255,255,255,.1)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ padding: "22px 18px", textAlign: "center" }}>
+              <div style={{ fontSize: 38, marginBottom: 8 }}>👋</div>
+              <div
+                style={{
+                  fontSize: 13.5,
+                  fontWeight: 800,
+                  color: "#fff",
+                  marginBottom: 4,
+                }}
+              >
+                Leave seminar?
+              </div>
+              <div style={{ fontSize: 11.5, color: "rgba(255,255,255,.38)" }}>
+                You've been observing for {timer}
+              </div>
+            </div>
+            <div
+              className="mf"
+              style={{ borderColor: "rgba(255,255,255,.08)" }}
+            >
+              <button
+                className="btn-s"
+                style={{
+                  background: "rgba(255,255,255,.04)",
+                  borderColor: "rgba(255,255,255,.1)",
+                  color: "rgba(255,255,255,.5)",
+                }}
+                onClick={() => setShowEnd(false)}
+              >
+                Stay
+              </button>
+              <button
+                className="btn-d"
+                onClick={() =>
+                  onEnd({
+                    timer,
+                    topic: session?.title || config.topic,
+                    subject: session?.subject || "",
+                    unit: session?.unit || "",
+                    participants: 0,
+                    exchanges: exchangeCount,
+                    presenterName,
+                    modeType: "observer",
+                  })
+                }
+              >
+                Leave Session
+              </button>
             </div>
           </div>
         </div>
@@ -6218,36 +13111,42 @@ function ObserverRoomLegacy({config,onEnd}) {
 }
 
 // ─── RESULTS ─────────────────────────────────────────────────────────────────
-function ObserverRoom({config,onEnd}) {
-  const timer=useTimer(true);
-  const [panelTab,setPanelTab]=useState("chat");
-  const [chatInput,setChatInput]=useState("");
-  const [micOn,setMicOn]=useState(false);
+function ObserverRoom({ config, onEnd }) {
+  const timer = useTimer(true);
+  const [panelTab, setPanelTab] = useState("chat");
+  const [chatInput, setChatInput] = useState("");
+  const [micOn, setMicOn] = useState(false);
   // const localStreamRef=useRef(null);
-  const [showEnd,setShowEnd]=useState(false);
-  const [showReactions,setShowReactions]=useState(false);
-  const [reaction,setReaction]=useState(null);
-  const [liveSession,setLiveSession]=useState(config.liveSession || null);
-  const [messages,setMessages]=useState([]);
-  const [roomLoading,setRoomLoading]=useState(true);
-  const [roomError,setRoomError]=useState("");
-  const [sendingChat,setSendingChat]=useState(false);
-  const [requestingSpeak,setRequestingSpeak]=useState(false);
-  const {show:toast$,node:toastNode}=useToast();
-  const presenterName=liveSession?.hostCandidateName||config.liveSession?.hostCandidateName||"Presenter";
+  const [showEnd, setShowEnd] = useState(false);
+  const [showReactions, setShowReactions] = useState(false);
+  const [reaction, setReaction] = useState(null);
+  const [liveSession, setLiveSession] = useState(config.liveSession || null);
+  const [messages, setMessages] = useState([]);
+  const [roomLoading, setRoomLoading] = useState(true);
+  const [roomError, setRoomError] = useState("");
+  const [sendingChat, setSendingChat] = useState(false);
+  const [requestingSpeak, setRequestingSpeak] = useState(false);
+  const { show: toast$, node: toastNode } = useToast();
+  const presenterName =
+    liveSession?.hostCandidateName ||
+    config.liveSession?.hostCandidateName ||
+    "Presenter";
   // LiveKit — participants join as listen-only (no mic track)
   // We pass a dummy localStream=null and enabled only when session is active
 
-  const presenterColor=avColor(presenterName);
-  const chatEndRef=useRef(null);
-  const pollingRef=useRef(null);
-  const completionHandledRef=useRef(false);
-  const latestConfigRef=useRef(config);
-  const latestTimerRef=useRef(timer);
-  const latestOnEndRef=useRef(onEnd);
+  const presenterColor = avColor(presenterName);
+  const chatEndRef = useRef(null);
+  const pollingRef = useRef(null);
+  const completionHandledRef = useRef(false);
+  const latestConfigRef = useRef(config);
+  const latestTimerRef = useRef(timer);
+  const latestOnEndRef = useRef(onEnd);
   const currentCandidateId = String(config.candidateId || "");
   const isGuestUser = Boolean(config.isGuest);
-  const approvedToSpeak = isSeminarParticipantApproved(liveSession, currentCandidateId);
+  const approvedToSpeak = isSeminarParticipantApproved(
+    liveSession,
+    currentCandidateId,
+  );
   const roomStatus = liveSession?.status || "waiting";
   const livekitParticipant = useDebateLivekit({
     sessionId: config.sessionId || "",
@@ -6258,96 +13157,141 @@ function ObserverRoom({config,onEnd}) {
     apiBase: `${process.env.REACT_APP_API_BASE_URL}`,
     startMuted: true,
   });
-  useEffect(()=>{
-    if(livekitParticipant.connected){
+  useEffect(() => {
+    if (livekitParticipant.connected) {
       console.log("[ObserverRoom] LiveKit connected for seminar media");
     }
-    if(livekitParticipant.error){
-      console.error("[ObserverRoom] LiveKit connection error:", livekitParticipant.error);
+    if (livekitParticipant.error) {
+      console.error(
+        "[ObserverRoom] LiveKit connection error:",
+        livekitParticipant.error,
+      );
     }
-  },[livekitParticipant.connected, livekitParticipant.error]);
-  useEffect(()=>{
-    if(!livekitParticipant.remoteScreenShareTrack) return undefined;
-    return attachLiveKitScreenTrack(livekitParticipant.remoteScreenShareTrack, "observer-remote");
-  },[livekitParticipant.remoteScreenShareTrack]);
-  useEffect(()=>{chatEndRef.current?.scrollIntoView({behavior:"smooth"});},[messages]);
-  useEffect(()=>{setMessages(mapSeminarTurnsToMessages(liveSession, config.name));},[liveSession, config.name]);
-  useEffect(()=>{if(!approvedToSpeak && micOn) setMicOn(false);},[approvedToSpeak, micOn]);
-  useEffect(()=>{latestConfigRef.current = config;},[config]);
-  useEffect(()=>{latestTimerRef.current = timer;},[timer]);
-  useEffect(()=>{latestOnEndRef.current = onEnd;},[onEnd]);
+  }, [livekitParticipant.connected, livekitParticipant.error]);
+  useEffect(() => {
+    if (!livekitParticipant.remoteScreenShareTrack) return undefined;
+    return attachLiveKitScreenTrack(
+      livekitParticipant.remoteScreenShareTrack,
+      "observer-remote",
+    );
+  }, [livekitParticipant.remoteScreenShareTrack]);
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+  useEffect(() => {
+    setMessages(mapSeminarTurnsToMessages(liveSession, config.name));
+  }, [liveSession, config.name]);
+  useEffect(() => {
+    if (!approvedToSpeak && micOn) setMicOn(false);
+  }, [approvedToSpeak, micOn]);
+  useEffect(() => {
+    latestConfigRef.current = config;
+  }, [config]);
+  useEffect(() => {
+    latestTimerRef.current = timer;
+  }, [timer]);
+  useEffect(() => {
+    latestOnEndRef.current = onEnd;
+  }, [onEnd]);
 
-  const syncSession = useCallback(async (showFullLoader = false)=>{
-    const latestConfig = latestConfigRef.current;
-    if(!latestConfig?.sessionId) return;
-    if(showFullLoader) setRoomLoading(true);
-    try{
-      const session = await getSeminarSession(latestConfig.sessionId);
-      setLiveSession(session || null);
-      setRoomError("");
-      if((session?.status === "completed" || session?.status === "ending") && !completionHandledRef.current){
-        completionHandledRef.current = true;
-        latestOnEndRef.current({
-          sessionId: latestConfig.sessionId,
-          timer: latestTimerRef.current,
-          topic: session?.topic || latestConfig.topic,
-          subject: session?.subject || latestConfig.subject,
-          unit: session?.unit || latestConfig.unit,
-          participants: 0,
-          exchanges: mapSeminarTurnsToMessages(session, latestConfig.name).length,
-          presenterName,
-          modeType: "observer",
-          isHost: false,
-          canViewFeedback: false,
-          scores: null,
-          feedback: null,
-        });
+  const syncSession = useCallback(
+    async (showFullLoader = false) => {
+      const latestConfig = latestConfigRef.current;
+      if (!latestConfig?.sessionId) return;
+      if (showFullLoader) setRoomLoading(true);
+      try {
+        const session = await getSeminarSession(latestConfig.sessionId);
+        setLiveSession(session || null);
+        setRoomError("");
+        if (
+          (session?.status === "completed" || session?.status === "ending") &&
+          !completionHandledRef.current
+        ) {
+          completionHandledRef.current = true;
+          latestOnEndRef.current({
+            sessionId: latestConfig.sessionId,
+            timer: latestTimerRef.current,
+            topic: session?.topic || latestConfig.topic,
+            subject: session?.subject || latestConfig.subject,
+            unit: session?.unit || latestConfig.unit,
+            participants: 0,
+            exchanges: mapSeminarTurnsToMessages(session, latestConfig.name)
+              .length,
+            presenterName,
+            modeType: "observer",
+            isHost: false,
+            canViewFeedback: false,
+            scores: null,
+            feedback: null,
+          });
+        }
+      } catch (error) {
+        setRoomError(error?.message || "Unable to refresh the seminar room.");
+      } finally {
+        if (showFullLoader) setRoomLoading(false);
       }
-    } catch(error){
-      setRoomError(error?.message || "Unable to refresh the seminar room.");
-    } finally {
-      if(showFullLoader) setRoomLoading(false);
-    }
-  },[presenterName]);
+    },
+    [presenterName],
+  );
 
-useEffect(()=>{
+  useEffect(() => {
     syncSession(true);
-    pollingRef.current = setInterval(()=>{ syncSession(false).catch(()=>null); },3000);
-    return ()=>{ if(pollingRef.current) clearInterval(pollingRef.current); };
-  },[]);
+    pollingRef.current = setInterval(() => {
+      syncSession(false).catch(() => null);
+    }, 3000);
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current);
+    };
+  }, []);
 
   // Heartbeat — keep lastSeenAt fresh so the host knows this tab is still open
-  useEffect(()=>{
-    if(!config.sessionId || !currentCandidateId) return;
-    const heartbeat = async ()=>{
-      try{
-        await fetch(`${(window as any).__API_BASE__ || ""}/api/v1/seminar/join`, {
-          method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({ sessionId: config.sessionId, candidateId: currentCandidateId, candidateName: config.name, role: "observer" }),
-        });
+  useEffect(() => {
+    if (!config.sessionId || !currentCandidateId) return;
+    const heartbeat = async () => {
+      try {
+        await fetch(
+          `${(window as any).__API_BASE__ || ""}/api/v1/seminar/join`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sessionId: config.sessionId,
+              candidateId: currentCandidateId,
+              candidateName: config.name,
+              role: "observer",
+            }),
+          },
+        );
       } catch {}
     };
     heartbeat();
     const hbId = setInterval(heartbeat, 20000);
-    return ()=>clearInterval(hbId);
-  },[]);
+    return () => clearInterval(hbId);
+  }, []);
 
-  useEffect(()=>{
-    window.history.pushState({ seminarObserverRoom: true }, "", window.location.href);
-    const handlePopState = ()=>{
-      window.history.pushState({ seminarObserverRoom: true }, "", window.location.href);
+  useEffect(() => {
+    window.history.pushState(
+      { seminarObserverRoom: true },
+      "",
+      window.location.href,
+    );
+    const handlePopState = () => {
+      window.history.pushState(
+        { seminarObserverRoom: true },
+        "",
+        window.location.href,
+      );
       setShowEnd(true);
     };
     window.addEventListener("popstate", handlePopState);
-    return ()=>window.removeEventListener("popstate", handlePopState);
-  },[]);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
-  async function sendMsg(){
+  async function sendMsg() {
     const trimmed = chatInput.trim();
-    if(!trimmed || sendingChat) return;
+    if (!trimmed || sendingChat) return;
     setSendingChat(true);
-    try{
+    try {
       const session = await sendSeminarMessage({
         sessionId: config.sessionId,
         candidateId: currentCandidateId,
@@ -6357,43 +13301,75 @@ useEffect(()=>{
       });
       setChatInput("");
       setLiveSession(session || null);
-    } catch(error){
-      toast$(getErrorMessage(error, "Unable to send this seminar message."),"error");
+    } catch (error) {
+      toast$(
+        getErrorMessage(error, "Unable to send this seminar message."),
+        "error",
+      );
     } finally {
       setSendingChat(false);
     }
   }
 
-  async function handleMicToggle(){
-    if(approvedToSpeak){
-      setMicOn((value)=>!value);
+  async function handleMicToggle() {
+    if (approvedToSpeak) {
+      setMicOn((value) => !value);
       return;
     }
     setRequestingSpeak(true);
-    try{
+    try {
       await requestSeminarSpeakingAccess({
         sessionId: config.sessionId,
         candidateId: currentCandidateId,
         candidateName: config.name,
       });
-      toast$("Speaking request sent to the host.","info");
+      toast$("Speaking request sent to the host.", "info");
       await syncSession(false);
-    } catch(error){
-      toast$(getErrorMessage(error, "Unable to request speaking access."),"error");
+    } catch (error) {
+      toast$(
+        getErrorMessage(error, "Unable to request speaking access."),
+        "error",
+      );
     } finally {
       setRequestingSpeak(false);
     }
   }
 
-  function sendReaction(emoji){setShowReactions(false);const k=Date.now();setReaction({emoji,k});setTimeout(()=>setReaction(null),2400);}
-  const fmt=(d)=>new Date(d).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
-  function leaveAndRedirect(){
-    onEnd({timer,topic:liveSession?.topic||config.topic,subject:liveSession?.subject||config.subject||"",unit:liveSession?.unit||config.unit||"",participants:0,exchanges:messages.length,presenterName,modeType:"observer",isHost:false,canViewFeedback:false,scores:null,feedback:null});
-    setTimeout(()=>navigateAfterSeminarExit(isGuestUser),50);
+  function sendReaction(emoji) {
+    setShowReactions(false);
+    const k = Date.now();
+    setReaction({ emoji, k });
+    setTimeout(() => setReaction(null), 2400);
+  }
+  const fmt = (d) =>
+    new Date(d).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  function leaveAndRedirect() {
+    onEnd({
+      timer,
+      topic: liveSession?.topic || config.topic,
+      subject: liveSession?.subject || config.subject || "",
+      unit: liveSession?.unit || config.unit || "",
+      participants: 0,
+      exchanges: messages.length,
+      presenterName,
+      modeType: "observer",
+      isHost: false,
+      canViewFeedback: false,
+      scores: null,
+      feedback: null,
+    });
+    setTimeout(() => navigateAfterSeminarExit(isGuestUser), 50);
   }
 
-  if(roomLoading){
-    return <div className="room-page"><PageLoader label="Joining seminar room…" sublabel="Syncing live seminar state" /></div>;
+  if (roomLoading) {
+    return (
+      <div className="room-page">
+        <PageLoader
+          label="Joining seminar room…"
+          sublabel="Syncing live seminar state"
+        />
+      </div>
+    );
   }
 
   const waitingRoom = roomStatus !== "active";
@@ -6401,81 +13377,415 @@ useEffect(()=>{
   return (
     <div className="room-page">
       <div className="room-bar">
-        <div className="room-logo"><div className="room-logo-ic">🎓</div>SeminarArena</div>
-        <div className="room-divider"/>
-        <div className="room-topic"><strong>Seminar: </strong>{liveSession?.topic || config.topic || "Seminar Session"}</div>
+        <div className="room-logo">
+          <div className="room-logo-ic">
+            <SeminarIcon name="graduation" />
+          </div>
+          SeminarArena
+        </div>
+        <div className="room-divider" />
+        <div className="room-topic">
+          <strong>Seminar: </strong>
+          {liveSession?.topic || config.topic || "Seminar Session"}
+        </div>
         <div className="r-pill rp-timer">{timer}</div>
         <div className="r-pill rp-ai">👁️ Participant</div>
-        <button className="rbar-end-btn" onClick={()=>setShowEnd(true)}>Leave</button>
+        <button className="rbar-end-btn" onClick={() => setShowEnd(true)}>
+          Leave
+        </button>
       </div>
-      {roomError&&<div style={{margin:"12px 16px 0",padding:"10px 12px",borderRadius:10,background:"rgba(229,62,62,.08)",border:"1px solid rgba(229,62,62,.2)",color:"#fecaca",fontSize:12.5}}>{roomError}</div>}
+      {roomError && (
+        <div
+          style={{
+            margin: "12px 16px 0",
+            padding: "10px 12px",
+            borderRadius: 10,
+            background: "rgba(229,62,62,.08)",
+            border: "1px solid rgba(229,62,62,.2)",
+            color: "#fecaca",
+            fontSize: 12.5,
+          }}
+        >
+          {roomError}
+        </div>
+      )}
 
       {waitingRoom ? (
-        <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
-          <div style={{maxWidth:520,width:"100%",padding:"34px 28px",borderRadius:24,background:"#08111d",border:"1px solid rgba(255,255,255,.08)",textAlign:"center"}}>
-            <div style={{fontSize:54,marginBottom:14}}>⏳</div>
-            <div style={{fontSize:28,fontWeight:900,color:"#fff",marginBottom:10}}>Waiting for host to start</div>
-            <div style={{fontSize:13,color:"rgba(255,255,255,.55)",lineHeight:1.8}}>You’ve joined the seminar room successfully. Once the host starts the session, this page will move into the live seminar meeting layout automatically.</div>
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+          }}
+        >
+          <div
+            style={{
+              maxWidth: 520,
+              width: "100%",
+              padding: "34px 28px",
+              borderRadius: 24,
+              background: "#08111d",
+              border: "1px solid rgba(255,255,255,.08)",
+              textAlign: "center",
+            }}
+          >
+            <div style={{ fontSize: 54, marginBottom: 14 }}>⏳</div>
+            <div
+              style={{
+                fontSize: 28,
+                fontWeight: 900,
+                color: "#fff",
+                marginBottom: 10,
+              }}
+            >
+              Waiting for host to start
+            </div>
+            <div
+              style={{
+                fontSize: 13,
+                color: "rgba(255,255,255,.55)",
+                lineHeight: 1.8,
+              }}
+            >
+              You’ve joined the seminar room successfully. Once the host starts
+              the session, this page will move into the live seminar meeting
+              layout automatically.
+            </div>
           </div>
         </div>
       ) : (
         <div className="room-body">
           <div className="grid-area">
             <div className="ss-area">
-              <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:10,color:"rgba(255,255,255,.2)",flex:1,width:"100%"}}>
-                <div style={{fontSize:52,opacity:.18}}>🖥️</div>
-                <div style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,.4)"}}>Presenter's Screen</div>
-                <div style={{fontSize:11,textAlign:"center",maxWidth:240,lineHeight:1.6,color:"rgba(255,255,255,.25)"}}>The host is presenting this seminar. You can use chat freely, and you can request speaking access when you need to ask a question.</div>
-                {approvedToSpeak&&(<div style={{display:"flex",alignItems:"center",gap:8,padding:"5px 12px",borderRadius:8,background:"rgba(0,195,122,.09)",border:"1px solid rgba(0,195,122,.2)",marginTop:8}}><span style={{fontSize:11,fontWeight:700,color:"#5ee3b7"}}>Host approved your speaking access.</span></div>)}
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 10,
+                  color: "rgba(255,255,255,.2)",
+                  flex: 1,
+                  width: "100%",
+                }}
+              >
+                <div style={{ fontSize: 52, opacity: 0.18 }}>🖥️</div>
+                <div
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color: "rgba(255,255,255,.4)",
+                  }}
+                >
+                  Presenter's Screen
+                </div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    textAlign: "center",
+                    maxWidth: 240,
+                    lineHeight: 1.6,
+                    color: "rgba(255,255,255,.25)",
+                  }}
+                >
+                  The host is presenting this seminar. You can use chat freely,
+                  and you can request speaking access when you need to ask a
+                  question.
+                </div>
+                {approvedToSpeak && (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "5px 12px",
+                      borderRadius: 8,
+                      background: "rgba(0,195,122,.09)",
+                      border: "1px solid rgba(0,195,122,.2)",
+                      marginTop: 8,
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 700,
+                        color: "#5ee3b7",
+                      }}
+                    >
+                      Host approved your speaking access.
+                    </span>
+                  </div>
+                )}
               </div>
-              {reaction&&<div key={reaction.k} style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",fontSize:44,animation:"rPop 2s forwards",pointerEvents:"none",zIndex:5}}>{reaction.emoji}</div>}
+              {reaction && (
+                <div
+                  key={reaction.k}
+                  style={{
+                    position: "absolute",
+                    top: "50%",
+                    left: "50%",
+                    transform: "translate(-50%,-50%)",
+                    fontSize: 44,
+                    animation: "rPop 2s forwards",
+                    pointerEvents: "none",
+                    zIndex: 5,
+                  }}
+                >
+                  {reaction.emoji}
+                </div>
+              )}
             </div>
             <div className="presenter-strip">
-              <div className="strip-tile" style={{border:`1.5px solid ${presenterColor}44`}}>
-                <div className="strip-av" style={{background:presenterColor+"22",color:presenterColor}}>{avInit(presenterName)}</div>
-                <div className="strip-ov"><span className="strip-name">{presenterName}</span></div>
+              <div
+                className="strip-tile"
+                style={{ border: `1.5px solid ${presenterColor}44` }}
+              >
+                <div
+                  className="strip-av"
+                  style={{
+                    background: presenterColor + "22",
+                    color: presenterColor,
+                  }}
+                >
+                  {avInit(presenterName)}
+                </div>
+                <div className="strip-ov">
+                  <span className="strip-name">{presenterName}</span>
+                </div>
               </div>
-              <div className="strip-tile" style={{border:`1.5px solid ${approvedToSpeak ? "rgba(0,195,122,.3)" : "rgba(255,255,255,.12)"}`}}>
-                <div className="strip-av" style={{background:avColor(config.name)+"22",color:avColor(config.name)}}>{avInit(config.name)}</div>
-                <div className="strip-ov"><span className="strip-name">{config.name}</span><span style={{fontSize:9}}>{micOn?"🎤":"🔇"}</span></div>
+              <div
+                className="strip-tile"
+                style={{
+                  border: `1.5px solid ${approvedToSpeak ? "rgba(0,195,122,.3)" : "rgba(255,255,255,.12)"}`,
+                }}
+              >
+                <div
+                  className="strip-av"
+                  style={{
+                    background: avColor(config.name) + "22",
+                    color: avColor(config.name),
+                  }}
+                >
+                  {avInit(config.name)}
+                </div>
+                <div className="strip-ov">
+                  <span className="strip-name">{config.name}</span>
+                  <span style={{ fontSize: 9 }}>{micOn ? "🎤" : "🔇"}</span>
+                </div>
               </div>
             </div>
             <div className="ctrl-bar">
               <div className="cg">
-                <button className={`cbtn ${micOn?"on":"off"}`} onClick={handleMicToggle} disabled={requestingSpeak}><span className="cbtn-ic">{micOn?"🎤":"🔇"}</span><span>{approvedToSpeak ? (micOn ? "Mute" : "Unmute") : (requestingSpeak ? "Requesting..." : "Request Speak")}</span></button>
-                <div style={{position:"relative"}}><button className={`cbtn${showReactions?" hi":""}`} onClick={()=>setShowReactions((value)=>!value)}><span className="cbtn-ic">😊</span><span>React</span></button>{showReactions&&<div className="react-pop">{REACTIONS.map((item)=><button key={item} className="react-em" onClick={()=>sendReaction(item)}>{item}</button>)}</div>}</div>
+                <button
+                  className={`cbtn ${micOn ? "on" : "off"}`}
+                  onClick={handleMicToggle}
+                  disabled={requestingSpeak}
+                >
+                  <span className="cbtn-ic">{micOn ? "🎤" : "🔇"}</span>
+                  <span>
+                    {approvedToSpeak
+                      ? micOn
+                        ? "Mute"
+                        : "Unmute"
+                      : requestingSpeak
+                        ? "Requesting..."
+                        : "Request Speak"}
+                  </span>
+                </button>
+                <div style={{ position: "relative" }}>
+                  <button
+                    className={`cbtn${showReactions ? " hi" : ""}`}
+                    onClick={() => setShowReactions((value) => !value)}
+                  >
+                    <span className="cbtn-ic">😊</span>
+                    <span>React</span>
+                  </button>
+                  {showReactions && (
+                    <div className="react-pop">
+                      {REACTIONS.map((item) => (
+                        <button
+                          key={item}
+                          className="react-em"
+                          onClick={() => sendReaction(item)}
+                        >
+                          {item}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="cg">
-                <button className={`cbtn${panelTab==="chat"?" hi":""}`} onClick={()=>setPanelTab("chat")}><span className="cbtn-ic">💬</span><span>Chat</span></button>
-                <button className="end-room-btn-sm" style={{background:"rgba(229,62,62,.8)"}} onClick={()=>setShowEnd(true)}>Leave</button>
+                <button
+                  className={`cbtn${panelTab === "chat" ? " hi" : ""}`}
+                  onClick={() => setPanelTab("chat")}
+                >
+                  <span className="cbtn-ic">💬</span>
+                  <span>Chat</span>
+                </button>
+                <button
+                  className="end-room-btn-sm"
+                  style={{ background: "rgba(229,62,62,.8)" }}
+                  onClick={() => setShowEnd(true)}
+                >
+                  Leave
+                </button>
               </div>
             </div>
           </div>
-          <div className="side-panel" style={{width:300,minWidth:300}}>
+          <div className="side-panel" style={{ width: 300, minWidth: 300 }}>
             <div className="panel-tabs">
-              <button className="ptab active"><span style={{fontSize:12}}>💬</span><span>Chat</span></button>
+              <button className="ptab active">
+                <span style={{ fontSize: 12 }}>💬</span>
+                <span>Chat</span>
+              </button>
             </div>
-            <div style={{display:"flex",flexDirection:"column",height:"100%",minHeight:0}}>
-              <div className="pscroll" style={{flex:1}}>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                height: "100%",
+                minHeight: 0,
+              }}
+            >
+              <div className="pscroll" style={{ flex: 1 }}>
                 <div className="chat-msgs">
-                  {messages.length===0&&<div className="chat-empty">No messages yet.<br/>Use chat to interact with the host.</div>}
-                  {messages.map((m)=>{const own=m.sender===config.name;const isAI=m.type==="ai";return(<div key={m.id} className={`chat-msg${own?" own":""}`}>{!own&&<div className="chat-av-s" style={{background:isAI?"rgba(45,156,219,.2)":"rgba(255,255,255,.08)",color:isAI?"#7ed3f7":"rgba(255,255,255,.5)"}}>{isAI?"🤖":m.sender[0]?.toUpperCase()}</div>}<div className="chat-bw">{!own&&<span className="chat-sender">{m.sender}</span>}<div className={`chat-bubble ${own?"b-own":""}`} style={isAI?{background:"rgba(45,156,219,.09)",border:"1px solid rgba(45,156,219,.15)",color:"#d0e8ff",borderRadius:"3px 9px 9px 9px"}:!own?{background:"rgba(255,255,255,.07)",color:"#e8ecf2",border:"1px solid rgba(255,255,255,.07)",borderRadius:"3px 9px 9px 9px"}:{}}>{m.text}</div><span className="chat-t">{fmt(m.time)}</span></div></div>);})}
-                  <div ref={chatEndRef}/>
+                  {messages.length === 0 && (
+                    <div className="chat-empty">
+                      No messages yet.
+                      <br />
+                      Use chat to interact with the host.
+                    </div>
+                  )}
+                  {messages.map((m) => {
+                    const own = m.sender === config.name;
+                    const isAI = m.type === "ai";
+                    return (
+                      <div
+                        key={m.id}
+                        className={`chat-msg${own ? " own" : ""}`}
+                      >
+                        {!own && (
+                          <div
+                            className="chat-av-s"
+                            style={{
+                              background: isAI
+                                ? "rgba(45,156,219,.2)"
+                                : "rgba(255,255,255,.08)",
+                              color: isAI ? "#7ed3f7" : "rgba(255,255,255,.5)",
+                            }}
+                          >
+                            {isAI ? "🤖" : m.sender[0]?.toUpperCase()}
+                          </div>
+                        )}
+                        <div className="chat-bw">
+                          {!own && (
+                            <span className="chat-sender">{m.sender}</span>
+                          )}
+                          <div
+                            className={`chat-bubble ${own ? "b-own" : ""}`}
+                            style={
+                              isAI
+                                ? {
+                                    background: "rgba(45,156,219,.09)",
+                                    border: "1px solid rgba(45,156,219,.15)",
+                                    color: "#d0e8ff",
+                                    borderRadius: "3px 9px 9px 9px",
+                                  }
+                                : !own
+                                  ? {
+                                      background: "rgba(255,255,255,.07)",
+                                      color: "#e8ecf2",
+                                      border: "1px solid rgba(255,255,255,.07)",
+                                      borderRadius: "3px 9px 9px 9px",
+                                    }
+                                  : {}
+                            }
+                          >
+                            {m.text}
+                          </div>
+                          <span className="chat-t">{fmt(m.time)}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div ref={chatEndRef} />
                 </div>
               </div>
               <div className="chat-ia">
-                <textarea className="chat-inp" placeholder="Ask a question…" value={chatInput} onChange={(event)=>setChatInput(event.target.value)} onKeyDown={(event)=>{if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();sendMsg();}}} rows={1}/>
-                <button className="chat-send" onClick={sendMsg} disabled={sendingChat}>➤</button>
+                <textarea
+                  className="chat-inp"
+                  placeholder="Ask a question…"
+                  value={chatInput}
+                  onChange={(event) => setChatInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      sendMsg();
+                    }
+                  }}
+                  rows={1}
+                />
+                <button
+                  className="chat-send"
+                  onClick={sendMsg}
+                  disabled={sendingChat}
+                >
+                  ➤
+                </button>
               </div>
             </div>
           </div>
         </div>
       )}
-      {showEnd&&(
-        <div className="overlay" onClick={()=>setShowEnd(false)}>
-          <div className="modal" style={{maxWidth:320,background:"#0c1422",border:"1px solid rgba(255,255,255,.1)"}} onClick={(event)=>event.stopPropagation()}>
-            <div style={{padding:"22px 18px",textAlign:"center"}}><div style={{fontSize:38,marginBottom:8}}>👋</div><div style={{fontSize:13.5,fontWeight:800,color:"#fff",marginBottom:4}}>Leave seminar?</div><div style={{fontSize:11.5,color:"rgba(255,255,255,.38)"}}>You’ve been in this seminar for {timer}</div></div>
-            <div className="mf" style={{borderColor:"rgba(255,255,255,.08)"}}><button className="btn-s" style={{background:"rgba(255,255,255,.04)",borderColor:"rgba(255,255,255,.1)",color:"rgba(255,255,255,.5)"}} onClick={()=>setShowEnd(false)}>Stay</button><button className="btn-d" onClick={leaveAndRedirect}>Leave Session</button></div>
+      {showEnd && (
+        <div className="overlay" onClick={() => setShowEnd(false)}>
+          <div
+            className="modal"
+            style={{
+              maxWidth: 320,
+              background: "#0c1422",
+              border: "1px solid rgba(255,255,255,.1)",
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div style={{ padding: "22px 18px", textAlign: "center" }}>
+              <div style={{ fontSize: 38, marginBottom: 8 }}>👋</div>
+              <div
+                style={{
+                  fontSize: 13.5,
+                  fontWeight: 800,
+                  color: "#fff",
+                  marginBottom: 4,
+                }}
+              >
+                Leave seminar?
+              </div>
+              <div style={{ fontSize: 11.5, color: "rgba(255,255,255,.38)" }}>
+                You’ve been in this seminar for {timer}
+              </div>
+            </div>
+            <div
+              className="mf"
+              style={{ borderColor: "rgba(255,255,255,.08)" }}
+            >
+              <button
+                className="btn-s"
+                style={{
+                  background: "rgba(255,255,255,.04)",
+                  borderColor: "rgba(255,255,255,.1)",
+                  color: "rgba(255,255,255,.5)",
+                }}
+                onClick={() => setShowEnd(false)}
+              >
+                Stay
+              </button>
+              <button className="btn-d" onClick={leaveAndRedirect}>
+                Leave Session
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -6484,102 +13794,348 @@ useEffect(()=>{
   );
 }
 
-function SeminarResults({result,onNew}) {
-  const [showAnalysis,setShowAnalysis]=useState(false);
-  const [showFeedbackChat,setShowFeedbackChat]=useState(false);
-  const [feedbackChatMessages,setFeedbackChatMessages]=useState([]);
-  const [feedbackChatInput,setFeedbackChatInput]=useState("");
-  const [feedbackChatLoading,setFeedbackChatLoading]=useState(false);
-  const isObserver=result.modeType==="observer";
-  function handleDownload(){downloadSessionPDF({config:{name:result.presenterName,topic:result.topic,subject:result.subject,unit:result.unit},timer:result.timer,transcriptHistory:result.transcriptHistory||[],notes:result.notes||[],messages:result.messages||[],apiScores:result.scores||null,hintsUsed:result.hintsUsed||0,topicsCovered:result.topicsCovered||[]});}
-  async function openFeedbackChat(){
-    if(!result.sessionId) return;
+function SeminarResults({ result, onNew }) {
+  const [showAnalysis, setShowAnalysis] = useState(false);
+  const [showFeedbackChat, setShowFeedbackChat] = useState(false);
+  const [feedbackChatMessages, setFeedbackChatMessages] = useState([]);
+  const [feedbackChatInput, setFeedbackChatInput] = useState("");
+  const [feedbackChatLoading, setFeedbackChatLoading] = useState(false);
+  const isObserver = result.modeType === "observer";
+  function handleDownload() {
+    downloadSessionPDF({
+      config: {
+        name: result.presenterName,
+        topic: result.topic,
+        subject: result.subject,
+        unit: result.unit,
+      },
+      timer: result.timer,
+      transcriptHistory: result.transcriptHistory || [],
+      notes: result.notes || [],
+      messages: result.messages || [],
+      apiScores: result.scores || null,
+      hintsUsed: result.hintsUsed || 0,
+      topicsCovered: result.topicsCovered || [],
+    });
+  }
+  async function openFeedbackChat() {
+    if (!result.sessionId) return;
     setShowFeedbackChat(true);
-    if(feedbackChatMessages.length) return;
+    if (feedbackChatMessages.length) return;
     setFeedbackChatLoading(true);
-    try{
+    try {
       const response = await startSeminarChat({ sessionId: result.sessionId });
-      const opening = response?.ai_response || response?.response || response?.reply || response?.message || "Ask anything about your seminar feedback.";
-      setFeedbackChatMessages([{ id:"start", role:"assistant", text: opening }]);
-    } catch(error){
-      setFeedbackChatMessages([{ id:"error", role:"assistant", text: error?.message || "Unable to start the feedback chat right now." }]);
+      const opening =
+        response?.ai_response ||
+        response?.response ||
+        response?.reply ||
+        response?.message ||
+        "Ask anything about your seminar feedback.";
+      setFeedbackChatMessages([
+        { id: "start", role: "assistant", text: opening },
+      ]);
+    } catch (error) {
+      setFeedbackChatMessages([
+        {
+          id: "error",
+          role: "assistant",
+          text:
+            error?.message || "Unable to start the feedback chat right now.",
+        },
+      ]);
     } finally {
       setFeedbackChatLoading(false);
     }
   }
-  async function sendFeedbackChat(){
+  async function sendFeedbackChat() {
     const trimmed = feedbackChatInput.trim();
-    if(!trimmed || !result.sessionId || feedbackChatLoading) return;
-    setFeedbackChatMessages((current)=>[...current,{ id:`u-${Date.now()}`, role:"user", text: trimmed }]);
+    if (!trimmed || !result.sessionId || feedbackChatLoading) return;
+    setFeedbackChatMessages((current) => [
+      ...current,
+      { id: `u-${Date.now()}`, role: "user", text: trimmed },
+    ]);
     setFeedbackChatInput("");
     setFeedbackChatLoading(true);
-    try{
-      const response = await respondSeminarChat({ sessionId: result.sessionId, message: trimmed });
-      const reply = response?.ai_response || response?.response || response?.reply || response?.message || "I couldn’t generate a deeper review yet.";
-      setFeedbackChatMessages((current)=>[...current,{ id:`a-${Date.now()}`, role:"assistant", text: reply }]);
-    } catch(error){
-      setFeedbackChatMessages((current)=>[...current,{ id:`e-${Date.now()}`, role:"assistant", text: error?.message || "Unable to continue the feedback chat." }]);
+    try {
+      const response = await respondSeminarChat({
+        sessionId: result.sessionId,
+        message: trimmed,
+      });
+      const reply =
+        response?.ai_response ||
+        response?.response ||
+        response?.reply ||
+        response?.message ||
+        "I couldn’t generate a deeper review yet.";
+      setFeedbackChatMessages((current) => [
+        ...current,
+        { id: `a-${Date.now()}`, role: "assistant", text: reply },
+      ]);
+    } catch (error) {
+      setFeedbackChatMessages((current) => [
+        ...current,
+        {
+          id: `e-${Date.now()}`,
+          role: "assistant",
+          text: error?.message || "Unable to continue the feedback chat.",
+        },
+      ]);
     } finally {
       setFeedbackChatLoading(false);
     }
   }
   return (
     <div className="results-page route-enter">
-      <div className="res-trophy">{isObserver?"👁️":"🎓"}</div>
-      <h2 className="res-h">{isObserver?"Session Ended":"Seminar Complete!"}</h2>
-      <p className="res-sub">{isObserver?<>You observed <strong style={{color:"var(--em)"}}>{result.topic?.slice(0,30)||"the seminar"}</strong> for <strong style={{color:"var(--em)"}}>{result.timer}</strong>.</>:<>Seminar on <strong style={{color:"var(--em)"}}>{result.topic?.slice(0,30)}</strong> lasted <strong style={{color:"var(--em)"}}>{result.timer}</strong>.</>}</p>
-      {result.subject&&(<div style={{display:"flex",gap:7,marginBottom:13,flexWrap:"wrap",justifyContent:"center"}}>
-        <span style={{padding:"3px 11px",borderRadius:20,background:"rgba(0,195,122,.08)",border:"1px solid rgba(0,195,122,.18)",fontSize:11,fontWeight:700,color:"var(--em)"}}>📚 {result.subject}</span>
-        {result.unit&&<span style={{padding:"3px 11px",borderRadius:20,background:"rgba(45,156,219,.08)",border:"1px solid rgba(45,156,219,.18)",fontSize:11,fontWeight:700,color:"var(--sky)"}}>📖 {result.unit}</span>}
-      </div>)}
+      <div className="res-trophy">{isObserver ? "👁️" : "🎓"}</div>
+      <h2 className="res-h">
+        {isObserver ? "Session Ended" : "Seminar Complete!"}
+      </h2>
+      <p className="res-sub">
+        {isObserver ? (
+          <>
+            You observed{" "}
+            <strong style={{ color: "var(--em)" }}>
+              {result.topic?.slice(0, 30) || "the seminar"}
+            </strong>{" "}
+            for <strong style={{ color: "var(--em)" }}>{result.timer}</strong>.
+          </>
+        ) : (
+          <>
+            Seminar on{" "}
+            <strong style={{ color: "var(--em)" }}>
+              {result.topic?.slice(0, 30)}
+            </strong>{" "}
+            lasted{" "}
+            <strong style={{ color: "var(--em)" }}>{result.timer}</strong>.
+          </>
+        )}
+      </p>
+      {result.subject && (
+        <div
+          style={{
+            display: "flex",
+            gap: 7,
+            marginBottom: 13,
+            flexWrap: "wrap",
+            justifyContent: "center",
+          }}
+        >
+          <span
+            style={{
+              padding: "3px 11px",
+              borderRadius: 20,
+              background: "rgba(0,195,122,.08)",
+              border: "1px solid rgba(0,195,122,.18)",
+              fontSize: 11,
+              fontWeight: 700,
+              color: "var(--em)",
+            }}
+          >
+            📚 {result.subject}
+          </span>
+          {result.unit && (
+            <span
+              style={{
+                padding: "3px 11px",
+                borderRadius: 20,
+                background: "rgba(45,156,219,.08)",
+                border: "1px solid rgba(45,156,219,.18)",
+                fontSize: 11,
+                fontWeight: 700,
+                color: "var(--sky)",
+              }}
+            >
+              📖 {result.unit}
+            </span>
+          )}
+        </div>
+      )}
       <div className="res-stats">
-        {[{l:"Duration",v:result.timer,i:"⏱️"},{l:isObserver?"Watched":"Exchanges",v:isObserver?result.timer:result.exchanges,i:isObserver?"👁️":"💬"},{l:isObserver?"Role":"Mode",v:isObserver?"Observer":result.modeType==="prepare"?"AI Prep":"Live",i:isObserver?"🎓":"🏅"}].map((s,i)=>(
-          <div key={s.l} className="res-stat" style={{animationDelay:`${i*.1}s`}}><div className="res-stat-ic">{s.i}</div><div className="res-stat-v">{s.v}</div><div className="res-stat-l">{s.l}</div></div>
+        {[
+          { l: "Duration", v: result.timer, i: "⏱️" },
+          {
+            l: isObserver ? "Watched" : "Exchanges",
+            v: isObserver ? result.timer : result.exchanges,
+            i: isObserver ? "👁️" : "💬",
+          },
+          {
+            l: isObserver ? "Role" : "Mode",
+            v: isObserver
+              ? "Observer"
+              : result.modeType === "prepare"
+                ? "AI Prep"
+                : "Live",
+            i: isObserver ? "🎓" : "🏅",
+          },
+        ].map((s, i) => (
+          <div
+            key={s.l}
+            className="res-stat"
+            style={{ animationDelay: `${i * 0.1}s` }}
+          >
+            <div className="res-stat-ic">{s.i}</div>
+            <div className="res-stat-v">{s.v}</div>
+            <div className="res-stat-l">{s.l}</div>
+          </div>
         ))}
       </div>
       <div className="res-acts">
-        {!isObserver&&<button className="btn-s" style={{borderColor:"rgba(0,195,122,.28)",color:"var(--em)"}} onClick={()=>setShowAnalysis(true)}>📊 View Report</button>}
-        
-        {!isObserver&&<button className="btn-s" style={{borderColor:"rgba(45,156,219,.28)",color:"var(--sky)"}} onClick={handleDownload}>📥 Download Report</button>}
-        <button className="btn-p" style={{fontSize:13,width:"auto",padding:"10px 22px"}} onClick={onNew}>🎓 Back</button>
+        {!isObserver && (
+          <button
+            className="btn-s"
+            style={{ borderColor: "rgba(0,195,122,.28)", color: "var(--em)" }}
+            onClick={() => setShowAnalysis(true)}
+          >
+            📊 View Report
+          </button>
+        )}
+
+        {!isObserver && (
+          <button
+            className="btn-s"
+            style={{ borderColor: "rgba(45,156,219,.28)", color: "var(--sky)" }}
+            onClick={handleDownload}
+          >
+            📥 Download Report
+          </button>
+        )}
+        <button
+          className="btn-p"
+          style={{ fontSize: 13, width: "auto", padding: "10px 22px" }}
+          onClick={onNew}
+        >
+          🎓 Back
+        </button>
       </div>
-      {showFeedbackChat&&(
-        <div className="overlay" onClick={()=>setShowFeedbackChat(false)}>
-          <div className="modal" style={{maxWidth:680,height:"min(80vh,720px)"}} onClick={(event)=>event.stopPropagation()}>
-            <div className="mh"><div className="mh-title">AI Feedback Chat</div><button className="mh-close" onClick={()=>setShowFeedbackChat(false)}>✕</button></div>
-            <div className="mb" style={{display:"flex",flexDirection:"column",gap:12,paddingBottom:10}}>
-              {feedbackChatMessages.map((message)=>(
-                <div key={message.id} style={{display:"flex",justifyContent:message.role==="user"?"flex-end":"flex-start"}}>
-                  <div style={{maxWidth:"82%",padding:"12px 14px",borderRadius:16,background:message.role==="user"?"linear-gradient(135deg,#00c37a,#2d9cdb)":"var(--surf2)",color:message.role==="user"?"#fff":"var(--t1)",border:message.role==="user"?"none":"1px solid var(--bdr)"}}>
-                    {message.role==="assistant" ? <FormattedAIContent content={message.text} /> : message.text}
+      {showFeedbackChat && (
+        <div className="overlay" onClick={() => setShowFeedbackChat(false)}>
+          <div
+            className="modal"
+            style={{ maxWidth: 680, height: "min(80vh,720px)" }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mh">
+              <div className="mh-title">AI Feedback Chat</div>
+              <button
+                className="mh-close"
+                onClick={() => setShowFeedbackChat(false)}
+              >
+                ✕
+              </button>
+            </div>
+            <div
+              className="mb"
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+                paddingBottom: 10,
+              }}
+            >
+              {feedbackChatMessages.map((message) => (
+                <div
+                  key={message.id}
+                  style={{
+                    display: "flex",
+                    justifyContent:
+                      message.role === "user" ? "flex-end" : "flex-start",
+                  }}
+                >
+                  <div
+                    style={{
+                      maxWidth: "82%",
+                      padding: "12px 14px",
+                      borderRadius: 16,
+                      background:
+                        message.role === "user"
+                          ? "linear-gradient(135deg,#00c37a,#2d9cdb)"
+                          : "var(--surf2)",
+                      color: message.role === "user" ? "#fff" : "var(--t1)",
+                      border:
+                        message.role === "user"
+                          ? "none"
+                          : "1px solid var(--bdr)",
+                    }}
+                  >
+                    {message.role === "assistant" ? (
+                      <FormattedAIContent content={message.text} />
+                    ) : (
+                      message.text
+                    )}
                   </div>
                 </div>
               ))}
-              {feedbackChatLoading&&<div style={{fontSize:12,color:"var(--t2)"}}>AI is thinking…</div>}
+              {feedbackChatLoading && (
+                <div style={{ fontSize: 12, color: "var(--t2)" }}>
+                  AI is thinking…
+                </div>
+              )}
             </div>
-            <div className="mf" style={{justifyContent:"stretch"}}>
-              <textarea className="finput" style={{minHeight:54,flex:1}} placeholder="Ask about your feedback, strengths, or improvements…" value={feedbackChatInput} onChange={(event)=>setFeedbackChatInput(event.target.value)} onKeyDown={(event)=>{if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();sendFeedbackChat();}}}/>
-              <button className="btn-p" style={{width:"auto"}} onClick={sendFeedbackChat} disabled={feedbackChatLoading||!feedbackChatInput.trim()}>{feedbackChatLoading?"Sending...":"Send"}</button>
+            <div className="mf" style={{ justifyContent: "stretch" }}>
+              <textarea
+                className="finput"
+                style={{ minHeight: 54, flex: 1 }}
+                placeholder="Ask about your feedback, strengths, or improvements…"
+                value={feedbackChatInput}
+                onChange={(event) => setFeedbackChatInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    sendFeedbackChat();
+                  }
+                }}
+              />
+              <button
+                className="btn-p"
+                style={{ width: "auto" }}
+                onClick={sendFeedbackChat}
+                disabled={feedbackChatLoading || !feedbackChatInput.trim()}
+              >
+                {feedbackChatLoading ? "Sending..." : "Send"}
+              </button>
             </div>
           </div>
         </div>
       )}
-      {showAnalysis&&<AnalysisModal topic={result.topic} subject={result.subject} unit={result.unit} timer={result.timer} exchanges={result.exchanges||0} presenterName={result.presenterName} apiScores={result.scores||result.feedback||null} hintsUsed={result.hintsUsed||0} onClose={()=>setShowAnalysis(false)} onDownload={handleDownload}/>}
+      {showAnalysis && (
+        <AnalysisModal
+          topic={result.topic}
+          subject={result.subject}
+          unit={result.unit}
+          timer={result.timer}
+          exchanges={result.exchanges || 0}
+          presenterName={result.presenterName}
+          apiScores={result.scores || result.feedback || null}
+          hintsUsed={result.hintsUsed || 0}
+          onClose={() => setShowAnalysis(false)}
+          onDownload={handleDownload}
+        />
+      )}
     </div>
   );
 }
 
-function AutoAdvance({delay,onDone}) {
-  useEffect(()=>{const t=setTimeout(onDone,delay);return()=>clearTimeout(t);},[]);
+function AutoAdvance({ delay, onDone }) {
+  useEffect(() => {
+    const t = setTimeout(onDone, delay);
+    return () => clearTimeout(t);
+  }, []);
   return null;
 }
 
 function CreateWithAIWorkspace({ config, onCancel }) {
   const [artifactConfig, setArtifactConfig] = useState(config || {});
-  const artifact = useMemo(() => inferCreateArtifact(artifactConfig), [artifactConfig]);
-  const [docText, setDocText] = useState(() => config?.documentText || buildSeminarDocument(config || {}));
+  const artifact = useMemo(
+    () => inferCreateArtifact(artifactConfig),
+    [artifactConfig],
+  );
+  const [docText, setDocText] = useState(
+    () => config?.documentText || buildSeminarDocument(config || {}),
+  );
   const [companionNotesText, setCompanionNotesText] = useState(
-    () => config?.companionNotesText || (artifact.hasFile ? buildCompanionNotes(config || {}) : "")
+    () =>
+      config?.companionNotesText ||
+      (artifact.hasFile ? buildCompanionNotes(config || {}) : ""),
   );
   const [viewMode, setViewMode] = useState("preview");
   const [chatInput, setChatInput] = useState("");
@@ -6595,8 +14151,16 @@ function CreateWithAIWorkspace({ config, onCancel }) {
       },
     ];
   });
-  const [saveState, setSaveState] = useState(config?.status === "saved" ? "saved" : config?.status === "draft" ? "draft" : "unsaved");
-  const [refreshNotes, setRefreshNotes] = useState(() => config?.refreshNotes || []);
+  const [saveState, setSaveState] = useState(
+    config?.status === "saved"
+      ? "saved"
+      : config?.status === "draft"
+        ? "draft"
+        : "unsaved",
+  );
+  const [refreshNotes, setRefreshNotes] = useState(
+    () => config?.refreshNotes || [],
+  );
   const [downloading, setDownloading] = useState(false);
   const [aiThinking, setAiThinking] = useState(false);
   const [previewRefreshKey, setPreviewRefreshKey] = useState(0);
@@ -6650,10 +14214,23 @@ function CreateWithAIWorkspace({ config, onCancel }) {
   }
 
   function applyDocTool(tool) {
-    if (tool === "bold") replaceSelection((text) => `**${text.trim() || "Bold text"}**`);
-    if (tool === "italic") replaceSelection((text) => `*${text.trim() || "Italic text"}*`);
-    if (tool === "h1") replaceSelection((text) => `\n# ${text.replace(/^#+\s*/, "").trim() || "Heading"}\n`);
-    if (tool === "list") replaceSelection((text) => text.split("\n").map((line) => line.trim() ? `- ${line.replace(/^[-*]\s*/, "")}` : line).join("\n"));
+    if (tool === "bold")
+      replaceSelection((text) => `**${text.trim() || "Bold text"}**`);
+    if (tool === "italic")
+      replaceSelection((text) => `*${text.trim() || "Italic text"}*`);
+    if (tool === "h1")
+      replaceSelection(
+        (text) => `\n# ${text.replace(/^#+\s*/, "").trim() || "Heading"}\n`,
+      );
+    if (tool === "list")
+      replaceSelection((text) =>
+        text
+          .split("\n")
+          .map((line) =>
+            line.trim() ? `- ${line.replace(/^[-*]\s*/, "")}` : line,
+          )
+          .join("\n"),
+      );
   }
 
   async function saveDocument(status = "saved") {
@@ -6725,17 +14302,25 @@ function CreateWithAIWorkspace({ config, onCancel }) {
     if (artifact.slides?.length) {
       setSlideIndex((current) => {
         const max = artifact.slides.length - 1;
-        return direction === "next" ? Math.min(max, current + 1) : Math.max(0, current - 1);
+        return direction === "next"
+          ? Math.min(max, current + 1)
+          : Math.max(0, current - 1);
       });
       return;
     }
-    toast$("External Google Slides iframes do not allow parent-page arrow control. Return slide images from the backend to enable these arrows.", "warn");
+    toast$(
+      "External Google Slides iframes do not allow parent-page arrow control. Return slide images from the backend to enable these arrows.",
+      "warn",
+    );
   }
 
   async function sendMessage(value = chatInput) {
     const prompt = value.trim();
     if (!prompt || aiThinking) return;
-    setMessages((current) => [...current, { id: `me-${Date.now()}`, role: "me", text: prompt }]);
+    setMessages((current) => [
+      ...current,
+      { id: `me-${Date.now()}`, role: "me", text: prompt },
+    ]);
     setChatInput("");
     setAiThinking(true);
     try {
@@ -6755,22 +14340,38 @@ function CreateWithAIWorkspace({ config, onCancel }) {
           ...response,
           companionNotesText: nextNotes,
           fileUrl: response.fileUrl || response.sourceUrl || current.fileUrl,
-          sourceUrl: response.sourceUrl || response.fileUrl || current.sourceUrl,
+          sourceUrl:
+            response.sourceUrl || response.fileUrl || current.sourceUrl,
           previewUrl: response.previewUrl || current.previewUrl,
           editUrl: response.editUrl || current.editUrl,
           downloadUrl: response.downloadUrl || current.downloadUrl,
-          slides: response.slides || response.slideImages || response.slidePreviewUrls || current.slides,
+          slides:
+            response.slides ||
+            response.slideImages ||
+            response.slidePreviewUrls ||
+            current.slides,
         }));
         setViewMode("preview");
         setPreviewRefreshKey((current) => current + 1);
       } else {
         const nextDocText = response.documentText || docText;
         setDocText(nextDocText);
-        setArtifactConfig((current) => ({ ...current, documentText: nextDocText }));
+        setArtifactConfig((current) => ({
+          ...current,
+          documentText: nextDocText,
+        }));
       }
-      if (response.refreshNote) setRefreshNotes((current) => [...current, response.refreshNote]);
+      if (response.refreshNote)
+        setRefreshNotes((current) => [...current, response.refreshNote]);
       markUnsaved();
-      setMessages((current) => [...current, { id: `ai-${Date.now()}`, role: "ai", text: response.reply || getCreateAIReply(prompt, artifact.hasFile) }]);
+      setMessages((current) => [
+        ...current,
+        {
+          id: `ai-${Date.now()}`,
+          role: "ai",
+          text: response.reply || getCreateAIReply(prompt, artifact.hasFile),
+        },
+      ]);
     } catch (error) {
       setMessages((current) => [
         ...current,
@@ -6778,8 +14379,14 @@ function CreateWithAIWorkspace({ config, onCancel }) {
           id: `ai-error-${Date.now()}`,
           role: "ai",
           text: artifact.hasFile
-            ? getErrorMessage(error, "The backend did not update the linked Google Slides file. To make chat work like an agent, the backend must edit the deck through Google Slides API and return an updated preview or slide image list.")
-            : getErrorMessage(error, "Unable to update the seminar file right now."),
+            ? getErrorMessage(
+                error,
+                "The backend did not update the linked Google Slides file. To make chat work like an agent, the backend must edit the deck through Google Slides API and return an updated preview or slide image list.",
+              )
+            : getErrorMessage(
+                error,
+                "Unable to update the seminar file right now.",
+              ),
         },
       ]);
     } finally {
@@ -6789,32 +14396,77 @@ function CreateWithAIWorkspace({ config, onCancel }) {
 
   const renderEditorTools = () => (
     <>
-      <button className="doc-tool" onClick={() => applyDocTool("bold")}>B</button>
-      <button className="doc-tool" onClick={() => applyDocTool("italic")}>I</button>
-      <button className="doc-tool" onClick={() => applyDocTool("h1")}>H1</button>
-      <button className="doc-tool" onClick={() => applyDocTool("list")}>List</button>
+      <button className="doc-tool" onClick={() => applyDocTool("bold")}>
+        B
+      </button>
+      <button className="doc-tool" onClick={() => applyDocTool("italic")}>
+        I
+      </button>
+      <button className="doc-tool" onClick={() => applyDocTool("h1")}>
+        H1
+      </button>
+      <button className="doc-tool" onClick={() => applyDocTool("list")}>
+        List
+      </button>
     </>
   );
 
   return (
     <div className="create-ai-page route-enter">
       <div className="create-ai-bar">
-        <button className="create-ai-logo" onClick={cancelWorkspace}><span className="create-ai-logo-ic">📄</span><span>Create with AI</span></button>
-        <div className="create-ai-topic"><strong>{config?.topic || "Seminar File"}</strong>{config?.subject ? ` · ${config.subject}` : ""}{config?.unit ? ` · ${config.unit}` : ""}</div>
-        <div className={`create-ai-pill ${saveState}`}>{saveState === "saving" ? "Saving..." : saveState === "unsaved" ? "Unsaved changes" : saveState === "draft" ? "Draft saved" : "Saved"}</div>
+        <button className="create-ai-logo" onClick={cancelWorkspace}>
+          <span className="create-ai-logo-ic">📄</span>
+          <span>Create with AI</span>
+        </button>
+        <div className="create-ai-topic">
+          <strong>{config?.topic || "Seminar File"}</strong>
+          {config?.subject ? ` · ${config.subject}` : ""}
+          {config?.unit ? ` · ${config.unit}` : ""}
+        </div>
+        <div className={`create-ai-pill ${saveState}`}>
+          {saveState === "saving"
+            ? "Saving..."
+            : saveState === "unsaved"
+              ? "Unsaved changes"
+              : saveState === "draft"
+                ? "Draft saved"
+                : "Saved"}
+        </div>
         <div className="create-ai-actions">
-          <button className="doc-action ghost" onClick={() => saveDocument("draft")} disabled={saveState === "saving"}>Save as Draft</button>
-          <button className="doc-action primary" onClick={() => saveDocument("saved")} disabled={saveState === "saving"}>Save</button>
+          <button
+            className="doc-action ghost"
+            onClick={() => saveDocument("draft")}
+            disabled={saveState === "saving"}
+          >
+            Save as Draft
+          </button>
+          <button
+            className="doc-action primary"
+            onClick={() => saveDocument("saved")}
+            disabled={saveState === "saving"}
+          >
+            Save
+          </button>
           <button
             className="doc-action"
             onClick={downloadDocument}
             disabled={saveState !== "saved" || downloading}
-            title={saveState !== "saved" ? "Save before downloading" : `Download ${artifact.hasFile ? `.${artifact.extension}` : ".txt"}`}
+            title={
+              saveState !== "saved"
+                ? "Save before downloading"
+                : `Download ${artifact.hasFile ? `.${artifact.extension}` : ".txt"}`
+            }
           >
-            {downloading ? "Preparing..." : `Download${artifact.hasFile && artifact.extension ? ` .${artifact.extension}` : ""}`}
+            {downloading
+              ? "Preparing..."
+              : `Download${artifact.hasFile && artifact.extension ? ` .${artifact.extension}` : ""}`}
           </button>
-          <button className="doc-action danger" onClick={deleteDocument}>Delete</button>
-          <button className="doc-action ghost" onClick={cancelWorkspace}>Cancel</button>
+          <button className="doc-action danger" onClick={deleteDocument}>
+            Delete
+          </button>
+          <button className="doc-action ghost" onClick={cancelWorkspace}>
+            Cancel
+          </button>
         </div>
       </div>
       <div className="create-ai-body">
@@ -6822,30 +14474,90 @@ function CreateWithAIWorkspace({ config, onCancel }) {
           <div className="create-doc-toolbar">
             {artifact.hasFile ? (
               <>
-                <button className={`doc-tool${viewMode === "preview" ? " active" : ""}`} onClick={() => setViewMode("preview")}>Preview</button>
-                <button className={`doc-tool${viewMode === "notes" ? " active" : ""}`} onClick={() => setViewMode("notes")}>Companion Notes</button>
+                <button
+                  className={`doc-tool${viewMode === "preview" ? " active" : ""}`}
+                  onClick={() => setViewMode("preview")}
+                >
+                  Preview
+                </button>
+                <button
+                  className={`doc-tool${viewMode === "notes" ? " active" : ""}`}
+                  onClick={() => setViewMode("notes")}
+                >
+                  Companion Notes
+                </button>
                 <span className="doc-tool-sep" />
-                <button className="doc-tool" onClick={openEditor}>Manual Edit</button>
-                <button className="doc-tool" onClick={refreshPreview}>Refresh Preview</button>
+                <button className="doc-tool" onClick={openEditor}>
+                  Manual Edit
+                </button>
+                <button className="doc-tool" onClick={refreshPreview}>
+                  Refresh Preview
+                </button>
                 {viewMode === "notes" && renderEditorTools()}
               </>
-            ) : renderEditorTools()}
-            <div className="doc-status">{saveState === "unsaved" ? "Unsaved edits" : saveState === "draft" ? "Draft saved" : saveState === "saving" ? "Saving document" : "All changes saved"}</div>
+            ) : (
+              renderEditorTools()
+            )}
+            <div className="doc-status">
+              {saveState === "unsaved"
+                ? "Unsaved edits"
+                : saveState === "draft"
+                  ? "Draft saved"
+                  : saveState === "saving"
+                    ? "Saving document"
+                    : "All changes saved"}
+            </div>
           </div>
-          <div className={`create-doc-scroll${artifact.hasFile && viewMode === "preview" ? " full-preview" : ""}`}>
+          <div
+            className={`create-doc-scroll${artifact.hasFile && viewMode === "preview" ? " full-preview" : ""}`}
+          >
             {artifact.hasFile && viewMode === "preview" ? (
               <div className="create-file-preview full">
                 <div className="create-file-preview-head">
-                  <div><strong>{artifact.label} Preview</strong><span>{artifact.sourceUrl}</span></div>
+                  <div>
+                    <strong>{artifact.label} Preview</strong>
+                    <span>{artifact.sourceUrl}</span>
+                  </div>
                 </div>
                 {artifact.slides?.length ? (
                   <div className="create-file-stage">
-                    <button className="create-slide-nav prev" type="button" title="Previous slide" onClick={() => movePreview("previous")} disabled={slideIndex <= 0}>‹</button>
+                    <button
+                      className="create-slide-nav prev"
+                      type="button"
+                      title="Previous slide"
+                      onClick={() => movePreview("previous")}
+                      disabled={slideIndex <= 0}
+                    >
+                      ‹
+                    </button>
                     <div className="create-slide-image-wrap">
-                      <img className="create-slide-image" src={artifact.slides[Math.min(slideIndex, artifact.slides.length - 1)]?.imageUrl} alt={artifact.slides[Math.min(slideIndex, artifact.slides.length - 1)]?.title || `Slide ${slideIndex + 1}`} />
-                      <div className="create-slide-counter">{Math.min(slideIndex + 1, artifact.slides.length)} / {artifact.slides.length}</div>
+                      <img
+                        className="create-slide-image"
+                        src={
+                          artifact.slides[
+                            Math.min(slideIndex, artifact.slides.length - 1)
+                          ]?.imageUrl
+                        }
+                        alt={
+                          artifact.slides[
+                            Math.min(slideIndex, artifact.slides.length - 1)
+                          ]?.title || `Slide ${slideIndex + 1}`
+                        }
+                      />
+                      <div className="create-slide-counter">
+                        {Math.min(slideIndex + 1, artifact.slides.length)} /{" "}
+                        {artifact.slides.length}
+                      </div>
                     </div>
-                    <button className="create-slide-nav next" type="button" title="Next slide" onClick={() => movePreview("next")} disabled={slideIndex >= artifact.slides.length - 1}>›</button>
+                    <button
+                      className="create-slide-nav next"
+                      type="button"
+                      title="Next slide"
+                      onClick={() => movePreview("next")}
+                      disabled={slideIndex >= artifact.slides.length - 1}
+                    >
+                      ›
+                    </button>
                   </div>
                 ) : artifact.previewUrl ? (
                   <div className="create-file-stage">
@@ -6861,23 +14573,53 @@ function CreateWithAIWorkspace({ config, onCancel }) {
                 ) : (
                   <div className="create-file-fallback">
                     <div>No embeddable preview is available for this file.</div>
-                    <button className="doc-action primary" onClick={openEditor}>Open File</button>
+                    <button className="doc-action primary" onClick={openEditor}>
+                      Open File
+                    </button>
                   </div>
                 )}
                 {!artifact.isGoogleFile && (
                   <div className="create-file-viewer-fallback">
                     <span>Trouble viewing this file?</span>
                     <div className="create-file-viewer-links">
-                      <a href={artifact.googleViewerFallbackUrl || artifact.sourceUrl} target="_blank" rel="noopener noreferrer">Google viewer</a>
-                      {artifact.officeViewerUrl && <a href={artifact.officeViewerUrl} target="_blank" rel="noopener noreferrer">Office viewer</a>}
+                      <a
+                        href={
+                          artifact.googleViewerFallbackUrl || artifact.sourceUrl
+                        }
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Google viewer
+                      </a>
+                      {artifact.officeViewerUrl && (
+                        <a
+                          href={artifact.officeViewerUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          Office viewer
+                        </a>
+                      )}
                     </div>
                   </div>
                 )}
               </div>
             ) : artifact.hasFile && viewMode === "notes" ? (
-              <textarea ref={docRef} className="create-doc-paper" aria-label="Companion notes" value={companionNotesText} onChange={handleNotesChange} />
+              <textarea
+                ref={docRef}
+                className="create-doc-paper"
+                aria-label="Companion notes"
+                value={companionNotesText}
+                onChange={handleNotesChange}
+              />
             ) : (
-              <textarea ref={docRef} className="create-doc-paper" aria-label="Editable seminar document" value={docText} onChange={handleDocChange} />
+              <textarea
+                ref={docRef}
+                className="create-doc-paper"
+                aria-label="Editable seminar document"
+                value={docText}
+                onChange={handleDocChange}
+              />
             )}
           </div>
         </section>
@@ -6892,17 +14634,35 @@ function CreateWithAIWorkspace({ config, onCancel }) {
           </div>
           <div className="create-chat-msgs">
             {messages.map((message) => (
-              <div key={message.id} className={`create-chat-msg ${message.role === "me" ? "me" : "ai"}`}>
-                <div className="create-chat-av">{message.role === "me" ? avInit(config?.name) : "AI"}</div>
+              <div
+                key={message.id}
+                className={`create-chat-msg ${message.role === "me" ? "me" : "ai"}`}
+              >
+                <div className="create-chat-av">
+                  {message.role === "me" ? avInit(config?.name) : "AI"}
+                </div>
                 <div className="create-chat-bubble">{message.text}</div>
               </div>
             ))}
             {aiThinking && (
               <div className="create-chat-msg ai">
                 <div className="create-chat-av">AI</div>
-                <div className="create-chat-bubble" style={{ display: "flex", gap: 4 }}>
+                <div
+                  className="create-chat-bubble"
+                  style={{ display: "flex", gap: 4 }}
+                >
                   {[0, 1, 2].map((item) => (
-                    <span key={item} style={{ width: 5, height: 5, borderRadius: "50%", background: "#7ed3f7", animation: "dotPulse .8s ease-in-out infinite", animationDelay: `${item * 0.2}s` }} />
+                    <span
+                      key={item}
+                      style={{
+                        width: 5,
+                        height: 5,
+                        borderRadius: "50%",
+                        background: "#7ed3f7",
+                        animation: "dotPulse .8s ease-in-out infinite",
+                        animationDelay: `${item * 0.2}s`,
+                      }}
+                    />
                   ))}
                 </div>
               </div>
@@ -6912,22 +14672,45 @@ function CreateWithAIWorkspace({ config, onCancel }) {
           <div className="create-chat-prompts">
             {refreshNotes.length > 0 && (
               <div className="create-refresh-log">
-                {refreshNotes.slice(-3).map((note, index) => <span key={`${note}-${index}`}>{note}</span>)}
+                {refreshNotes.slice(-3).map((note, index) => (
+                  <span key={`${note}-${index}`}>{note}</span>
+                ))}
               </div>
             )}
-            {["Add examples", "Simplify language", "Create Q&A", "Improve conclusion"].map((prompt) => (
-              <button key={prompt} className="create-prompt" onClick={() => sendMessage(prompt)}>{prompt}</button>
+            {[
+              "Add examples",
+              "Simplify language",
+              "Create Q&A",
+              "Improve conclusion",
+            ].map((prompt) => (
+              <button
+                key={prompt}
+                className="create-prompt"
+                onClick={() => sendMessage(prompt)}
+              >
+                {prompt}
+              </button>
             ))}
           </div>
           <div className="create-chat-input">
             <textarea
               value={chatInput}
               onChange={(event) => setChatInput(event.target.value)}
-              onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendMessage(); } }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  sendMessage();
+                }
+              }}
               placeholder="Tell AI what to add or change..."
               disabled={aiThinking}
             />
-            <button onClick={() => sendMessage()} disabled={!chatInput.trim() || aiThinking}>➤</button>
+            <button
+              onClick={() => sendMessage()}
+              disabled={!chatInput.trim() || aiThinking}
+            >
+              ➤
+            </button>
           </div>
         </aside>
       </div>
@@ -6953,12 +14736,17 @@ function extractStructuredSectionLabels(content) {
     : Array.isArray(content)
       ? content[0]
       : content;
-  const sections = Array.isArray(unitContent?.sections) ? unitContent.sections : [];
+  const sections = Array.isArray(unitContent?.sections)
+    ? unitContent.sections
+    : [];
 
   return sections
     .filter((section) => {
       const sectionType = normalizeStructuredLabel(
-        section?.type || section?.kind || section?.section_type || section?.sectionType,
+        section?.type ||
+          section?.kind ||
+          section?.section_type ||
+          section?.sectionType,
       ).toLowerCase();
       return sectionType === "section";
     })
@@ -6979,52 +14767,61 @@ function extractStructuredSectionLabels(content) {
     .filter(Boolean);
 }
 
-function navigateAfterSeminarExit(isGuest){
+function navigateAfterSeminarExit(isGuest) {
   window.location.href = isGuest ? "/auth" : "/dashboard";
 }
 
 export default function SeminarPage() {
   const { user } = useAuth();
-  const [screen,setScreen]=useState("setup");
-  const [config,setConfig]=useState(null);
-  const [result,setResult]=useState(null);
-  const [role,setRole]=useState("student");
+  const [screen, setScreen] = useState("setup");
+  const [config, setConfig] = useState(null);
+  const [result, setResult] = useState(null);
+  const [role, setRole] = useState("student");
   const [pageInitialLoad, setPageInitialLoad] = useState(true);
-  const [entrySessionId,setEntrySessionId]=useState("");
-  const [showGuestNameModal,setShowGuestNameModal]=useState(false);
-  const [guestName,setGuestName]=useState(()=>localStorage.getItem(SEMINAR_GUEST_NAME_KEY) || "");
-  const [entryLoading,setEntryLoading]=useState(false);
-  const [entryError,setEntryError]=useState(null);
-  const autoJoinRef=useRef(false);
+  const [entrySessionId, setEntrySessionId] = useState("");
+  const [showGuestNameModal, setShowGuestNameModal] = useState(false);
+  const [guestName, setGuestName] = useState(
+    () => localStorage.getItem(SEMINAR_GUEST_NAME_KEY) || "",
+  );
+  const [entryLoading, setEntryLoading] = useState(false);
+  const [entryError, setEntryError] = useState(null);
+  const autoJoinRef = useRef(false);
 
   useEffect(() => {
     const t = setTimeout(() => setPageInitialLoad(false), 1500);
     return () => clearTimeout(t);
   }, []);
 
-  async function joinLinkedSeminar(nameOverride){
+  async function joinLinkedSeminar(nameOverride) {
     const params = new URLSearchParams(window.location.search);
-    const linkedSessionId = params.get("sessionId") || params.get("session") || params.get("room") || "";
-    if(!linkedSessionId) return;
+    const linkedSessionId =
+      params.get("sessionId") ||
+      params.get("session") ||
+      params.get("room") ||
+      "";
+    if (!linkedSessionId) return;
     setEntryLoading(true);
     setEntryError(null);
-    try{
+    try {
       let candidateId = "";
       let candidateName = "";
-      if(user){
+      if (user) {
         const candidate = getCandidateContext(user || {});
         candidateId = candidate.candidateId;
         // Prefer the typed name if it was entered; fall back to account name
-        candidateName = (nameOverride || guestName || candidate.candidateName || "").trim() || candidate.candidateName;
+        candidateName =
+          (nameOverride || guestName || candidate.candidateName || "").trim() ||
+          candidate.candidateName;
       } else {
         const safeName = (nameOverride || guestName || "").trim();
-        if(!safeName){
+        if (!safeName) {
           setShowGuestNameModal(true);
           setScreen("entry");
           setEntryLoading(false);
           return;
         }
-        const storedGuestId = localStorage.getItem(SEMINAR_GUEST_ID_KEY) || `guest-${Date.now()}`;
+        const storedGuestId =
+          localStorage.getItem(SEMINAR_GUEST_ID_KEY) || `guest-${Date.now()}`;
         localStorage.setItem(SEMINAR_GUEST_ID_KEY, storedGuestId);
         localStorage.setItem(SEMINAR_GUEST_NAME_KEY, safeName);
         candidateId = storedGuestId;
@@ -7043,8 +14840,10 @@ export default function SeminarPage() {
         candidateId,
         isGuest: !user,
         role: "Observer",
-        subject: joinedSession?.subject || joinedSession?.liveSession?.subject || "",
-        unit: joinedSession?.unit || joinedSession?.liveSession?.unitTitle || "",
+        subject:
+          joinedSession?.subject || joinedSession?.liveSession?.subject || "",
+        unit:
+          joinedSession?.unit || joinedSession?.liveSession?.unitTitle || "",
         topic: joinedSession?.topic || joinedSession?.liveSession?.topic || "",
         invitees: [],
         roomId: linkedSessionId,
@@ -7059,79 +14858,129 @@ export default function SeminarPage() {
         joinSession: joinedSession || null,
       });
       setScreen("loading");
-    } catch(error){
-      setEntryError(getErrorMessage(error, "Unable to join this seminar session right now."));
+    } catch (error) {
+      setEntryError(
+        getErrorMessage(
+          error,
+          "Unable to join this seminar session right now.",
+        ),
+      );
       setScreen("entry");
     } finally {
       setEntryLoading(false);
     }
   }
 
-  useEffect(()=>{
+  useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const createDocId = params.get("createAi") || "";
     if (createDocId) {
-      CREATE_AI_API.getDocument(createDocId).then((docConfig) => {
-        if (docConfig) {
-          setConfig({ ...docConfig, seminarMode: "create", sessionSubMode: "create-ai" });
-          setScreen("loading");
-        }
-      }).catch(() => null);
+      CREATE_AI_API.getDocument(createDocId)
+        .then((docConfig) => {
+          if (docConfig) {
+            setConfig({
+              ...docConfig,
+              seminarMode: "create",
+              sessionSubMode: "create-ai",
+            });
+            setScreen("loading");
+          }
+        })
+        .catch(() => null);
       return;
     }
-    const linkedSessionId = params.get("sessionId") || params.get("session") || params.get("room") || "";
-    if(!linkedSessionId || autoJoinRef.current) return;
+    const linkedSessionId =
+      params.get("sessionId") ||
+      params.get("session") ||
+      params.get("room") ||
+      "";
+    if (!linkedSessionId || autoJoinRef.current) return;
     autoJoinRef.current = true;
     setEntrySessionId(linkedSessionId);
-    if(user){
-      joinLinkedSeminar().catch(()=>null);
+    if (user) {
+      joinLinkedSeminar().catch(() => null);
       return;
     }
     setGuestName(localStorage.getItem(SEMINAR_GUEST_NAME_KEY) || "");
     setScreen("entry");
-  },[user]);
+  }, [user]);
 
-  function handleLinkLogin(){
-    localStorage.setItem(POST_AUTH_REDIRECT_KEY, `${window.location.pathname}${window.location.search}`);
+  function handleLinkLogin() {
+    localStorage.setItem(
+      POST_AUTH_REDIRECT_KEY,
+      `${window.location.pathname}${window.location.search}`,
+    );
     window.location.href = "/auth";
   }
 
-  function handleGuestContinue(){
+  function handleGuestContinue() {
     setShowGuestNameModal(true);
   }
 
-  function handleGuestJoin(){
+  function handleGuestJoin() {
     const trimmed = guestName.trim();
-    if(!trimmed){
+    if (!trimmed) {
       setEntryError("Please enter your name to continue as guest.");
       return;
     }
-    joinLinkedSeminar(trimmed).catch(()=>null);
+    joinLinkedSeminar(trimmed).catch(() => null);
     setShowGuestNameModal(false);
   }
 
-  const isRoom=screen==="room"||screen==="loading"||screen==="results-loading"||screen==="results";
+  const isRoom =
+    screen === "room" ||
+    screen === "loading" ||
+    screen === "results-loading" ||
+    screen === "results";
 
-  const loaderSteps={
-    prepare:[{ic:"🎙️",label:"Enabling voice transcription"},{ic:"🤖",label:"Loading AI coach"},{ic:"📋",label:"Preparing notes board"},{ic:"✅",label:"Room ready"}],
-    create:[{ic:"📄",label:"Opening AI document"},{ic:"✏️",label:"Loading editor"},{ic:"🤖",label:"Connecting chat builder"},{ic:"✅",label:"Workspace ready"}],
-    presenter:[{ic:"🖥️",label:"Setting up screen share"},{ic:"🤖",label:"Initialising AI moderator"},{ic:"🎙️",label:"Enabling live transcript"},{ic:"✅",label:"Seminar room ready"}],
-    observer:[{ic:"👁️",label:"Connecting to session"},{ic:"💬",label:"Loading chat"},{ic:"✅",label:"Joined as observer"}],
+  const loaderSteps = {
+    prepare: [
+      { ic: "mic", label: "Enabling voice transcription" },
+      { ic: "ai", label: "Loading AI coach" },
+      { ic: "clipboard", label: "Preparing notes board" },
+      { ic: "check", label: "Room ready" },
+    ],
+    create: [
+      { ic: "file", label: "Opening AI document" },
+      { ic: "pencil", label: "Loading editor" },
+      { ic: "ai", label: "Connecting chat builder" },
+      { ic: "check", label: "Workspace ready" },
+    ],
+    presenter: [
+      { ic: "monitor", label: "Setting up screen share" },
+      { ic: "ai", label: "Initialising AI moderator" },
+      { ic: "mic", label: "Enabling live transcript" },
+      { ic: "check", label: "Seminar room ready" },
+    ],
+    observer: [
+      { ic: "eye", label: "Connecting to session" },
+      { ic: "message", label: "Loading chat" },
+      { ic: "check", label: "Joined as observer" },
+    ],
   };
 
-  function getLoaderSteps(){
-    if(!config)return loaderSteps.prepare;
-    if(config.seminarMode==="create")return loaderSteps.create;
-    if(config.seminarMode==="prepare")return loaderSteps.prepare;
-    if(config.sessionSubMode==="observer")return loaderSteps.observer;
+  function getLoaderSteps() {
+    if (!config) return loaderSteps.prepare;
+    if (config.seminarMode === "create") return loaderSteps.create;
+    if (config.seminarMode === "prepare") return loaderSteps.prepare;
+    if (config.sessionSubMode === "observer") return loaderSteps.observer;
     return loaderSteps.presenter;
   }
 
-  function handleLaunch(cfg){setConfig(cfg);setScreen("loading");}
-  function handleEnd(res){setConfig(null);setResult(res);setScreen("results-loading");}
-  function handleNew(){
+  function handleLaunch(cfg) {
+    setConfig(cfg);
+    setScreen("loading");
+  }
+  function handleEnd(res) {
+    setConfig(null);
+    setResult(res);
+    setScreen("results-loading");
+  }
+  function handleNew() {
     setPageInitialLoad(true);
-    setResult(null);setConfig(null);setScreen("setup");
+    setResult(null);
+    setConfig(null);
+    setScreen("setup");
     setTimeout(() => setPageInitialLoad(false), 1500);
   }
 
@@ -7140,7 +14989,10 @@ export default function SeminarPage() {
       <>
         <style>{CSS}</style>
         <div className="sp-app">
-          <PageLoader label="Loading SeminarArena" sublabel="Preparing environment..." />
+          <PageLoader
+            label="Loading SeminarArena"
+            sublabel="Preparing environment..."
+          />
         </div>
       </>
     );
@@ -7151,47 +15003,150 @@ export default function SeminarPage() {
       <style>{CSS}</style>
       <div className="sp-app">
         {/* Navigation shown ONLY on setup screen */}
-        {screen==="setup"&&<Navigation currentRole={role} onRoleChange={setRole}/>}
+        {screen === "setup" && (
+          <Navigation currentRole={role} onRoleChange={setRole} />
+        )}
 
-        {screen==="entry"&&(
-          <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:"24px",background:"#060e1c"}}>
-            <div className="modal" style={{maxWidth:460,width:"100%",background:"#0c1422",border:"1px solid rgba(255,255,255,.1)"}}>
-              <div style={{padding:"24px 22px",textAlign:"center",borderBottom:"1px solid rgba(255,255,255,.08)"}}>
-                <div style={{fontSize:40,marginBottom:10}}>🎓</div>
-                <div style={{fontSize:18,fontWeight:800,color:"#fff",marginBottom:6}}>Join Seminar Session</div>
-                <div style={{fontSize:12.5,color:"rgba(255,255,255,.45)",lineHeight:1.7}}>
-                  You opened a seminar room link. Continue with your account or join as a guest to enter the waiting room.
+        {screen === "entry" && (
+          <div
+            style={{
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "24px",
+              background: "#060e1c",
+            }}
+          >
+            <div
+              className="modal"
+              style={{
+                maxWidth: 460,
+                width: "100%",
+                background: "#0c1422",
+                border: "1px solid rgba(255,255,255,.1)",
+              }}
+            >
+              <div
+                style={{
+                  padding: "24px 22px",
+                  textAlign: "center",
+                  borderBottom: "1px solid rgba(255,255,255,.08)",
+                }}
+              >
+                <div style={{ fontSize: 40, marginBottom: 10 }}>🎓</div>
+                <div
+                  style={{
+                    fontSize: 18,
+                    fontWeight: 800,
+                    color: "#fff",
+                    marginBottom: 6,
+                  }}
+                >
+                  Join Seminar Session
+                </div>
+                <div
+                  style={{
+                    fontSize: 12.5,
+                    color: "rgba(255,255,255,.45)",
+                    lineHeight: 1.7,
+                  }}
+                >
+                  You opened a seminar room link. Continue with your account or
+                  join as a guest to enter the waiting room.
                 </div>
               </div>
-              <div style={{padding:"18px 20px"}}>
-                {entryError&&(
-                  <div style={{background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.24)",borderRadius:14,padding:12,color:"#fecaca",fontSize:12.5,lineHeight:1.6,marginBottom:14}}>
+              <div style={{ padding: "18px 20px" }}>
+                {entryError && (
+                  <div
+                    style={{
+                      background: "rgba(239,68,68,.08)",
+                      border: "1px solid rgba(239,68,68,.24)",
+                      borderRadius: 14,
+                      padding: 12,
+                      color: "#fecaca",
+                      fontSize: 12.5,
+                      lineHeight: 1.6,
+                      marginBottom: 14,
+                    }}
+                  >
                     {entryError}
                   </div>
                 )}
-                <div style={{padding:"10px 12px",borderRadius:12,background:"rgba(255,255,255,.05)",border:"1px solid rgba(255,255,255,.08)",fontSize:11.5,fontWeight:700,color:"rgba(255,255,255,.7)",marginBottom:14}}>
-                  Room ID: <span style={{color:"#5ee3b7"}}>{entrySessionId || parseSeminarSessionId(window.location.href)}</span>
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: 12,
+                    background: "rgba(255,255,255,.05)",
+                    border: "1px solid rgba(255,255,255,.08)",
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                    color: "rgba(255,255,255,.7)",
+                    marginBottom: 14,
+                  }}
+                >
+                  Room ID:{" "}
+                  <span style={{ color: "#5ee3b7" }}>
+                    {entrySessionId ||
+                      parseSeminarSessionId(window.location.href)}
+                  </span>
                 </div>
-                <div style={{display:"flex",gap:10,justifyContent:"center"}}>
-                  <button className="btn-p" style={{width:"auto"}} onClick={handleLinkLogin} disabled={entryLoading}>Login</button>
-                  <button className="btn-s" onClick={handleGuestContinue} disabled={entryLoading}>Continue as Guest</button>
+                <div
+                  style={{ display: "flex", gap: 10, justifyContent: "center" }}
+                >
+                  <button
+                    className="btn-p"
+                    style={{ width: "auto" }}
+                    onClick={handleLinkLogin}
+                    disabled={entryLoading}
+                  >
+                    Login
+                  </button>
+                  <button
+                    className="btn-s"
+                    onClick={handleGuestContinue}
+                    disabled={entryLoading}
+                  >
+                    Continue as Guest
+                  </button>
                 </div>
               </div>
 
-              {showGuestNameModal&&(
+              {showGuestNameModal && (
                 <div className="overlay">
-                  <div className="modal" style={{maxWidth:380}}>
+                  <div className="modal" style={{ maxWidth: 380 }}>
                     <div className="mh">
                       <div className="mh-title">Continue as Guest</div>
-                      <button className="mh-close" onClick={()=>setShowGuestNameModal(false)}>✕</button>
+                      <button
+                        className="mh-close"
+                        onClick={() => setShowGuestNameModal(false)}
+                      >
+                        ✕
+                      </button>
                     </div>
                     <div className="mb">
                       <label className="fl">Your Name</label>
-                      <input className="finput" value={guestName} onChange={(event)=>setGuestName(event.target.value)} placeholder="Enter your display name" maxLength={40}/>
+                      <input
+                        className="finput"
+                        value={guestName}
+                        onChange={(event) => setGuestName(event.target.value)}
+                        placeholder="Enter your display name"
+                        maxLength={40}
+                      />
                     </div>
                     <div className="mf">
-                      <button className="btn-s" onClick={()=>setShowGuestNameModal(false)}>Cancel</button>
-                      <button className="btn-p" style={{width:"auto"}} onClick={handleGuestJoin} disabled={entryLoading}>
+                      <button
+                        className="btn-s"
+                        onClick={() => setShowGuestNameModal(false)}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        className="btn-p"
+                        style={{ width: "auto" }}
+                        onClick={handleGuestJoin}
+                        disabled={entryLoading}
+                      >
                         {entryLoading ? "Joining..." : "Join Waiting Room"}
                       </button>
                     </div>
@@ -7202,30 +15157,75 @@ export default function SeminarPage() {
           </div>
         )}
 
-        {screen==="loading"&&config&&(
+        {screen === "loading" && config && (
           <>
             <PageLoader
-              label={config.seminarMode==="create"?"Opening AI Seminar File…":config.seminarMode==="prepare"?"Entering AI Coach Room…":config.sessionSubMode==="observer"?"Joining as Observer…":"Launching Seminar Room…"}
-              sublabel={config.seminarMode==="create"?"Loading document editor and AI chat":config.seminarMode==="prepare"?"Setting up voice transcription & AI coach":config.sessionSubMode==="observer"?"Connecting to live session":"Preparing screen share & AI moderator"}
+              label={
+                config.seminarMode === "create"
+                  ? "Opening AI Seminar File…"
+                  : config.seminarMode === "prepare"
+                    ? "Entering AI Coach Room…"
+                    : config.sessionSubMode === "observer"
+                      ? "Joining as Observer…"
+                      : "Launching Seminar Room…"
+              }
+              sublabel={
+                config.seminarMode === "create"
+                  ? "Loading document editor and AI chat"
+                  : config.seminarMode === "prepare"
+                    ? "Setting up voice transcription & AI coach"
+                    : config.sessionSubMode === "observer"
+                      ? "Connecting to live session"
+                      : "Preparing screen share & AI moderator"
+              }
               steps={getLoaderSteps()}
             />
-            <AutoAdvance delay={2600} onDone={()=>setScreen("room")}/>
+            <AutoAdvance delay={2600} onDone={() => setScreen("room")} />
           </>
         )}
 
-        {screen==="setup"&&(
-          <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",minHeight:0}}>
-            <SeminarSetupIntegrated onLaunch={handleLaunch}/>
+        {screen === "setup" && (
+          <div
+            style={{
+              flex: 1,
+              overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
+              minHeight: 0,
+            }}
+          >
+            <SeminarSetupIntegrated onLaunch={handleLaunch} />
           </div>
         )}
 
-        {screen==="room"&&config&&config.seminarMode==="create"&&<CreateWithAIWorkspace config={config} onCancel={handleNew}/>}
-        {screen==="room"&&config&&config.seminarMode==="prepare"&&<PrepareWithAIRoom config={config} onEnd={handleEnd}/>}
-        {screen==="room"&&config&&config.seminarMode==="session"&&config.sessionSubMode==="presenter"&&<PresenterRoom config={config} onEnd={handleEnd}/>}
-        {screen==="room"&&config&&config.seminarMode==="session"&&config.sessionSubMode==="observer"&&<ObserverRoom config={config} onEnd={handleEnd}/>}
+        {screen === "room" && config && config.seminarMode === "create" && (
+          <CreateWithAIWorkspace config={config} onCancel={handleNew} />
+        )}
+        {screen === "room" && config && config.seminarMode === "prepare" && (
+          <PrepareWithAIRoom config={config} onEnd={handleEnd} />
+        )}
+        {screen === "room" &&
+          config &&
+          config.seminarMode === "session" &&
+          config.sessionSubMode === "presenter" && (
+            <PresenterRoom config={config} onEnd={handleEnd} />
+          )}
+        {screen === "room" &&
+          config &&
+          config.seminarMode === "session" &&
+          config.sessionSubMode === "observer" && (
+            <ObserverRoom config={config} onEnd={handleEnd} />
+          )}
 
-        {screen==="results-loading"&&result&&<ResultsLoader onDone={()=>setScreen("results")} isObserver={result.modeType==="observer"}/>}
-        {screen==="results"&&result&&<SeminarResults result={result} onNew={handleNew}/>}
+        {screen === "results-loading" && result && (
+          <ResultsLoader
+            onDone={() => setScreen("results")}
+            isObserver={result.modeType === "observer"}
+          />
+        )}
+        {screen === "results" && result && (
+          <SeminarResults result={result} onNew={handleNew} />
+        )}
       </div>
     </>
   );
