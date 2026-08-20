@@ -5,11 +5,13 @@ import {
   ChevronLeft,
   ChevronRight,
   Hand,
+  Mic,
   Pause,
   Play,
   Send,
   Settings,
   Sparkles,
+  Square,
   X,
 } from "lucide-react";
 import {
@@ -18,6 +20,7 @@ import {
   resumeAvatarSession,
   startAvatarSession,
   synthesizeDebateSpeech,
+  transcribeDebateAudio,
 } from "../../lib/gradeupApi";
 
 type GeniusContext = {
@@ -253,13 +256,20 @@ export default function AvatarGeniusView() {
   const [feedback, setFeedback] = useState<Record<string, { correct: boolean; message: string }>>({});
   const [doubtOpen, setDoubtOpen] = useState(false);
   const [doubtText, setDoubtText] = useState("");
+  const [doubtInputMode, setDoubtInputMode] = useState<"type" | "voice">("type");
   const [raiseHandChat, setRaiseHandChat] = useState<RaiseHandMessage[]>([]);
   const [isRaisingHand, setIsRaisingHand] = useState(false);
+  const [isRecordingDoubt, setIsRecordingDoubt] = useState(false);
+  const [isTranscribingDoubt, setIsTranscribingDoubt] = useState(false);
   const [isResuming, setIsResuming] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioKeyRef = useRef("");
   const flashcardAudioCacheRef = useRef<Record<string, FlashcardAudioEntry>>({});
   const flashcardAudioPromiseRef = useRef<Record<string, Promise<FlashcardAudioEntry>>>({});
+  const doubtRecorderRef = useRef<MediaRecorder | null>(null);
+  const doubtStreamRef = useRef<MediaStream | null>(null);
+  const doubtAudioChunksRef = useRef<Blob[]>([]);
+  const doubtRecordingCancelledRef = useRef(false);
   const mediaRequestTokenRef = useRef(0);
   const statusRef = useRef(status);
   const fallbackTimerRef = useRef<number | null>(null);
@@ -364,6 +374,7 @@ export default function AvatarGeniusView() {
 
   useEffect(() => {
     return () => {
+      cleanupDoubtRecording();
       destroyLessonAudio();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -442,6 +453,20 @@ export default function AvatarGeniusView() {
     audioRef.current.remove();
     audioRef.current = null;
     audioKeyRef.current = "";
+  }
+
+  function cleanupDoubtRecording() {
+    doubtRecordingCancelledRef.current = true;
+    try {
+      if (doubtRecorderRef.current?.state === "recording") {
+        doubtRecorderRef.current.stop();
+      }
+    } catch {}
+    doubtStreamRef.current?.getTracks().forEach((track) => track.stop());
+    doubtStreamRef.current = null;
+    doubtRecorderRef.current = null;
+    doubtAudioChunksRef.current = [];
+    setIsRecordingDoubt(false);
   }
 
   function pauseCurrentMedia() {
@@ -619,6 +644,7 @@ export default function AvatarGeniusView() {
   }
 
   function closeDoubtModal({ resume = true } = {}) {
+    cleanupDoubtRecording();
     setDoubtOpen(false);
     if (resume && wasPlayingBeforeDoubtRef.current) resumeCurrentMedia();
     wasPlayingBeforeDoubtRef.current = false;
@@ -682,21 +708,21 @@ export default function AvatarGeniusView() {
     window.close();
   }
 
-  async function submitDoubt() {
-    if (!sessionId || !doubtText.trim() || isRaisingHand) return;
+  async function sendRaiseHandDoubt(studentText: string) {
+    if (!sessionId || !studentText.trim() || isRaisingHand) return;
     pauseCurrentMedia();
-    const studentText = doubtText.trim();
+    const finalStudentText = studentText.trim();
     const messageSeed = Date.now();
     setRaiseHandChat((prev) => [
       ...prev,
-      { id: `student-${messageSeed}`, role: "student", text: studentText },
+      { id: `student-${messageSeed}`, role: "student", text: finalStudentText },
     ]);
     setDoubtText("");
     setIsRaisingHand(true);
     try {
       const response = await raiseAvatarHand({
         sessionId,
-        studentDoubt: studentText,
+        studentDoubt: finalStudentText,
       });
       const nextClarifications = response?.clarification?.segments;
       const aiMessages = Array.isArray(nextClarifications)
@@ -724,6 +750,75 @@ export default function AvatarGeniusView() {
     } finally {
       setIsRaisingHand(false);
     }
+  }
+
+  async function submitDoubt() {
+    await sendRaiseHandDoubt(doubtText);
+  }
+
+  async function startDoubtRecording() {
+    if (isRecordingDoubt || isTranscribingDoubt || isRaisingHand) return;
+    pauseCurrentMedia();
+    setError(null);
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setError("Voice recording is not supported in this browser.");
+      return;
+    }
+    try {
+      doubtRecordingCancelledRef.current = false;
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      doubtStreamRef.current = stream;
+      doubtRecorderRef.current = recorder;
+      doubtAudioChunksRef.current = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data?.size) doubtAudioChunksRef.current.push(event.data);
+      };
+      recorder.onerror = () => {
+        setError("Voice recording failed. Please try again.");
+        cleanupDoubtRecording();
+      };
+      recorder.onstop = async () => {
+        const wasCancelled = doubtRecordingCancelledRef.current;
+        const chunks = [...doubtAudioChunksRef.current];
+        doubtStreamRef.current?.getTracks().forEach((track) => track.stop());
+        doubtStreamRef.current = null;
+        doubtRecorderRef.current = null;
+        doubtAudioChunksRef.current = [];
+        setIsRecordingDoubt(false);
+        if (wasCancelled) return;
+        if (!chunks.length) return;
+
+        setIsTranscribingDoubt(true);
+        try {
+          const audioBlob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+          const response = await transcribeDebateAudio(audioBlob, "en");
+          const transcript = String(response?.text || response?.transcript || "").trim();
+          if (!transcript) {
+            setError("I could not hear a clear doubt. Please try again.");
+            return;
+          }
+          await sendRaiseHandDoubt(transcript);
+        } catch (err: any) {
+          setError(err?.message || "Unable to transcribe your voice doubt.");
+        } finally {
+          setIsTranscribingDoubt(false);
+        }
+      };
+      recorder.start();
+      setIsRecordingDoubt(true);
+    } catch (err: any) {
+      cleanupDoubtRecording();
+      setError(err?.message || "Microphone permission was blocked.");
+    }
+  }
+
+  function stopDoubtRecording() {
+    if (doubtRecorderRef.current?.state === "recording") {
+      doubtRecorderRef.current.stop();
+      return;
+    }
+    cleanupDoubtRecording();
   }
 
   async function resumeLesson() {
@@ -1039,19 +1134,65 @@ export default function AvatarGeniusView() {
                 <div className="db-bubble db-thinking">Thinking...</div>
               </div>
             )}
+            {isTranscribingDoubt && (
+              <div className="db-msg ai">
+                <div className="db-bubble db-thinking">Listening back...</div>
+              </div>
+            )}
           </div>
-          <div className="db-input-row open">
-            <input
-              className="db-input"
-              value={doubtText}
-              onChange={(event) => setDoubtText(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") submitDoubt();
-              }}
-              placeholder="Type your doubt..."
-            />
-            <button className="db-send" onClick={submitDoubt} disabled={isRaisingHand}><Send size={16} /></button>
+          <div className="db-mode-row">
+            <button
+              className={`db-mode-btn ${doubtInputMode === "type" ? "active" : ""}`}
+              onClick={() => setDoubtInputMode("type")}
+              disabled={isRecordingDoubt || isTranscribingDoubt}
+              type="button"
+            >
+              Type
+            </button>
+            <button
+              className={`db-mode-btn ${doubtInputMode === "voice" ? "active" : ""}`}
+              onClick={() => setDoubtInputMode("voice")}
+              disabled={isRecordingDoubt || isTranscribingDoubt}
+              type="button"
+            >
+              Voice
+            </button>
           </div>
+          {doubtInputMode === "type" ? (
+            <div className="db-input-row open">
+              <input
+                className="db-input"
+                value={doubtText}
+                onChange={(event) => setDoubtText(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") submitDoubt();
+                }}
+                placeholder="Type your doubt..."
+              />
+              <button className="db-send" onClick={submitDoubt} disabled={isRaisingHand || isTranscribingDoubt || !doubtText.trim()}><Send size={16} /></button>
+            </div>
+          ) : (
+            <div className="db-voice-box">
+              <button
+                className={`db-mic-btn ${isRecordingDoubt ? "recording" : ""}`}
+                onClick={isRecordingDoubt ? stopDoubtRecording : startDoubtRecording}
+                disabled={isRaisingHand || isTranscribingDoubt}
+                type="button"
+              >
+                {isRecordingDoubt ? <Square size={18} /> : <Mic size={18} />}
+                <span>
+                  {isTranscribingDoubt
+                    ? "Processing..."
+                    : isRecordingDoubt
+                      ? "Stop recording"
+                      : "Ask with voice"}
+                </span>
+              </button>
+              <div className="db-voice-hint">
+                {isRecordingDoubt ? "Recording your doubt..." : "Your voice will be converted to text and sent to the avatar."}
+              </div>
+            </div>
+          )}
           {raiseHandChat.length > 0 && (
             <div className="db-voice-actions">
               <button className="db-small-btn primary" onClick={resumeLesson} disabled={isResuming}>
@@ -1155,7 +1296,7 @@ body{overflow:hidden;}
 #voice-bar{position:fixed;bottom:0;left:0;width:calc(100% - 320px);background:var(--surface);border-top:1px solid var(--border);padding:8px 16px;display:flex;align-items:center;gap:10px;box-shadow:0 -4px 20px rgba(0,0,0,.06);z-index:50;}.vb-btn{width:32px;height:32px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--sub);transition:all .18s;flex-shrink:0;}.vb-btn:hover{border-color:var(--accent);color:var(--accent);}.vb-btn.play{background:var(--accent)!important;color:#fff!important;border-color:var(--accent)!important;box-shadow:0 3px 10px rgba(91,94,247,.3);}.vb-track{flex:1;min-width:120px;}.vb-label{font-size:10px;color:var(--muted);font-weight:600;display:flex;justify-content:space-between;gap:12px;margin-bottom:4px;}.vb-label span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);}.vb-bg{height:12px;background:transparent;border-radius:8px;position:relative;}.chapter-track{display:flex;gap:3px;overflow:visible;}.vb-chapter{position:relative;flex:1;min-width:10px;height:100%;border:0;border-radius:2px;background:var(--surface2);cursor:pointer;padding:0;transition:transform .16s ease,background .16s ease,opacity .16s ease;}.vb-chapter.done{background:linear-gradient(90deg,var(--accent),var(--accent2));opacity:.82;}.vb-chapter.active{background:var(--accent);transform:scaleY(1.25);box-shadow:0 0 0 2px rgba(91,94,247,.16);}.vb-chapter.upcoming{opacity:.72;}.vb-chapter.flashcard{background-image:linear-gradient(135deg,rgba(245,158,11,.85),rgba(249,115,22,.78));}.vb-chapter.flashcard.upcoming{background:rgba(245,158,11,.22);}.vb-chapter:hover{transform:scaleY(1.45);opacity:1;}.vb-tip{position:absolute;left:50%;bottom:22px;transform:translateX(-50%) translateY(4px);width:max-content;max-width:220px;padding:9px 10px;border-radius:10px;background:rgba(13,16,33,.96);color:#fff;box-shadow:0 10px 28px rgba(0,0,0,.22);opacity:0;pointer-events:none;transition:opacity .14s ease,transform .14s ease;z-index:70;text-align:left;}.vb-tip::after{content:'';position:absolute;left:50%;bottom:-6px;transform:translateX(-50%);border:6px solid transparent;border-top-color:rgba(13,16,33,.96);border-bottom:0;}.vb-tip b{display:block;font-size:11px;line-height:1.25;white-space:normal;}.vb-tip small{display:block;margin-top:4px;font-size:9px;color:rgba(255,255,255,.68);font-weight:800;text-transform:uppercase;letter-spacing:.08em;}.vb-chapter:hover .vb-tip{opacity:1;transform:translateX(-50%) translateY(0);}.vb-btn.segment{font-size:16px;font-weight:800;}.vb-spd{padding:4px 9px;border-radius:20px;font-size:10px;font-weight:700;border:1px solid var(--border);background:var(--surface2);color:var(--muted);flex-shrink:0;}.wave{display:flex;align-items:center;gap:3px;height:20px;}.wb{width:3px;border-radius:2px;background:var(--accent);height:4px;opacity:.2;animation:wavb 1.2s ease-in-out infinite;}.wb.on{opacity:1;}@keyframes wavb{0%,100%{height:4px}50%{height:18px}}
 #doubt-overlay{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.48);display:none;align-items:flex-end;justify-content:flex-start;padding:0 0 60px 0;}#doubt-overlay.open{display:flex;}#doubt-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);box-shadow:var(--sh2);width:min(520px,calc(100vw - 32px));max-height:70vh;display:flex;flex-direction:column;margin:0 0 0 16px;animation:dSlide .32s cubic-bezier(.34,1.3,.64,1);}@keyframes dSlide{from{opacity:0;transform:translateY(20px) scale(.97)}to{opacity:1;transform:none}}
 .db-head{padding:14px 18px 12px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border);}.db-avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;}.db-title{font-size:13px;font-weight:700;color:var(--text);}.db-sub{font-size:11px;color:var(--muted);}.db-close{margin-left:auto;width:28px;height:28px;border-radius:8px;border:1px solid var(--border);background:none;cursor:pointer;font-size:14px;color:var(--muted);display:flex;align-items:center;justify-content:center;transition:all .15s;}.db-close:hover{background:rgba(239,68,68,.1);border-color:var(--red);color:var(--red);}
-.db-msgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;min-height:120px;max-height:calc(70vh - 140px);}.db-msg{display:flex;gap:8px;max-width:92%;}.db-msg.student{align-self:flex-end;}.db-msg.ai{align-self:flex-start;}.db-bubble{padding:9px 13px;border-radius:14px;font-size:13px;line-height:1.6;color:var(--text);background:var(--surface2);border:1px solid var(--border);border-radius:14px 14px 14px 4px;}.db-msg.student .db-bubble{background:linear-gradient(135deg,var(--accent),var(--accent2));border-color:transparent;color:#fff;border-radius:14px 14px 4px 14px;}.db-thinking{color:var(--muted);font-weight:700;}.db-input-row{display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--border);}.db-send{width:36px;height:36px;border-radius:10px;background:var(--accent);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;color:#fff;transition:all .18s;flex-shrink:0;}.db-send:disabled{opacity:.58;cursor:not-allowed;}.db-voice-actions{display:flex;gap:8px;padding:0 14px 14px;}.db-small-btn{border:1px solid var(--border);background:var(--surface2);color:var(--sub);border-radius:10px;padding:8px 11px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;}.db-small-btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;}
+.db-msgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;min-height:120px;max-height:calc(70vh - 140px);}.db-msg{display:flex;gap:8px;max-width:92%;}.db-msg.student{align-self:flex-end;}.db-msg.ai{align-self:flex-start;}.db-bubble{padding:9px 13px;border-radius:14px;font-size:13px;line-height:1.6;color:var(--text);background:var(--surface2);border:1px solid var(--border);border-radius:14px 14px 14px 4px;}.db-msg.student .db-bubble{background:linear-gradient(135deg,var(--accent),var(--accent2));border-color:transparent;color:#fff;border-radius:14px 14px 4px 14px;}.db-thinking{color:var(--muted);font-weight:700;}.db-mode-row{display:flex;gap:8px;padding:10px 14px 0;border-top:1px solid var(--border);}.db-mode-btn{flex:1;border:1px solid var(--border);background:var(--surface2);color:var(--sub);border-radius:10px;padding:8px 10px;font-size:12px;font-weight:800;font-family:inherit;cursor:pointer;}.db-mode-btn.active{background:rgba(91,94,247,.12);border-color:rgba(91,94,247,.4);color:var(--accent);}.db-input-row{display:flex;gap:8px;padding:10px 14px;}.db-send{width:36px;height:36px;border-radius:10px;background:var(--accent);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;color:#fff;transition:all .18s;flex-shrink:0;}.db-send:disabled{opacity:.58;cursor:not-allowed;}.db-voice-box{padding:10px 14px 14px;display:grid;gap:8px;}.db-mic-btn{width:100%;min-height:42px;border:1px solid rgba(91,94,247,.35);border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font-family:inherit;font-size:13px;font-weight:850;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;}.db-mic-btn.recording{background:linear-gradient(135deg,#ef4444,#f97316);border-color:rgba(239,68,68,.45);animation:recPulse 1s ease-in-out infinite;}.db-mic-btn:disabled{opacity:.62;cursor:not-allowed;animation:none;}.db-voice-hint{font-size:11px;line-height:1.45;color:var(--muted);text-align:center;}.db-voice-actions{display:flex;gap:8px;padding:0 14px 14px;}.db-small-btn{border:1px solid var(--border);background:var(--surface2);color:var(--sub);border-radius:10px;padding:8px 11px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;}.db-small-btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;}@keyframes recPulse{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.22)}50%{box-shadow:0 0 0 6px rgba(239,68,68,.12)}}
 #complete-screen{position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center;}#complete-screen.open{display:flex;}.cs-card{background:var(--surface);border:1px solid rgba(91,94,247,.25);border-radius:28px;padding:40px;max-width:420px;width:90%;text-align:center;box-shadow:var(--sh2);animation:dSlide .4s cubic-bezier(.34,1.3,.64,1);position:relative;}.cs-close{position:absolute;top:16px;right:16px;width:34px;height:34px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--muted);font-size:18px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;}.cs-emoji{font-size:52px;margin-bottom:12px;}.cs-title{font-size:26px;font-weight:800;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:8px;}.cs-sub{font-size:14px;color:var(--muted);line-height:1.6;margin-bottom:24px;}.cs-btn{display:inline-flex;align-items:center;gap:8px;padding:12px 28px;border-radius:14px;border:none;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 6px 20px rgba(91,94,247,.35);}
 .genius-empty{min-height:100vh;background:var(--bg);color:var(--text);display:grid;place-items:center;align-content:center;gap:10px;font-family:Sora,system-ui,sans-serif;text-align:center;padding:24px;}.genius-empty h1{font-size:22px;}
 @media(max-width:900px){#app{grid-template-columns:1fr;}#avatar-panel{display:none;}#voice-bar{width:100%;}#raise-btn{bottom:72px;}}

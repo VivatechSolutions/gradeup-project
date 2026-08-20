@@ -412,7 +412,8 @@ interface CommunityPoll { id: string; question: string; options: PollOption[]; t
 
 function communitySessionStatus(card: any) {
   const status = String(card?.status || "waiting").toLowerCase();
-  if (status === "completed" || status === "ended") return "Meeting has ended";
+  if (status === "cancelled" || status === "canceled") return "Meeting was cancelled";
+  if (status === "completed" || status === "ended" || status === "ending" || status === "end_error") return "Meeting has ended";
   if (card?.sessionType === "seminar" && status === "active") return "Join Seminar";
   if (status === "active" || status === "waiting_for_ai") return "Debate already started";
   return card?.sessionType === "seminar" ? "Join Seminar" : "Join Debate";
@@ -420,7 +421,7 @@ function communitySessionStatus(card: any) {
 
 function communitySessionJoinable(card: any) {
   const status = String(card?.status || "waiting").toLowerCase();
-  if (status === "completed" || status === "ended") return false;
+  if (["completed", "ended", "ending", "end_error", "cancelled", "canceled"].includes(status)) return false;
   if (card?.sessionType === "seminar") return status === "waiting" || status === "active";
   return status === "waiting";
 }
@@ -446,14 +447,20 @@ function CommunitySessionCard({ card }: { card: any }) {
         if (!closed) {
           setLiveCard((previous: any) => ({
             ...previous,
+            accessError: undefined,
             status: live?.status || previous.status,
             participantCount: Array.isArray(live?.participants)
               ? live.participants.filter((item: any) => !item.isAi).length
               : previous.participantCount,
           }));
         }
-      } catch {
-        // Keep saved metadata when a session status cannot be refreshed.
+      } catch (error: any) {
+        if (!closed) {
+          setLiveCard((previous: any) => ({
+            ...previous,
+            accessError: error?.message || "You do not have access to this session.",
+          }));
+        }
       }
     };
     load();
@@ -464,8 +471,8 @@ function CommunitySessionCard({ card }: { card: any }) {
     };
   }, [card?.sessionId, card?.sessionType]);
   if (!card) return null;
-  const joinable = communitySessionJoinable(liveCard);
-  const label = communitySessionStatus(liveCard);
+  const joinable = !liveCard?.accessError && communitySessionJoinable(liveCard);
+  const label = liveCard?.accessError || communitySessionStatus(liveCard);
   const joinUrl = liveCard.joinUrl
     ? /^https?:\/\//i.test(liveCard.joinUrl)
       ? liveCard.joinUrl
@@ -482,7 +489,7 @@ function CommunitySessionCard({ card }: { card: any }) {
         <div style={{ fontSize: 12, color: "#64748b", marginTop: 3 }}>Created by {liveCard.createdBy || "GradeUp learner"}</div>
       </div>
       {joinable ? (
-        <button className="comm-reaction-btn" style={{ width: "100%", justifyContent: "center", borderRadius: 0, border: "none", borderTop: "1px solid #e2e8f0" }} onClick={() => { if (joinUrl) window.location.href = joinUrl; }}>
+        <button className="comm-reaction-btn" style={{ width: "100%", justifyContent: "center", borderRadius: 0, border: "none", borderTop: "1px solid #e2e8f0" }} onClick={() => { if (joinUrl) window.open(joinUrl, "_blank", "noopener,noreferrer"); }}>
           {label}
         </button>
       ) : (
@@ -589,6 +596,22 @@ export default function CommunityPage() {
       setShowPollCreationForm(false);
       toast({ title:"Poll created!" });
     },
+  });
+
+  const deletePostMutation = useMutation({
+    mutationFn: async (postId: string) => {
+      const r = await fetch(buildApiUrl(`/api/community/posts/${postId}`), {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/community/posts"] });
+      toast({ title: "Post deleted" });
+    },
+    onError: () => toast({ title: "Unable to delete post" }),
   });
 
   const votePollMutation = useMutation({
@@ -871,6 +894,17 @@ export default function CommunityPage() {
                                 <span className="comm-badge indigo">{post.type}</span>
                               </div>
                               <span className="comm-post-time">{formatDistanceToNow(new Date(post.createdAt), {addSuffix:true})}</span>
+                              {String(post.author?.id || "") === String((user as any)?.id || (user as any)?._id || "") && (
+                                <button
+                                  className="comm-reaction-btn"
+                                  style={{ padding: "6px 8px", color: "#dc2626" }}
+                                  onClick={() => deletePostMutation.mutate(post.id)}
+                                  disabled={deletePostMutation.isPending}
+                                  title="Delete post"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              )}
                             </div>
                             <div className="comm-post-content">{post.content}</div>
                             {post.metadata?.sessionCard && <CommunitySessionCard card={post.metadata.sessionCard} />}

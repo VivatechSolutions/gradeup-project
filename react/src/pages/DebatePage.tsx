@@ -40,8 +40,6 @@ import {
 import { debateDebug, ttsDebug } from "../lib/ttsDebug";
 import { useDebateLivekit } from "./../hooks/useDebateLivekit";
 const POST_AUTH_REDIRECT_KEY = "gradeup_post_auth_redirect";
-const DEBATE_GUEST_NAME_KEY = "gradeup_debate_guest_name";
-const DEBATE_GUEST_ID_KEY = "gradeup_debate_guest_id";
 
 type GreetingFlight = {
   promise: Promise<{ dataUrl: string | null }>;
@@ -112,7 +110,8 @@ button,input,select,textarea{font-family:var(--font)}
 .finput:focus{border-color:var(--ind);background:var(--surf);box-shadow:0 0 0 3px rgba(99,102,241,.1)}
 .finput::placeholder{color:var(--t3)}
 .finput:disabled{opacity:.45;cursor:not-allowed}
-select.finput{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 11px center;padding-right:30px}
+select.finput{cursor:pointer;appearance:none;background-color:var(--surf);color:var(--t1);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 11px center;padding-right:30px}
+select.finput option{background:#fff;color:#0f172a}
 .fi-row{display:grid;grid-template-columns:1fr 1fr;gap:9px}
 
 .btn-p{padding:11px 20px;border-radius:13px;border:none;cursor:pointer;background:var(--grad);color:#fff;font-size:13px;font-weight:700;transition:all .22s;box-shadow:0 5px 18px rgba(99,102,241,.28);display:inline-flex;align-items:center;justify-content:center;gap:8px;font-family:var(--font);width:100%}
@@ -12586,11 +12585,7 @@ export default function DebatePage() {
   const [result, setResult] = useState<any>(null);
   const [role, setRole] = useState("student");
   const [entrySessionId, setEntrySessionId] = useState("");
-  const [showGuestNameModal, setShowGuestNameModal] = useState(false);
   const [showEntryMicModal, setShowEntryMicModal] = useState(false);
-  const [guestName, setGuestName] = useState(
-    () => localStorage.getItem(DEBATE_GUEST_NAME_KEY) || "",
-  );
   const [entryLoading, setEntryLoading] = useState(false);
   const [entryError, setEntryError] = useState<string | null>(null);
   const resultTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -12656,7 +12651,7 @@ export default function DebatePage() {
   ]);
 
   const joinLinkedRoom = useCallback(
-    async (nameOverride?: string) => {
+    async () => {
       const params = new URLSearchParams(window.location.search);
       const linkedSessionId =
         params.get("sessionId") ||
@@ -12672,6 +12667,12 @@ export default function DebatePage() {
       });
       setEntryError(null);
       setEntrySessionId(linkedSessionId);
+      if (!user) {
+        setEntryError("Please log in with your student account to join this debate room.");
+        setScreen("entry");
+        setEntryLoading(false);
+        return;
+      }
       if (!entryMicReady) {
         // console.log("[MIC] join blocked until mic is ready", {
         //   entryMicState,
@@ -12686,27 +12687,9 @@ export default function DebatePage() {
 
       setEntryLoading(true);
       try {
-        let candidateId = "";
-        let candidateName = "";
-
-        if (user) {
-          const candidate = getCandidateContext(user);
-          candidateId = candidate.candidateId;
-          candidateName = candidate.candidateName;
-        } else {
-          const safeName = (nameOverride || guestName || "").trim();
-          if (!safeName) {
-            setShowGuestNameModal(true);
-            setScreen("entry");
-            setEntryLoading(false);
-            return;
-          }
-          const storedGuestId = `guest-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-          localStorage.setItem(DEBATE_GUEST_ID_KEY, storedGuestId);
-          localStorage.setItem(DEBATE_GUEST_NAME_KEY, safeName);
-          candidateId = storedGuestId;
-          candidateName = safeName;
-        }
+        const candidate = getCandidateContext(user);
+        const candidateId = candidate.candidateId;
+        const candidateName = candidate.candidateName;
 
         const room = await joinDebateRoom({
           sessionId: linkedSessionId,
@@ -12791,7 +12774,7 @@ export default function DebatePage() {
         setEntryLoading(false);
       }
     },
-    [entryMicReady, entryMicStream, guestName, setConfig, setScreen, user],
+    [entryMicReady, entryMicStream, setConfig, setScreen, user],
   );
 
   useEffect(() => {
@@ -12831,7 +12814,7 @@ export default function DebatePage() {
       return;
     }
     setShowEntryMicModal(false);
-    await joinLinkedRoom(guestName || undefined);
+    await joinLinkedRoom();
   }
 
   async function handleRequestEntryMic() {
@@ -12888,12 +12871,7 @@ export default function DebatePage() {
       joinLinkedRoom().catch(() => null);
       return;
     }
-    const savedGuestName = localStorage.getItem(DEBATE_GUEST_NAME_KEY) || "";
-    if (savedGuestName) {
-      setGuestName(savedGuestName);
-      joinLinkedRoom(savedGuestName).catch(() => null);
-      return;
-    }
+    setEntryError("Please log in with your student account to join this debate room.");
     setScreen("entry");
   }, [joinLinkedRoom, setScreen, user]);
 
@@ -12903,20 +12881,6 @@ export default function DebatePage() {
       `${window.location.pathname}${window.location.search}`,
     );
     setLocation("/auth");
-  }
-
-  function handleGuestContinue() {
-    setShowGuestNameModal(true);
-  }
-
-  function handleGuestJoin() {
-    const trimmed = guestName.trim();
-    if (!trimmed) {
-      setEntryError("Please enter your name to continue as guest.");
-      return;
-    }
-    joinLinkedRoom(trimmed).catch(() => null);
-    setShowGuestNameModal(false);
   }
 
   return (
@@ -12966,8 +12930,7 @@ export default function DebatePage() {
                   marginBottom: 18,
                 }}
               >
-                You opened a debate room link. Continue with your account or
-                join as a guest to enter the waiting room.
+                You opened a debate room link. Log in with your student account to enter the waiting room.
               </div>
               {entryError && (
                 <div
@@ -13113,64 +13076,34 @@ export default function DebatePage() {
               )}
 
               <div style={{ display: "grid", gap: 10 }}>
-                <button
-                  className="btn-p"
-                  onClick={handleLinkLogin}
-                  disabled={entryLoading}
-                >
-                  Login
-                </button>
-                <button
-                  className="btn-s"
-                  onClick={handleGuestContinue}
-                  disabled={entryLoading}
-                >
-                  Continue as Guest
-                </button>
-              </div>
-            </div>
-
-            {showGuestNameModal && (
-              <div className="overlay">
-                <div className="modal" style={{ maxWidth: 380 }}>
-                  <div className="mh">
-                    <div className="mh-title">Continue as Guest</div>
-                    <button
-                      className="mh-close"
-                      onClick={() => setShowGuestNameModal(false)}
-                    >
-                      ?
-                    </button>
-                  </div>
-                  <div className="mb">
-                    <label className="fl">Your Name</label>
-                    <input
-                      className="finput"
-                      value={guestName}
-                      onChange={(event) => setGuestName(event.target.value)}
-                      placeholder="Enter your display name"
-                      maxLength={40}
-                    />
-                  </div>
-                  <div className="mf">
-                    <button
-                      className="btn-s"
-                      onClick={() => setShowGuestNameModal(false)}
-                    >
-                      Cancel
-                    </button>
+                {user ? (
+                  <>
                     <button
                       className="btn-p"
-                      style={{ width: "auto" }}
-                      onClick={handleGuestJoin}
+                      onClick={() => joinLinkedRoom().catch(() => null)}
                       disabled={entryLoading}
                     >
-                      {entryLoading ? "Joining..." : "Join Waiting Room"}
+                      {entryLoading ? "Checking Room..." : "Continue to Waiting Room"}
                     </button>
-                  </div>
-                </div>
+                    <button
+                      className="btn-s"
+                      onClick={() => setLocation("/live-events")}
+                      disabled={entryLoading}
+                    >
+                      Live Events
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    className="btn-p"
+                    onClick={handleLinkLogin}
+                    disabled={entryLoading}
+                  >
+                    Login
+                  </button>
+                )}
               </div>
-            )}
+            </div>
           </div>
         )}
         {screen === "waiting" && config && (

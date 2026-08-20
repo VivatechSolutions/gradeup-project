@@ -19,6 +19,7 @@ router.post("/groups/:groupId/members", controller.addMember);
 router.post("/groups/:groupId/invites", controller.createInvite);
 router.get("/groups/:groupId/messages", controller.getMessages);
 router.post("/groups/:groupId/messages", controller.sendMessage);
+router.delete("/groups/:groupId/messages/:messageId", controller.deleteMessage);
 router.post("/groups/:groupId/attachments", controller.uploadAttachment);
 router.post("/groups/:groupId/session-cards", controller.sendSessionCard);
 router.post("/session-invites", controller.sendSessionInvites);

@@ -169,12 +169,12 @@ function AppWithAuth() {
         <ProtectedRoute path="/bookGallery" component={BookGallery} />
         <ProtectedRoute path="/seminar-tool" component={SeminarToolPage} />
         <ProtectedRoute path="/debate-tool" component={DebateToolPage} />
+        <Route path="/debatePage/join" component={DebatePage} />
+        <Route path="/debate/join" component={DebatePage} />
         <ProtectedRoute path="/debatePage" component={DebatePage} />
-        <ProtectedRoute path="/debatePage/join" component={DebatePage} />
-        <ProtectedRoute path="/debate/join" component={DebatePage} />
+        <Route path="/seminarPage/join" component={SeminarPage} />
+        <Route path="/seminar/join" component={SeminarPage} />
         <ProtectedRoute path="/seminarPage" component={SeminarPage} />
-        <ProtectedRoute path="/seminarPage/join" component={SeminarPage} />
-        <ProtectedRoute path="/seminar/join" component={SeminarPage} />
         <ProtectedRoute path="/live-events" component={LiveEventsPage} />
         <ProtectedRoute path="/meetingPage" component={MeetingPage} />
         <ProtectedRoute path="/studio/quiz/:id?" component={(params) => <StudioQuizPage id={params.id} />} />

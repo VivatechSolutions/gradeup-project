@@ -93,7 +93,7 @@ const liveSessionSchema = new mongoose.Schema(
     visibilityUpdatedAt: { type: Date, default: null },
     status: {
       type: String,
-      enum: ["created", "waiting", "active", "waiting_for_ai", "ending", "completed", "end_error"],
+      enum: ["created", "waiting", "active", "waiting_for_ai", "ending", "completed", "end_error", "cancelled"],
       default: "active",
       index: true,
     },

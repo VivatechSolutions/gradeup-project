@@ -135,6 +135,21 @@ const controller = {
     }
   },
 
+  async deletePost(req, res) {
+    try {
+      const post = await CommunityPost.findOne({ _id: req.params.postId, deletedAt: null });
+      if (!post) return res.status(404).json({ status: false, message: "Post not found" });
+      if (post.authorId.toString() !== req.authUser.id) {
+        return res.status(403).json({ status: false, message: "You can delete only your own posts." });
+      }
+      post.deletedAt = new Date();
+      await post.save();
+      return res.status(200).json({ status: true, data: { postId: post._id.toString() } });
+    } catch (error) {
+      return res.status(500).json({ status: false, message: error.message || "Internal Server Error" });
+    }
+  },
+
   async toggleLike(req, res) {
     try {
       const post = await CommunityPost.findOne({ _id: req.params.postId, deletedAt: null });

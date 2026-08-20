@@ -851,10 +851,13 @@ const controller = {
         return res.status(404).json({ status: false, message: "Seminar session not found" });
       }
       await assertSessionAccess(sessionId, req);
-      if (existingSession.status === "completed" || existingSession.status === "ending") {
+      if (["completed", "ending", "end_error", "cancelled"].includes(existingSession.status)) {
         return res.status(403).json({
           status: false,
-          message: "This seminar has already ended.",
+          message:
+            existingSession.status === "cancelled"
+              ? "This seminar was cancelled because it was not started within one hour."
+              : "This seminar has already ended.",
         });
       }
 

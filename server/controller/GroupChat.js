@@ -439,6 +439,31 @@ const controller = {
     }
   },
 
+  async deleteMessage(req, res) {
+    try {
+      const { group } = await requireGroupMember(req.params.groupId, req.authUser);
+      const message = await GroupMessage.findOne({
+        _id: req.params.messageId,
+        groupId: req.params.groupId,
+        deletedAt: null,
+      });
+      if (!message) return res.status(404).json({ status: false, message: "Message not found" });
+      const canDelete =
+        message.senderId.toString() === req.authUser.id ||
+        isGroupAdmin(group, req.authUser);
+      if (!canDelete) {
+        return res.status(403).json({ status: false, message: "You can delete only your own messages." });
+      }
+      message.deletedAt = new Date();
+      await message.save();
+      const payload = { groupId: group._id.toString(), messageId: message._id.toString() };
+      emitToGroup(group._id.toString(), "group:message:deleted", payload);
+      return res.status(200).json({ status: true, data: payload });
+    } catch (error) {
+      return handleError(res, error);
+    }
+  },
+
   async uploadAttachment(req, res) {
     try {
       const { group, member } = await requireGroupMember(req.params.groupId, req.authUser);

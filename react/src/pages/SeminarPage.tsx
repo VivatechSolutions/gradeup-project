@@ -253,7 +253,8 @@ button,input,select,textarea{font-family:var(--font)}
 .finput{width:100%;padding:9px 12px;border-radius:10px;border:1.5px solid var(--bdr);background:var(--surf);color:var(--t1);font-size:13.5px;outline:none;transition:all .16s}
 .finput:focus{border-color:var(--em);box-shadow:0 0 0 3px rgba(0,195,122,.1)}
 .finput::placeholder{color:var(--t3)}.finput:disabled{opacity:.4;cursor:not-allowed}
-select.finput{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%238a95a3' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px}
+select.finput{cursor:pointer;appearance:none;background-color:var(--surf);color:var(--t1);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%238a95a3' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px}
+select.finput option{background:#fff;color:#111827}
 .fi-row{display:grid;grid-template-columns:1fr 1fr;gap:9px}
 .btn-p{padding:10px 20px;border-radius:10px;border:none;cursor:pointer;background:var(--grad);color:#fff;font-size:13.5px;font-weight:700;transition:all .2s;box-shadow:0 4px 16px rgba(0,195,122,.24);display:inline-flex;align-items:center;justify-content:center;gap:7px;font-family:var(--font);width:100%}
 .btn-p:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 7px 24px rgba(0,195,122,.34)}
@@ -14720,8 +14721,6 @@ function CreateWithAIWorkspace({ config, onCancel }) {
 }
 
 const POST_AUTH_REDIRECT_KEY = "gradeup_post_auth_redirect";
-const SEMINAR_GUEST_NAME_KEY = "gradeup_seminar_guest_name";
-const SEMINAR_GUEST_ID_KEY = "gradeup_seminar_guest_id";
 
 function normalizeStructuredLabel(value) {
   return String(value ?? "")
@@ -14779,10 +14778,6 @@ export default function SeminarPage() {
   const [role, setRole] = useState("student");
   const [pageInitialLoad, setPageInitialLoad] = useState(true);
   const [entrySessionId, setEntrySessionId] = useState("");
-  const [showGuestNameModal, setShowGuestNameModal] = useState(false);
-  const [guestName, setGuestName] = useState(
-    () => localStorage.getItem(SEMINAR_GUEST_NAME_KEY) || "",
-  );
   const [entryLoading, setEntryLoading] = useState(false);
   const [entryError, setEntryError] = useState(null);
   const autoJoinRef = useRef(false);
@@ -14792,7 +14787,7 @@ export default function SeminarPage() {
     return () => clearTimeout(t);
   }, []);
 
-  async function joinLinkedSeminar(nameOverride) {
+  async function joinLinkedSeminar() {
     const params = new URLSearchParams(window.location.search);
     const linkedSessionId =
       params.get("sessionId") ||
@@ -14803,30 +14798,15 @@ export default function SeminarPage() {
     setEntryLoading(true);
     setEntryError(null);
     try {
-      let candidateId = "";
-      let candidateName = "";
-      if (user) {
-        const candidate = getCandidateContext(user || {});
-        candidateId = candidate.candidateId;
-        // Prefer the typed name if it was entered; fall back to account name
-        candidateName =
-          (nameOverride || guestName || candidate.candidateName || "").trim() ||
-          candidate.candidateName;
-      } else {
-        const safeName = (nameOverride || guestName || "").trim();
-        if (!safeName) {
-          setShowGuestNameModal(true);
-          setScreen("entry");
-          setEntryLoading(false);
-          return;
-        }
-        const storedGuestId =
-          localStorage.getItem(SEMINAR_GUEST_ID_KEY) || `guest-${Date.now()}`;
-        localStorage.setItem(SEMINAR_GUEST_ID_KEY, storedGuestId);
-        localStorage.setItem(SEMINAR_GUEST_NAME_KEY, safeName);
-        candidateId = storedGuestId;
-        candidateName = safeName;
+      if (!user) {
+        setEntryError("Please log in with your student account to join this seminar session.");
+        setScreen("entry");
+        setEntryLoading(false);
+        return;
       }
+      const candidate = getCandidateContext(user || {});
+      const candidateId = candidate.candidateId;
+      const candidateName = candidate.candidateName;
 
       const joinedSession = await joinSeminarSession({
         sessionId: linkedSessionId,
@@ -14838,7 +14818,7 @@ export default function SeminarPage() {
       setConfig({
         name: candidateName,
         candidateId,
-        isGuest: !user,
+        isGuest: false,
         role: "Observer",
         subject:
           joinedSession?.subject || joinedSession?.liveSession?.subject || "",
@@ -14901,7 +14881,7 @@ export default function SeminarPage() {
       joinLinkedSeminar().catch(() => null);
       return;
     }
-    setGuestName(localStorage.getItem(SEMINAR_GUEST_NAME_KEY) || "");
+    setEntryError("Please log in with your student account to join this seminar session.");
     setScreen("entry");
   }, [user]);
 
@@ -14911,20 +14891,6 @@ export default function SeminarPage() {
       `${window.location.pathname}${window.location.search}`,
     );
     window.location.href = "/auth";
-  }
-
-  function handleGuestContinue() {
-    setShowGuestNameModal(true);
-  }
-
-  function handleGuestJoin() {
-    const trimmed = guestName.trim();
-    if (!trimmed) {
-      setEntryError("Please enter your name to continue as guest.");
-      return;
-    }
-    joinLinkedSeminar(trimmed).catch(() => null);
-    setShowGuestNameModal(false);
   }
 
   const isRoom =
@@ -15052,8 +15018,7 @@ export default function SeminarPage() {
                     lineHeight: 1.7,
                   }}
                 >
-                  You opened a seminar room link. Continue with your account or
-                  join as a guest to enter the waiting room.
+                  You opened a seminar room link. Log in with your student account to enter the waiting room.
                 </div>
               </div>
               <div style={{ padding: "18px 20px" }}>
@@ -15094,65 +15059,38 @@ export default function SeminarPage() {
                 <div
                   style={{ display: "flex", gap: 10, justifyContent: "center" }}
                 >
-                  <button
-                    className="btn-p"
-                    style={{ width: "auto" }}
-                    onClick={handleLinkLogin}
-                    disabled={entryLoading}
-                  >
-                    Login
-                  </button>
-                  <button
-                    className="btn-s"
-                    onClick={handleGuestContinue}
-                    disabled={entryLoading}
-                  >
-                    Continue as Guest
-                  </button>
-                </div>
-              </div>
-
-              {showGuestNameModal && (
-                <div className="overlay">
-                  <div className="modal" style={{ maxWidth: 380 }}>
-                    <div className="mh">
-                      <div className="mh-title">Continue as Guest</div>
-                      <button
-                        className="mh-close"
-                        onClick={() => setShowGuestNameModal(false)}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                    <div className="mb">
-                      <label className="fl">Your Name</label>
-                      <input
-                        className="finput"
-                        value={guestName}
-                        onChange={(event) => setGuestName(event.target.value)}
-                        placeholder="Enter your display name"
-                        maxLength={40}
-                      />
-                    </div>
-                    <div className="mf">
-                      <button
-                        className="btn-s"
-                        onClick={() => setShowGuestNameModal(false)}
-                      >
-                        Cancel
-                      </button>
+                  {user ? (
+                    <>
                       <button
                         className="btn-p"
                         style={{ width: "auto" }}
-                        onClick={handleGuestJoin}
+                        onClick={() => joinLinkedSeminar().catch(() => null)}
                         disabled={entryLoading}
                       >
-                        {entryLoading ? "Joining..." : "Join Waiting Room"}
+                        {entryLoading ? "Checking Room..." : "Continue to Waiting Room"}
                       </button>
-                    </div>
-                  </div>
+                      <button
+                        className="btn-s"
+                        onClick={() => {
+                          window.location.href = "/live-events";
+                        }}
+                        disabled={entryLoading}
+                      >
+                        Live Events
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      className="btn-p"
+                      style={{ width: "auto" }}
+                      onClick={handleLinkLogin}
+                      disabled={entryLoading}
+                    >
+                      Login
+                    </button>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
           </div>
         )}

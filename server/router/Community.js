@@ -7,6 +7,7 @@ router.use(requireStudentAuth);
 
 router.get("/posts", controller.listPosts);
 router.post("/posts", controller.createPost);
+router.delete("/posts/:postId", controller.deletePost);
 router.post("/posts/:postId/like", controller.toggleLike);
 router.post("/posts/:postId/comments", controller.addComment);
 router.get("/polls", controller.listPolls);

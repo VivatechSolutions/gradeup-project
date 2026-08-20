@@ -10,6 +10,28 @@ function now() {
   return new Date();
 }
 
+const WAITING_SESSION_TIMEOUT_MS = 60 * 60 * 1000;
+const LIVE_STATUSES = new Set(["waiting", "active", "waiting_for_ai"]);
+
+function isStaleWaitingSession(session, at = now()) {
+  if (!session || String(session.status || "").toLowerCase() !== "waiting") return false;
+  const createdAt = session.createdAt || session.startedAt;
+  const createdTime = createdAt ? new Date(createdAt).getTime() : 0;
+  return Boolean(createdTime && at.getTime() - createdTime > WAITING_SESSION_TIMEOUT_MS);
+}
+
+async function cancelStaleWaitingSession(session) {
+  if (!isStaleWaitingSession(session)) return session;
+  session.status = "cancelled";
+  session.endedAt = session.endedAt || now();
+  session.metadata = {
+    ...(session.metadata || {}),
+    cancellationReason: "Session was not started within one hour.",
+  };
+  await session.save();
+  return session;
+}
+
 function toParticipant(candidateId, candidateName, role = "participant", extra = {}) {
   return {
     participantId: String(candidateId),
@@ -707,7 +729,7 @@ async function saveFeedback(sessionId, feedback, metadata = null) {
 
 async function getSession(sessionId) {
   const session = await LiveSession.findOne({ sessionId });
-  return session ? normalizeSession(session) : null;
+  return session ? normalizeSession(await cancelStaleWaitingSession(session)) : null;
 }
 
 async function listSessionTopics({ sessionType, subjectGroupKey }) {
@@ -741,7 +763,10 @@ async function listActiveSessions({ sessionType, context = null, includePrivate 
     .sort({ updatedAt: -1 })
     .limit(100);
 
-  return sessions.map((session) => {
+  const normalizedSessions = (await Promise.all(sessions.map(cancelStaleWaitingSession)))
+    .filter((session) => LIVE_STATUSES.has(String(session.status || "").toLowerCase()));
+
+  return normalizedSessions.map((session) => {
     const normalized = normalizeSession(session);
     const observers = (normalized.participants || []).filter((participant) => participant.role === "observer");
     const presenters = (normalized.participants || []).filter(
@@ -772,10 +797,12 @@ async function listActiveSessions({ sessionType, context = null, includePrivate 
 
 module.exports = {
   appendTurn,
+  cancelStaleWaitingSession,
   completeSession,
   createRoomSession,
   extractScores,
   getSession,
+  isStaleWaitingSession,
   listActiveSessions,
   listSessionTopics,
   normalizeSession,

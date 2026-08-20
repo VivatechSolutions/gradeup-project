@@ -847,8 +847,11 @@ export async function sendSessionInviteEmails(payload: SessionShareCardPayload &
   });
 }
 
-export async function listLiveEvents(type?: "debate" | "seminar") {
-  return apiFetch<any[]>(`/api/v1/live-events${type ? `?type=${encodeURIComponent(type)}` : ""}`);
+export async function listLiveEvents(type?: "debate" | "seminar", statusTab?: "live" | "ongoing" | "ended") {
+  const params = new URLSearchParams();
+  if (type) params.set("type", type);
+  if (statusTab) params.set("statusTab", statusTab);
+  return apiFetch<any[]>(`/api/v1/live-events${params.toString() ? `?${params.toString()}` : ""}`);
 }
 
 export async function startSeminarPptSession(payload: {

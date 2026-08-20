@@ -1144,7 +1144,7 @@ const MsgBubble = ({
               ))}
             </PopoverContent>
           </Popover>
-          {isAdmin && (
+          {(isAdmin || isYou) && (
             <Popover>
               <PopoverTrigger asChild>
                 <button className="cm-act-btn" title="More">
@@ -1292,7 +1292,8 @@ function absoluteAppUrl(pathOrUrl = "") {
 
 function sessionStatusLabel(card: any) {
   const status = String(card?.status || "waiting").toLowerCase();
-  if (status === "completed" || status === "ended") return "Meeting has ended";
+  if (status === "cancelled" || status === "canceled") return "Meeting was cancelled";
+  if (status === "completed" || status === "ended" || status === "ending" || status === "end_error") return "Meeting has ended";
   if (card?.sessionType === "seminar" && status === "active") return "Seminar started";
   if (status === "active" || status === "waiting_for_ai") return "Debate already started";
   return card?.sessionType === "seminar" ? "Join Seminar" : "Join Debate";
@@ -1300,7 +1301,7 @@ function sessionStatusLabel(card: any) {
 
 function canJoinSessionCard(card: any) {
   const status = String(card?.status || "waiting").toLowerCase();
-  if (status === "completed" || status === "ended") return false;
+  if (["completed", "ended", "ending", "end_error", "cancelled", "canceled"].includes(status)) return false;
   if (card?.sessionType === "seminar") return status === "waiting" || status === "active";
   return status === "waiting";
 }
@@ -1502,14 +1503,20 @@ const SessionInviteCard = ({ card, groupName }: { card: any; groupName?: string 
         if (!closed) {
           setLiveCard((previous: any) => ({
             ...previous,
+            accessError: undefined,
             status: live.status || previous.status,
             participantCount: Array.isArray(live.participants)
               ? live.participants.filter((item: any) => !item.isAi).length
               : previous.participantCount,
           }));
         }
-      } catch {
-        // Keep the saved card if the status endpoint is unavailable.
+      } catch (error: any) {
+        if (!closed) {
+          setLiveCard((previous: any) => ({
+            ...previous,
+            accessError: error?.message || "You do not have access to this session.",
+          }));
+        }
       }
     };
     load();
@@ -1519,8 +1526,8 @@ const SessionInviteCard = ({ card, groupName }: { card: any; groupName?: string 
       window.clearInterval(timer);
     };
   }, [card?.sessionId, card?.sessionType]);
-  const status = sessionStatusLabel(liveCard);
-  const joinable = canJoinSessionCard(liveCard);
+  const status = liveCard?.accessError || sessionStatusLabel(liveCard);
+  const joinable = !liveCard?.accessError && canJoinSessionCard(liveCard);
   const sessionType = liveCard?.sessionType === "seminar" ? "Seminar" : "Debate";
   const creator = liveCard?.createdBy || "A GradeUp learner";
   const topic = liveCard?.topic || liveCard?.title || "Live session";
@@ -1588,7 +1595,7 @@ const SessionInviteCard = ({ card, groupName }: { card: any; groupName?: string 
         {joinable ? (
           <button
             onClick={() => {
-              if (liveCard?.joinUrl) window.location.href = absoluteAppUrl(liveCard.joinUrl);
+              if (liveCard?.joinUrl) window.open(absoluteAppUrl(liveCard.joinUrl), "_blank", "noopener,noreferrer");
             }}
             style={{
               border: "none",
@@ -1830,6 +1837,16 @@ const CommunityNewPage = () => {
       });
       socketRef.current.on("group:message", (message: any) => {
         setData((previous) => appendLiveMessage(previous, message, user?.id));
+      });
+      socketRef.current.on("group:message:deleted", ({ groupId, messageId }: any) => {
+        const key = liveMsgKey(groupId);
+        setData((previous) => ({
+          ...previous,
+          messages: {
+            ...previous.messages,
+            [key]: (previous.messages[key] || []).filter((message: any) => message.id !== messageId),
+          },
+        }));
       });
       socketRef.current.on("group:members", (group: any) => {
         setData((previous) => upsertLiveGroup(previous, group));
@@ -2121,8 +2138,8 @@ const CommunityNewPage = () => {
       const seedSessionId = `group-${type}-${Date.now()}`;
       const localPath =
         type === "seminar"
-          ? `/seminar?sessionId=${encodeURIComponent(seedSessionId)}`
-          : `/debate?sessionId=${encodeURIComponent(seedSessionId)}`;
+          ? `/seminarPage/join?room=${encodeURIComponent(seedSessionId)}`
+          : `/debatePage/join?room=${encodeURIComponent(seedSessionId)}`;
       let created: any;
       if (type === "seminar") {
         created = await createSeminarRoom({
@@ -2156,8 +2173,8 @@ const CommunityNewPage = () => {
         created?.shareLink ||
         created?.liveSession?.shareLink ||
         (type === "seminar"
-          ? `/seminar?sessionId=${encodeURIComponent(sessionId)}`
-          : `/debate?sessionId=${encodeURIComponent(sessionId)}`);
+          ? `/seminarPage/join?room=${encodeURIComponent(sessionId)}`
+          : `/debatePage/join?room=${encodeURIComponent(sessionId)}`);
       const card = {
         groupId: activeServerId,
         sessionType: type as "debate" | "seminar",
@@ -2619,7 +2636,18 @@ const CommunityNewPage = () => {
                         setTyping(m.text);
                         inputRef.current?.focus();
                       }}
-                      onDelete={(id: string) =>
+                      onDelete={async (id: string) => {
+                        if (activeServerId) {
+                          try {
+                            await groupChatApi<any>(
+                              `/api/v1/group-chat/groups/${activeServerId}/messages/${id}`,
+                              { method: "DELETE" },
+                            );
+                          } catch (error) {
+                            console.error("Failed to delete message", error);
+                            return;
+                          }
+                        }
                         setData((p) => ({
                           ...p,
                           messages: {
@@ -2628,8 +2656,8 @@ const CommunityNewPage = () => {
                               (m: any) => m.id !== id,
                             ),
                           },
-                        }))
-                      }
+                        }));
+                      }}
                       onReact={(id: string, e: string | null) =>
                         setData((p) => ({
                           ...p,

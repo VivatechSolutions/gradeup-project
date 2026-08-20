@@ -503,10 +503,19 @@ console.log
             String(participant.id) === String(candidate.candidate_id),
         );
         const roomStatus = liveSession?.status;
+        const isClosed = ["completed", "ending", "end_error", "cancelled"].includes(roomStatus);
+        if (isClosed) {
+          return res.status(403).json({
+            status: false,
+            message:
+              roomStatus === "cancelled"
+                ? "This debate was cancelled because it was not started within one hour."
+                : "This debate has already ended.",
+          });
+        }
         const hasStarted =
           roomStatus === "active" ||
-          roomStatus === "waiting_for_ai" ||
-          roomStatus === "completed";
+          roomStatus === "waiting_for_ai";
 
         if (hasStarted && !existingParticipant) {
           return res.status(403).json({

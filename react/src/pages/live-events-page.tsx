@@ -7,6 +7,7 @@ import FunnyLoader from "../components/ui/FunnyLoader";
 import { listLiveEvents } from "../lib/gradeupApi";
 
 type EventType = "debate" | "seminar";
+type StatusTab = "live" | "ongoing" | "ended";
 
 type LiveEvent = {
   id: string;
@@ -37,6 +38,9 @@ const styles = `
 .live-events-tabs{display:flex;gap:8px;padding:5px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 8px 24px rgba(15,23,42,.05)}
 .live-events-tab{height:36px;padding:0 14px;border:0;border-radius:6px;background:transparent;color:#475569;font-size:13px;font-weight:800;cursor:pointer}
 .live-events-tab.active{background:#0f172a;color:#fff}
+.live-events-filters{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.live-events-filter{height:34px;padding:0 13px;border:1px solid #dbe4ef;border-radius:7px;background:#fff;color:#475569;font-size:12px;font-weight:900;cursor:pointer}
+.live-events-filter.active{background:#2563eb;border-color:#2563eb;color:#fff}
 .live-events-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
 .event-card{background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 10px 28px rgba(15,23,42,.06);overflow:hidden}
 .event-card-top{padding:15px 16px 12px;border-bottom:1px solid #edf2f7}
@@ -66,6 +70,7 @@ function actionLabel(event: LiveEvent) {
   if (!event.canAccess) return event.accessLabel || "Restricted";
   const status = String(event.status || "waiting").toLowerCase();
   const ended = status === "completed" || status === "ended" || status === "ending" || status === "end_error";
+  if (status === "cancelled" || status === "canceled") return "Cancelled";
   const started = status === "active" || status === "waiting_for_ai";
   if (ended) return "Ended";
   if (event.sessionType === "debate" && started) return "In Progress";
@@ -75,9 +80,10 @@ function actionLabel(event: LiveEvent) {
 export default function LiveEventsPage() {
   const [, setLocation] = useLocation();
   const [tab, setTab] = useState<EventType>("debate");
+  const [statusTab, setStatusTab] = useState<StatusTab>("live");
   const { data = [], isLoading } = useQuery<LiveEvent[]>({
-    queryKey: ["/api/v1/live-events", tab],
-    queryFn: () => listLiveEvents(tab),
+    queryKey: ["/api/v1/live-events", tab, statusTab],
+    queryFn: () => listLiveEvents(tab, statusTab),
     refetchInterval: 5000,
   });
 
@@ -112,6 +118,22 @@ export default function LiveEventsPage() {
               Seminar
             </button>
           </div>
+        </div>
+
+        <div className="live-events-filters">
+          {[
+            ["live", "Live"],
+            ["ongoing", "Ongoing"],
+            ["ended", "Ended / Cancelled"],
+          ].map(([value, label]) => (
+            <button
+              key={value}
+              className={`live-events-filter${statusTab === value ? " active" : ""}`}
+              onClick={() => setStatusTab(value as StatusTab)}
+            >
+              {label}
+            </button>
+          ))}
         </div>
 
         {isLoading ? (
@@ -152,7 +174,12 @@ export default function LiveEventsPage() {
                       className={`event-action ${event.sessionType}${joinable ? "" : " disabled"}`}
                       disabled={!joinable}
                       onClick={() => {
-                        if (event.joinUrl) setLocation(event.joinUrl);
+                        if (!event.joinUrl) return;
+                        if (/^https?:\/\//i.test(event.joinUrl)) {
+                          window.location.href = event.joinUrl;
+                        } else {
+                          setLocation(event.joinUrl);
+                        }
                       }}
                     >
                       {joinable ? actionLabel(event) : actionLabel(event)}
@@ -165,7 +192,7 @@ export default function LiveEventsPage() {
         ) : (
           <div className="event-empty">
             <CalendarClock size={28} style={{ margin: "0 auto 10px" }} />
-            No visible {tab} events are live right now.
+            No visible {tab} events found in this status.
           </div>
         )}
       </main>

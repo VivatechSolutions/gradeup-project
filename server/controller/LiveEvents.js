@@ -1,4 +1,5 @@
 const LiveSession = require("../model/LiveSession");
+const { cancelStaleWaitingSession } = require("../services/liveSessionService");
 const {
   canAccessSession,
   eventAccessLabel,
@@ -8,6 +9,7 @@ const {
 
 function statusLabel(session) {
   const status = String(session.status || "waiting").toLowerCase();
+  if (status === "cancelled") return "Cancelled";
   if (status === "completed" || status === "ending" || status === "end_error") return "Ended";
   if (status === "active" || status === "waiting_for_ai") return "In Progress";
   return "Waiting";
@@ -23,8 +25,9 @@ function serializeEvent(session, context) {
   const status = String(session.status || "waiting").toLowerCase();
   const type = session.sessionType;
   const isEnded = status === "completed" || status === "ending" || status === "end_error";
+  const isCancelled = status === "cancelled";
   const isStarted = status === "active" || status === "waiting_for_ai";
-  const canJoinByStatus = type === "seminar" ? !isEnded : !isEnded && !isStarted;
+  const canJoinByStatus = type === "seminar" ? !isEnded && !isCancelled : !isEnded && !isCancelled && !isStarted;
   return {
     id: session.sessionId,
     sessionId: session.sessionId,
@@ -52,8 +55,8 @@ function serializeEvent(session, context) {
     joinUrl:
       session.shareLink ||
       (type === "seminar"
-        ? `/seminar?sessionId=${encodeURIComponent(session.sessionId)}`
-        : `/debate?sessionId=${encodeURIComponent(session.sessionId)}`),
+        ? `/seminarPage/join?room=${encodeURIComponent(session.sessionId)}`
+        : `/debatePage/join?room=${encodeURIComponent(session.sessionId)}`),
     updatedAt: session.updatedAt || session.startedAt || session.createdAt,
   };
 }
@@ -66,14 +69,27 @@ async function listLiveEvents(req, res) {
     const sessions = await LiveSession.find({
       ...(sessionType ? { sessionType } : {}),
       visibility: { $ne: "private" },
-      status: { $in: ["waiting", "active", "waiting_for_ai", "ending", "completed", "end_error"] },
+      status: { $in: ["waiting", "active", "waiting_for_ai", "ending", "completed", "end_error", "cancelled"] },
     })
       .sort({ updatedAt: -1 })
       .limit(100);
 
+    const statusTab = String(req.query.statusTab || req.query.status || "live").toLowerCase();
+    const refreshedSessions = await Promise.all(sessions.map(cancelStaleWaitingSession));
+    const filteredSessions = refreshedSessions.filter((session) => {
+      const status = String(session.status || "waiting").toLowerCase();
+      if (statusTab === "ended" || statusTab === "cancelled") {
+        return ["completed", "ending", "end_error", "cancelled"].includes(status);
+      }
+      if (statusTab === "ongoing") {
+        return ["active", "waiting_for_ai"].includes(status);
+      }
+      return status === "waiting";
+    });
+
     return res.status(200).json({
       status: true,
-      data: sessions.map((session) => serializeEvent(session, context)),
+      data: filteredSessions.map((session) => serializeEvent(session, context)),
     });
   } catch (error) {
     return res.status(error.statusCode || 500).json({
