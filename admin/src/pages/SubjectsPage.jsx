@@ -5,9 +5,9 @@ import {
   deleteSubjectUnit,
   fetchSubjectGroup,
   fetchSubjects,
+  uploadQuestionBank,
   updateSubjectGroup,
 } from "../api/client";
-const API_BASE_URL = "http://localhost:8000/api/v1";
 // ============================================================================
 // INLINE STYLES
 // ============================================================================
@@ -681,76 +681,51 @@ function UploadQuestionBankModal({
 }) {
 
   const [file, setFile] = useState(null);
+  const [uploadSource, setUploadSource] = useState("file");
+  const [jsonContent, setJsonContent] = useState("");
   const [error, setError] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [hoveredCloseBtn, setHoveredCloseBtn] = useState(false);
 
-  const [uploadMode, setUploadMode] = useState("single");
   const [form, setForm] = useState({
     board: groupData?.board || "",
     standard: groupData?.standard || "",
     subject: groupData?.subject || "",
-    part: groupData?.part || "",
     term: groupData?.term || "",
-    unitOrChapterName: "",
-    chapterName: "",
-    processingMode: "single_unit",
-    skipEnrichment: false,
-    skipQdrant: false,
-    skipLlmRefinement: false,
     examName: "",
-    year: "",
-    unitName: groupData?.units[0]?.unitTitle || "",
-    unitNumber: groupData?.units[0]?.unitNumber || "",
+    year: String(new Date().getFullYear()),
   });
-  const [files, setFiles] = useState([]);
-  const [fileMetadata, setFileMetadata] = useState([]);
-async function handleUpload(event) {
+  const termOptions = Array.from(
+    new Set(["Term 1", "Term 2", "Term 3", groupData?.term].filter(Boolean)),
+  );
+
+  async function handleUpload(event) {
     event.preventDefault();
     setError("");
 
-    // Validate form
-    if (!form.board.trim()) {
-      setError("Board is required");
+    if (!form.examName.trim()) {
+      setError("Exam name is required");
       return;
     }
-    if (!form.standard.trim()) {
-      setError("Standard is required");
+    if (uploadSource === "file" && !file) {
+      setError("Please select a PDF file");
       return;
     }
-    if (!form.subject.trim()) {
-      setError("Subject is required");
-      return;
-    }
-
-    if (uploadMode === "single") {
-      if (!String(form.unitNumber || "").trim()) {
-        setError("Unit number is required for single unit upload");
+    if (uploadSource === "json") {
+      if (!jsonContent.trim()) {
+        setError("Paste the question bank JSON");
         return;
       }
-      if (!form.chapterName.trim()) {
-        setError("Chapter name is required for single unit upload");
-        return;
-      }
-      if (files.length !== 1) {
-        setError("Please select exactly one file for single unit upload");
-        return;
-      }
-    } else {
-      if (files.length < 2) {
-        setError("Please select at least 2 files for multiple units upload");
-        return;
-      }
-      // Validate metadata for each file
-      for (let i = 0; i < files.length; i++) {
-        if (!String(fileMetadata[i]?.unitNumber || "").trim()) {
-          setError(`Unit number is required for file ${i + 1}`);
+      try {
+        const parsed = JSON.parse(jsonContent);
+        const questions = Array.isArray(parsed) ? parsed : parsed?.questions;
+        if (!Array.isArray(questions)) {
+          setError('JSON must be an array of questions or an object with a "questions" array');
           return;
         }
-        if (!fileMetadata[i]?.chapterName || !fileMetadata[i]?.chapterName.trim()) {
-          setError(`Chapter name is required for file ${i + 1}`);
-          return;
-        }
+      } catch {
+        setError("Enter valid JSON before uploading");
+        return;
       }
     }
 
@@ -758,97 +733,34 @@ async function handleUpload(event) {
 
     try {
       const formData = new FormData();
-
-      if (uploadMode === "single") {
-        formData.append("file", files[0]);
-        formData.append("processingMode", "single_unit");
-        formData.append("unitNumber", form.unitNumber);
-        formData.append("chapterName", form.chapterName);
-        formData.append("unitOrChapterName", form.chapterName);
+      formData.append("uploadType", uploadSource);
+      if (uploadSource === "file") {
+        formData.append("file", file);
       } else {
-        // Multiple files upload
-        files.forEach((file, index) => {
-          formData.append("file", file);
-        });
-        formData.append("processingMode", "multiple_units");
-        fileMetadata.forEach((metadata, index) => {
-          formData.append(`fileMetadata[${index}]`, JSON.stringify(metadata));
-        });
+        formData.append("jsonContent", jsonContent.trim());
       }
-
+      formData.append("examName", form.examName.trim());
+      formData.append("year", form.year);
       formData.append("board", form.board);
-      formData.append("standard", form.standard);
+      formData.append("classNumber", form.standard);
       formData.append("subject", form.subject);
-      if (form.part) formData.append("part", form.part);
-      if (form.term) formData.append("term", form.term);
-      formData.append("subjectAssignmentMode", groupKey ? "existing_subject" : "new_subject");
-      if (groupKey) formData.append("existingSubjectKey", groupKey);
-      formData.append("skip_enrichment", form.skipEnrichment);
-      formData.append("skip_qdrant", form.skipQdrant);
-      formData.append("skip_llm_refinement", form.skipLlmRefinement);
+      if (form.term.trim()) formData.append("term", form.term.trim());
+      formData.append("subjectGroupKey", groupKey);
 
-      const response = await fetch(`${API_BASE_URL}/admin/subjects/upload`, {
-        method: "POST",
-        body: formData,
-      });
+      await uploadQuestionBank(formData);
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Upload failed");
-      }
-
-      const data = await response.json();
-
-      if (!data.status) {
-        throw new Error(data.message || "Upload failed");
-      }
-
-      onSaved(
-        uploadMode === "single"
-          ? "Subject uploaded and queued for processing. Check progress on the dashboard."
-          : `${files.length} files uploaded and queued for processing. Units will be created in strict FIFO order. Check progress on the dashboard.`
-      );
+      onSaved("Question bank uploaded successfully.");
       onClose();
     } catch (uploadError) {
-      setError(uploadError.message || "Unable to upload subject");
+      setError(uploadError.message || "Unable to upload question bank");
     } finally {
       setIsUploading(false);
     }
   }
 
   function handleFileSelection(event) {
-    const selectedFiles = Array.from(event.target.files || []);
-    if (uploadMode === "single" && selectedFiles.length > 1) {
-      setError("Only one file can be selected for single unit upload");
-      return;
-    }
-    if (uploadMode === "multiple" && selectedFiles.length < 2) {
-      setError("At least 2 files required for multiple units upload");
-      return;
-    }
-    setFiles(selectedFiles);
+    setFile(event.target.files?.[0] || null);
     setError("");
-
-    // Initialize metadata for new files
-    if (uploadMode === "multiple") {
-      const newMetadata = selectedFiles.map((file, index) => ({
-        unitNumber: index + 1,
-        chapterName: "",
-        unitTitle: `Unit ${index + 1}`,
-        part: form.part || null,
-        term: form.term || null,
-      }));
-      setFileMetadata(newMetadata);
-    }
-  }
-
-  function updateFileMetadata(index, field, value) {
-    const newMetadata = [...fileMetadata];
-    newMetadata[index] = {
-      ...newMetadata[index],
-      [field]: value,
-    };
-    setFileMetadata(newMetadata);
   }
 
   return (
@@ -892,15 +804,47 @@ async function handleUpload(event) {
                   }))
                 }
                 disabled={isUploading}
+                required
               />
             </label>
 
             <label style={styles.formLabel}>
-              Year *
+              Term
+              <select
+                style={styles.formInput}
+                value={form.term}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    term: event.target.value,
+                  }))
+                }
+                disabled={isUploading}
+              >
+                <option value="">No term</option>
+                {termOptions.map((term) => (
+                  <option key={term} value={term}>
+                    {term}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label style={styles.formLabel}>
+              Subject
               <input
                 type="text"
                 style={styles.formInput}
-                placeholder="e.g., 2024, 2023"
+                value={form.subject}
+                readOnly
+              />
+            </label>
+
+            <label style={styles.formLabel}>
+              Year
+              <input
+                type="text"
+                style={styles.formInput}
                 value={form.year}
                 onChange={(event) =>
                   setForm((current) => ({
@@ -909,207 +853,82 @@ async function handleUpload(event) {
                   }))
                 }
                 disabled={isUploading}
+                required
               />
             </label>
 
             <label style={styles.formLabel}>
-              Unit Name
+              Board
               <input
                 type="text"
                 style={styles.formInput}
-                placeholder="Optional"
-                value={form.unitName}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    unitName: event.target.value,
-                  }))
-                }
-                disabled={isUploading}
-              />
-            </label>
-
-            <label style={styles.formLabel}>
-              Unit Number
-              <input
-                type="text"
-                style={styles.formInput}
-                placeholder="Optional"
-                value={form.unitNumber}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    unitNumber: event.target.value,
-                  }))
-                }
-                disabled={isUploading}
-              />
-            </label>
-
-            <label style={styles.formLabel}>
-              Part
-              <input
-                type="text"
-                style={styles.formInput}
-                placeholder="History, Geography, Civics"
-                value={form.part}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    part: event.target.value,
-                  }))
-                }
-                disabled={isUploading}
+                value={form.board}
+                readOnly
               />
             </label>
           </div>
-  <div style={{ marginBottom: "1.5rem", padding: "1rem", backgroundColor: "#f5f5f5", borderRadius: "4px" }}>
-            <p style={{ margin: "0 0 0.75rem", fontSize: "0.875rem", fontWeight: 500, color: "#333" }}>
-              Upload Mode *
-            </p>
-            <div style={{ display: "flex", gap: "1rem" }}>
-              <label style={{ display: "flex", alignItems: "center", cursor: "pointer", gap: "0.5rem" }}>
-                <input
-                  type="radio"
-                  name="uploadMode"
-                  value="single"
-                  checked={uploadMode === "single"}
-                  onChange={(e) => {
-                    setUploadMode(e.target.value);
-                    setFiles([]);
-                    setFileMetadata([]);
-                    setError("");
-                  }}
-                  disabled={isUploading}
-                />
-                <span style={{ fontSize: "0.875rem" }}>Single Unit (1 PDF)</span>
-              </label>
-              <label style={{ display: "flex", alignItems: "center", cursor: "pointer", gap: "0.5rem" }}>
-                <input
-                  type="radio"
-                  name="uploadMode"
-                  value="multiple"
-                  checked={uploadMode === "multiple"}
-                  onChange={(e) => {
-                    setUploadMode(e.target.value);
-                    setFiles([]);
-                    setFileMetadata([]);
-                    setError("");
-                  }}
-                  disabled={isUploading}
-                />
-                <span style={{ fontSize: "0.875rem" }}>Multiple Units (2+ PDFs)</span>
-              </label>
-            </div>
-          </div>
 
-          {uploadMode === "single" && (
-            <>
-              <label style={styles.formLabel}>
-                Unit Number *
-                <input
-                  type="number"
-                  min="1"
-                  style={styles.formInput}
-                  placeholder="1"
-                  value={form.unitNumber}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      unitNumber: event.target.value,
-                    }))
-                  }
-                  disabled={isUploading}
-                />
-              </label>
-              <label style={styles.formLabel}>
-                Chapter Name *
-                <input
-                  type="text"
-                  style={styles.formInput}
-                  placeholder="Heat And Temperature"
-                  value={form.chapterName}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      chapterName: event.target.value,
-                      unitOrChapterName: event.target.value,
-                    }))
-                  }
-                  disabled={isUploading}
-                />
-              </label>
-            </>
-          )}
-          <label style={styles.fileUploadLabel}>
-            PDF File{uploadMode === "multiple" ? "s" : ""} *
-            <input
-              type="file"
-              style={styles.fileUploadInput}
-              accept=".pdf"
-              onChange={handleFileSelection}
+          <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
+            <button
+              type="button"
+              style={uploadSource === "file" ? styles.primaryBtn : styles.ghostBtn}
+              onClick={() => {
+                setUploadSource("file");
+                setError("");
+              }}
               disabled={isUploading}
-              multiple={uploadMode === "multiple"}
-              required
-            />
-            {files.length > 0 ? (
-              <div style={styles.fileSelected}>
-                {files.map((f, idx) => (
-                  <div key={idx} style={{ marginBottom: "0.5rem" }}>
-                    <span style={styles.fileSelectedSpan}>✓ {f.name}</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div style={styles.filePlaceholder}>
-                <span style={styles.filePlaceholderSpan}>
-                  {uploadMode === "single"
-                    ? "Choose PDF file or drag and drop"
-                    : "Choose 2 or more PDF files or drag and drop"}
-                </span>
-              </div>
-            )}
-          </label>
+            >
+              File Upload
+            </button>
+            <button
+              type="button"
+              style={uploadSource === "json" ? styles.primaryBtn : styles.ghostBtn}
+              onClick={() => {
+                setUploadSource("json");
+                setError("");
+              }}
+              disabled={isUploading}
+            >
+              Paste JSON
+            </button>
+          </div>
 
-          {uploadMode === "multiple" && files.length > 0 && (
-            <div style={{ marginTop: "1.5rem", padding: "1rem", backgroundColor: "#f9f9f9", borderRadius: "4px", border: "1px solid #e0e0e0" }}>
-              <p style={{ margin: "0 0 1rem", fontSize: "0.875rem", fontWeight: 500, color: "#333" }}>
-                File Metadata - Enter unit information for each file
-              </p>
-              {files.map((file, index) => (
-                <div key={index} style={{ marginBottom: "1rem", padding: "1rem", backgroundColor: "white", borderRadius: "4px", border: "1px solid #e0e0e0" }}>
-                  <p style={{ margin: "0 0 0.75rem", fontSize: "0.75rem", color: "#999", fontWeight: 500 }}>
-                    File {index + 1}: {file.name}
-                  </p>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                    <input
-                      type="number"
-                      style={styles.formInput}
-                      placeholder="Unit Number"
-                      value={fileMetadata[index]?.unitNumber || ""}
-                      onChange={(e) => updateFileMetadata(index, "unitNumber", e.target.value)}
-                      disabled={isUploading}
-                    />
-                    <input
-                      type="text"
-                      style={styles.formInput}
-                      placeholder="Chapter Name"
-                      value={fileMetadata[index]?.chapterName || ""}
-                      onChange={(e) => {
-                        const newMetadata = [...fileMetadata];
-                        newMetadata[index] = {
-                          ...newMetadata[index],
-                          chapterName: e.target.value,
-                          unitTitle: e.target.value,
-                        };
-                        setFileMetadata(newMetadata);
-                      }}
-                      disabled={isUploading}
-                    />
-                  </div>
+          {uploadSource === "file" ? (
+            <label style={styles.fileUploadLabel}>
+              PDF File *
+              <input
+                type="file"
+                style={styles.fileUploadInput}
+                accept=".pdf"
+                onChange={handleFileSelection}
+                disabled={isUploading}
+                required
+              />
+              {file ? (
+                <div style={styles.fileSelected}>
+                  <span style={styles.fileSelectedSpan}>✓ {file.name}</span>
                 </div>
-              ))}
-            </div>
+              ) : (
+                <div style={styles.filePlaceholder}>
+                  <span style={styles.filePlaceholderSpan}>Choose PDF file or drag and drop</span>
+                </div>
+              )}
+            </label>
+          ) : (
+            <label style={styles.formLabel}>
+              Question Bank JSON *
+              <textarea
+                style={{ ...styles.formInput, minHeight: "240px", resize: "vertical", fontFamily: "monospace" }}
+                value={jsonContent}
+                onChange={(event) => setJsonContent(event.target.value)}
+                placeholder={'[{"question":"What is ...?","difficulty":"easy"}]'}
+                disabled={isUploading}
+                required
+              />
+              <span style={{ color: "#777", fontSize: "0.75rem" }}>
+                Paste a question array or an object containing a questions array.
+              </span>
+            </label>
           )}
 
           <div style={styles.modalActions}>

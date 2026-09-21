@@ -736,24 +736,35 @@ async uploadQuestionBank(req, res) {
       message: "Question bank upload initiated",
     });
  
-    // Check if file exists
-    if (!req.file) {
-      return res.status(400).json({
-        status: false,
-        message: "No file provided",
-      });
-    }
- 
     const { 
       examName, 
       year, 
       classNumber, 
       board, 
       subject, 
+      term,
       unitName, 
       unitNumber,
+      uploadType,
+      jsonContent,
       subjectGroupKey  // NEW: Capture the subject group key
     } = req.body;
+
+    const isJsonUpload = uploadType === "json";
+
+    if (!isJsonUpload && !req.file) {
+      return res.status(400).json({
+        status: false,
+        message: "No PDF file provided",
+      });
+    }
+
+    if (isJsonUpload && !jsonContent) {
+      return res.status(400).json({
+        status: false,
+        message: "Question bank JSON is required",
+      });
+    }
  
     // Validate required fields
     if (!examName || !year || !classNumber || !board || !subject) {
@@ -771,8 +782,6 @@ async uploadQuestionBank(req, res) {
       });
     }
  
-    const filePath = req.file.path;
- 
     // Step 1: Get or create subject metadata
     const metadata = await getOrCreateSubjectMetadata(
       board,
@@ -781,37 +790,86 @@ async uploadQuestionBank(req, res) {
     new Date(),
     );
  
-    logApiStep({
-      api: "UPLOAD_QUESTION_BANK",
-      status: "PROCESSING",
-      requestId: req.requestId,
-      message: "Calling Python API to extract questions",
-    });
- 
-    // Step 2: Call Python API to extract questions
-    const FormData = require("form-data");
-    const fs = require("fs");
-    const form = new FormData();
-    
-    form.append("file", fs.createReadStream(filePath));
-    form.append("exam_name", examName);
-    form.append("year", year);
-    form.append("class_number", classNumber);
-    form.append("board", board);
-    form.append("subject", subject);
-    
-    if (unitName) form.append("unit_name", unitName);
-    if (unitNumber) form.append("unit_number", unitNumber);
- 
-    const pythonResponse = await callPython({
-      method: "post",
-      path: "/tutor/question-bank/upload-pdf",
-      data: form,
-      headers: form.getHeaders(),
-    });
- 
-    if (!pythonResponse.success) {
-      throw new Error(pythonResponse.message || "Python API processing failed");
+    let questions;
+    let totalQuestions;
+    let difficultyDistribution;
+    let originalFileName;
+
+    if (isJsonUpload) {
+      let parsedJson;
+      try {
+        parsedJson = JSON.parse(jsonContent);
+      } catch {
+        const error = new Error("Question bank JSON is invalid");
+        error.statusCode = 400;
+        throw error;
+      }
+
+      questions = Array.isArray(parsedJson) ? parsedJson : parsedJson?.questions;
+      if (!Array.isArray(questions)) {
+        const error = new Error(
+          'Question bank JSON must be an array or an object with a "questions" array',
+        );
+        error.statusCode = 400;
+        throw error;
+      }
+
+      difficultyDistribution =
+        (!Array.isArray(parsedJson) &&
+          (parsedJson.difficultyDistribution || parsedJson.difficulty_distribution)) ||
+        questions.reduce(
+          (counts, question) => {
+            const difficulty = String(question?.difficulty || "").toLowerCase();
+            if (Object.prototype.hasOwnProperty.call(counts, difficulty)) {
+              counts[difficulty] += 1;
+            }
+            return counts;
+          },
+          { easy: 0, medium: 0, hard: 0 },
+        );
+      totalQuestions = questions.length;
+      originalFileName = "pasted-question-bank.json";
+    } else {
+      logApiStep({
+        api: "UPLOAD_QUESTION_BANK",
+        status: "PROCESSING",
+        requestId: req.requestId,
+        message: "Calling Python API to extract questions",
+      });
+
+      const FormData = require("form-data");
+      const fs = require("fs");
+      const form = new FormData();
+
+      form.append("file", fs.createReadStream(req.file.path));
+      form.append("exam_name", examName);
+      form.append("year", year);
+      form.append("class_number", classNumber);
+      form.append("board", board);
+      form.append("subject", subject);
+
+      if (unitName) form.append("unit_name", unitName);
+      if (unitNumber) form.append("unit_number", unitNumber);
+
+      const pythonResponse = await callPython({
+        method: "post",
+        path: "/tutor/question-bank/upload-pdf",
+        data: form,
+        headers: form.getHeaders(),
+      });
+
+      if (!pythonResponse.success) {
+        throw new Error(pythonResponse.message || "Python API processing failed");
+      }
+
+      questions = pythonResponse.questions || [];
+      totalQuestions = pythonResponse.extracted_count || questions.length;
+      difficultyDistribution = pythonResponse.difficulty_distribution || {
+        easy: 0,
+        medium: 0,
+        hard: 0,
+      };
+      originalFileName = req.file.originalname;
     }
  
     // Generate document ID
@@ -825,17 +883,14 @@ async uploadQuestionBank(req, res) {
       board,
       classNumber,
       subject,
+      term: String(term || "").trim() || null,
       subjectGroupKey,  // NEW: Store the subject group key
       unitName: unitName || null,
       unitNumber: unitNumber ? Number(unitNumber) : null,
-      totalQuestions: pythonResponse.extracted_count || 0,
-      difficultyDistribution: pythonResponse.difficulty_distribution || { 
-        easy: 0, 
-        medium: 0, 
-        hard: 0 
-      },
-      questions: pythonResponse.questions || null,
-      originalFileName: req.file.originalname,
+      totalQuestions,
+      difficultyDistribution,
+      questions,
+      originalFileName,
       uploadedBy: "AdminUser",
       metadataId: metadata._id,
       processingStatus: "completed",
@@ -848,14 +903,16 @@ async uploadQuestionBank(req, res) {
       api: "UPLOAD_QUESTION_BANK",
       status: "SUCCESS",
       requestId: req.requestId,
-      message: `Question bank saved with ${pythonResponse.extracted_count} questions`,
+      message: `Question bank saved with ${totalQuestions} questions`,
     });
  
     // Clean up uploaded file
-    try {
-      fs.unlinkSync(filePath);
-    } catch (err) {
-      console.log("Warning: Could not delete temp file", err.message);
+    if (req.file?.path) {
+      try {
+        require("fs").unlinkSync(req.file.path);
+      } catch (err) {
+        console.log("Warning: Could not delete temp file", err.message);
+      }
     }
  
     return res.status(201).json({
@@ -868,6 +925,7 @@ async uploadQuestionBank(req, res) {
         board: questionBank.board,
         classNumber: questionBank.classNumber,
         subject: questionBank.subject,
+        term: questionBank.term,
         subjectGroupKey: questionBank.subjectGroupKey,  // NEW: Return in response
         totalQuestions: questionBank.totalQuestions,
         difficultyDistribution: questionBank.difficultyDistribution,

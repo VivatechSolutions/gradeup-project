@@ -37,11 +37,16 @@ const questionBankSchema = new mongoose.Schema(
       trim: true,
       index: true
     },
-      subjectGroupKey: {
-    type: String,
-    required: true,
-    index: true,  // Index for faster queries by group
-  },
+    term: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    subjectGroupKey: {
+      type: String,
+      required: true,
+      index: true,  // Index for faster queries by group
+    },
     unitName: { 
       type: String, 
       default: null,

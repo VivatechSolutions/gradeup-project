@@ -152,27 +152,8 @@ export async function fetchUploadProcesses(searchParams = "") {
 }
 
 export async function uploadQuestionBank(formData) {
-  // try {
-  //   const response = await fetch(`${API_BASE_URL}/api/v1/admin/subjectsadmin/question-bank/upload`, {
-  //     method: "POST",
-  //     body: formData,
-  //     // Don't set Content-Type header - FormData will set it automatically
-  //   });
-
-  //   if (!response.ok) {
-  //     const errorData = await response.json().catch(() => ({}));
-  //     throw new Error(
-  //       errorData.message || `Upload failed with status ${response.status}`,
-  //     );
-  //   }
-
-  //   return await response.json();
-  // } catch (error) {
-  //   console.error("Question bank upload error:", error);
-  //   throw error;
-  // }
-  return apiRequest("/api/v1/admin/subjectsadmin/question-bank/upload", {
+  return apiRequest("/admin/subjects/question-bank/upload", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: formData,
   });
 }

@@ -21,12 +21,6 @@ function uniqueSorted(values) {
   );
 }
 
-function subjectPartKey(option) {
-  return [option.subject || "", option.part || ""]
-    .map((value) => String(value).trim().toLowerCase())
-    .join("::");
-}
-
 export default function UploadSubjectPage() {
   const [uploadMode, setUploadMode] = useState("single");
   const [form, setForm] = useState({
@@ -103,67 +97,25 @@ export default function UploadSubjectPage() {
     [form.board, subjectOptions],
   );
 
-  const existingTermOptions = useMemo(
-    () =>
-      uniqueSorted(
-        [
-          ...DEFAULT_TERMS,
-          ...subjectOptions
-            .filter((option) => !form.board || option.board === form.board)
-            .filter((option) => !form.standard || option.standard === form.standard)
-            .map((option) => option.term || "No term"),
-        ],
-      ),
-    [form.board, form.standard, subjectOptions],
-  );
-
-  const filteredExistingSubjects = useMemo(
+  const subjectDropdownOptions = useMemo(
     () =>
       subjectOptions
         .filter((option) => option.board === form.board)
-        .filter((option) => option.standard === form.standard)
-        .filter((option) => (option.term || "No term") === form.term),
-    [form.board, form.standard, form.term, subjectOptions],
+        .filter((option) => option.standard === form.standard),
+    [form.board, form.standard, subjectOptions],
   );
 
-  const newTermSubjectOptions = useMemo(() => {
-    if (!form.board || !form.standard || !form.term) {
-      return [];
-    }
-
-    const exactSubjectParts = new Set(filteredExistingSubjects.map(subjectPartKey));
-    const uniqueBaseSubjects = new Map();
-
-    subjectOptions
-      .filter((option) => option.board === form.board)
-      .filter((option) => option.standard === form.standard)
-      .forEach((option) => {
-        const key = subjectPartKey(option);
-        if (exactSubjectParts.has(key) || uniqueBaseSubjects.has(key)) {
-          return;
-        }
-
-        uniqueBaseSubjects.set(key, {
-          ...option,
-          id: `new-term::${form.board}::${form.standard}::${form.term}::${option.subject}::${option.part || "__none__"}`,
-          subjectGroupKey: null,
-          term: form.term,
-          unitCount: 0,
-          isNewTermOption: true,
-        });
-      });
-
-    return Array.from(uniqueBaseSubjects.values()).sort((left, right) =>
-      buildSubjectOptionLabel(left).localeCompare(buildSubjectOptionLabel(right), undefined, {
-        numeric: true,
-        sensitivity: "base",
-      }),
-    );
-  }, [filteredExistingSubjects, form.board, form.standard, form.term, subjectOptions]);
-
-  const subjectDropdownOptions = useMemo(
-    () => [...filteredExistingSubjects, ...newTermSubjectOptions],
-    [filteredExistingSubjects, newTermSubjectOptions],
+  const termOptions = useMemo(
+    () =>
+      uniqueSorted([
+        ...DEFAULT_TERMS,
+        ...subjectOptions
+          .filter((option) => option.board === form.board)
+          .filter((option) => !form.standard || option.standard === form.standard)
+          .map((option) => option.term),
+        form.term,
+      ]),
+    [form.board, form.standard, form.term, subjectOptions],
   );
 
   const selectedExistingSubject = useMemo(
@@ -205,16 +157,6 @@ export default function UploadSubjectPage() {
     }));
   }
 
-  function handleExistingTermChange(nextTerm) {
-    setForm((current) => ({
-      ...current,
-      term: nextTerm,
-      subject: "",
-      part: "",
-      existingSubjectKey: "",
-    }));
-  }
-
   function handleExistingSubjectChange(nextKey) {
     const selectedGroup =
       subjectDropdownOptions.find((option) => option.id === nextKey) || null;
@@ -226,7 +168,7 @@ export default function UploadSubjectPage() {
       standard: selectedGroup?.standard || current.standard,
       subject: selectedGroup?.subject || current.subject,
       part: selectedGroup?.part || "",
-      term: selectedGroup?.term || "No term",
+      term: selectedGroup?.term || "",
     }));
   }
 
@@ -497,29 +439,12 @@ export default function UploadSubjectPage() {
               </label>
 
               <label>
-                Term
-                <select
-                  value={form.term}
-                  onChange={(event) => handleExistingTermChange(event.target.value)}
-                  required
-                  disabled={!form.standard}
-                >
-                  <option value="">Select term</option>
-                  {existingTermOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
                 Subject
                 <select
                   value={form.existingSubjectKey}
                   onChange={(event) => handleExistingSubjectChange(event.target.value)}
                   required
-                  disabled={!form.term}
+                  disabled={!form.standard}
                 >
                   <option value="">
                     {loadingSubjects ? "Loading subjects..." : "Select subject"}
@@ -530,6 +455,25 @@ export default function UploadSubjectPage() {
                     </option>
                   ))}
                 </select>
+              </label>
+
+              <label>
+                Term
+                <select
+                  value={form.term}
+                  onChange={(event) => updateField("term", event.target.value)}
+                  disabled={!form.existingSubjectKey}
+                >
+                  <option value="">No term</option>
+                  {termOptions.map((term) => (
+                    <option key={term} value={term}>
+                      {term}
+                    </option>
+                  ))}
+                </select>
+                <span className="muted small">
+                  Auto-filled from the subject when available; you can change it.
+                </span>
               </label>
 
               <label>
@@ -630,11 +574,17 @@ export default function UploadSubjectPage() {
 
                   <label>
                     Term
-                    <input
+                    <select
                       value={form.term}
                       onChange={(event) => updateField("term", event.target.value)}
-                      placeholder="Term 1, Term 2"
-                    />
+                    >
+                      <option value="">No term</option>
+                      {termOptions.map((term) => (
+                        <option key={term} value={term}>
+                          {term}
+                        </option>
+                      ))}
+                    </select>
                   </label>
                 </>
               ) : null}

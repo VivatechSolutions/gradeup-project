@@ -7,7 +7,10 @@ const {
 const multer = require("multer");
 const upload = multer({ 
   dest: "uploads/temp/",
-  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB limit
+  limits: {
+    fileSize: 100 * 1024 * 1024,
+    fieldSize: 100 * 1024 * 1024,
+  }, // Allow large PDFs and pasted question-bank JSON
   fileFilter: (req, file, cb) => {
     if (file.mimetype === "application/pdf") {
       cb(null, true);
@@ -29,7 +32,9 @@ router.get("/uploads/:id/status", requireAdminAuth, requirePasswordResetResolved
 router.get("/:id", requireAdminAuth, requirePasswordResetResolved, adminSubjectController.getSubject);
 // Question Bank Upload
 router.post(
-  "/admin/question-bank/upload",
+  "/question-bank/upload",
+  requireAdminAuth,
+  requirePasswordResetResolved,
   upload.single("file"), // Expects single file with field name "file"
   adminSubjectController.uploadQuestionBank
 );
