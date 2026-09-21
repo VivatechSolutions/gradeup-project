@@ -1,3 +1,4 @@
+import React, { Suspense } from 'react';
 import { Switch, Route, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -56,8 +57,6 @@ import QuestionBank from "./pages/studio/QuestionBank";
 import EnhancedView from "./components/BookContentWindow/EnhancedView";
 import ExamPreparationPage from "./pages/exam-preparation";
 import CalendarPage from "./pages/calendar-page";
-import { useAutoLogout } from "./hooks/useAutoLogout";
-import { SessionTimeoutModal } from "./components/SessionTimeoutModal";
 import TeacherAssessmentQuizCreatorPage from "./pages/teacher-assessment-quiz-creator-page";
 import TeacherExamProgressTracker from "./pages/teacher-exam-progress-tracker";
 import MeetingSystem from "./components/Meetingsystem";
@@ -65,15 +64,13 @@ import DebatePage from "./pages/DebatePage";
 import SeminarPage from "./pages/SeminarPage";
 import MeetingPage from "./pages/MeetingPage";
 import LiveEventsPage from "./pages/live-events-page";
-import TeacherSeminarPage from "./pages/teacher-seminar-page";
-import TeacherDebatePage from "./pages/teacher-debate-page";
 import TeacherMeetingPage from "./pages/teacher-meeting-page";
 import TeacherSeminarSetupPage from "./pages/teacher-seminar-setup-page";
 import TeacherDebateSetupPage from "./pages/teacher-debate-setup-page";
 import TeacherMeetingSetupPage from "./pages/teacher-meeting-setup-page";
 
 
-const WARNING_SECONDS = 120;
+const SlideEditorPage = React.lazy(() => import('./pages/SlideEditorPage'));
 
 const withTeacherLayout = (
   Component: React.ComponentType<any>,
@@ -87,14 +84,7 @@ const withTeacherLayout = (
 };
 
 function AppWithAuth() {
-  const { user, logoutMutation, isLoading } = useAuth();
-  const { warningVisible, secondsLeft, extendSession } = useAutoLogout({
-    onLogout:       () => logoutMutation.mutate(),
-    idleMinutes:    10,
-    warningSeconds: WARNING_SECONDS,
-    closeMinutes:   15,
-    enabled:        !!user,
-  });
+  const { user, isLoading } = useAuth();
 
   if (isLoading) {
     return (
@@ -105,14 +95,9 @@ function AppWithAuth() {
   }
   return (
     <>
-      <SessionTimeoutModal
-        visible={warningVisible}
-        secondsLeft={secondsLeft}
-        totalSeconds={WARNING_SECONDS}
-        onStay={extendSession}
-        onLogout={() => logoutMutation.mutate()}
-      />
       <Switch>
+        <Route path="/seminar/slides/:deckId/present"><Suspense fallback={<div>Loading presentation...</div>}><SlideEditorPage /></Suspense></Route>
+        <Route path="/seminar/slides/:deckId"><Suspense fallback={<div>Loading editor...</div>}><SlideEditorPage /></Suspense></Route>
         <ProtectedRoute path="/dashboard" component={Dashboard} />
         <ProtectedRoute path="/courses" component={CoursesPage} />
         <ProtectedRoute path="/courses/:courseId" component={CourseLessonsPage} />

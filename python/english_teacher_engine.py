@@ -28,6 +28,11 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
 
 import requests
+from langfuse_utils import traced_post
+from langfuse_utils import with_student_context
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -264,20 +269,20 @@ class EnglishTeacherEngine:
             "temperature": temperature,
         }
         try:
-            resp = requests.post(
+            resp = traced_post("english-teacher-turn",
                 "https://api.openai.com/v1/chat/completions",
                 headers=headers, json=payload, timeout=SESSION_TIMEOUT,
             )
             if not resp.ok:
                 payload["model"] = SESSION_FALLBACK_MODEL
-                resp = requests.post(
+                resp = traced_post("english-teacher-turn",
                     "https://api.openai.com/v1/chat/completions",
                     headers=headers, json=payload, timeout=SESSION_TIMEOUT,
                 )
             if resp.ok:
                 return resp.json()["choices"][0]["message"]["content"].strip()
         except Exception as e:
-            print(f"  ❌ [EnglishTeacher] LLM error: {e}")
+            logger.error(f"[EnglishTeacher] LLM error: {e}")
         return "I'm having trouble right now. Let's try again in a moment!"
 
     def _parse_json_from_llm(self, raw: str) -> Optional[Any]:
@@ -378,7 +383,7 @@ class EnglishTeacherEngine:
             if not report:
                 return None
         except Exception as e:
-            print(f"  ⚠️ [EnglishTeacher] Could not load test for adaptive plan: {e}")
+            logger.warning(f"[EnglishTeacher] Could not load test for adaptive plan: {e}")
             return None
 
         cats = report.get("category_scores", {})
@@ -451,7 +456,7 @@ class EnglishTeacherEngine:
             if next_session and next_session > progress.get("current_session_number", 2):
                 progress["current_session_number"] = next_session
             self._save_json(self._progress_path(candidate_id), progress)
-            print(f"  [OK] [EnglishTeacher] Adaptive plan saved for {candidate_id}: skip sessions {plan['skip_sessions']}")
+            logger.info(f"[OK] [EnglishTeacher] Adaptive plan saved for {candidate_id}: skip sessions {plan['skip_sessions']}")
 
     # ── Test Gate Logic ────────────────────────────────────────────────────
 
@@ -479,7 +484,7 @@ class EnglishTeacherEngine:
                         }
             return {"passed": False, "has_test": False}
         except Exception as e:
-            print(f"  ⚠️ [EnglishTeacher] Could not check test: {e}")
+            logger.warning(f"[EnglishTeacher] Could not check test: {e}")
             return {"passed": False, "has_test": False}
 
     def _unlock_next_level(self, candidate_id: str, current_level: str) -> None:
@@ -777,6 +782,7 @@ Your name is "Teacher" and you speak with patience, clarity, and enthusiasm.
 
     # ── Public API ────────────────────────────────────────────────────────
 
+    @with_student_context()
     def start_session(self, candidate_id: str, candidate_name: str,
                       level: Optional[str] = None) -> Dict:
         """Start a new teaching session for a student."""
@@ -809,7 +815,7 @@ Your name is "Teacher" and you speak with patience, clarity, and enthusiasm.
             # Update progress to the new position
             progress["current_session_number"] = session_number
             self._save_json(self._progress_path(candidate_id), progress)
-            print(f"  [SKIP] [EnglishTeacher] Skipped sessions {original_session}->{session_number} "
+            logger.warning(f"[SKIP] [EnglishTeacher] Skipped sessions {original_session}->{session_number} "
                   f"for {candidate_id} (adaptive plan)")
 
         session_info = level_syllabus[session_number - 1]
@@ -870,7 +876,7 @@ Your name is "Teacher" and you speak with patience, clarity, and enthusiasm.
                 from english_test_engine import get_english_test_engine
                 test_report = get_english_test_engine().get_test_report_for_session(candidate_id)
             except Exception as e:
-                print(f"  ⚠️ [EnglishTeacher] Could not load test report: {e}")
+                logger.warning(f"[EnglishTeacher] Could not load test report: {e}")
 
             system_prompt = self._build_system_prompt_test_discussion(
                 candidate_name, actual_level, test_report

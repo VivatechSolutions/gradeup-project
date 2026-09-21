@@ -25,6 +25,9 @@ import os
 import json
 import re
 from typing import Any, Dict, List, Optional, Union
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 CANONICAL_TERMS = ["term_1", "term_2", "term_3"]
 
@@ -35,8 +38,13 @@ _WORD_TO_NUM = {
     "first": 1, "second": 2, "third": 3,
 }
 
-# Values that explicitly mean "no term scoping", not "unparseable".
-_EMPTY_VALUES = {"", "none", "null", "all", "na", "n/a", "-"}
+# Values that explicitly mean "no term scoping", not "unparseable". Compared
+# against _slug(raw), so they are written in slug form: "N/A" arrives as "n_a",
+# "No term" (the upload form's dropdown label for non-term-split boards) as
+# "no_term", and "-" collapses to "". Before this was slugged consistently,
+# "n/a" in the set never matched and "No term" was rejected as a bad term.
+_EMPTY_VALUES = {"", "none", "null", "nil", "all", "na", "n_a",
+                 "no_term", "not_applicable"}
 
 # Default exam -> term scope. A None value means the caller MUST supply an
 # explicit scope (unit tests / formative assessments aren't tied to a term).
@@ -116,6 +124,46 @@ def normalize_term(raw: Any) -> Optional[str]:
     return canonical if canonical in CANONICAL_TERMS else None
 
 
+# ── Ingestion validation ──────────────────────────────────────────────────────
+# normalize_term returns None for anything it cannot parse, which is right for
+# a read filter and wrong for an upload: "Term 5" typed into the form became
+# term=None, and the book was ingested unscoped instead of being rejected.
+
+
+def term_error(raw: Any) -> Optional[str]:
+    """Why this value cannot be a term, or None if it can."""
+    if raw is None or str(raw).strip() == "":
+        return None                          # absent is allowed (CBSE/NCERT)
+    if _slug(raw) in _EMPTY_VALUES:
+        return None                          # explicit "all"/"none"
+    if normalize_term(raw) is None:
+        return (f"term {raw!r} is not a term — use "
+                f"{', '.join(t.rsplit('_', 1)[1] for t in CANONICAL_TERMS)} "
+                f"(or omit it for boards whose books are not term-split)")
+    return None
+
+
+def validate_term(raw: Any) -> Optional[str]:
+    """Canonical term for ingestion. Raises ValueError on an impossible one."""
+    problem = term_error(raw)
+    if problem:
+        raise ValueError(problem)
+    return normalize_term(raw)
+
+
+# "Class_7_Science_term_2_unit6" -> "term_2". Used to cross-check what the
+# upload declared against what the file itself says it is.
+_TERM_HINT_RE = re.compile(r"(?:^|[^a-z0-9])term[_\s\-]*([123])(?![0-9])", re.IGNORECASE)
+
+
+def term_hint_from_text(text: Any) -> Optional[str]:
+    """The term a filename states outright, canonicalized, else None."""
+    matches = {m.group(1) for m in _TERM_HINT_RE.finditer(str(text or ""))}
+    if len(matches) != 1:
+        return None                          # absent, or ambiguous — no claim
+    return normalize_term(matches.pop())
+
+
 def normalize_terms(raw: Any) -> List[str]:
     """Normalize a scalar, a list, or a "1,2" style string into canonical terms.
 
@@ -165,7 +213,7 @@ def _load_exam_term_scope() -> Dict[str, Optional[List[str]]]:
         if not isinstance(override, dict):
             raise ValueError("EXAM_TERM_SCOPE_JSON must be a JSON object")
     except Exception as e:
-        print(f"  [term_utils] WARNING: ignoring invalid EXAM_TERM_SCOPE_JSON: {e}")
+        logger.warning(f"[term_utils] WARNING: ignoring invalid EXAM_TERM_SCOPE_JSON: {e}")
         return scope
 
     for exam, terms in override.items():
@@ -213,13 +261,13 @@ def exam_to_terms(
 
     key = canonical_exam(exam_name)
     if key is None:
-        print(f"  [term_utils] WARNING: unknown exam '{exam_name}' - no term scope applied")
+        logger.warning(f"[term_utils] WARNING: unknown exam '{exam_name}' - no term scope applied")
         return []
 
     terms = EXAM_TERM_SCOPE.get(key)
     if terms is None:
-        print(
-            f"  [term_utils] WARNING: exam '{exam_name}' ({key}) has no fixed term scope - "
+        logger.warning(
+            f"[term_utils] WARNING: exam '{exam_name}' ({key}) has no fixed term scope - "
             f"supply term_scope explicitly"
         )
         return []
@@ -236,3 +284,17 @@ def term_slug(terms: Union[str, List[str], None]) -> str:
     if not normalized:
         return ""
     return "-".join(f"t{t.rsplit('_', 1)[1]}" for t in normalized)
+
+
+# ── Request-model field type ──────────────────────────────────────────────────
+
+try:  # pydantic is always present in the API process; keep the module importable without it
+    from pydantic import BeforeValidator
+    from typing_extensions import Annotated as _Annotated
+
+    # Ingestion only. Rejects an unrecognised term with a 422 instead of
+    # ingesting the book unscoped. Read/filter paths keep using normalize_term,
+    # which never raises.
+    IngestTerm = _Annotated[Optional[str], BeforeValidator(validate_term)]
+except ImportError:  # pragma: no cover
+    IngestTerm = Optional[str]

@@ -28,6 +28,10 @@ import unicodedata
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+from logger import get_logger
+
+logger = get_logger(__name__)
+
 from agents.blueprint_builder import BlueprintSection, UnitBlueprint
 
 
@@ -225,7 +229,7 @@ def run_blueprint_judge(
     out_of_order: List[Dict[str, Any]] = []
     expected_numbered_ids = [s.id for s in expected_numbered]
     actual_numbered_ids   = [sid for sid in json_ids
-                              if re.match(r"^\d+\.\d+", sid)]
+                              if re.match(r"^[A-Za-z]?\d+\.\d+", sid)]
 
     # Find the longest common subsequence order — sections NOT in LCS are out of order
     expected_in_actual = [sid for sid in expected_numbered_ids if sid in json_id_set]
@@ -281,7 +285,7 @@ def run_blueprint_judge_for_all_units(
             continue
         verdict = run_blueprint_judge(bp, unit)
         verdicts.append(verdict)
-        print(verdict.summary())
+        logger.info(verdict.summary())
 
     overall = "PASS" if all(v.verdict == "PASS" for v in verdicts) else "FAIL"
     return overall, verdicts

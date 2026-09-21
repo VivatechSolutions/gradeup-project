@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
+import gradeupLogo from "../assets/new-logo-g.png";
 
 /* ─── FONTS & TOKENS ─────────────────────────────────────── */
 const SYSTEM_FONT_STACK = 'system-ui,-apple-system,"Segoe UI",sans-serif';
@@ -2181,17 +2182,12 @@ export default function GradeUp(){
         background:navBg,backdropFilter:"blur(28px) saturate(200%)",
         borderBottom:`1px solid ${border}`,
         boxShadow:isDark?"0 1px 0 rgba(255,255,255,.04)":"0 1px 0 rgba(99,102,241,.12), 0 4px 24px rgba(99,102,241,.06)"}}>
-        <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <div style={{width:38,height:38,borderRadius:12,
-            background:`linear-gradient(135deg,${T.indigo},${T.rose})`,
-            display:"flex",alignItems:"center",justifyContent:"center",
-            fontWeight:900,fontSize:17,color:"#fff",
-            boxShadow:`0 0 24px ${T.indigo}60,0 0 48px ${T.rose}20`,
-            animation:"spin 22s linear infinite"}}>G</div>
-          <span style={{fontWeight:800,fontSize:isMobile?16:18,letterSpacing:"-.03em",fontFamily:SYSTEM_FONT_STACK}}>
-            GradeUp{" "}
-            <span style={{background:`linear-gradient(90deg,${T.indigo},${T.rose})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>AI</span>
-          </span>
+        <div style={{display:"flex",alignItems:"center"}}>
+          <img
+            src={gradeupLogo}
+            alt="GradeUp AI"
+            style={{height:isMobile?42:70,width:isMobile?128:200,objectFit:"contain",display:"block"}}
+          />
         </div>
 
         <div style={{display:isCompact?"none":"flex",gap:32}}>
@@ -2849,10 +2845,11 @@ export default function GradeUp(){
         <div style={{maxWidth:1280,margin:"0 auto",position:"relative"}}>
           <div style={{display:"grid",gridTemplateColumns:footerGridColumns,gap:isMobile?28:44,marginBottom:56}}>
             <div>
-              <div style={{fontFamily:SYSTEM_FONT_STACK,fontWeight:900,fontSize:22,marginBottom:14,letterSpacing:"-.02em"}}>
-                GradeUp{" "}
-                <span style={{background:`linear-gradient(90deg,${T.indigo},${T.rose})`,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>AI</span>
-              </div>
+              <img
+                src={gradeupLogo}
+                alt="GradeUp AI"
+                style={{height:70,width:200,objectFit:"contain",display:"block",marginBottom:14}}
+              />
               <p style={{color:muted,fontSize:14,lineHeight:1.75,maxWidth:265}}>Revolutionising education through neural-adaptive AI and immersive 3D learning environments for students everywhere.</p>
               <div style={{display:"flex",gap:10,marginTop:22}}>
                 {["𝕏","in","gh","yt"].map((icon,i)=>(

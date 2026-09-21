@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useAuth } from "../hooks/use-auth";
 import NotificationIcon from "./NotificationIcon";
 import { useTheme } from "../hooks/use-theme";
+import gradeupLogo from "../assets/new-logo-g.png";
 
 interface NavigationProps {
   currentRole: "student" | "teacher";
@@ -78,7 +79,14 @@ const css = `
 .dark .nav-back-tip { background: #e2e8f0; color: #0f172a; }
 .dark .nav-back-tip::before { border-bottom-color: #e2e8f0; }
 
-.nav-brand { display:flex; align-items:center; gap:9px; text-decoration:none; flex-shrink:0; }
+.nav-brand { display:flex; align-items:center; text-decoration:none; flex-shrink:0; }
+.nav-brand-logo {
+  width: 150px;
+  height: 60px;
+  object-fit: contain;
+  display: block;
+  flex-shrink: 0;
+}
 .nav-logo-wrap {
   width: 36px; height: 36px; border-radius: 10px;
   background: linear-gradient(135deg,#6366f1,#8b5cf6);
@@ -101,6 +109,12 @@ const css = `
   background:linear-gradient(135deg,#6366f1,#8b5cf6,#ec4899);
   -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
 }
+.mob-brand-logo {
+  width: 118px;
+  height: 38px;
+  object-fit: contain;
+  display: block;
+}
 
 .nav-crumb { display:flex; align-items:center; gap:4px; animation: crumbIn .2s ease both; flex-wrap:nowrap; overflow:hidden; }
 @keyframes crumbIn { from{opacity:0;transform:translateX(-4px)} to{opacity:1;transform:none} }
@@ -115,16 +129,16 @@ const css = `
 }
 .nav-crumb-page.clickable:hover { background: rgba(99,102,241,.08); }
 .nav-crumb-page.current { color: #374151; cursor: default; }
-.dark .nav-crumb-sep  { color:#374151; }
-.dark .nav-crumb-page { color:#94a3b8; }
+.dark .nav-crumb-sep  { color:#fff; }
+.dark .nav-crumb-page { color:#fff; }
 .dark .nav-crumb-page.clickable { color: #a5b4fc; }
 .dark .nav-crumb-page.clickable:hover { background: rgba(99,102,241,.15); }
-.dark .nav-crumb-page.current { color: #94a3b8; }
+.dark .nav-crumb-page.current { color: #ffff; }
 
 /* ── CENTER ── */
 .nav-links {
   display:flex; align-items:center; gap:2px;
-  position:absolute; left:50%; transform:translateX(-50%); margin-left:30px;
+  position:absolute; left:55%; transform:translateX(-50%); margin-left:30px;
 }
 .nav-link {
   display:flex; align-items:center; gap:6px; padding:7px 13px; border-radius:9px;
@@ -139,7 +153,7 @@ const css = `
   content:''; position:absolute; bottom:2px; left:50%; transform:translateX(-50%);
   width:18px; height:2.5px; background:linear-gradient(90deg,#6366f1,#8b5cf6); border-radius:2px;
 }
-.dark .nav-link { color:#94a3b8; }
+.dark .nav-link { color:#fff; }
 .dark .nav-link:hover  { color:#a5b4fc; background:rgba(99,102,241,.15); }
 .dark .nav-link.active { color:#a5b4fc; background:rgba(99,102,241,.2); }
 
@@ -509,9 +523,8 @@ export default function Navigation({ currentRole }: NavigationProps) {
             </div>
           )}
 
-          <Link href="/dashboard" className="nav-brand">
-            <div className="nav-logo-wrap"><I p={ICONS.grad} s={17} /></div>
-            <span className="nav-brand-name">GradeUp!</span>
+          <Link href="/dashboard" className="nav-brand" aria-label="GradeUp AI dashboard">
+            <img src={gradeupLogo} alt="GradeUp AI" className="nav-brand-logo" />
           </Link>
 
           {showBack && crumbTrail.length > 0 && (
@@ -613,7 +626,7 @@ export default function Navigation({ currentRole }: NavigationProps) {
         <div className="mob-overlay" onClick={() => setMobileOpen(false)} />
         <div className="mob-drawer">
           <div className="mob-head">
-            <span className="nav-brand-name" style={{fontSize:16}}>GradeUp!</span>
+            <img src={gradeupLogo} alt="GradeUp AI" className="mob-brand-logo" />
             <button className="nav-icon-btn" onClick={() => setMobileOpen(false)}>
               <I p={ICONS.x} s={17} />
             </button>

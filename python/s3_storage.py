@@ -18,6 +18,9 @@ from typing import Any, Dict, List, Optional, Tuple
 import boto3
 from botocore.exceptions import ClientError, NoCredentialsError
 from dotenv import load_dotenv
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 load_dotenv()
 
@@ -42,7 +45,7 @@ def get_s3_client():
         return _s3_client
 
     if not S3_AVAILABLE:
-        print("⚠️  S3 not configured: missing AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, or S3_BUCKET_NAME")
+        logger.warning("S3 not configured: missing AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, or S3_BUCKET_NAME")
         return None
 
     try:
@@ -54,24 +57,24 @@ def get_s3_client():
         )
         # Quick connectivity check
         _s3_client.head_bucket(Bucket=S3_BUCKET_NAME)
-        print(f"✅ Connected to S3 bucket: {S3_BUCKET_NAME} ({AWS_REGION})")
+        logger.info(f"Connected to S3 bucket: {S3_BUCKET_NAME} ({AWS_REGION})")
         return _s3_client
     except ClientError as e:
         error_code = e.response["Error"]["Code"]
         if error_code == "404":
-            print(f"❌ S3 bucket '{S3_BUCKET_NAME}' does not exist")
+            logger.error(f"S3 bucket '{S3_BUCKET_NAME}' does not exist")
         elif error_code == "403":
-            print(f"❌ Access denied to S3 bucket '{S3_BUCKET_NAME}' — check IAM permissions")
+            logger.error(f"Access denied to S3 bucket '{S3_BUCKET_NAME}' — check IAM permissions")
         else:
-            print(f"❌ S3 error: {e}")
+            logger.error(f"S3 error: {e}")
         _s3_client = None
         return None
     except NoCredentialsError:
-        print("❌ AWS credentials not found")
+        logger.error("AWS credentials not found")
         _s3_client = None
         return None
     except Exception as e:
-        print(f"❌ Failed to connect to S3: {e}")
+        logger.error(f"Failed to connect to S3: {e}")
         _s3_client = None
         return None
 
@@ -161,10 +164,10 @@ def upload_image_to_s3(
         url = get_s3_public_url(s3_key)
         return url
     except ClientError as e:
-        print(f"  ⚠️  S3 upload failed for {s3_key}: {e}")
+        logger.warning(f"S3 upload failed for {s3_key}: {e}")
         return None
     except Exception as e:
-        print(f"  ⚠️  S3 upload error for {s3_key}: {e}")
+        logger.warning(f"S3 upload error for {s3_key}: {e}")
         return None
 
 
@@ -188,7 +191,7 @@ def upload_images_to_s3(
         {unit_number: {filename: s3_url, ...}, ...}
     """
     if not S3_AVAILABLE:
-        print("  ⚠️  S3 not configured — skipping S3 upload")
+        logger.warning("S3 not configured — skipping S3 upload")
         return {}
 
     url_map: Dict[int, Dict[str, str]] = {}
@@ -222,7 +225,7 @@ def upload_images_to_s3(
 
         url_map[unit_num] = unit_urls
 
-    print(f"  ☁️  S3 upload: {total_uploaded} images uploaded, {total_failed} failed")
+    logger.info(f"S3 upload: {total_uploaded} images uploaded, {total_failed} failed")
     return url_map
 
 
@@ -292,23 +295,25 @@ def upload_audio_to_s3(
     board: str,
     class_number: str,
     subject: str,
+    content_type: Optional[str] = None,
 ) -> Optional[str]:
     """Upload a TTS audio file to S3 and return its public URL.
 
     Audio files are stored under: highlight-audio/{board}/{class}/{subject}/{filename}
 
     Args:
-        audio_bytes: Raw audio bytes (MP3)
+        audio_bytes: Raw audio bytes (MP3 or WAV)
         filename: Audio filename (e.g. "explain_abc123.mp3")
         board: Board name
         class_number: Class number
         subject: Subject name
+        content_type: MIME type; derived from the filename extension when omitted
 
     Returns:
         Public URL of the uploaded audio, or None on failure
     """
     if not S3_AVAILABLE:
-        print("  ⚠️  S3 not configured — skipping audio upload")
+        logger.warning("S3 not configured — skipping audio upload")
         return None
 
     if "." not in filename:
@@ -321,7 +326,14 @@ def upload_audio_to_s3(
         filename=filename,
     )
 
-    return upload_image_to_s3(audio_bytes, s3_key, content_type="audio/mpeg")
+    # Content type follows the file, not a hardcoded MP3: the avatar path moved
+    # to WAV when TTS went local and every upload was being tagged audio/mpeg.
+    # Browsers mostly sniff past that, but S3 serves what it was told.
+    if not content_type:
+        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "mp3"
+        content_type = {"mp3": "audio/mpeg", "wav": "audio/wav",
+                        "flac": "audio/flac", "ogg": "audio/ogg"}.get(ext, "audio/mpeg")
+    return upload_image_to_s3(audio_bytes, s3_key, content_type=content_type)
 
 
 # ─── Avatar Audio Upload (Enrichment Pipeline) ───────────────────────────────
@@ -358,6 +370,7 @@ def upload_avatar_audio_to_s3(
     class_number: str,
     subject: str,
     unit_number: int,
+    content_type: Optional[str] = None,
 ) -> Optional[str]:
     """Upload an avatar TTS audio file to S3 and return its public URL.
 
@@ -376,7 +389,7 @@ def upload_avatar_audio_to_s3(
         Public URL of the uploaded audio, or None on failure
     """
     if not S3_AVAILABLE:
-        print("  ⚠️  S3 not configured — skipping avatar audio upload")
+        logger.warning("S3 not configured — skipping avatar audio upload")
         return None
 
     if "." not in filename:
@@ -391,3 +404,70 @@ def upload_avatar_audio_to_s3(
     )
 
     return upload_image_to_s3(audio_bytes, s3_key, content_type="audio/mpeg")
+
+
+# ─── Avatar Visual Upload (Web-sourced Teaching Images) ──────────────────────
+
+def build_s3_avatar_visual_key(
+    board: str,
+    class_number: str,
+    subject: str,
+    unit_number: int,
+    filename: str,
+) -> str:
+    """Build the S3 object key for an avatar teaching visual.
+
+    These are images sourced from the open web (Wikimedia Commons and friends)
+    that the avatar shows and talks about mid-lesson. They live under their own
+    prefix so they are never confused with images extracted from the textbook.
+
+    Args:
+        board: Board name (e.g. "CBSE", "State Board")
+        class_number: Class number (e.g. "10", "11")
+        subject: Subject name (e.g. "science", "mathematics")
+        unit_number: Unit or chapter number
+        filename: Image filename (e.g. "human_heart_a1b2c3d4.jpg")
+
+    Returns:
+        S3 key like: avatar-visuals/cbse/10/science/unit-1/human_heart_a1b2c3d4.jpg
+    """
+    board_part = _sanitize_path_component(board)
+    class_part = _sanitize_path_component(class_number or "unknown")
+    subject_part = _sanitize_path_component(subject or "unknown")
+
+    return f"avatar-visuals/{board_part}/{class_part}/{subject_part}/unit-{unit_number}/{filename}"
+
+
+def upload_avatar_visual_to_s3(
+    image_bytes: bytes,
+    filename: str,
+    board: str,
+    class_number: str,
+    subject: str,
+    unit_number: int,
+    content_type: str = "image/jpeg",
+) -> Optional[str]:
+    """Upload an avatar teaching visual to S3 and return its public URL.
+
+    Images are stored under:
+        avatar-visuals/{board}/{class}/{subject}/unit-{n}/{filename}
+
+    Returns:
+        Public URL of the uploaded image, or None on failure
+    """
+    if not S3_AVAILABLE:
+        logger.warning("S3 not configured — skipping avatar visual upload")
+        return None
+
+    if "." not in filename:
+        filename = f"{filename}.jpg"
+
+    s3_key = build_s3_avatar_visual_key(
+        board=board,
+        class_number=class_number,
+        subject=subject,
+        unit_number=unit_number,
+        filename=filename,
+    )
+
+    return upload_image_to_s3(image_bytes, s3_key, content_type=content_type)

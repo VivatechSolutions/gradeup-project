@@ -24,6 +24,10 @@ This module is pure decision-making: it performs NO search itself. The caller
 import re
 from typing import Any, Dict, Optional
 
+from logger import get_logger
+
+logger = get_logger(__name__)
+
 INTENTS = ("answer", "image", "edit", "guide")
 SOURCES = ("rag", "web", "hybrid")
 
@@ -61,7 +65,7 @@ _DEFAULT = {"intent": "answer", "source": "rag", "reason": "default"}
 
 # ── keyword heuristics (fallback when the LLM is unavailable) ──────────────────
 _IMAGE_RX = re.compile(
-    r"\b(image|images|picture|pic|photo|photos|diagram|illustration|visual|"
+    r"\b(image|images|img|imgs|picture|pic|photo|photos|diagram|illustration|visual|"
     r"figure|graphic|drawing|infographic)\b", re.I)
 _EDIT_RX = re.compile(
     r"\b(edit|change|rewrite|rephrase|reword|fix|update|replace|remove|delete|"
@@ -97,7 +101,10 @@ def _heuristic(msg: str) -> Dict[str, Any]:
 def _llm_classify(msg: str, unit_title: str) -> Optional[Dict[str, Any]]:
     try:
         from ppt.ppt_review import _call_llm_json
-    except Exception:
+    except Exception as e:
+        # Debug, not warning: this runs per student message, and the keyword
+        # heuristics below are a working fallback.
+        logger.debug(f"[SourceRouter] LLM classifier unavailable, using heuristics: {e}")
         return None
 
     system = (

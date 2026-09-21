@@ -4,6 +4,7 @@ const { requireStudentAuth } = require("../middleware/studentAuth");
 const { injectStudentIdentity } = require("../middleware/injectStudentIdentity");
 
 const router = express.Router();
+router.use(require('./Presentations'));
 
 router.post("/ppt/suggest", controller.pptSuggest);
 router.post("/ppt/decide", controller.pptDecide);

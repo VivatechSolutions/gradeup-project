@@ -1,4 +1,7 @@
 .env
+.env.*
+!.env.example
+!.env.sample
 *service-account*.json
 *.key.json
 oauth_client.json
@@ -24,3 +27,13 @@ seminar_practice_data/
 practice_session/
 avatar_data/
 google_student_tokens/
+
+# Avatar benchmark: keep the runner and the labelled fixtures, not the runs
+bench/results/
+bench/__pycache__/
+
+# Kokoro TTS: 338MB of weights, downloaded on first run — never commit
+models/kokoro/
+*.onnx
+avatar_audio/
+/tests

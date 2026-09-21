@@ -8,16 +8,22 @@ import json
 import time
 import threading
 import requests
+from langfuse_utils import traced_post
 from typing import Any, Dict, List, Optional, Tuple
 from dotenv import load_dotenv
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 # Load environment variables
 load_dotenv()
 
 from homework_engine import get_homework_engine
 
-# Classifier model
-CLASSIFIER_MODEL = "gpt-4o-mini"
+# Classifier model — Gemini, via its OpenAI-compatible endpoint so the request
+# shape, JSON mode and response parsing below are unchanged.
+CLASSIFIER_MODEL = os.getenv("GUARDRAIL_MODEL", "gemini-3.6-flash")
+CLASSIFIER_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
 CLASSIFIER_TIMEOUT = 8  # Low timeout for fast pre-flight interception
 
 # TTL Cache for pending homework questions (avoids repeated DB fetches)
@@ -69,7 +75,7 @@ def get_pending_homework_questions(candidate_id: str, subject: str, unit_number:
     with _hw_cache_lock:
         entry = _hw_cache.get(cache_key)
         if entry is not None and (now - entry["ts"]) < _HW_CACHE_TTL:
-            print(f"  [Guardrails] HW cache hit for {cache_key}")
+            logger.info(f"[Guardrails] HW cache hit for {cache_key}")
             return entry["questions"]
 
     try:
@@ -89,7 +95,7 @@ def get_pending_homework_questions(candidate_id: str, subject: str, unit_number:
                     if text:
                         questions.append(text)
     except Exception as e:
-        print(f"  [Guardrails] Failed to fetch pending homework: {e}")
+        logger.error(f"[Guardrails] Failed to fetch pending homework: {e}")
         questions = []
 
     with _hw_cache_lock:
@@ -102,10 +108,10 @@ def classify_homework_intent(
     pending_questions: List[str],
     image_description: Optional[str] = None
 ) -> Dict[str, Any]:
-    """Calls OpenAI to classify if the student query is requesting homework answers."""
-    api_key = os.environ.get("OPENAI_API_KEY_TEXT") or os.environ.get("OPENAI_API_KEY")
+    """Calls Gemini to classify if the student query is requesting homework answers."""
+    api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     if not api_key:
-        print("  [Guardrails] OpenAI API Key missing, bypass guardrail.")
+        logger.warning("[Guardrails] GEMINI_API_KEY missing, bypass guardrail.")
         return {"classification": "general_academic_doubt", "concept": "", "explanation_or_response": ""}
 
     # Construct user message content
@@ -135,8 +141,8 @@ def classify_homework_intent(
     }
 
     try:
-        resp = requests.post(
-            "https://api.openai.com/v1/chat/completions",
+        resp = traced_post("classify-homework-intent",
+            CLASSIFIER_URL,
             headers=headers,
             json=payload,
             timeout=CLASSIFIER_TIMEOUT
@@ -145,9 +151,9 @@ def classify_homework_intent(
             data = json.loads(resp.json()["choices"][0]["message"]["content"])
             return data
         else:
-            print(f"  [Guardrails] Classifier API failed: {resp.status_code} {resp.text}")
+            logger.error(f"[Guardrails] Classifier API failed: {resp.status_code} {resp.text}")
     except Exception as e:
-        print(f"  [Guardrails] Error running classifier: {e}")
+        logger.error(f"[Guardrails] Error running classifier: {e}")
 
     # Fallback to bypass in case of failure (fail-safe approach)
     return {"classification": "general_academic_doubt", "concept": ""}
@@ -203,5 +209,4 @@ def run_query_guardrail(
             "concept": concept,
             "redirection_allowed": True
         }
-
     return None

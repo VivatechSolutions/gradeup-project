@@ -11,6 +11,10 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Tuple
 
+from logger import get_logger
+
+logger = get_logger(__name__)
+
 
 # ── Sub-step A: Text-box detection ───────────────────────────────────────────
 
@@ -30,7 +34,7 @@ def _text_box_pass(
         )
         return updated_md, count, img_meta
     except Exception as e:
-        print(f"  ⚠️  Vision text-box pass failed: {e}")
+        logger.warning(f"Vision text-box pass failed: {e}")
         return content_md, 0, {}
 
 
@@ -57,14 +61,14 @@ def _bad_page_reocr(
         if not bad_pages:
             return content_md
 
-        print(f"  ⚠️  Detected {len(bad_pages)} low-quality page(s): {bad_pages}")
+        logger.warning(f"Detected {len(bad_pages)} low-quality page(s): {bad_pages}")
         vision_results = _vision_reocr_pages(Path(pdf_path), bad_pages, api_key)
         if vision_results:
             content_md = _patch_markdown_pages(content_md, vision_results)
-            print(f"  ✅ Re-OCR'd {len(vision_results)} page(s) via GPT-4o Vision")
+            logger.info(f"Re-OCR'd {len(vision_results)} page(s) via GPT-4o Vision")
 
     except Exception as e:
-        print(f"  ⚠️  Bad-page re-OCR failed: {e}")
+        logger.warning(f"Bad-page re-OCR failed: {e}")
 
     return content_md
 
@@ -84,12 +88,10 @@ def vision_pass_node(state: Dict[str, Any]) -> Dict[str, Any]:
     pdf_path   = state["pdf_path"]
     api_key    = state.get("api_key", "")
 
-    print(f"\n{'='*60}")
-    print(f"👁️  Stage 0b: Vision Pass")
-    print(f"{'='*60}")
+    logger.info("Stage 0b: Vision Pass")
 
     if not api_key:
-        print("  ⚠️  No OpenAI API key — skipping vision pass")
+        logger.warning("No OpenAI API key — skipping vision pass")
         return {
             "image_metadata":            {},
             "vision_replacement_count":  0,
@@ -97,29 +99,40 @@ def vision_pass_node(state: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     total_images = len(raw_ocr.get("pages", []))
-    print(f"  📷  Processing {total_images} OCR page(s) for embedded images...")
+    logger.info(f"Processing {total_images} OCR page(s) for embedded images...")
 
     # Sub-step A: classify images + inject text-boxes into markdown
     content_md, replacement_count, image_metadata = _text_box_pass(
         content_md, raw_ocr, api_key
     )
-    print(f"  ✅ Text-box injection: {replacement_count} image(s) replaced with text")
+    logger.info(f"Text-box injection: {replacement_count} image(s) replaced with text")
 
     # Sub-step B: re-OCR bad pages
     content_md = _bad_page_reocr(content_md, pdf_path, api_key)
 
     # Vision pass summary
     text_boxes  = sum(1 for m in image_metadata.values() if m.get("is_text_box"))
-    illust      = sum(1 for m in image_metadata.values() if not m.get("is_text_box"))
+    failed      = sum(1 for m in image_metadata.values() if m.get("error"))
+    illust      = sum(1 for m in image_metadata.values()
+                      if not m.get("is_text_box") and not m.get("error"))
 
     vision_report = {
         "total_images":      len(image_metadata),
         "text_boxes_found":  text_boxes,
         "illustrations":     illust,
+        "unevaluated":       failed,
         "replacements_made": replacement_count,
     }
-    print(f"  📊 Vision report: {text_boxes} text-boxes, {illust} illustrations")
-    print(f"  ✅ Stage 0b complete")
+    logger.info(f"Vision report: {text_boxes} text-boxes, {illust} illustrations"
+                + (f", {failed} UNEVALUATED" if failed else ""))
+    if failed:
+        # An unevaluated image is possible content loss the audit cannot see:
+        # a text box that was never read leaves no trace in content.md.
+        logger.warning(
+            f"{failed} image(s) were never classified — any text box among "
+            f"them is missing from the extraction. See vision_pass_report.unevaluated"
+        )
+    logger.info("Stage 0b complete")
 
     return {
         "content_md":                content_md,

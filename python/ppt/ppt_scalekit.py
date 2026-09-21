@@ -21,6 +21,9 @@ falls back to the existing OAuth/service-account credentials in mcp_slides_clien
 
 import os
 from typing import Optional, Tuple
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 CONNECTION_NAME = os.environ.get("SCALEKIT_GOOGLE_CONNECTION", "google")
 
@@ -36,7 +39,7 @@ def last_error() -> Optional[str]:
 def _fail(where: str, exc: Exception) -> None:
     global _last_error
     _last_error = f"{where}: {type(exc).__name__}: {exc}"
-    print(f"  [ppt_scalekit] {_last_error}")
+    logger.info(f"[ppt_scalekit] {_last_error}")
 
 # authorization_details keys that may hold the OAuth access token, in priority order.
 _TOKEN_KEYS = ("access_token", "accessToken", "token")

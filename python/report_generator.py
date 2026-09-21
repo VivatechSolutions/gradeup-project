@@ -19,7 +19,9 @@ import math
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from datetime import datetime
+from logger import get_logger
 
+logger = get_logger(__name__)
 
 try:
     from reportlab.lib.pagesizes import A4
@@ -38,7 +40,7 @@ try:
     REPORTLAB_AVAILABLE = True
 except ImportError:
     REPORTLAB_AVAILABLE = False
-    print("⚠️  reportlab not installed. PDF reports unavailable. pip install reportlab")
+    logger.warning("reportlab not installed. PDF reports unavailable. pip install reportlab")
 
 # ── Design Tokens ─────────────────────────────────────────────────────────
 

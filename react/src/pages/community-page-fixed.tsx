@@ -687,7 +687,7 @@ export default function CommunityPage() {
   const tabs = [
     { id:"feed",        label:"Feed",       icon:<MessageSquare /> },
     // { id:"messaging",   label:"Messages",   icon:<Send /> },
-    { id:"blogs",       label:"Blogs",      icon:<BookOpen /> },
+    // { id:"blogs",       label:"Blogs",      icon:<BookOpen /> },
     // Leaderboard is intentionally hidden until the reward rules are finalized.
   ];
 

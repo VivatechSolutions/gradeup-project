@@ -16,6 +16,9 @@ apply_theme_all_slides_node — enforces the uniform theme across every slide in
 import mcp_slides_client
 from ppt.ppt_state import PPTAgentState
 from ppt.ppt_theme import DEFAULT_THEME_SPEC
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 
 # ── read ───────────────────────────────────────────────────────────────────────
@@ -35,7 +38,7 @@ def read_slide_node(state: PPTAgentState) -> dict:
             snapshot = mcp_slides_client.get_slide_content(deck_ref, slide_index)
             return {"slide_snapshot": snapshot}
         except Exception as e:
-            print(f"  [GoogleSlidesAgent] get_slide_content failed, using stub snapshot: {e}")
+            logger.warning(f"[GoogleSlidesAgent] get_slide_content failed, using stub snapshot: {e}")
 
     # Stub snapshot for dev environments without credentials.
     snapshot = {
@@ -68,11 +71,12 @@ def auto_apply_node(state: PPTAgentState) -> dict:
         try:
             applied = mcp_slides_client.apply_ops_batch(deck_ref, slide_index, ops, theme_spec)
         except Exception as e:
-            print(f"  [GoogleSlidesAgent] auto_apply_node: apply_ops_batch failed: {e}")
+            logger.warning(f"[GoogleSlidesAgent] auto_apply_node: apply_ops_batch failed: {e}")
     else:
         for op in ops:
-            print(f"  [GoogleSlidesAgent] (stub) auto-apply: op={op.get('op')} "
-                  f"value={op.get('value')}")
+            logger.debug(
+                f"[GoogleSlidesAgent] (stub) auto-apply: op={op.get('op')} value={op.get('value')}"
+            )
         applied = ops  # treat all as applied in stub mode
 
     reasons = "; ".join(op.get("reason", op.get("op", "")) for op in applied) or \
@@ -115,11 +119,12 @@ def apply_change_node(state: PPTAgentState) -> dict:
             applied = mcp_slides_client.apply_ops_batch(deck_ref, slide_index, all_ops, theme_spec)
             applied_live = bool(applied)
         except Exception as e:
-            print(f"  [GoogleSlidesAgent] apply_change_node: apply_ops_batch failed: {e}")
+            logger.warning(f"[GoogleSlidesAgent] apply_change_node: apply_ops_batch failed: {e}")
     else:
         for op in all_ops:
-            print(f"  [GoogleSlidesAgent] (stub) apply approved: op={op.get('op')} "
-                  f"value={op.get('value')}")
+            logger.debug(
+                f"[GoogleSlidesAgent] (stub) apply approved: op={op.get('op')} value={op.get('value')}"
+            )
         applied = all_ops  # treat all as applied in stub mode
 
     reason = proposed.get("reason", "")
@@ -165,10 +170,11 @@ def apply_theme_all_slides_node(state: PPTAgentState) -> dict:
         try:
             n_slides = mcp_slides_client.apply_theme_to_deck(deck_ref, theme_spec)
         except Exception as e:
-            print(f"  [GoogleSlidesAgent] apply_theme_all_slides failed: {e}")
+            logger.warning(f"[GoogleSlidesAgent] apply_theme_all_slides failed: {e}")
     else:
-        print(f"  [GoogleSlidesAgent] (stub) theme: {title_pt}pt title, "
-              f"{body_pt}pt body across all slides")
+        logger.debug(
+            f"[GoogleSlidesAgent] (stub) theme: {title_pt}pt title, {body_pt}pt body across all slides"
+        )
 
     existing_feedback = state.get("ai_feedback", "")
     theme_note = (

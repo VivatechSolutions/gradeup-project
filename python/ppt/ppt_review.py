@@ -18,6 +18,10 @@ import re
 from typing import Any, Dict, List, Optional
 
 import requests
+from langfuse_utils import traced_post
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 REVIEW_MODEL = "gpt-4o-mini"
 REVIEW_FALLBACK_MODEL = "gpt-4o"
@@ -37,16 +41,16 @@ def _call_llm_json(messages: List[Dict[str, str]], temperature: float = 0.2):
         "response_format": {"type": "json_object"},
     }
     try:
-        resp = requests.post("https://api.openai.com/v1/chat/completions",
+        resp = traced_post("review-slides", "https://api.openai.com/v1/chat/completions",
                              headers=headers, json=payload, timeout=REVIEW_TIMEOUT)
         if not resp.ok:
             payload["model"] = REVIEW_FALLBACK_MODEL
-            resp = requests.post("https://api.openai.com/v1/chat/completions",
+            resp = traced_post("review-slides", "https://api.openai.com/v1/chat/completions",
                                  headers=headers, json=payload, timeout=REVIEW_TIMEOUT)
         if resp.ok:
             return json.loads(resp.json()["choices"][0]["message"]["content"])
     except Exception as e:
-        print(f"  [ppt_review] LLM call failed: {e}")
+        logger.error(f"[ppt_review] LLM call failed: {e}")
     return None
 
 
@@ -69,7 +73,9 @@ def _readable_slide_text(slide_content: Dict[str, Any]) -> str:
         if sh.get("placeholder") in ("TITLE", "CENTERED_TITLE"):
             continue   # title is handled separately
         t = (sh.get("text") or "").strip()
-        if t:
+        # Icon-only boxes (the emoji tiles a rendered layout draws) carry no meaning for
+        # the reviewer and would otherwise show up as junk "content" lines.
+        if t and re.search(r"[A-Za-z0-9]", t):
             parts.append(t)
     return "\n".join(parts)
 
@@ -154,10 +160,13 @@ Rules:
 
 
 def llm_restructure_slide(slide_content: Dict[str, Any], rag_chunks: List[Dict[str, Any]],
-                          unit_title: str) -> Dict[str, Any]:
+                          unit_title: str, student_instruction: str = "") -> Dict[str, Any]:
     """
     Rewrite a slide's current content (usually prose) as concise point-wise bullets, and pick the
     key terms to bold. Used by the DESIGN path when a slide is prose / empty / overcrowded.
+
+    `student_instruction` is what the student asked for this turn; when present the rewrite
+    must satisfy it and must not hand back the slide's existing points.
 
     Returns {"suggested_bullets": [str], "highlight_terms": [str], "critique": str}.
     highlight_terms are verbatim substrings of the bullets so apply-time offsets are findable.
@@ -166,16 +175,25 @@ def llm_restructure_slide(slide_content: Dict[str, Any], rag_chunks: List[Dict[s
     current = _readable_slide_text(slide_content)
 
     context = _chunks_to_context(rag_chunks) or "(no textbook context available)"
+    instruction = (student_instruction or "").strip()
+    request_block = (
+        f"\n\nWHAT THE STUDENT ASKED: \"{instruction}\"\n"
+        "The rewrite must visibly satisfy that request and must NOT return the slide's current "
+        "points unchanged. \"gaps\"/\"empty space\" means the slide is too thin — cover the topic "
+        "more fully with more points; \"too crowded\" means fewer, shorter points."
+        if instruction else ""
+    )
 
     system = (
         "You are a seminar slide designer for school students. Rewrite a slide's content into "
         "concise, presentable POINT-WISE bullets and pick the key terms to bold. Preserve the "
-        "original meaning and stay grounded in the textbook context. Respond in strict JSON."
+        "original meaning and stay grounded in the textbook context. When the student asks for a "
+        "specific change, that request governs the result. Respond in strict JSON."
     )
     user = f"""Chapter: {unit_title}
 Slide title: {slide_title or '(none)'}
 Current slide content (may be prose paragraphs):
-{current or '(empty)'}
+{current or '(empty)'}{request_block}
 
 Textbook context:
 {context}
@@ -257,7 +275,9 @@ def _sanitize_card(c):
 def llm_build_slide_layout(slide_content: Dict[str, Any], rag_chunks: List[Dict[str, Any]],
                            unit_title: str,
                            other_slides: Optional[List[str]] = None,
-                           avoid_layouts: Optional[List[str]] = None) -> Dict[str, Any]:
+                           avoid_layouts: Optional[List[str]] = None,
+                           student_instruction: str = "",
+                           current_layout: str = "") -> Dict[str, Any]:
     """
     Choose the layout that best fits a slide's content and return a renderable layout spec.
 
@@ -271,12 +291,20 @@ def llm_build_slide_layout(slide_content: Dict[str, Any], rag_chunks: List[Dict[
     `other_slides` are short "Title: content" summaries of the deck's OTHER slides — passed
     so the layout stays distinct and doesn't duplicate what another slide already covers.
 
+    `student_instruction` is what the student actually asked for this turn ("fill the empty
+    space", "add more detail", "make it shorter"). It is the strongest signal we have: a
+    re-run on an already-designed slide must produce something DIFFERENT from what's on the
+    slide now, otherwise the student gets the same deck back and nothing appears to happen.
+    `current_layout` names the layout the slide already uses, so the model knows what
+    "different" means.
+
     Returns a dict: {"layout": <name or "">, plus the layout's own field, "critique": str}.
     On failure / no clear structure returns {"layout": ""} so the caller can fall back.
     """
     slide_title = slide_content.get("title", "") or ""
     current = _readable_slide_text(slide_content)
     context = _chunks_to_context(rag_chunks) or "(no textbook context available)"
+    instruction = (student_instruction or "").strip()
     others = [t for t in (other_slides or []) if t and t.strip()]
     others_block = "\n".join(f"  - {o}" for o in others)
     others_line = (
@@ -299,17 +327,43 @@ def llm_build_slide_layout(slide_content: Dict[str, Any], rag_chunks: List[Dict[
         if avoid and allowed else ""
     )
 
+    # What the student asked for this turn. Stated twice on purpose — once with the content
+    # it applies to, once as the closing line, which is where models look hardest.
+    if instruction:
+        already = (f"This slide is ALREADY built as a \"{current_layout}\" holding exactly the "
+                   f"content above. " if current_layout else
+                   "This slide already holds the content above. ")
+        request_block = (
+            f"\n\nWHAT THE STUDENT ASKED FOR THIS SLIDE: \"{instruction}\"\n"
+            f"{already}Rebuild it so that request is visibly satisfied. Your output MUST differ "
+            "from the current content above — returning the same items reworded is a failure.\n"
+            "Read the request literally:\n"
+            "- \"gaps\" / \"empty space\" / \"looks bare\" / \"fill it\": the slide is too thin. "
+            "Use the MAXIMUM number of items the chosen layout allows and give every item a "
+            "fuller explanation (10-12 words), so the slide reads complete.\n"
+            "- \"too crowded\" / \"too much text\": fewer items, shorter text.\n"
+            "- a named sub-topic to add or expand: give it its own item.\n"
+        )
+        instruction_final = (
+            f"\n\nFINAL CHECK before answering: does your output actually do what the student "
+            f"asked — \"{instruction}\" — and does it differ from the current content? "
+            "If not, redo it."
+        )
+    else:
+        request_block, instruction_final = "", ""
+
     system = (
         "You are a seminar slide DESIGNER for school students. Read a slide's content and pick the "
         "ONE layout that presents it best, then output the content structured for that layout. "
         "Preserve meaning, stay grounded in the textbook context, keep every piece of text SHORT "
         "so it never overflows, and make the slide DISTINCT from the deck's other slides. "
-        "Respond in strict JSON."
+        "When the student asks for a specific change, that request governs the result — never "
+        "hand back the content the slide already has. Respond in strict JSON."
     )
     user = f"""Chapter: {unit_title}
 Slide title: {slide_title or '(none)'}{others_line}
 Current slide content:
-{current or '(empty)'}
+{current or '(empty)'}{request_block}
 
 Textbook context:
 {context}
@@ -342,7 +396,7 @@ Rules:
 - "steps": 3-5 steps. "timeline": 3-5 events. "comparison": exactly two sides, 3 points each.
 - Every item/side/card needs a relevant emoji "icon".
 - PLAIN TEXT ONLY — no markdown, asterisks, or underscores. Keep text short (fits a small card).
-- Every point must be factual and grounded in the context above.{avoid_final}"""
+- Every point must be factual and grounded in the context above.{avoid_final}{instruction_final}"""
 
     result = _call_llm_json([
         {"role": "system", "content": system},

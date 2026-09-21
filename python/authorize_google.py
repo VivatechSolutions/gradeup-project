@@ -24,12 +24,13 @@ this is your own app and your own account, so it is safe here.
 import json
 import os
 import sys
-
 from mcp_slides_client import OAUTH_SCOPES
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 _CLIENT_SECRETS_ENV = os.environ.get("GOOGLE_OAUTH_CLIENT_JSON", "./oauth_client.json")
 TOKEN_PATH = os.environ.get("GOOGLE_OAUTH_TOKEN_JSON", "./google_token.json")
-
 
 def _load_flow(scopes):
     """Return an InstalledAppFlow from either inline JSON or a secrets file."""
@@ -52,9 +53,9 @@ def main() -> int:
 
     val = _CLIENT_SECRETS_ENV.strip()
     if not val.startswith("{") and not os.path.exists(val):
-        print(f"ERROR: OAuth client file not found: {val}")
-        print("Download it from Google Cloud → Credentials → OAuth client ID (Desktop app),")
-        print("and save it there, or set GOOGLE_OAUTH_CLIENT_JSON to the raw JSON content.")
+        logger.error(f"ERROR: OAuth client file not found: {val}")
+        logger.info("Download it from Google Cloud → Credentials → OAuth client ID (Desktop app),")
+        logger.info("and save it there, or set GOOGLE_OAUTH_CLIENT_JSON to the raw JSON content.")
         return 1
 
     flow = _load_flow(OAUTH_SCOPES)
@@ -64,8 +65,8 @@ def main() -> int:
     with open(TOKEN_PATH, "w") as f:
         f.write(creds.to_json())
 
-    print(f"\nAuthorized. Token saved to {TOKEN_PATH}")
-    print("You can now start the app — /ppt/session/start will create real decks.")
+    logger.info(f"Authorized. Token saved to {TOKEN_PATH}")
+    logger.info("You can now start the app — /ppt/session/start will create real decks.")
     return 0
 
 

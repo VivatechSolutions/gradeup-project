@@ -34,6 +34,10 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
+from logger import get_logger
+
+logger = get_logger(__name__)
+
 
 # Named section type detection
 _NAMED_TYPE_RULES: List[Tuple[re.Pattern, str]] = [
@@ -57,7 +61,12 @@ _NAMED_TYPE_RULES: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"^corollary\b",             re.I), "theorem"),
 ]
 
-_NUMBERED_RE = re.compile(r"^(\d+\.\d+(?:\.\d+)*)\s+(.*)")
+# Mirrors auto_schema_extractor._SECNUM: NCERT appendix chapters number
+# every heading "A2.1"/"A1.3.2", and the extractor now emits those as ids.
+# Without the letter prefix the blueprint files them as UNNUMBERED with the
+# number stuck in the title, so no id ever matches the JSON and every
+# appendix section is reported missing.
+_NUMBERED_RE = re.compile(r"^([A-Za-z]?\d+\.\d+(?:\.\d+)*)\s+(.*)")
 _UNIT_HEADING_RE = re.compile(r"^(?:unit|chapter)\s+(\d+)\b", re.I)
 
 
@@ -150,6 +159,9 @@ def build_unit_blueprint(
     auto_title_found = bool(unit_title)
     depth_stack: List[Tuple[int, BlueprintSection]] = []
     unnamed_counter: Dict[str, int] = {}
+    # The chapter heading names the unit; the text beneath it is the unit's
+    # Introduction section, so it is not an expected section of its own.
+    title_key = re.sub(r"[^a-z0-9]+", "", (unit_title or "").lower())
 
     for raw_line in lines:
         line = raw_line.rstrip()
@@ -167,6 +179,8 @@ def build_unit_blueprint(
                 auto_title_found = True
             continue
         if depth == 1 and len(text) < 4:
+            continue
+        if depth == 1 and title_key and re.sub(r"[^a-z0-9]+", "", text.lower()) == title_key:
             continue
 
         sec_id, sec_title = _parse_section_id(text)
@@ -236,8 +250,9 @@ def build_blueprints_from_full_doc(
                 extracted = extract_unit_markdown(content_md, unit_number)
                 if extracted and len(extracted) >= 100:
                     unit_md = extracted
-            except Exception:
-                pass
+            except Exception as e:
+                # Falls back to the whole document, which blurs this unit's blueprint.
+                logger.warning(f"[Blueprint] Unit {unit_number} markdown extraction failed, using full content: {e}")
         bp = build_unit_blueprint(unit_md, unit_number, unit_title)
         blueprints[unit_number] = bp
     return blueprints

@@ -24,6 +24,11 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+from logger import get_logger
+from section_types import section_content_kind
+
+logger = get_logger(__name__)
+
 try:
     import orjson
     def _dumps(obj): return orjson.dumps(obj, option=orjson.OPT_INDENT_2)
@@ -33,8 +38,19 @@ except ImportError:
 
 
 # Required fields that MUST have non-empty values
+#
+# "prose" does NOT require a title. This table was written for English readers,
+# where a prose passage is a titled story — but the extractor also files the
+# untitled paragraph that follows a figure or a definition box as "prose", and
+# its own prompt says so ("even if it has no explicit heading"). In a CBSE
+# Geography chapter that was eight sections, each carrying real content and
+# none of them a heading the book ever printed. Demanding a title there can
+# never be satisfied by any repair, and it blocked five documents in the corpus
+# outright once the schema verdict became binding. A heading the book DID print
+# and the extraction dropped is the audit's MISSING_HEADING check, which knows
+# the source; a blanket rule here does not. An untitled passage is a warning.
 _REQUIRED_FIELDS: Dict[str, List[str]] = {
-    "prose":          ["title", "content"],
+    "prose":          ["content"],
     "poem":           ["title", "sub_items"],  # sub_items = stanzas
     "supplementary":  ["content"],
     "section":        ["content"],
@@ -115,6 +131,18 @@ class SchemaIntegrityReport:
 
 
 
+def _carries_text_elsewhere(section: Dict[str, Any]) -> bool:
+    """True when a section with empty `content` still holds real text —
+    in nested sections, in sub_items, or in metadata. Delegates to the
+    audit's definition so the two verdicts cannot disagree about it."""
+    try:
+        from extraction_audit import _is_empty
+        return not _is_empty(section)
+    except Exception:
+        return bool(section.get("sub_sections") or section.get("subsections")
+                    or section.get("sections") or section.get("sub_items"))
+
+
 def validate_section_schema(
     section: Dict[str, Any],
     unit_number: int,
@@ -126,7 +154,9 @@ def validate_section_schema(
     failures: List[FieldFailure] = []
     warnings: List[FieldWarning] = []
 
-    stype = section.get("type", "other")
+    # English readings carry type="section"; validate against the real reading
+    # kind (prose / poem / supplementary) recorded in metadata.content_kind.
+    stype = section_content_kind(section) or "other"
     sid   = str(section.get("id") or section.get("section_number") or stype)
 
     required = _REQUIRED_FIELDS.get(stype, [])
@@ -137,6 +167,27 @@ def validate_section_schema(
             or (isinstance(val, str) and not val.strip())
             or (isinstance(val, list) and len(val) == 0)
         )
+        if is_empty and _carries_text_elsewhere(section):
+            # The field is empty but the section is not: a container heading
+            # whose text sits in nested boxes (1,141 chars under an empty
+            # `content`), an exercise whose 2,346 chars of questions sit in
+            # `content` instead of `sub_items`. Content loss is CRITICAL; the
+            # wrong SHAPE is a warning. The audit already judges emptiness this
+            # way, and every time this validator judged it differently it
+            # vetoed a document the audit had passed — over a pie-chart
+            # caption, then a container heading, then an un-itemized exercise.
+            where = [k for k in ("content", "sub_items", "sub_sections", "subsections")
+                     if k != req_field and section.get(k)]
+            warnings.append(FieldWarning(
+                unit_number=unit_number,
+                section_type=stype,
+                section_id=sid,
+                field=req_field,
+                reason=(f"Required field '{req_field}' is empty, but the section's "
+                        f"text is carried in {', '.join(where) or 'metadata'} — "
+                        f"shape, not loss"),
+            ))
+            continue
         if is_empty:
             failures.append(FieldFailure(
                 unit_number=unit_number,
@@ -145,6 +196,17 @@ def validate_section_schema(
                 field=req_field,
                 reason=f"Required field '{req_field}' is empty/null in {stype} section",
             ))
+
+    # An untitled reading is worth a look, not a rejection (see _REQUIRED_FIELDS).
+    if stype == "prose" and not str(section.get("title") or "").strip():
+        warnings.append(FieldWarning(
+            unit_number=unit_number,
+            section_type=stype,
+            section_id=sid,
+            field="title",
+            reason="Prose section has no title — a continuation paragraph, "
+                   "or a dropped heading (the audit checks the latter)",
+        ))
 
     # Content length check
     min_len = _MIN_CONTENT_LEN.get(stype, 0)
@@ -182,16 +244,29 @@ def validate_section_schema(
                 reason="Poem has only 1 stanza — may not be fully split",
             ))
 
-    # Exercise question check
+    # Exercise question check. This duplicates the required-field rule above
+    # for "exercise", and used to fire regardless of it — so an exercise whose
+    # questions sat in `content` (one sentence, a table, 2,346 chars of MCQs)
+    # was CRITICAL here even after the rule above had already judged it a
+    # shape warning. Same verdict as above: loss is CRITICAL, shape is not.
     if stype == "exercise":
         sub_items = section.get("sub_items") or []
-        if not sub_items:
+        if not sub_items and not _carries_text_elsewhere(section):
             failures.append(FieldFailure(
                 unit_number=unit_number,
                 section_type="exercise",
                 section_id=sid,
                 field="sub_items",
                 reason="Exercise has no questions in sub_items[]",
+            ))
+        elif not sub_items and not any(w.field == "sub_items" for w in warnings):
+            warnings.append(FieldWarning(
+                unit_number=unit_number,
+                section_type="exercise",
+                section_id=sid,
+                field="sub_items",
+                reason="Exercise questions are not itemized — present as text, "
+                       "not as sub_items[]",
             ))
 
     return failures, warnings
@@ -228,8 +303,8 @@ def detect_merged_siblings(sections: List[Dict[str, Any]]) -> int:
         )
         if sibling_pattern.search(content):
             count += 1
-            print(
-                f"  ⚠️  [SchemaValidator] Possible merged siblings: "
+            logger.warning(
+                f"[SchemaValidator] Possible merged siblings: "
                 f"section {sec_id} content contains {major}.{minor + 1} heading"
             )
     return count
@@ -348,7 +423,12 @@ def compute_word_coverage(
                 val = obj.get(key)
                 if isinstance(val, str):
                     structured_words.update(_word_set(val))
-            for key in ("sections", "sub_items", "subsections", "units", "chapters"):
+            # sub_sections is the key the extractor emits for nested sections;
+            # walking only "subsections" made every nested section invisible,
+            # and a chapter with twelve nested sections scored 41% "word
+            # coverage" (99% once they were counted) and was rejected for it.
+            for key in ("sections", "sub_items", "subsections", "sub_sections",
+                        "units", "chapters"):
                 val = obj.get(key)
                 if val:
                     _collect(val)
@@ -383,9 +463,24 @@ def compute_word_coverage(
 
 # ── Per-unit schema validation ────────────────────────────────────────────────
 
-def validate_unit_schema(unit: Dict[str, Any]) -> Dict[str, Any]:
+def _title_key(section: Dict[str, Any]) -> str:
+    title = str(section.get("title") or "")
+    title = re.sub(r"^\s*\d+(?:\.\d+)*\.?\s*", "", title)      # drop a leading number
+    return re.sub(r"[^a-z0-9]+", "", title.lower())
+
+
+def validate_unit_schema(
+    unit: Dict[str, Any],
+    furniture: Optional[Set[str]] = None,
+) -> Dict[str, Any]:
     """
     Validate all sections in a single unit.
+
+    `furniture` is the set of heading keys the book prints with no body beneath
+    them (a chart title, a chapter-number line). An empty section under one of
+    those is not lost content — there was none to extract — so its "empty
+    content" failure is reported as a warning instead. Without this the
+    validator vetoed documents the audit had passed, over pie-chart captions.
 
     Returns {
         unit_number, failures, warnings,
@@ -394,6 +489,7 @@ def validate_unit_schema(unit: Dict[str, Any]) -> Dict[str, Any]:
     """
     unit_number = unit.get("unit_number") or unit.get("chapter_number") or 0
     sections    = unit.get("sections", [])
+    furniture   = furniture or set()
 
     all_failures: List[FieldFailure] = []
     all_warnings: List[FieldWarning] = []
@@ -409,12 +505,25 @@ def validate_unit_schema(unit: Dict[str, Any]) -> Dict[str, Any]:
 
     for sec in sections:
         f, w = validate_section_schema(sec, unit_number)
+        if f and furniture and _title_key(sec) in furniture:
+            for failure in f:
+                if failure.field == "content":
+                    w.append(FieldWarning(
+                        unit_number=failure.unit_number,
+                        section_type=failure.section_type,
+                        section_id=failure.section_id,
+                        field="content",
+                        reason="Section is empty, but the book prints nothing "
+                               "under this heading either (chart title / "
+                               "structural furniture)",
+                    ))
+            f = [failure for failure in f if failure.field != "content"]
         all_failures.extend(f)
         all_warnings.extend(w)
 
         stype   = sec.get("type", "")
         content = sec.get("content") or ""
-        subs    = sec.get("sub_items") or sec.get("subsections") or []
+        subs    = sec.get("sub_items") or sec.get("subsections") or sec.get("sub_sections") or []
         if stype not in must_have or content.strip() or subs:
             sections_with_content += 1
 
@@ -462,6 +571,26 @@ def _compute_unit_score(unit_result: Dict[str, Any]) -> float:
 
 
 
+# A composite score can clear 95 while the document still carries an unfixed
+# CRITICAL field failure (empty section content, exercise with no questions) —
+# exactly the defects a reader notices first. Those veto the pass regardless of
+# score, so the verification loop keeps trying instead of exiting on pass 1.
+#
+# Word coverage is only a catastrophic-loss backstop. It is deliberately NOT a
+# quality bar: maths/science books legitimately sit at 56-72% because formulas
+# and diagrams carry meaning a word count cannot see (see note at section C2).
+_MIN_WORD_COVERAGE_PCT = 50.0
+
+
+def _has_critical_failure(failures) -> bool:
+    """True if any field failure is CRITICAL (dataclass or dict form)."""
+    for f in failures or []:
+        sev = f.get("severity") if isinstance(f, dict) else getattr(f, "severity", None)
+        if (sev or "CRITICAL") == "CRITICAL":
+            return True
+    return False
+
+
 def run_schema_validator(
     structured_data: Dict[str, Any],
     content_md: str,
@@ -502,8 +631,17 @@ def run_schema_validator(
     total_sections  = 0
     sections_ok     = 0
 
+    # Which headings the book prints with nothing beneath them — the audit's
+    # own rule, so the two verdicts stop disagreeing about the same caption.
+    try:
+        from extraction_audit import furniture_headings
+        furniture = furniture_headings(content_md)
+    except Exception as e:
+        logger.warning(f"[SchemaValidator] furniture lookup unavailable: {e}")
+        furniture = set()
+
     for unit in units:
-        ur = validate_unit_schema(unit)
+        ur = validate_unit_schema(unit, furniture=furniture)
         unit_results.append(ur)
         all_failures.extend(ur["failures"])
         all_warnings.extend(ur["warnings"])
@@ -558,12 +696,16 @@ def run_schema_validator(
         word_coverage_pct=word_cov_pct,
         merged_sibling_count=merged_total,
         duplicate_section_count=duplicate_total,
-        is_passing=overall >= 95.0,
+        is_passing=(
+            overall >= 95.0
+            and not _has_critical_failure(all_failures)
+            and word_cov_pct >= _MIN_WORD_COVERAGE_PCT
+        ),
     )
 
-    status = "✅ PASS" if report.is_passing else "⚠️  BELOW THRESHOLD"
-    print(
-        f"  📊 [SchemaValidator] Score: {overall:.1f}/100 — {status} "
+    status = "PASS" if report.is_passing else "BELOW THRESHOLD"
+    logger.info(
+        f"[SchemaValidator] Score: {overall:.1f}/100 — {status} "
         f"| struct_cov={struct_cov_pct:.0f}% | word_cov={word_cov_pct:.0f}% "
         f"| failures={len(all_failures)} | warnings={len(all_warnings)}"
     )
@@ -576,5 +718,5 @@ def save_schema_report(report: SchemaIntegrityReport, output_dir: Path) -> Path:
     """Save schema_integrity_report.json to output_dir. Returns path."""
     path = output_dir / "schema_integrity_report.json"
     path.write_bytes(_dumps(report.to_dict()))
-    print(f"  💾 [SchemaValidator] Saved → {path.name}")
+    logger.info(f"[SchemaValidator] Saved → {path.name}")
     return path

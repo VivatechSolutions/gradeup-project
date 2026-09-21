@@ -25,6 +25,11 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
 
 import requests
+from langfuse_utils import traced_post
+from langfuse_utils import with_student_context
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 SEMINAR_DATA_DIR = Path("seminar_data")
 SEMINAR_PRACTICE_DATA_DIR = Path("seminar_practice_data")
@@ -56,7 +61,7 @@ def extract_uploaded_file_content(filename: str, file_bytes: bytes) -> str:
                 pages_text.append(page.get_text())
             doc.close()
             text = "\n\n".join(pages_text)
-            print(f"  📄 [SeminarEngine] Extracted {len(text):,} chars from PDF ({len(pages_text)} pages)")
+            logger.info(f"[SeminarEngine] Extracted {len(text):,} chars from PDF ({len(pages_text)} pages)")
             return text
         except ImportError:
             raise ImportError("PyMuPDF (fitz) is required for PDF extraction. Install: pip install PyMuPDF")
@@ -85,7 +90,7 @@ def extract_uploaded_file_content(filename: str, file_bytes: bytes) -> str:
                                 slide_parts.append(row_text)
                 slides_text.append("\n".join(slide_parts))
             text = "\n\n".join(slides_text)
-            print(f"  📊 [SeminarEngine] Extracted {len(text):,} chars from PPTX ({len(slides_text)} slides)")
+            logger.info(f"[SeminarEngine] Extracted {len(text):,} chars from PPTX ({len(slides_text)} slides)")
             return text
         except ImportError:
             raise ImportError("python-pptx is required for PPTX extraction. Install: pip install python-pptx")
@@ -172,20 +177,20 @@ class SeminarEngine:
         }
 
         try:
-            resp = requests.post(
+            resp = traced_post("seminar-turn",
                 "https://api.openai.com/v1/chat/completions",
                 headers=headers, json=payload, timeout=SEMINAR_TIMEOUT,
             )
             if not resp.ok:
                 payload["model"] = SEMINAR_FALLBACK_MODEL
-                resp = requests.post(
+                resp = traced_post("seminar-turn",
                     "https://api.openai.com/v1/chat/completions",
                     headers=headers, json=payload, timeout=SEMINAR_TIMEOUT,
                 )
             if resp.ok:
                 return resp.json()["choices"][0]["message"]["content"].strip()
         except Exception as e:
-            print(f"  ❌ [SeminarEngine] Error: {e}")
+            logger.error(f"[SeminarEngine] Error: {e}")
         return "Something went wrong. Please try again."
 
     def _call_llm_json(self, messages: List[Dict], temperature: float = 0.3) -> Optional[Dict]:
@@ -542,7 +547,7 @@ Return ONLY valid JSON in this format:
                 result = json.loads(raw[start:end + 1])
                 return result
         except Exception as e:
-            print(f"  ⚠️ [SeminarEngine] Failed to parse comparison analysis: {e}")
+            logger.warning(f"[SeminarEngine] Failed to parse comparison analysis: {e}")
 
         # Fallback
         return {
@@ -614,6 +619,7 @@ Return ONLY valid JSON in this format:
 
     # ── Public API ────────────────────────────────────────────────────────────
 
+    @with_student_context()
     def start_seminar(
         self,
         candidate_id: str,
@@ -678,12 +684,12 @@ Return ONLY valid JSON in this format:
         if uploaded_content and session_mode in ("main", "demo"):
             content_source = "uploaded_file"
             session_context = uploaded_content
-            print(f"  📎 [SeminarEngine] Using uploaded file content as session source ({len(uploaded_content):,} chars)")
+            logger.info(f"[SeminarEngine] Using uploaded file content as session source ({len(uploaded_content):,} chars)")
         elif not rag_context and uploaded_content:
             # RAG returned nothing but file was provided
             content_source = "uploaded_file"
             session_context = uploaded_content
-            print(f"  📎 [SeminarEngine] RAG empty — using uploaded file as fallback")
+            logger.info(f"[SeminarEngine] RAG empty — using uploaded file as fallback")
 
         # ── Generate mode-appropriate greeting ─────────────────────────────
         if session_mode == "practice":
@@ -862,13 +868,13 @@ Keep the greeting warm and encouraging. Limit to 6-8 sentences.{uploaded_note}""
                     if any(kw in msg_lower for kw in keywords):
                         chosen_tool = tool_name
                         session["chosen_tool"] = chosen_tool
-                        print(f"  🔧 [SeminarEngine] Practice: Student chose tool: {chosen_tool}")
+                        logger.info(f"[SeminarEngine] Practice: Student chose tool: {chosen_tool}")
                         break
                 # If no match but step 3, treat the whole message as tool name
                 if not chosen_tool and len(student_message.strip()) < 50:
                     chosen_tool = student_message.strip()
                     session["chosen_tool"] = chosen_tool
-                    print(f"  🔧 [SeminarEngine] Practice: Student chose tool (raw): {chosen_tool}")
+                    logger.info(f"[SeminarEngine] Practice: Student chose tool (raw): {chosen_tool}")
 
             system_prompt = self._practice_system_prompt(
                 session["subject"], session["unit_number"],
@@ -896,7 +902,7 @@ Keep the greeting warm and encouraging. Limit to 6-8 sentences.{uploaded_note}""
                     session["practice_step"] = practice_step
                     step_info = self.PRACTICE_STEPS.get(practice_step, {})
                     session["practice_step_name"] = step_info.get("name", "")
-                    print(f"  📈 [SeminarEngine] Practice: Advanced to Step {practice_step} — {step_info.get('name', '')}")
+                    logger.info(f"[SeminarEngine] Practice: Advanced to Step {practice_step} — {step_info.get('name', '')}")
                 # Remove the marker from the response shown to student
                 ai_response = _re.sub(r'\[STEP_COMPLETE:\d+\]', '', ai_response).strip()
 
@@ -1055,9 +1061,9 @@ Keep it under 4 sentences."""
             try:
                 if session_path.exists():
                     session_path.unlink()
-                    print(f"  🗑️ [SeminarEngine] Deleted practice session file: {session_path.name}")
+                    logger.info(f"[SeminarEngine] Deleted practice session file: {session_path.name}")
             except OSError as e:
-                print(f"  ⚠️ [SeminarEngine] Failed to delete practice session file: {e}")
+                logger.warning(f"[SeminarEngine] Failed to delete practice session file: {e}")
 
             # Auto-delete seminar chat history
             self.end_seminar_chat(session_id)
@@ -1182,9 +1188,9 @@ Keep it conversational and supportive."""
                     unit_title=session.get("unit_name", ""),
                 )
             except Exception as e:
-                print(f"  ⚠️ [SeminarEngine] Failed to update performance: {e}")
+                logger.warning(f"[SeminarEngine] Failed to update performance: {e}")
         else:
-            print(f"  ℹ️ [SeminarEngine] Demo session — skipping performance tracking")
+            logger.info(f"[SeminarEngine] Demo session — skipping performance tracking")
 
         # ── Auto-delete seminar chat history ─────────────────────────────────
         self.end_seminar_chat(session_id)
@@ -1650,9 +1656,9 @@ Keep it to 2-3 sentences. Be encouraging!"""
 
         try:
             chat_path.unlink()
-            print(f"  🗑️ [SeminarEngine] Deleted chat history for session {session_id}")
+            logger.info(f"[SeminarEngine] Deleted chat history for session {session_id}")
         except OSError as e:
-            print(f"  ⚠️ [SeminarEngine] Failed to delete chat file: {e}")
+            logger.warning(f"[SeminarEngine] Failed to delete chat file: {e}")
 
         return {
             "success": True,

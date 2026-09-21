@@ -14,6 +14,9 @@ from urllib.parse import quote_plus
 
 import requests
 from dotenv import load_dotenv
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 WIKIPEDIA_API_URL = "https://en.wikipedia.org/api/rest_v1"
 SIMPLE_WIKI_API_URL = "https://simple.wikipedia.org/api/rest_v1"
@@ -63,7 +66,7 @@ class WebToolsClient:
             return self.get_wikipedia_summary(title, sentences)
             
         except Exception as e:
-            print(f"  Warning: Wikipedia search error: {e}")
+            logger.warning(f"Warning: Wikipedia search error: {e}")
             return None
     
     def get_wikipedia_summary(self, title: str, sentences: int = 3) -> Optional[str]:
@@ -96,7 +99,7 @@ class WebToolsClient:
             return extract
             
         except Exception as e:
-            print(f"  Warning: Wikipedia summary error: {e}")
+            logger.warning(f"Warning: Wikipedia summary error: {e}")
             return None
     
     def get_simple_wikipedia_summary(self, title: str, sentences: int = 3) -> Optional[str]:
@@ -129,7 +132,7 @@ class WebToolsClient:
             return extract
             
         except Exception as e:
-            print(f"  Warning: Simple Wikipedia error: {e}")
+            logger.warning(f"Warning: Simple Wikipedia error: {e}")
             return None
     
     def get_related_wikipedia_topics(self, title: str, limit: int = 5) -> List[str]:
@@ -169,7 +172,7 @@ class WebToolsClient:
             return related[:limit]
             
         except Exception as e:
-            print(f"  Warning: Wikipedia links error: {e}")
+            logger.warning(f"Warning: Wikipedia links error: {e}")
             return []
     
     def search_scientist_info(self, name: str) -> Optional[Dict[str, Any]]:
@@ -200,7 +203,7 @@ def main():
     """Test the web tools."""
     client = WebToolsClient()
     
-    print("Testing Wikipedia search...")
+    logger.info("Testing Wikipedia search...")
     
     test_queries = [
         "Newton's laws of motion",
@@ -209,22 +212,22 @@ def main():
     ]
     
     for query in test_queries:
-        print(f"\nQuery: {query}")
+        logger.info(f"Query: {query}")
         summary = client.search_wikipedia(query)
         if summary:
-            print(f"Summary: {summary[:200]}...")
+            logger.info(f"Summary: {summary[:200]}...")
         else:
-            print("No results found")
+            logger.info("No results found")
         time.sleep(1)
     
-    print("\n\nTesting Simple Wikipedia...")
+    logger.info("Testing Simple Wikipedia...")
     simple_summary = client.get_simple_wikipedia_summary("Gravity")
     if simple_summary:
-        print(f"Simple summary: {simple_summary}")
+        logger.info(f"Simple summary: {simple_summary}")
     
-    print("\n\nTesting related topics...")
+    logger.info("Testing related topics...")
     related = client.get_related_wikipedia_topics("Physics")
-    print(f"Related to Physics: {related}")
+    logger.info(f"Related to Physics: {related}")
 
 
 if __name__ == "__main__":

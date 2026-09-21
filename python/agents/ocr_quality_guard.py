@@ -19,6 +19,10 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from logger import get_logger
+
+logger = get_logger(__name__)
+
 try:
     import orjson
     def _json_dumps(obj): return orjson.dumps(obj, option=orjson.OPT_INDENT_2)
@@ -183,12 +187,12 @@ def generate_page_quality_report(content_md: str) -> Dict[str, Any]:
     }
 
     if corrupted:
-        print(
-            f"  ⚠️  [OCRQualityGuard] {len(corrupted)}/{len(scores)} pages corrupted "
+        logger.warning(
+            f"[OCRQualityGuard] {len(corrupted)}/{len(scores)} pages corrupted "
             f"(watermark/hash-spam). Pages: {report['corrupted_page_nums'][:10]}"
         )
     else:
-        print(f"  ✅ [OCRQualityGuard] All {len(scores)} pages clean.")
+        logger.info(f"[OCRQualityGuard] All {len(scores)} pages clean.")
 
     return report
 
@@ -256,8 +260,10 @@ def clean_corrupted_pages(content_md: str, quality_report: Dict[str, Any]) -> st
         elif pnum in pages_to_clean:
             cleaned_text = _clean_single_page(ptext)
             rebuilt.append(f"\n{marker}\n{cleaned_text}")
-            print(f"  🧹 [OCRQualityGuard] Cleaned page {pnum} "
-                  f"({len(ptext)} → {len(cleaned_text)} chars)")
+            logger.info(
+                f"[OCRQualityGuard] Cleaned page {pnum} "
+                f"({len(ptext)} → {len(cleaned_text)} chars)"
+            )
         else:
             rebuilt.append(f"\n{marker}\n{ptext}")
 
@@ -271,5 +277,5 @@ def save_quality_report(report: Dict[str, Any], output_dir: Path) -> Path:
     """Save page_quality_report.json to output_dir. Returns path."""
     path = output_dir / "page_quality_report.json"
     path.write_bytes(_json_dumps(report))
-    print(f"  💾 [OCRQualityGuard] Saved → {path.name}")
+    logger.info(f"[OCRQualityGuard] Saved → {path.name}")
     return path

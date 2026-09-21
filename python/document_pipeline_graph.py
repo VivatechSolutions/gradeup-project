@@ -9,7 +9,9 @@ Pipeline stages:
   1:  structure_discovery_node — TOC parse + unit boundaries + section type discovery
   2:  extract_unit_node × N    — Semantic chunk + LLM extract (parallel fan-out)
   3:  verification_node        — Convergence loop: score ≥ 95%, max 3 passes
-  4:  enrich_unit_node × N     — Avatar enrichment + TTS audio (parallel fan-out)
+  4:  enrich_unit_node × N     — Six-phase avatar lesson per SECTION, with pictures
+                                and narration (parallel fan-out; same build as
+                                /avatar/lesson/section)
   5:  debate_unit_node × N     — Debate topic generation (parallel fan-out)
   6:  final_publish_node       — Save JSON artifacts + upload to S3 + Qdrant
 
@@ -38,7 +40,17 @@ from typing_extensions import TypedDict
 from langgraph.graph import END, StateGraph
 from langgraph.types import Send
 
+from class_utils import normalize_class_number
 from config import OUTPUTS_DIR
+from langfuse_utils import (
+    observation as _lf_observation,
+    trace_context as _lf_trace_context,
+    update_observation as _lf_update_observation,
+    flush_safely as _lf_flush,
+)
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -180,9 +192,7 @@ def verification_node(state: DocumentPipelineState) -> Dict[str, Any]:
     Runs the existing extraction_verification_graph as a function call.
     Maps parent state fields → sub-graph inputs → reads outputs back.
     """
-    print(f"\n{'='*60}")
-    print(f"🤖 Stage 3: Verification Loop")
-    print(f"{'='*60}")
+    logger.info("Stage 3: Verification Loop")
 
     doc_id         = state["doc_id"]
     structured_data = state.get("structured_data", {})
@@ -191,7 +201,7 @@ def verification_node(state: DocumentPipelineState) -> Dict[str, Any]:
     api_key        = state.get("api_key", "")
 
     if not structured_data or not content_md:
-        print("  ⚠️  No structured data — skipping verification")
+        logger.warning("No structured data — skipping verification")
         return {
             "verification_passed": False,
             "overall_score":       0.0,
@@ -199,11 +209,15 @@ def verification_node(state: DocumentPipelineState) -> Dict[str, Any]:
             "fixes_made":          0,
         }
 
-    # Save structured.json so sub-graph can read it
+    # Save structured.json so sub-graph can read it. What was there before is
+    # the last extraction that PASSED the gate; it is kept so a rejected re-run
+    # puts it back rather than leaving this unverified copy on disk (and
+    # has_structured reading true for a document the audit just refused).
     doc_dir = OUTPUTS_DIR / doc_id
     doc_dir.mkdir(parents=True, exist_ok=True)
     structured_path = doc_dir / "structured.json"
     content_path    = doc_dir / "content.md"
+    previous_good   = structured_path.read_bytes() if structured_path.exists() else None
 
     structured_path.write_bytes(_dumps(structured_data))
     content_path.write_text(content_md, encoding="utf-8")
@@ -216,9 +230,24 @@ def verification_node(state: DocumentPipelineState) -> Dict[str, Any]:
             content_md_path=content_path,
             subject=subject,
             api_key=api_key,
+            # What the upload declared this document to be. The audit compares
+            # the unit fields against it, so a `part` or `subject` the model
+            # invented is a failure rather than something Qdrant files under.
+            declared={
+                "subject": subject,
+                "part":    state.get("part"),
+                "term":    state.get("term"),
+            },
         )
     except Exception as e:
-        print(f"  ⚠️  Verification graph failed: {e}")
+        # A crash here used to surface as one line with no traceback, so the
+        # real cause (a dict where a string was required) was invisible and the
+        # document was rejected for reasons nobody could see.
+        logger.error(
+            f"Verification graph CRASHED ({type(e).__name__}: {e}) — the audit "
+            f"never ran, so this document cannot be verified or stored.",
+            exc_info=True,
+        )
         report = {}
 
     # Re-load potentially corrected structured.json
@@ -227,9 +256,53 @@ def verification_node(state: DocumentPipelineState) -> Dict[str, Any]:
     except Exception:
         corrected = structured_data
 
-    score   = report.get("overall_score", 0.0)
-    passed  = score >= 95.0
-    print(f"  📊 Verification score: {score:.1f}%  {'✅ PASSED' if passed else '⚠️  BELOW 95%'}")
+    # Final, idempotent section-hierarchy normalization: the verification
+    # sub-graph can re-attach a numbered section's children as a flat sub_items
+    # list ({"number": "1.4.1", ...}) rather than nested sections. Re-promote
+    # them so structured/enriched/debate all consume the proper nested shape.
+    try:
+        from auto_schema_extractor import normalize_section_hierarchy
+        corrected = normalize_section_hierarchy(corrected, content_md)
+    except Exception as e:
+        logger.warning(f"Section-hierarchy normalization skipped: {e}")
+
+    # The score alone is not the verdict. The verification graph refuses to
+    # converge while the schema report still lists CRITICAL failures, and it
+    # says so in is_complete — a run can log "FINAL STATUS: PARTIAL" with 49
+    # sections missing and still score 96. Recomputing passed from the score
+    # alone threw that verdict away and wrote success:true over it.
+    # The audit inside the verification graph is the authority now: it decides
+    # whether structured.json was stored at all. A document it rejected must not
+    # be enriched, turned into debate topics, or indexed — that was how partial
+    # extractions reached Qdrant and the avatar in the first place.
+    score     = report.get("overall_score", 0.0)
+    converged = bool(report.get("is_complete", False))
+    stored    = bool(report.get("stored", converged))
+    audit     = report.get("audit") or {}
+    passed    = converged and stored
+
+    if passed:
+        logger.info(f"Verification: PASSED audit (score {score:.1f}%) — stored")
+    else:
+        counts = audit.get("failures_by_kind") or {}
+        logger.error(
+            f"Verification: REJECTED — {counts or 'quality gate failed'} "
+            f"(score {score:.1f}%). structured.json was NOT stored; enrichment, "
+            f"debate generation and Qdrant indexing are skipped for this document. "
+            f"See audit_report.json"
+        )
+        # The unverified copy written above must not outlive the rejection.
+        try:
+            if previous_good is not None:
+                structured_path.write_bytes(previous_good)
+                logger.info("Restored the previously verified structured.json — the rejected "
+                            "extraction is in structured.rejected.json")
+            elif structured_path.exists():
+                structured_path.unlink()
+                logger.info("Removed the unverified structured.json — this document has no "
+                            "stored extraction (see structured.rejected.json)")
+        except OSError as e:
+            logger.warning(f"Could not tidy structured.json after the rejection: {e}")
 
     return {
         "structured_data":    corrected,
@@ -251,9 +324,7 @@ def final_publish_node(state: DocumentPipelineState) -> Dict[str, Any]:
     Saves all artifacts to disk and uploads JSON artifacts to S3.
     Optionally uploads to Qdrant.
     """
-    print(f"\n{'='*60}")
-    print(f"📤 Stage 6: Final Publish")
-    print(f"{'='*60}")
+    logger.info("Stage 6: Final Publish")
 
     doc_id      = state["doc_id"]
     subject     = state.get("subject", "unknown")
@@ -266,16 +337,80 @@ def final_publish_node(state: DocumentPipelineState) -> Dict[str, Any]:
     skip_qdrant      = state.get("skip_qdrant", True)
 
     # ── Save structured.json ──────────────────────────────────────────────
+    # {"units": []} is truthy, so a run that extracted nothing used to still
+    # write a 17-byte file — and every has_structured check keys off the file
+    # merely existing, so a total failure reported as a successful extraction.
     structured_path = doc_dir / "structured.json"
-    if structured_data:
+    _has_content = bool(
+        structured_data
+        and (structured_data.get("units") or structured_data.get("chapters"))
+    )
+    # The audit is the gate. Stage 6 used to write structured.json regardless,
+    # which quietly undid the rejection: the log said "NOT stored" and then
+    # saved 212,813 bytes of rejected extraction one line later.
+    _verified = bool(state.get("verification_passed", False))
+    if _has_content and _verified:
         structured_path.write_bytes(_dumps(structured_data))
-        print(f"  💾 Saved structured.json ({structured_path.stat().st_size:,} bytes)")
+        logger.info(f"Saved structured.json ({structured_path.stat().st_size:,} bytes)")
+    elif _has_content:
+        # The verification gate has already quarantined the document it
+        # rejected. On a rejection the graph does not write structured.json, so
+        # what THIS node holds is the pre-verification copy re-read from disk —
+        # overwriting the gate's file with it replaced the evidence with a
+        # version that passes the audit, and a rejection could not be diagnosed
+        # from its own artifacts.
+        rejected_path = doc_dir / "structured.rejected.json"
+        if rejected_path.exists():
+            logger.error(
+                f"structured.json NOT written — the extraction did not pass the "
+                f"audit. The rejected document is in {rejected_path.name} "
+                f"({rejected_path.stat().st_size:,} bytes, written by the gate); "
+                f"see audit_report.json for the failing sections."
+            )
+        else:
+            rejected_path.write_bytes(_dumps(structured_data))
+            logger.error(
+                f"structured.json NOT written — the extraction did not pass the audit. "
+                f"Rejected copy saved to {rejected_path.name} "
+                f"({rejected_path.stat().st_size:,} bytes); see audit_report.json for the "
+                f"failing sections."
+            )
+    elif structured_data:
+        logger.error(
+            "Not writing structured.json — extraction produced zero units"
+        )
 
     # ── Save enriched.json ────────────────────────────────────────────────
+    # The same shape /avatar/lesson/build writes: the document's identity on
+    # top, then the units whose sections carry their avatar_lesson. The
+    # enrichment nodes checkpointed each finished section into this file as
+    # they went; this is the complete, merged copy.
     enriched_path = doc_dir / "enriched.json"
     if enriched_data:
-        enriched_path.write_bytes(_dumps(enriched_data))
-        print(f"  💾 Saved enriched.json ({enriched_path.stat().st_size:,} bytes)")
+        units_key = "chapters" if "chapters" in enriched_data else "units"
+        lesson_model = ""
+        try:
+            from avatar_lesson_builder import _lesson_model
+            lesson_model = _lesson_model()
+        except Exception:  # noqa: BLE001
+            pass
+        enriched_doc = {
+            "document_id":      doc_id,
+            "enriched_at":      datetime.now(timezone.utc).isoformat(),
+            "enrichment_model": lesson_model,
+            "enrichment_style": state.get("enrichment_style", "avatar_classroom_teaching"),
+            "subject":          subject,
+            "board":            state.get("board"),
+            "class_number":     state.get("class_number"),
+            units_key:          enriched_data.get(units_key, []),
+        }
+        enriched_path.write_bytes(_dumps(enriched_doc))
+        n_lessons = sum(
+            1 for u in enriched_doc[units_key] for sec in (u.get("sections") or [])
+            if ((sec.get("enrichment") or sec.get("section_enrichment") or {}).get("avatar_lesson"))
+        )
+        logger.info(f"Saved enriched.json ({enriched_path.stat().st_size:,} bytes, "
+                    f"{n_lessons} section lesson(s))")
 
     # ── Assemble + save debate_topics.json ────────────────────────────────
     debate_result: Dict[str, Any] = {}
@@ -294,7 +429,7 @@ def final_publish_node(state: DocumentPipelineState) -> Dict[str, Any]:
             "units":        debate_results,
         }
         (doc_dir / "debate_topics.json").write_bytes(_dumps(debate_result))
-        print(f"  💾 Saved debate_topics.json ({total_topics} topics)")
+        logger.info(f"Saved debate_topics.json ({total_topics} topics)")
 
     # ── Build pipeline report ─────────────────────────────────────────────
     pipeline_report = {
@@ -322,26 +457,46 @@ def final_publish_node(state: DocumentPipelineState) -> Dict[str, Any]:
             "passed":        state.get("verification_passed", False),
         },
         "enrichment": {
-            "units_enriched": len(state.get("enrichment_reports", [])),
-            "audio_files":    len(state.get("tts_audio_s3_urls", {})),
-            "reports":        state.get("enrichment_reports", []),
+            "units_enriched":    len(state.get("enrichment_reports", [])),
+            # Lessons actually built, so the caller can tell "enrichment ran on
+            # one unit" from "one unit has lessons".
+            "sections_enriched": sum(int(r.get("sections_enriched") or 0)
+                                     for r in state.get("enrichment_reports", []) if isinstance(r, dict)),
+            "sections_failed":   [t for r in state.get("enrichment_reports", []) if isinstance(r, dict)
+                                  for t in (r.get("sections_failed") or [])],
+            "audio_files":       len(state.get("tts_audio_s3_urls", {})),
+            "reports":           state.get("enrichment_reports", []),
         },
         "debate": {
             "units":        len(debate_results),
             "total_topics": debate_result.get("total_topics", 0),
         },
         "errors": state.get("pipeline_errors", []),
+        # Authoritative machine-readable verdict for callers: a run that
+        # errored or produced no units is NOT a success, whatever the score.
+        "units_published": len(
+            (structured_data or {}).get("units")
+            or (structured_data or {}).get("chapters")
+            or []
+        ),
+        "success": bool(_has_content) and not state.get("pipeline_errors"),
     }
     (doc_dir / "pipeline_report.json").write_bytes(_dumps(pipeline_report))
-    print(f"  💾 Saved pipeline_report.json")
+    logger.info("Saved pipeline_report.json")
 
     # ── Optional Qdrant upload ─────────────────────────────────────────────
     qdrant_uploaded = False
-    if not skip_qdrant and structured_path.exists():
+    qdrant_errors: List[str] = []
+    if not skip_qdrant and not state.get("verification_passed", False):
+        logger.error(
+            "Qdrant upload skipped — the extraction did not pass the audit. "
+            "Indexing a rejected extraction is how partial content reached RAG."
+        )
+    elif not skip_qdrant and structured_path.exists():
         try:
             from pipeline import get_pipeline
             pip = get_pipeline()
-            pip.upload_to_qdrant(
+            result = pip.upload_to_qdrant(
                 document_id=doc_id,
                 board=state.get("board", ""),
                 class_number=state.get("class_number", ""),
@@ -351,18 +506,34 @@ def final_publish_node(state: DocumentPipelineState) -> Dict[str, Any]:
                 subject=state.get("subject"),
                 part=state.get("part"),
             )
-            qdrant_uploaded = True
-            print(f"  ✅ Qdrant upload complete")
+            # upload_to_qdrant reports failure in its return value, not by
+            # raising: an embedding quota error or a rejected batch comes back
+            # as success=False. Ignoring it printed "upload complete" over a
+            # document whose chunks never reached the collection.
+            qdrant_uploaded = bool(result and result.get("success"))
+            if qdrant_uploaded:
+                logger.info("Qdrant upload complete")
+            else:
+                reason = (result or {}).get("error") or "see the Qdrant errors above"
+                logger.error(
+                    f"Qdrant upload FAILED for {doc_id} — the document is not "
+                    f"searchable: {reason}"
+                )
+                qdrant_errors.append(f"qdrant_upload_failed: {reason}")
         except Exception as e:
-            print(f"  ⚠️  Qdrant upload failed: {e}")
+            logger.error(f"Qdrant upload failed for {doc_id}: {type(e).__name__}: {e}")
+            qdrant_errors.append(f"qdrant_upload_failed: {type(e).__name__}: {e}")
 
-    print(f"\n  ✅ Stage 6 complete — all artifacts saved to {doc_dir}")
+    logger.info(f"Stage 6 complete — all artifacts saved to {doc_dir}")
 
     return {
         "debate_topics":   debate_result,
         "qdrant_uploaded": qdrant_uploaded,
         "is_complete":     True,
         "final_report":    pipeline_report,
+        # pipeline_errors is an accumulating channel, so the node returns its
+        # own errors rather than mutating the shared list in place.
+        "pipeline_errors": qdrant_errors,
     }
 
 
@@ -376,14 +547,20 @@ def fan_out_extraction(state: DocumentPipelineState) -> List[Send]:
     if not toc_units:
         # Nothing to extract — skip to verification
         return [Send("verification", state)]
-    print(f"\n  🔀 Fan-out extraction: {len(toc_units)} unit(s) in parallel")
+    logger.info(f"Fan-out extraction: {len(toc_units)} unit(s) in parallel")
     return [Send("extract_unit", {**state, "target_unit": u}) for u in toc_units]
 
 
 def fan_out_enrichment(state: DocumentPipelineState) -> List[Send]:
     """Fire one enrich_unit_node per unit (all run in parallel)."""
     if state.get("skip_enrichment"):
-        print("  ⏭️  Enrichment skipped")
+        logger.info("Enrichment skipped")
+        return [Send("fan_out_debate_collector", state)]
+
+    # A document the audit rejected has sections missing, empty or duplicated.
+    # Enriching it spends model budget on text that will not be stored.
+    if not state.get("verification_passed", False):
+        logger.error("Enrichment skipped — the extraction did not pass the audit")
         return [Send("fan_out_debate_collector", state)]
 
     data     = state.get("structured_data", {})
@@ -393,14 +570,31 @@ def fan_out_enrichment(state: DocumentPipelineState) -> List[Send]:
     if not units:
         return [Send("fan_out_debate_collector", state)]
 
-    print(f"\n  🔀 Fan-out enrichment: {len(units)} unit(s) in parallel")
+    # A fresh upload is a fresh build. The enrichment nodes checkpoint every
+    # finished section into enriched.json as they go, so a copy left by an
+    # earlier run of this document has to go first or its stale sections
+    # would be merged in with the new ones.
+    stale = OUTPUTS_DIR / state["doc_id"] / "enriched.json"
+    if stale.exists():
+        try:
+            stale.unlink()
+            logger.info(f"Removed the previous enriched.json for {state['doc_id']} — rebuilding every lesson")
+        except OSError as e:
+            logger.warning(f"Could not remove the previous enriched.json ({e}) — its sections will be replaced one by one")
+
+    logger.info(f"Fan-out enrichment: {len(units)} unit(s) in parallel — six-phase avatar "
+                f"lesson per section, with pictures and narration")
     return [Send("enrich_unit", {**state, "target_unit": u}) for u in units]
 
 
 def fan_out_debate(state: DocumentPipelineState) -> List[Send]:
     """Fire one debate_unit_node per unit (all run in parallel)."""
     if state.get("skip_debate"):
-        print("  ⏭️  Debate topics skipped")
+        logger.info("Debate topics skipped")
+        return [Send("debate_collector", state)]
+
+    if not state.get("verification_passed", False):
+        logger.error("Debate topics skipped — the extraction did not pass the audit")
         return [Send("debate_collector", state)]
 
     # Use enriched_data if available, else structured_data
@@ -411,7 +605,7 @@ def fan_out_debate(state: DocumentPipelineState) -> List[Send]:
     if not units:
         return [Send("debate_collector", state)]
 
-    print(f"\n  🔀 Fan-out debate: {len(units)} unit(s) in parallel")
+    logger.info(f"Fan-out debate: {len(units)} unit(s) in parallel")
     return [Send("debate_unit", {**state, "target_unit": u}) for u in units]
 
 
@@ -421,7 +615,7 @@ def extraction_collector_node(state: DocumentPipelineState) -> Dict[str, Any]:
     """No-op: waits for all extract_unit results to merge, then passes to verification."""
     units_key = "chapters" if "chapters" in state.get("structured_data", {}) else "units"
     n = len(state.get("structured_data", {}).get(units_key, []))
-    print(f"\n  ✅ Extraction complete — {n} unit(s) merged into structured_data")
+    logger.info(f"Extraction complete — {n} unit(s) merged into structured_data")
     return {}
 
 
@@ -429,20 +623,39 @@ def enrichment_collector_node(state: DocumentPipelineState) -> Dict[str, Any]:
     """No-op: waits for all enrich_unit results to merge."""
     units_key = "chapters" if "chapters" in state.get("enriched_data", {}) else "units"
     n = len(state.get("enriched_data", {}).get(units_key, []))
-    print(f"\n  ✅ Enrichment complete — {n} unit(s) merged into enriched_data")
+    logger.info(f"Enrichment complete — {n} unit(s) merged into enriched_data")
     return {}
 
 
 def debate_collector_node(state: DocumentPipelineState) -> Dict[str, Any]:
     """No-op: waits for all debate_unit results to merge."""
     n = len(state.get("debate_unit_results", []))
-    print(f"\n  ✅ Debate generation complete — {n} unit(s) processed")
+    logger.info(f"Debate generation complete — {n} unit(s) processed")
     return {}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Graph builder
 # ══════════════════════════════════════════════════════════════════════════════
+
+def route_after_ocr(state: DocumentPipelineState) -> str:
+    """Skip straight to publish when OCR produced no text.
+
+    Without this the graph walks the whole pipeline on an empty string: structure
+    discovery burns six LLM calls (3x gpt-4o-mini + 3x gpt-4o, ~2.5 min with
+    backoff) discovering nothing, extraction reports "empty slice", verification
+    is skipped for lack of data, and the run still publishes. Going straight to
+    final_publish keeps the error report and the artifacts directory, minus the
+    wasted spend.
+    """
+    if not (state.get("content_md") or "").strip():
+        logger.error(
+            "OCR produced no text — skipping extraction pipeline "
+            "(see pipeline_report.json errors[])"
+        )
+        return "final_publish"
+    return "vision_pass"
+
 
 def build_document_pipeline_graph():
     """Compile and return the full LangGraph StateGraph."""
@@ -473,7 +686,11 @@ def build_document_pipeline_graph():
 
     # ── Edges ──────────────────────────────────────────────────────────────
     graph.set_entry_point("ocr_extraction")
-    graph.add_edge("ocr_extraction",    "vision_pass")
+    graph.add_conditional_edges(
+        "ocr_extraction",
+        route_after_ocr,
+        ["vision_pass", "final_publish"],
+    )
     graph.add_edge("vision_pass",       "structure_discovery")
 
     # Stage 2 fan-out: structure_discovery → [extract_unit × N]
@@ -510,6 +727,18 @@ def build_document_pipeline_graph():
 # Public entry point
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _validate_identity(pdf_path: Path, class_number: Optional[str],
+                       term: Optional[str]) -> tuple:
+    """Canonical (class, term), or ValueError with an actionable message.
+
+    The endpoints validate first, so reaching here with a bad identity means a
+    caller went straight to the pipeline. Kept as the last line of defence
+    because what is wrong here is stamped into every Qdrant payload.
+    """
+    from ingest_identity import resolve_identity
+    return resolve_identity(pdf_path.name, class_number, term)
+
+
 def run_document_pipeline(
     pdf_path:         Path,
     board:            str,
@@ -537,8 +766,18 @@ def run_document_pipeline(
     """
     pdf_path = Path(pdf_path)
 
+    # ── Identity validation ───────────────────────────────────────────────────
+    # Everything below is stamped into the doc_id and into every Qdrant payload,
+    # so a wrong value here is not a cosmetic problem: it files the book where
+    # no filter will ever find it again. One upload declared class "23" (a
+    # serial number typed into the class field) and term 1 for a file named
+    # "Class_7_Science_term_2_unit6", and the pipeline accepted all of it.
+    class_number, term = _validate_identity(pdf_path, class_number, term)
+
     # Resolve API keys
-    resolved_api_key     = api_key or os.environ.get("OPENAI_API_KEY_TEXT", "")
+    # Extraction LLM (Llama 4 Scout) uses OpenRouter key
+    # TTS / Vision / Embeddings still use OpenAI key (not changed here)
+    resolved_api_key     = api_key or os.environ.get("OPENROUTER_API_KEY", "") or os.environ.get("OPENAI_API_KEY_TEXT", "")
     resolved_mistral_key = mistral_key or os.environ.get("MISTRAL_API_KEY", "")
 
     # Build doc_id from PDF stem (mirrors pipeline.py sanitization)
@@ -549,14 +788,17 @@ def run_document_pipeline(
     # Term is part of the identity: two term books of one subject would otherwise
     # collide whenever their PDF stems match.
     _term_tag = f"_{term_slug(canonical_term)}" if canonical_term else ""
-    doc_id = re.sub(r"[^a-zA-Z0-9_\-]", "_", f"{board}_{class_number}_{subject}{_term_tag}_{stem}")[:120]
+    # doc_id and chunk metadata must agree with what the API now hands out,
+    # which is the canonical two-digit form ("7" -> "07").
+    _raw_cn = normalize_class_number(class_number) or ""
+    doc_id = re.sub(r"[^a-zA-Z0-9_\-]", "_", f"{board}_{_raw_cn}_{subject}{_term_tag}_{stem}")[:120]
 
-    print(f"\n{'#'*60}")
-    print(f"🚀 Document Pipeline  →  {pdf_path.name}")
-    print(f"   Board: {board}  |  Class: {class_number}  |  Subject: {subject}"
-          + (f"  |  {canonical_term}" if canonical_term else ""))
-    print(f"   doc_id: {doc_id}")
-    print(f"{'#'*60}")
+    logger.info(f"Document Pipeline  →  {pdf_path.name}")
+    logger.info(
+        f"Board: {board}  |  Class: {_raw_cn or class_number}  |  Subject: {subject}"
+        + (f"  |  {canonical_term}" if canonical_term else "")
+    )
+    logger.info(f"doc_id: {doc_id}")
 
     # Build initial state
     initial_state: DocumentPipelineState = {
@@ -564,7 +806,7 @@ def run_document_pipeline(
         "doc_id":           doc_id,
         "pdf_path":         str(pdf_path),
         "board":            board,
-        "class_number":     class_number or "unknown",
+        "class_number":     _raw_cn or "unknown",
         "subject":          subject,
         "api_key":          resolved_api_key,
         "mistral_key":      resolved_mistral_key,
@@ -606,8 +848,24 @@ def run_document_pipeline(
         "pipeline_errors":       [],
     }
 
+    # One trace for the whole document run - OCR, extraction, verification,
+    # enrichment and debate generation all nest under this rather than each
+    # model call starting a trace of its own.
     graph = build_document_pipeline_graph()
-    final_state = graph.invoke(initial_state)
+    with _lf_observation("process-document-pipeline", as_type="chain",
+                         input={"doc_id": doc_id, "subject": subject}) as _root:
+        with _lf_trace_context(trace_name="process-document-pipeline",
+                               tags=["pipeline", subject or "unknown"],
+                               metadata={"doc_id": doc_id,
+                                         "subject": subject or "unknown"}):
+            final_state = graph.invoke(initial_state)
+        _lf_update_observation(_root, output={
+            "is_complete": final_state.get("is_complete", False),
+            "errors":      len(final_state.get("pipeline_errors", []) or []),
+        })
+    # A pipeline run is usually a script or a worker; without this the buffered
+    # spans die with the process.
+    _lf_flush()
 
     return final_state.get("final_report", {
         "is_complete": final_state.get("is_complete", False),
@@ -652,6 +910,6 @@ if __name__ == "__main__":
         enrichment_style=args.style,
     )
 
-    print(f"\n{'='*60}")
-    print(json.dumps(report, indent=2, default=str))
+    logger.info(f"{'='*60}")
+    logger.info(json.dumps(report, indent=2, default=str))
     sys.exit(0 if report.get("is_complete") else 1)

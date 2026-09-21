@@ -8,15 +8,15 @@ apply_theme_all_slides are Google-Slides-bound (see agents/google_slides_agent_n
 
 Graph topology
 ──────────────
-                            ┌─► say_suggestions ──────────────────────────┐
-read_slide ► analyze_slide ─┼─► feedback_only ─────────────────────────── ┤
+                            ┌─ say_suggestions ──────────────────────────┐
+read_slide analyze_slide ─┼─ feedback_only ─────────────────────────── ┤
                             │                                              │
-                            ├─► auto_apply ─► apply_theme_all_slides ──── ┤
+                            ├─ auto_apply ─ apply_theme_all_slides ──── ┤
                             │                                              ▼
-                            └─► propose_change ► wait_approval          update_score ► END
-                                                    ├─approve─► apply_change ► apply_theme_all_slides ─┘
-                                                    ├─reject──► explain_manual ──────────────────────────┘
-                                                    └─skip────► skip_change ───────────────────────────┘
+                            └─ propose_change wait_approval          update_score END
+                                                    ├─approve─ apply_change apply_theme_all_slides ─┘
+                                                    ├─reject── explain_manual ──────────────────────────┘
+                                                    └─skip──── skip_change ───────────────────────────┘
 
 Severity is set by the agent, not by the student:
   content     → say_suggestions (verbal only, no deck change)

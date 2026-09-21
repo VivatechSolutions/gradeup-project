@@ -4,13 +4,15 @@ GradeUp AI Extraction API
 Main application entry point with FastAPI endpoints for all modules.
 This file contains all APIs and main controls for the extraction pipeline.
 """
-
+ 
 import os
+import re
 import shutil
 import sys
 import tempfile
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Optional, List, Literal
+from typing import Annotated, Any, Dict, Optional, List, Literal
 
 # The pipeline logs progress with emoji (580+ print sites across the codebase).
 # On a console that is not UTF-8 — the Windows cp1252 default — each of those
@@ -23,31 +25,163 @@ for _stream in (sys.stdout, sys.stderr):
             _stream.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass  # non-reconfigurable stream (redirected/captured) — leave it alone
-
 from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Form
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.routing import Match
 from pydantic import BaseModel, Field
 
+from class_utils import (
+    ClassNumber,
+    IngestClassNumber,
+    OptionalClassNumber,
+    class_matches,
+    normalize_class_number,
+)
 from config import OUTPUTS_DIR, TEXTBOOKS_DIR
+from core.secrets_manager import validate_required_settings
+from ingest_identity import identity_problems
+from term_utils import IngestTerm
 from pipeline import get_pipeline, DocumentPipeline
 from ocr_pipeline import extract_with_mistral_ocr
 from guardrails import run_query_guardrail
+from security_middleware import SecureRequestMiddleware
 
-import logging
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+# Imported after config, which loads the .env - the Langfuse client is built
+# lazily on first use, so it picks up credentials either way, but keeping the
+# order explicit avoids a silent "no keys" client if that ever changes.
+from langfuse_utils import (
+    flush_safely as _lf_flush,
+    observation as _lf_observation,
+    record_error as _lf_record_error,
+    trace_context as _lf_trace_context,
+    tracing_enabled as _tracing_enabled,
+    update_observation as _lf_update_observation,
 )
-logger = logging.getLogger("gradeup-api")
+
+from logger import get_logger
+
+logger = get_logger("gradeup.api")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Fail fast on a missing key rather than serving 401s from providers later."""
+    validate_required_settings()
+    yield
+    # Spans are batched, so an unflushed shutdown loses whatever is still in
+    # the buffer - including the traces from the requests that prompted it.
+    _lf_flush()
+
 
 app = FastAPI(
     title="GradeUp AI Extraction API",
     description="API for PDF extraction, content enrichment, and semantic search",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan,
 )
+
+# Runs ahead of routing, so it covers every endpoint on this app (and any added
+# later). Rejects the config-file probes bots sweep public hosts with - /.env,
+# /.git/config, /settings.py - and logs each attempt at WARNING.
+app.add_middleware(SecureRequestMiddleware, fastapi_app=app)
+
+
+# ==============================================================================
+#  LANGFUSE REQUEST TRACING
+# ==============================================================================
+# One trace per API request, so a pipeline run reads as a single tree rather
+# than a scatter of unrelated model calls. The middleware only establishes the
+# root observation and the attributes it can see from the request line; handlers
+# that parse a session or student out of the body add those with a nested
+# trace_context(), which propagates to every observation created inside it.
+
+# Infrastructure endpoints do real work but never call a model, so tracing them
+# would bury the pipeline traces under health-check noise.
+_UNTRACED_PATHS = frozenset({
+    "/health", "/status", "/ppt/health", "/check-env",
+    "/docs", "/redoc", "/openapi.json", "/favicon.ico",
+})
+
+
+def _route_template(request) -> Optional[str]:
+    """The matched route's path template ("/documents/{document_id}").
+
+    Starlette fills scope["route"] while routing, which happens *after* this
+    middleware, so the template has to be matched by hand here. Using the
+    concrete path instead would put a document id in the trace name and make
+    every request its own unfilterable name.
+
+    Returns None when nothing matches: unmatched paths are 404s and scanner
+    probes, and tracing them would let a bot invent unbounded trace names.
+    """
+    try:
+        for route in request.app.router.routes:
+            match, _ = route.matches(request.scope)
+            if match is Match.FULL:
+                return getattr(route, "path", None)
+    except Exception:  # routing internals differ across versions
+        return None
+    return None
+
+
+def _identity_from_request(request) -> Dict[str, Optional[str]]:
+    """Session/student identity visible without consuming the request body.
+
+    Reading the body here would drain the stream before the handler sees it,
+    so only the query string and explicit headers are inspected. POST handlers
+    that carry identity in the body layer it on themselves.
+    """
+    params = request.query_params
+    return {
+        "session_id": (params.get("session_id")
+                       or request.headers.get("x-session-id")),
+        "user_id": (params.get("student_id") or params.get("user_id")
+                    or request.headers.get("x-student-id")),
+    }
+
+
+@app.middleware("http")
+async def langfuse_tracing_middleware(request, call_next):
+    if request.url.path in _UNTRACED_PATHS or not _tracing_enabled():
+        return await call_next(request)
+
+    # The route template ("/tutor/faq/{document_id}"), not the concrete path:
+    # observation names must stay low-cardinality or they cannot be grouped,
+    # filtered, or targeted by evaluators.
+    route_path = _route_template(request)
+    if route_path is None:
+        return await call_next(request)
+    name = f"{request.method} {route_path}"
+    identity = _identity_from_request(request)
+
+    with _lf_observation(name, as_type="span",
+                         input={"method": request.method,
+                                "path": str(request.url.path),
+                                "query": dict(request.query_params) or None}) as root:
+        with _lf_trace_context(trace_name=name,
+                               session_id=identity["session_id"],
+                               user_id=identity["user_id"],
+                               tags=["api", route_path.strip("/").split("/")[0] or "root"],
+                               metadata={"route": route_path,
+                                         "method": request.method,
+                                         "client": request.client.host if request.client else ""}):
+            response = await call_next(request)
+
+        output = {"status_code": response.status_code}
+        # Set by the RequestValidationError handler below. request.state lives
+        # in the ASGI scope, so it is shared with the handler's Request object.
+        problems = getattr(request.state, "validation_errors", None)
+        if problems:
+            output["validation_errors"] = problems
+        _lf_update_observation(root, output=output)
+        if response.status_code >= 400:
+            message = f"HTTP {response.status_code}"
+            if problems:
+                message += ": " + "; ".join(f"{p['field']}: {p['msg']}" for p in problems)
+            _lf_record_error(root, message,
+                             level="ERROR" if response.status_code >= 500 else "WARNING")
+    return response
 
 
 @app.exception_handler(RequestValidationError)
@@ -57,6 +191,15 @@ async def _validation_error_handler(request, exc: RequestValidationError):
         {"field": " → ".join(str(loc) for loc in err["loc"]), "msg": err["msg"]}
         for err in exc.errors()
     ]
+    # The caller gets the field names in the body, but the server log and the
+    # trace used to show only a bare 422 - a rejected upload was undiagnosable
+    # from our side.
+    request.state.validation_errors = details
+    client = request.client.host if request.client else "?"
+    logger.warning(
+        f"422 {request.method} {request.url.path} from {client}: "
+        + "; ".join(f"{d['field']}: {d['msg']}" for d in details)
+    )
     return JSONResponse(
         status_code=422,
         content={"error": "Validation failed", "details": details},
@@ -81,7 +224,7 @@ class SearchRequest(BaseModel):
     limit: int = 5
     unit_filter: Optional[int] = None
     content_type_filter: Optional[str] = None
-    class_filter: Optional[str] = None
+    class_filter: OptionalClassNumber = None
     subject_filter: Optional[str] = None
     board_filter: Optional[str] = None
     # A term ("2", "Term 2") or a scope of them (["term_1","term_2"], "1,2").
@@ -90,7 +233,7 @@ class SearchRequest(BaseModel):
 
 class QdrantUploadRequest(BaseModel):
     board: str
-    class_number: Optional[str] = None
+    class_number: OptionalClassNumber = None
     term: Optional[str] = None
 
 
@@ -98,7 +241,7 @@ class TutorRequest(BaseModel):
     """Request model for AI Tutor queries"""
     query: Optional[str] = ""
     board: str
-    class_number: str
+    class_number: ClassNumber
     image_base64: Optional[str] = None
     subject: str
     unit_number: int
@@ -138,8 +281,8 @@ async def upload_with_subject(
     subject: str = Form(..., description="Subject name (e.g. Science, Biology, Mathematics, English)"),
     part: Optional[str] = Form(None, description="Book/part name (e.g. 'History', 'Fundamentals of Physical Geography', 'India: Physical Environment')"),
     board: str = Form(..., description="Board name (e.g. 'State Board', 'CBSE')"),
-    class_number: Optional[str] = Form(None, alias="class_name", description="Class number/name (e.g. '11', '10')"),
-    term: Optional[str] = Form(None, description="Term for term-split state books: '1', '2', '3' or 'Term 1'. Omit for boards whose books are not term-split (CBSE/NCERT)."),
+    class_number: Annotated[IngestClassNumber, Form(alias="class_name", description="Class number/name: 1-12, or LKG/UKG/Nursery. Normalized to two digits, so '7' is stored as '07'. An impossible class is rejected rather than ingested.")] = None,
+    term: Annotated[IngestTerm, Form(description="Term for term-split state books: '1', '2' or '3'. Omit for boards whose books are not term-split (CBSE/NCERT). An unrecognised term is rejected rather than silently ignored.")] = None,
     skip_enrichment: bool = Form(False),
     skip_qdrant: bool = Form(False),
     skip_llm_refinement: bool = Form(False),
@@ -171,22 +314,31 @@ async def upload_with_subject(
     """
     if not file.filename or not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted")
-    
+
+    # The class and term are stamped into the doc_id and into every Qdrant
+    # payload, so a value that contradicts the file does not corrupt anything —
+    # it makes the book unreachable, silently. Checked here rather than deeper
+    # in, because the pipeline calls sit inside fallback handlers that would
+    # swallow the error and ingest the document anyway.
+    _identity_problems = identity_problems(file.filename, class_number, term)
+    if _identity_problems:
+        raise HTTPException(status_code=400, detail=" ".join(_identity_problems))
+
     logger.info(f"========== /upload-subject START ==========")
-    logger.info(f"  File: {file.filename}")
-    logger.info(f"  Subject: {subject}, Part: {part}, Board: {board}, Class: {class_number}, Term: {term}")
-    logger.info(f"  Flags → skip_enrichment={skip_enrichment}, skip_qdrant={skip_qdrant}, skip_llm_refinement={skip_llm_refinement}")
-    logger.info(f"  Enrichment style: {enrichment_style}")
+    logger.info(f"File: {file.filename}")
+    logger.info(f"Subject: {subject}, Part: {part}, Board: {board}, Class: {class_number}, Term: {term}")
+    logger.info(f"Flags → skip_enrichment={skip_enrichment}, skip_qdrant={skip_qdrant}, skip_llm_refinement={skip_llm_refinement}")
+    logger.info(f"Enrichment style: {enrichment_style}")
     
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_pdf_path = Path(temp_dir) / file.filename
         
         content = await file.read()
         temp_pdf_path.write_bytes(content)
-        logger.info(f"  Saved temp PDF: {temp_pdf_path} ({len(content):,} bytes)")
+        logger.info(f"Saved temp PDF: {temp_pdf_path} ({len(content):,} bytes)")
         
         pipeline = get_pipeline()
-        logger.info(f"  Pipeline initialized: {type(pipeline).__name__}")
+        logger.info(f"Pipeline initialized: {type(pipeline).__name__}")
         
         # ── AUTO-SPLIT LOGIC ──────────────────────────────────────────────────
         import re as _re
@@ -224,13 +376,13 @@ async def upload_with_subject(
                 split_units = []
             
         if split_units and len(split_units) > 1:
-            logger.info(f"✅ Split textbook into {len(split_units)} units. Processing each independently...")
+            logger.info(f"Split textbook into {len(split_units)} units. Processing each independently...")
             results = []
             for unit_idx, unit in enumerate(split_units):
                 unit_pdf_path = Path(unit["output_path"])
                 resolved_part = part if part else unit.get("part", "")
                 
-                logger.info(f"  [SPLIT {unit_idx+1}/{len(split_units)}] Processing: {unit_pdf_path.name}, part={resolved_part}")
+                logger.info(f"[SPLIT {unit_idx+1}/{len(split_units)}] Processing: {unit_pdf_path.name}, part={resolved_part}")
                 unit_res = pipeline.process_pdf_file_subject_aware(
                     pdf_path=unit_pdf_path,
                     subject=subject,
@@ -244,47 +396,47 @@ async def upload_with_subject(
                     enrichment_style=enrichment_style,
                     term=term,
                 )
-                logger.info(f"  [SPLIT {unit_idx+1}] Pipeline result → success={unit_res.get('success')}, "
+                logger.info(f"[SPLIT {unit_idx+1}] Pipeline result → success={unit_res.get('success')}, "
                             f"document_id={unit_res.get('document_id')}, "
                             f"has_structured={unit_res.get('has_structured')}, "
                             f"extraction_method={unit_res.get('extraction_method', 'N/A')}")
                 if not unit_res.get('success'):
-                    logger.error(f"  [SPLIT {unit_idx+1}] ❌ Pipeline FAILED: {unit_res.get('error', 'unknown error')}")
+                    logger.error(f"[SPLIT {unit_idx+1}] Pipeline FAILED: {unit_res.get('error', 'unknown error')}")
                 results.append(unit_res)
 
             # ── Generate debate topics for each split unit (independent of enrichment) ──
-            logger.info(f"  [DEBATE] Starting debate topic generation for {len(results)} split unit(s)...")
+            logger.info(f"[DEBATE] Starting debate topic generation for {len(results)} split unit(s)...")
             debate_results = []
             try:
                 from debate_topic_generator import generate_and_save_debate_topics
                 for unit_res in results:
                     doc_id = unit_res.get("document_id")
                     has_structured = unit_res.get("has_structured")
-                    logger.info(f"  [DEBATE] Checking unit → doc_id={doc_id}, has_structured={has_structured}")
+                    logger.info(f"[DEBATE] Checking unit → doc_id={doc_id}, has_structured={has_structured}")
                     if not doc_id:
-                        logger.warning(f"  [DEBATE] ⚠️ Skipping — no document_id in result")
+                        logger.warning(f"[DEBATE] Skipping — no document_id in result")
                         continue
                     if not has_structured:
-                        logger.warning(f"  [DEBATE] ⚠️ Skipping {doc_id} — has_structured is False (LLM refinement may have been skipped or extraction returned no sections)")
+                        logger.warning(f"[DEBATE] Skipping {doc_id} — has_structured is False (LLM refinement may have been skipped or extraction returned no sections)")
                         continue
                     structured_path = OUTPUTS_DIR / doc_id / "structured.json"
-                    logger.info(f"  [DEBATE] Checking structured.json at: {structured_path}")
+                    logger.info(f"[DEBATE] Checking structured.json at: {structured_path}")
                     if not structured_path.exists():
-                        logger.error(f"  [DEBATE] ❌ structured.json NOT FOUND at {structured_path} — cannot generate debate topics")
+                        logger.error(f"[DEBATE] structured.json NOT FOUND at {structured_path} — cannot generate debate topics")
                         # List what files actually exist in the output directory
                         doc_dir = OUTPUTS_DIR / doc_id
                         if doc_dir.exists():
                             existing_files = [f.name for f in doc_dir.iterdir()]
-                            logger.error(f"  [DEBATE]    Files in {doc_dir.name}/: {existing_files}")
+                            logger.error(f"[DEBATE]    Files in {doc_dir.name}/: {existing_files}")
                         else:
-                            logger.error(f"  [DEBATE]    Output directory does not exist: {doc_dir}")
+                            logger.error(f"[DEBATE]    Output directory does not exist: {doc_dir}")
                         continue
-                    logger.info(f"  [DEBATE] ✅ structured.json exists ({structured_path.stat().st_size:,} bytes). Generating debate topics for {doc_id}...")
+                    logger.info(f"[DEBATE] structured.json exists ({structured_path.stat().st_size:,} bytes). Generating debate topics for {doc_id}...")
                     dt_result = generate_and_save_debate_topics(
                         structured_path=structured_path,
                         subject=subject if subject != "auto" else None,
                     )
-                    logger.info(f"  [DEBATE] Result for {doc_id} → success={dt_result.get('success')}, "
+                    logger.info(f"[DEBATE] Result for {doc_id} → success={dt_result.get('success')}, "
                                 f"total_topics={dt_result.get('total_topics', 0)}, "
                                 f"error={dt_result.get('error', 'none')}")
                     debate_results.append({
@@ -293,9 +445,9 @@ async def upload_with_subject(
                         "success": dt_result.get("success", False),
                     })
             except ImportError as ie:
-                logger.warning(f"  [DEBATE] ⚠️ Debate topic generator module not available — skipping (ImportError: {ie})")
+                logger.warning(f"[DEBATE] Debate topic generator module not available — skipping (ImportError: {ie})")
             except Exception as e:
-                logger.error(f"  [DEBATE] ❌ Debate topic generation failed with exception: {e}", exc_info=True)
+                logger.error(f"[DEBATE] Debate topic generation failed with exception: {e}", exc_info=True)
 
             logger.info(f"========== /upload-subject END (split path, {len(results)} units) ==========")
             return {
@@ -308,7 +460,7 @@ async def upload_with_subject(
             }
         
         # ── SINGLE PDF FALLBACK ───────────────────────────────────────────────
-        logger.info(f"  [SINGLE] No chapters detected or already a unit. Processing as single PDF...")
+        logger.info(f"[SINGLE] No chapters detected or already a unit. Processing as single PDF...")
         result = pipeline.process_pdf_file_subject_aware(
             pdf_path=temp_pdf_path,
             subject=subject,
@@ -322,14 +474,14 @@ async def upload_with_subject(
             enrichment_style=enrichment_style,
             term=term,
         )
-        logger.info(f"  [SINGLE] Pipeline result → success={result.get('success')}, "
+        logger.info(f"[SINGLE] Pipeline result → success={result.get('success')}, "
                     f"document_id={result.get('document_id')}, "
                     f"has_structured={result.get('has_structured')}, "
                     f"extraction_method={result.get('extraction_method', 'N/A')}, "
                     f"subject={result.get('subject', 'N/A')}")
     
     if not result.get("success"):
-        logger.error(f"  [SINGLE] ❌ Processing FAILED: {result.get('error')}")
+        logger.error(f"[SINGLE] Processing FAILED: {result.get('error')}")
         logger.info(f"========== /upload-subject END (FAILED) ==========")
         raise HTTPException(status_code=500, detail=result.get("error", "Processing failed"))
     
@@ -337,36 +489,36 @@ async def upload_with_subject(
     debate_info = {}
     has_structured = result.get("has_structured")
     doc_id = result.get("document_id")
-    logger.info(f"  [DEBATE] Single PDF debate check → doc_id={doc_id}, has_structured={has_structured}")
+    logger.info(f"[DEBATE] Single PDF debate check → doc_id={doc_id}, has_structured={has_structured}")
     
     if not has_structured:
-        logger.warning(f"  [DEBATE] ⚠️ Skipping debate topic generation — has_structured is False")
-        logger.warning(f"  [DEBATE]    Possible causes: skip_llm_refinement={skip_llm_refinement}, "
+        logger.warning(f"[DEBATE] Skipping debate topic generation — has_structured is False")
+        logger.warning(f"[DEBATE]    Possible causes: skip_llm_refinement={skip_llm_refinement}, "
                        f"or auto-schema extraction returned no sections, or openai_api_key missing")
     elif not doc_id:
-        logger.warning(f"  [DEBATE] ⚠️ Skipping debate topic generation — no document_id in result")
+        logger.warning(f"[DEBATE] Skipping debate topic generation — no document_id in result")
     else:
         try:
             from debate_topic_generator import generate_and_save_debate_topics
             structured_path = OUTPUTS_DIR / doc_id / "structured.json"
-            logger.info(f"  [DEBATE] Checking structured.json at: {structured_path}")
+            logger.info(f"[DEBATE] Checking structured.json at: {structured_path}")
             if not structured_path.exists():
-                logger.error(f"  [DEBATE] ❌ structured.json NOT FOUND at {structured_path}")
+                logger.error(f"[DEBATE] structured.json NOT FOUND at {structured_path}")
                 # List what files actually exist in the output directory
                 doc_dir = OUTPUTS_DIR / doc_id
                 if doc_dir.exists():
                     existing_files = [f.name for f in doc_dir.iterdir()]
-                    logger.error(f"  [DEBATE]    Files in {doc_dir.name}/: {existing_files}")
+                    logger.error(f"[DEBATE]    Files in {doc_dir.name}/: {existing_files}")
                 else:
-                    logger.error(f"  [DEBATE]    Output directory does not exist: {doc_dir}")
+                    logger.error(f"[DEBATE]    Output directory does not exist: {doc_dir}")
             else:
                 file_size = structured_path.stat().st_size
-                logger.info(f"  [DEBATE] ✅ structured.json exists ({file_size:,} bytes). Generating debate topics...")
+                logger.info(f"[DEBATE] structured.json exists ({file_size:,} bytes). Generating debate topics...")
                 dt_result = generate_and_save_debate_topics(
                     structured_path=structured_path,
                     subject=subject if subject != "auto" else None,
                 )
-                logger.info(f"  [DEBATE] Result → success={dt_result.get('success')}, "
+                logger.info(f"[DEBATE] Result → success={dt_result.get('success')}, "
                             f"total_topics={dt_result.get('total_topics', 0)}, "
                             f"total_sections={dt_result.get('total_sections', 0)}, "
                             f"error={dt_result.get('error', 'none')}")
@@ -375,11 +527,11 @@ async def upload_with_subject(
                     "debate_topics_success": dt_result.get("success", False),
                 }
         except ImportError as ie:
-            logger.warning(f"  [DEBATE] ⚠️ Debate topic generator module not available — skipping (ImportError: {ie})")
+            logger.warning(f"[DEBATE] Debate topic generator module not available — skipping (ImportError: {ie})")
         except Exception as e:
-            logger.error(f"  [DEBATE] ❌ Debate topic generation failed: {e}", exc_info=True)
+            logger.error(f"[DEBATE] Debate topic generation failed: {e}", exc_info=True)
     
-    logger.info(f"  Final result: subject={result.get('subject', 'unknown')}, debate_info={debate_info}")
+    logger.info(f"Final result: subject={result.get('subject', 'unknown')}, debate_info={debate_info}")
     logger.info(f"========== /upload-subject END (single PDF, success) ==========")
     
     return {
@@ -397,8 +549,8 @@ async def upload_agentic(
     subject: str = Form(..., description="Subject name (e.g. Science, Biology, Mathematics, English)"),
     part: Optional[str] = Form(None, description="Book/part name"),
     board: str = Form(..., description="Board name (e.g. 'State Board', 'CBSE')"),
-    class_number: Optional[str] = Form(None, alias="class_name", description="Class number/name (e.g. '11', '10')"),
-    term: Optional[str] = Form(None, description="Term for term-split state books: '1', '2', '3' or 'Term 1'. Omit for boards whose books are not term-split (CBSE/NCERT)."),
+    class_number: Annotated[IngestClassNumber, Form(alias="class_name", description="Class number/name: 1-12, or LKG/UKG/Nursery. Normalized to two digits, so '7' is stored as '07'. An impossible class is rejected rather than ingested.")] = None,
+    term: Annotated[IngestTerm, Form(description="Term for term-split state books: '1', '2' or '3'. Omit for boards whose books are not term-split (CBSE/NCERT). An unrecognised term is rejected rather than silently ignored.")] = None,
     skip_enrichment: bool = Form(False),
     skip_qdrant: bool = Form(False),
     skip_llm_refinement: bool = Form(False),
@@ -418,8 +570,17 @@ async def upload_agentic(
     if not file.filename or not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted")
 
+    # The class and term are stamped into the doc_id and into every Qdrant
+    # payload, so a value that contradicts the file does not corrupt anything —
+    # it makes the book unreachable, silently. Checked here rather than deeper
+    # in, because the pipeline calls sit inside fallback handlers that would
+    # swallow the error and ingest the document anyway.
+    _identity_problems = identity_problems(file.filename, class_number, term)
+    if _identity_problems:
+        raise HTTPException(status_code=400, detail=" ".join(_identity_problems))
+
     logger.info(f"========== /upload-agentic START ==========")
-    logger.info(f"  file={file.filename} subject={subject} board={board} "
+    logger.info(f"file={file.filename} subject={subject} board={board} "
                 f"class={class_number} skip_enrichment={skip_enrichment}")
 
     # Import new pipeline (lazy so server still starts if not installed yet)
@@ -427,7 +588,7 @@ async def upload_agentic(
         from document_pipeline_graph import run_document_pipeline
         PIPELINE_GRAPH_AVAILABLE = True
     except ImportError as ie:
-        logger.warning(f"  ⚠️  document_pipeline_graph not available: {ie}")
+        logger.warning(f"document_pipeline_graph not available: {ie}")
         PIPELINE_GRAPH_AVAILABLE = False
 
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -456,12 +617,12 @@ async def upload_agentic(
                 if len(split_units) == 1:
                     split_units = []   # treat as single
             except Exception as e:
-                logger.warning(f"  PDF split check error: {e}")
+                logger.warning(f"PDF split check error: {e}")
 
         resolved_subject = None if subject == "auto" else subject
 
         if split_units and len(split_units) > 1:
-            logger.info(f"  ✅ Split into {len(split_units)} unit(s) — running pipeline on each...")
+            logger.info(f"Split into {len(split_units)} unit(s) — running pipeline on each...")
             results = []
             for unit_info in split_units:
                 unit_pdf = Path(unit_info["output_path"])
@@ -481,21 +642,46 @@ async def upload_agentic(
                             skip_qdrant=skip_qdrant,
                             enrichment_style=enrichment_style,
                         )
+                        _u_doc_id  = report.get("doc_id")
+                        _u_doc_dir = OUTPUTS_DIR / _u_doc_id if _u_doc_id else None
+                        _u_debate_total = report.get("debate", {}).get("total_topics", 0)
+                        _u_errors = report.get("errors", []) or []
+                        _u_has_structured = bool(
+                            (report.get("verification") or {}).get("passed")
+                            and _u_doc_dir and (_u_doc_dir / "structured.json").exists())
+                        # Per-unit verdict, same rule as the single-PDF path: one
+                        # failed unit must not read as success just because the
+                        # other units in the split worked.
+                        _u_success = bool(report.get(
+                            "success", _u_has_structured and not _u_errors))
+                        if not _u_success:
+                            logger.error(
+                                f"Unit {unit_pdf.name} produced no usable output "
+                                f"(errors={_u_errors})"
+                            )
                         results.append({
                             "unit_pdf":              unit_pdf.name,
-                            "document_id":           report.get("doc_id"),
+                            "success":               _u_success,
+                            "document_id":           _u_doc_id,
                             "subject":               report.get("subject"),
+                            "part":                  resolved_part,
                             "is_complete":           report.get("is_complete", False),
+                            "units_published":       report.get("units_published", 0),
+                            "has_structured":        _u_has_structured,
+                            "has_enriched":          (int((report.get("enrichment") or {}).get("sections_enriched") or 0) > 0
+                                                      and bool(_u_doc_dir and (_u_doc_dir / "enriched.json").exists())),
+                            "sections_enriched":     (report.get("enrichment") or {}).get("sections_enriched", 0),
                             "verification_score":    report.get("verification", {}).get("overall_score", 0),
                             "verification_passed":   report.get("verification", {}).get("passed", False),
                             "fixes_made":            report.get("verification", {}).get("fixes_made", 0),
                             "enrichment_units":      report.get("enrichment", {}).get("units_enriched", 0),
                             "audio_files":           report.get("enrichment", {}).get("audio_files", 0),
-                            "debate_topics_total":   report.get("debate", {}).get("total_topics", 0),
+                            "debate_topics_total":   _u_debate_total,
+                            "debate_topics_success": _u_debate_total > 0,
                             "pipeline_errors":       report.get("errors", []),
                         })
                     except Exception as e:
-                        logger.error(f"  ❌ Pipeline failed for {unit_pdf.name}: {e}", exc_info=True)
+                        logger.error(f"Pipeline failed for {unit_pdf.name}: {e}", exc_info=True)
                         results.append({"unit_pdf": unit_pdf.name, "error": str(e)})
                 else:
                     # Fallback: legacy pipeline
@@ -514,16 +700,21 @@ async def upload_agentic(
                     except Exception as e:
                         results.append({"unit_pdf": unit_pdf.name, "error": str(e)})
 
+            # Overall verdict: every unit that reported a verdict must have
+            # succeeded, and no unit may have raised.
+            _all_ok = bool(results) and all(
+                r.get("success", not r.get("error")) for r in results
+            )
             logger.info(f"========== /upload-agentic END (split path, {len(results)} units) ==========")
             return {
-                "success":         True,
+                "success":         _all_ok,
                 "is_split":        True,
                 "units_processed": len(results),
                 "results":         results,
             }
 
         # ── Single PDF path ───────────────────────────────────────────────────
-        logger.info(f"  [SINGLE] Processing as single PDF with full agentic pipeline...")
+        logger.info(f"[SINGLE] Processing as single PDF with full agentic pipeline...")
 
         if PIPELINE_GRAPH_AVAILABLE and not skip_llm_refinement:
             try:
@@ -540,23 +731,92 @@ async def upload_agentic(
                     skip_qdrant=skip_qdrant,
                     enrichment_style=enrichment_style,
                 )
+                # ── Status flags the frontend maps (has_structured / has_enriched /
+                #    debate_topics_success). Derived authoritatively from the saved
+                #    artifacts, mirroring the /documents endpoint, so they are never
+                #    null in the response. ──
+                _doc_id   = report.get("doc_id")
+                _doc_dir  = OUTPUTS_DIR / _doc_id if _doc_id else None
+                # THIS run's verdict, not whatever an earlier run left in the
+                # folder: a rejected re-run used to answer has_enriched=true off a
+                # stale enriched.json while the log said enrichment was skipped.
+                _verif    = report.get("verification", {}) or {}
+                _enrich   = report.get("enrichment", {}) or {}
+                _lessons  = int(_enrich.get("sections_enriched") or 0)
+                _has_structured = bool(_verif.get("passed")) and bool(
+                    _doc_dir and (_doc_dir / "structured.json").exists())
+                _has_enriched   = _lessons > 0 and bool(
+                    _doc_dir and (_doc_dir / "enriched.json").exists())
+                _debate_total   = report.get("debate", {}).get("total_topics", 0)
+
+                # A run whose OCR or extraction failed used to return
+                # success=True with a 17-byte {"units": []} on disk, so the caller
+                # could not tell a working extraction from a total outage. The
+                # verdict now comes from the pipeline report: real units AND no
+                # recorded errors. An upstream provider failure answers 502 so it
+                # is distinguishable from a genuinely unreadable PDF.
+                _errors  = report.get("errors", []) or []
+                _units   = report.get("units_published", 0)
+                _success = bool(report.get("success", _has_structured and not _errors))
+                if not _success:
+                    _upstream = any(
+                        s in str(e) for e in _errors
+                        for s in ("502", "503", "504", "upstream", "timed out", "timeout")
+                    )
+                    logger.error(
+                        f"Agentic pipeline produced no usable output for "
+                        f"{file.filename} (units={_units}, errors={_errors})"
+                    )
+                    raise HTTPException(
+                        status_code=502 if _upstream else 422,
+                        detail={
+                            "message": (
+                                "Upstream OCR/LLM provider failed — the document was "
+                                "not processed. Retry shortly."
+                                if _upstream else
+                                "Pipeline completed but extracted no content from "
+                                "this document."
+                            ),
+                            "document_id":     _doc_id,
+                            "units_published": _units,
+                            "pipeline_errors": _errors,
+                        },
+                    )
+
                 logger.info(f"========== /upload-agentic END (single PDF) ==========")
                 return {
-                    "success":              True,
-                    "document_id":          report.get("doc_id"),
-                    "subject":              report.get("subject"),
-                    "is_complete":          report.get("is_complete", False),
-                    "verification_score":   report.get("verification", {}).get("overall_score", 0),
-                    "verification_passed":  report.get("verification", {}).get("passed", False),
-                    "fixes_made":           report.get("verification", {}).get("fixes_made", 0),
-                    "enrichment_units":     report.get("enrichment", {}).get("units_enriched", 0),
-                    "audio_files":          report.get("enrichment", {}).get("audio_files", 0),
-                    "debate_topics_total":  report.get("debate", {}).get("total_topics", 0),
-                    "pipeline_errors":      report.get("errors", []),
-                    "message":              f"Successfully processed {file.filename} via agentic pipeline",
+                    "success":                _success,
+                    "document_id":            _doc_id,
+                    "subject":                report.get("subject"),
+                    "part":                   part,
+                    "is_complete":            report.get("is_complete", False),
+                    "has_structured":         _has_structured,
+                    "has_enriched":           _has_enriched,
+                    "verification_score":     report.get("verification", {}).get("overall_score", 0),
+                    "verification_passed":    report.get("verification", {}).get("passed", False),
+                    "fixes_made":             report.get("verification", {}).get("fixes_made", 0),
+                    "enrichment_units":       _enrich.get("units_enriched", 0),
+                    "sections_enriched":      _lessons,
+                    "sections_failed":        _enrich.get("sections_failed", []),
+                    "audio_files":            _enrich.get("audio_files", 0),
+                    "debate_topics_total":    _debate_total,
+                    "debate_topics_success":  _debate_total > 0,
+                    "units_published":        _units,
+                    "pipeline_errors":        _errors,
+                    "message": (
+                        f"Successfully processed {file.filename} via agentic pipeline"
+                        if _verif.get("passed") else
+                        f"Processed {file.filename}, but the extraction was REJECTED by the "
+                        f"audit gate (score {_verif.get('overall_score', 0)}) — nothing was stored, "
+                        f"enriched or indexed; see outputs/{_doc_id}/audit_report.json"
+                    ),
                 }
+            except HTTPException:
+                # The 502/422 raised above for an empty extraction is deliberate —
+                # let it through instead of remapping it to a generic 500.
+                raise
             except Exception as e:
-                logger.error(f"  ❌ Agentic pipeline failed: {e}", exc_info=True)
+                logger.error(f"Agentic pipeline failed: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=f"Pipeline failed: {e}")
 
         # Fallback: legacy single-shot pipeline
@@ -582,13 +842,13 @@ from pdf_unit_splitter import split_pdf_by_units
 
 
 @app.post("/upload_pdf")
-async def split_pdf_endpoint( 
+async def split_pdf_endpoint(
     file: UploadFile = File(...),
     subject: str = Form(..., description="Subject name"),
     part: Optional[str] = Form(None, description="Book/part name (e.g. 'History', 'Fundamentals of Physical Geography')"),
     board: str = Form(..., description="Board name (e.g. 'State Board', 'CBSE')"),
-    class_number: Optional[str] = Form(None, alias="class_name", description="Class number/name (e.g. '11', '10')"),
-    term: Optional[str] = Form(None, description="Term for term-split state books: '1', '2', '3' or 'Term 1'. Omit for boards whose books are not term-split (CBSE/NCERT)."),
+    class_number: Annotated[IngestClassNumber, Form(alias="class_name", description="Class number/name: 1-12, or LKG/UKG/Nursery. Normalized to two digits, so '7' is stored as '07'. An impossible class is rejected rather than ingested.")] = None,
+    term: Annotated[IngestTerm, Form(description="Term for term-split state books: '1', '2' or '3'. Omit for boards whose books are not term-split (CBSE/NCERT). An unrecognised term is rejected rather than silently ignored.")] = None,
     auto_upload: bool = Form(True, description="Automatically process split units via subject-aware pipeline"),
     skip_enrichment: bool = Form(False),
     skip_qdrant: bool = Form(False),
@@ -609,6 +869,16 @@ async def split_pdf_endpoint(
     """
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(400, "Only PDF files accepted")
+
+    # The class and term are stamped into the doc_id and into every Qdrant
+    # payload, so a value that contradicts the file does not corrupt anything —
+    # it makes the book unreachable, silently. Checked here rather than deeper
+    # in, because the pipeline calls sit inside fallback handlers that would
+    # swallow the error and ingest the document anyway.
+    _identity_problems = identity_problems(file.filename, class_number, term)
+    if _identity_problems:
+        raise HTTPException(status_code=400, detail=" ".join(_identity_problems))
+
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
@@ -837,7 +1107,7 @@ def process_textbooks(
     skip_llm_refinement: bool = Query(False),
     skip_qdrant: bool = Query(False),
     skip_enrichment: bool = Query(False),
-    class_number: Optional[str] = Query(None)
+    class_number: Annotated[OptionalClassNumber, Query()] = None,
 ):
     """Process all PDFs in the textbooks directory."""
     pipeline = get_pipeline()
@@ -882,8 +1152,133 @@ def run_ocr_only(document_id: str):
     return result
 
 
+class SectionEnrichRequest(BaseModel):
+    """Request body for single-section enrichment."""
+    section: dict
+    subject: Optional[str] = None
+    enrichment_style: str = "avatar_classroom_teaching"
+    unit_title: str = ""
+    fast_mode: bool = True
+    # Teaching visuals are stored per board/class/subject/unit on S3, so those
+    # four decide where the images land. with_visuals=False keeps the call as
+    # fast and cheap as it was before visuals existed.
+    board: str = ""
+    class_number: str = ""
+    unit_number: int = 0
+    with_visuals: bool = True
+
+
+@app.post("/enrichment/section")
+def enrich_section_content(request: SectionEnrichRequest):
+    """
+    Enrich a single section (or sub-section) dict and return the enrichment
+    content only — **no audio is generated**.
+
+    Request body:
+    ```json
+    {
+      "section": {
+        "type": "section",
+        "id": "1.2",
+        "title": "TYPES OF CHEMICAL REACTIONS",
+        "content": "...",
+        "sub_sections": [...]
+      },
+      "subject": "science",
+      "enrichment_style": "avatar_classroom_teaching",
+      "unit_title": "Chemical Reactions and Equations",
+      "fast_mode": true
+    }
+    ```
+
+    Returns the enrichment JSON for the section (concept overview, avatar
+    explanation / teaching segments, FAQs, practice questions, etc.).
+    No audio files are generated.
+    """
+    from enrichment_pipeline import EnrichmentOrchestrator, _build_section_text, _has_teachable_prose
+
+    section = request.section
+    section_title = (
+        section.get("title")
+        or section.get("section_title")
+        or section.get("id")
+        or "Untitled Section"
+    )
+
+    # Build composite content: section body + all sub_sections / sub_items
+    content = _build_section_text(section)
+    if not content.strip() or len(content.strip()) < 50:
+        raise HTTPException(
+            status_code=400,
+            detail="Section content is too short or empty to enrich (minimum 50 characters).",
+        )
+
+    if not _has_teachable_prose(content):
+        raise HTTPException(
+            status_code=400,
+            detail="Section appears to contain only images or URLs — no teachable prose found.",
+        )
+
+    try:
+        orch = EnrichmentOrchestrator(
+            fast_mode=request.fast_mode,
+            subject=request.subject,
+            enrichment_style=request.enrichment_style,
+        )
+        # Disable web enrichment for this lightweight single-section call
+        orch.enricher.reset_web_cache(enabled=False)
+
+        if request.enrichment_style == "classroom_teaching":
+            enrichment = orch.enricher.enrich_section_classroom_style(
+                content=content,
+                section_title=section_title,
+                unit_title=request.unit_title,
+                web_context="",
+            )
+            # SectionEnrichment dataclass -> dict
+            if enrichment is not None:
+                from dataclasses import asdict as _asdict
+                try:
+                    enrichment = _asdict(enrichment)
+                except TypeError:
+                    enrichment = enrichment.__dict__ if hasattr(enrichment, "__dict__") else enrichment
+        else:
+            # Default: avatar_classroom_teaching
+            enrichment = orch.enricher.enrich_section_avatar_style(
+                content=content,
+                section_title=section_title,
+                unit_title=request.unit_title,
+                web_context="",
+                board=request.board,
+                class_number=request.class_number,
+                subject=request.subject or "",
+                unit_number=request.unit_number,
+                with_visuals=request.with_visuals,
+            )
+
+        if enrichment is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Enrichment pipeline returned no output for this section.",
+            )
+
+        return {
+            "success": True,
+            "section_id": section.get("id"),
+            "section_title": section_title,
+            "enrichment_style": request.enrichment_style,
+            "enrichment": enrichment,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception(f"/enrichment/section failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"Enrichment error: {str(exc)}")
+
+
 @app.post("/enrichment/process")
-async def process_enrichment_payload(payload: dict):
+def process_enrichment_payload(payload: dict):
     """
     Receives {"message": {<structured.json content>}} in the body and returns the enrichment.json.
     """
@@ -1023,7 +1418,7 @@ def search_documents_get(
     limit: int = Query(5, description="Number of results to return"),
     unit_filter: Optional[int] = Query(None, description="Filter by unit number"),
     content_type_filter: Optional[str] = Query(None, description="Filter by content type"),
-    class_filter: Optional[str] = Query(None, description="Filter by class (e.g. '11', '10')"),
+    class_filter: Annotated[OptionalClassNumber, Query(description="Filter by class (e.g. '11', '10')")] = None,
     subject_filter: Optional[str] = Query(None, description="Filter by subject"),
     board_filter: Optional[str] = Query(None, description="Filter by board (e.g. 'State Board', 'CBSE')"),
     term_filter: Optional[str] = Query(None, description="Filter by term for term-split state books: '2', 'Term 2', or a scope like '1,2'"),
@@ -1081,7 +1476,7 @@ def get_debate_topics(document_id: str):
 def get_whole_textbook_structured(
     subject: Optional[str] = Query(None, description="Filter by subject and populate at root"),
     board: Optional[str] = Query(None, description="Populate board at root"),
-    class_number: Optional[str] = Query(None, description="Filter by class number"),
+    class_number: Annotated[OptionalClassNumber, Query(description="Filter by class number")] = None,
     term: Optional[str] = Query(None, description="Filter by term for term-split state books: '1', '2', '3' or 'Term 1'")
 ):
     """Get all extracted units as a single structured textbook."""
@@ -1107,11 +1502,8 @@ def get_whole_textbook_structured(
                         if meta_board != req_board:
                             continue
                             
-                    if class_number:
-                        meta_class = str(meta.get("class_number", "")).lower().lstrip("0")
-                        req_class = str(class_number).lower().lstrip("0")
-                        if meta_class != req_class:
-                            continue
+                    if class_number and not class_matches(meta.get("class_number"), class_number):
+                        continue
 
                     # Term books restart unit numbering — without this filter a
                     # term-split subject returns every term's units interleaved.
@@ -1166,7 +1558,7 @@ def get_whole_textbook_structured(
 def get_whole_textbook_enrichment(
     subject: Optional[str] = Query(None, description="Filter by subject and populate at root"),
     board: Optional[str] = Query(None, description="Populate board at root"),
-    class_number: Optional[str] = Query(None, description="Filter by class number"),
+    class_number: Annotated[OptionalClassNumber, Query(description="Filter by class number")] = None,
     term: Optional[str] = Query(None, description="Filter by term for term-split state books: '1', '2', '3' or 'Term 1'")
 ):
     """Get all enriched units as a single textbook."""
@@ -1192,11 +1584,8 @@ def get_whole_textbook_enrichment(
                         if meta_board != req_board:
                             continue
                             
-                    if class_number:
-                        meta_class = str(meta.get("class_number", "")).lower().lstrip("0")
-                        req_class = str(class_number).lower().lstrip("0")
-                        if meta_class != req_class:
-                            continue
+                    if class_number and not class_matches(meta.get("class_number"), class_number):
+                        continue
 
                     # Term books restart unit numbering — without this filter a
                     # term-split subject returns every term's units interleaved.
@@ -1497,7 +1886,7 @@ class QuestionBankUploadRequest(BaseModel):
     document_id: str
     questions: List[dict]  # [{question, marks, type, options?, correct_answer?}]
     board: Optional[str] = None
-    class_number: Optional[str] = None
+    class_number: OptionalClassNumber = None
     # Override the exam -> term mapping; normally derived from exam_name.
     term_scope: Optional[str] = None
 
@@ -1532,7 +1921,7 @@ class HomeworkAssignRequest(BaseModel):
     unit_name: str = ""
     num_questions: int = 5
     candidate_name: str = ""
-    class_number: Optional[str] = None
+    class_number: OptionalClassNumber = None
     # Term-split state books only; omit for CBSE/NCERT.
     term: Optional[str] = None
 
@@ -1553,7 +1942,7 @@ class HomeworkChatRequest(BaseModel):
     subject: Optional[str] = None      # Required if starting a new school homework session
     unit_number: Optional[int] = None  # Required if starting a new school homework session
     board: Optional[str] = None
-    class_number: Optional[str] = None
+    class_number: OptionalClassNumber = None
     # Term-split state books only; omit for CBSE/NCERT.
     term: Optional[str] = None
 
@@ -1671,7 +2060,7 @@ async def upload_question_paper_pdf(
     file: UploadFile = File(...),
     exam_name: str = Form(...),
     year: str = Form(...),
-    class_number: str = Form(...),
+    class_number: Annotated[ClassNumber, Form()] = ...,
     board: str = Form(...),
     subject: str = Form(...),
     unit_name: Optional[str] = Form(None),
@@ -1882,7 +2271,7 @@ Return ONLY the JSON array. No markdown formatting, no explanation.'''
                     break
             
             if is_header_only:
-                print(f"  ⚠️  [QuestionBank] Filtered out standalone section header: '{q_text}'")
+                logger.warning(f"[QuestionBank] Filtered out standalone section header: '{q_text}'")
                 continue
             
             cleaned_questions.append(q)
@@ -1905,18 +2294,18 @@ Return ONLY the JSON array. No markdown formatting, no explanation.'''
                 valid_marks_from_ocr.add(marks_each)
         
         if valid_marks_from_ocr:
-            print(f"  📋  [QuestionBank] Detected valid marks from paper: {sorted(valid_marks_from_ocr)}")
+            logger.info(f"[QuestionBank] Detected valid marks from paper: {sorted(valid_marks_from_ocr)}")
             for idx, q in enumerate(extracted_questions):
                 q_marks = q.get("marks")
                 if q_marks not in valid_marks_from_ocr:
-                    print(f"  ⚠️  [QuestionBank] Q{idx+1} has marks={q_marks} which is not in detected marks set {sorted(valid_marks_from_ocr)} — please verify")
+                    logger.warning(f"[QuestionBank] Q{idx+1} has marks={q_marks} which is not in detected marks set {sorted(valid_marks_from_ocr)} — please verify")
         
 
         # Term scope for this exam. An explicit term_scope always wins; otherwise
         # it comes from the exam name (see term_utils.EXAM_TERM_SCOPE).
         from term_utils import exam_to_terms, term_slug
         terms = exam_to_terms(exam_name, override=term_scope)
-        logger.info(f"  [QuestionBank] exam='{exam_name}' term_scope={terms or 'none'}")
+        logger.info(f"[QuestionBank] exam='{exam_name}' term_scope={terms or 'none'}")
 
         # Class and term belong in the logical document id: without them, Class 6
         # and Class 10 papers for one board+subject shared a single logical
@@ -1924,7 +2313,7 @@ Return ONLY the JSON array. No markdown formatting, no explanation.'''
         _qb_parts = [
             "qb_pdf",
             board.strip().replace(' ', '_'),
-            str(class_number).strip().replace(' ', '_'),
+            (normalize_class_number(class_number) or "").replace(' ', '_'),
             subject.strip().replace(' ', '_'),
         ]
         if terms:
@@ -1957,9 +2346,9 @@ Return ONLY the JSON array. No markdown formatting, no explanation.'''
         try:
             if os.path.exists("raw_ocr_dump.txt"):
                 os.remove("raw_ocr_dump.txt")
-                print("  🧹 Cleaned up raw_ocr_dump.txt")
+                logger.info("Cleaned up raw_ocr_dump.txt")
         except OSError as e:
-            print(f"  ⚠️  Failed to delete raw_ocr_dump.txt: {e}")
+            logger.warning(f"Failed to delete raw_ocr_dump.txt: {e}")
 
 
 @app.post("/tutor/question-bank/upload")
@@ -2227,8 +2616,12 @@ def submit_homework(request: HomeworkSubmitRequest):
 @app.post("/tutor/homework/chat")
 def homework_chat_turn(request: HomeworkChatRequest):
     """
-    Unified endpoint for stateful Socratic Homework Helper chat.
+    Unified endpoint for the interactive Homework Helper chat.
     Handles both internal GradeUp homework and external school-assigned worksheets.
+
+    The student can attempt the answer, ask the tutor to explain a concept, ask for a
+    hint, or move between questions — the reply carries the classified `intent`, the
+    resulting `action`, and 3 `suggested_questions` the student can tap to keep going.
     """
     try:
         from homework_engine import get_homework_engine
@@ -2251,6 +2644,27 @@ def homework_chat_turn(request: HomeworkChatRequest):
         return result
     except Exception as e:
         raise HTTPException(400, str(e))
+
+
+@app.get("/tutor/homework/chat/{candidate_id}/{homework_id}")
+def homework_chat_transcript(candidate_id: str, homework_id: str):
+    """
+    Full chat transcript and live progress for a homework helper session.
+
+    Lets the app reopen a conversation exactly where the student left it, with the
+    last set of suggested questions still on screen.
+    """
+    try:
+        from homework_engine import get_homework_engine
+    except ImportError:
+        raise HTTPException(500, "Homework engine module not available.")
+
+    engine = get_homework_engine()
+    transcript = engine.get_chat_transcript(candidate_id, homework_id)
+    if not transcript:
+        raise HTTPException(404, f"No homework chat session found for '{homework_id}'.")
+
+    return {"success": True, **transcript}
 
 
 @app.get("/tutor/homework/{candidate_id}")
@@ -2367,7 +2781,7 @@ class HighlightRequest(BaseModel):
     """Request model for Explain / Summarize highlighted text."""
     highlighted_text: str
     board: str
-    class_number: str = ""
+    class_number: ClassNumber = ""
     subject: str = ""
     unit_number: Optional[int] = None
     # Term-split state books only; also keys the highlight reuse cache.
@@ -2378,7 +2792,7 @@ class HighlightAskRequest(BaseModel):
     """Request model for Ask AI about highlighted text."""
     highlighted_text: str
     board: str
-    class_number: str = ""
+    class_number: ClassNumber = ""
     subject: str = ""
     unit_number: Optional[int] = None
     term: Optional[str] = None
@@ -2392,7 +2806,7 @@ class HighlightReadRequest(BaseModel):
     highlighted_text: str
     action: str = "explain" # "explain" or "summarize"
     board: str
-    class_number: str = ""
+    class_number: ClassNumber = ""
     subject: str = ""
     unit_number: Optional[int] = None
     term: Optional[str] = None
@@ -2536,7 +2950,7 @@ class DebateStartRequest(BaseModel):
     subject: str
     unit_number: int
     board: str
-    class_number: str
+    class_number: ClassNumber
     unit_name: str = ""
     topic: str  # mandatory — student selects the topic
     student_stance: Optional[str] = None  # optional — the specific argument/stance the student selected
@@ -2562,7 +2976,7 @@ class MultiDebateCreateRequest(BaseModel):
     subject: str
     unit_number: int
     board: str
-    class_number: str
+    class_number: ClassNumber
     unit_name: str = ""
     max_participants: int = 4
     topic: str  # mandatory — student selects the topic
@@ -2599,7 +3013,7 @@ class SeminarStartRequest(BaseModel):
     subject: str
     unit_number: int
     board: str
-    class_number: str
+    class_number: ClassNumber
     unit_name: str = ""
     topic: str  # mandatory — student selects the topic
     session_mode: str = "main"  # "demo" for hints, "main" for real exam, "practice" for interactive preparation
@@ -2647,9 +3061,10 @@ class PPTSessionStartRequest(BaseModel):
     # Curriculum coordinates — used to filter RAG (Qdrant) for scaffolding + analysis.
     board: str = Field(..., min_length=2, max_length=30,
                        description="Education board, e.g. CBSE, ICSE, IGCSE")
-    class_number: str = Field(
-        ..., pattern=r"^(KG|[1-9]|1[0-2])$",
-        description="Class/grade: KG or 1-12")
+    class_number: ClassNumber = Field(
+        # Post-normalization form: "7" and "VII" reach this pattern as "07".
+        ..., pattern=r"^(KG|0[1-9]|1[0-2])$",
+        description="Class/grade: KG or 1-12, any spelling ('7', 'Class 7', 'VII')")
     chapter: int = Field(..., ge=1, le=50,
                          description="Chapter/unit number (1-50)")
     title: str = Field(..., min_length=3, max_length=200,
@@ -2698,6 +3113,16 @@ class PPTSuggestRequest(BaseModel):
                              description="0-based slide index")
     query: Optional[str] = Field(None, max_length=500,
                                  description="e.g. 'explain pollination', 'add points on grafting'")
+    image_url: Optional[str] = Field(
+        None, max_length=2000,
+        description="Public image URL the student picked from a previous image search — "
+                    "send this when they click an image ('use this one'). It is placed on "
+                    "the slide, replacing the slide's existing picture in the same box.")
+    image_index: Optional[int] = Field(
+        None, ge=1, le=10,
+        description="The NUMBER shown against an image in the previous image results — send "
+                    "this (not a URL) when the student taps or types a number. The student "
+                    "can also just reply \"2\" in `query` and the backend resolves it.")
 
 
 class PPTDecideRequest(BaseModel):
@@ -2721,7 +3146,7 @@ class AvatarStartRequest(BaseModel):
     candidate_id: str
     candidate_name: str
     board: str
-    class_number: str
+    class_number: ClassNumber
     subject: str
     unit_number: int
     unit_name: str = ""
@@ -2732,10 +3157,60 @@ class AvatarStartRequest(BaseModel):
 
 
 class AvatarRaiseHandRequest(BaseModel):
-    """Student raises hand or responds to flashcard offer."""
+    """Student raises hand or responds to a flashcard offer."""
     session_id: str
     student_doubt: Optional[str] = None
     student_response: Optional[str] = None
+    # Where the student is. Defaults to the session's current segment. When
+    # that segment shows a picture, the doubt is answered from the image.
+    segment_id: Optional[str] = None
+
+
+class AvatarSectionEnrichRequest(BaseModel):
+    """Enrich a section into an avatar lesson AND narrate it in one call."""
+    # The raw section, same shape /enrichment/section takes.
+    section: dict
+    subject: Optional[str] = None
+    unit_title: str = ""
+    fast_mode: bool = True
+    # These four decide where images and audio land on S3.
+    board: str = ""
+    class_number: str = ""
+    unit_number: int = 0
+    with_visuals: bool = True
+    # Narration
+    with_audio: bool = True
+    voices: List[str] = ["male", "female"]
+    speed: Optional[float] = None
+    # False keeps audio local under avatar_audio/ — useful without AWS creds.
+    upload: bool = True
+    # True returns 202 + a job id at once and does the work on a worker thread;
+    # poll GET /avatar/section/enrich/jobs/{job_id} for the lesson. Use it from
+    # behind any gateway: the full call runs for minutes and ALB / nginx drop
+    # the connection with a 504 at 60 s while the server carries on.
+    background: bool = False
+
+
+class AvatarSectionAudioRequest(BaseModel):
+    """Generate avatar narration audio for a whole section's segments."""
+    # Either pass segments straight in (the quick way to test) ...
+    segments: Optional[List[Dict[str, Any]]] = None
+    # ... or name a section and let the enrichment file supply them.
+    board: str = ""
+    class_number: str = ""
+    subject: str = ""
+    unit_number: int = 0
+    section_title: str = ""
+    term: Optional[Any] = None
+    # Which voices to render. Defaults to both.
+    voices: List[str] = ["male", "female"]
+    # 0.5-2.0. Slower reads better for younger classes.
+    speed: Optional[float] = None
+    # False keeps the audio local instead of uploading to S3 - handy when
+    # testing without AWS credentials.
+    upload: bool = True
+    # Cap the work while testing; 0 means every segment.
+    max_segments: int = 0
 
 
 class FlashcardItem(BaseModel):
@@ -2761,6 +3236,85 @@ class AvatarEndRequest(BaseModel):
     session_id: str
 
 
+# ── Six-phase lesson models ───────────────────────────────────────────────────
+
+
+class AvatarLessonBuildRequest(BaseModel):
+    """Build and STORE the six-phase avatar lesson for a document's sections."""
+    document_id: str
+    # Narrow the run; omit both to build every eligible section of the document.
+    unit_number: Optional[int] = None
+    section_title: Optional[str] = None
+    # Rebuild sections that already carry a lesson.
+    force: bool = False
+    # Override the subject recorded in metadata.json (science / mathematics /
+    # social science / english).
+    subject: Optional[str] = None
+    with_visuals: bool = True
+    with_audio: bool = True
+    voices: List[str] = ["male", "female"]
+    speed: Optional[float] = None
+    upload: bool = True
+    # True answers 202 with a job id; poll GET /avatar/lesson/build/jobs/{job_id}.
+    background: bool = False
+
+
+class AvatarLessonSectionRequest(BaseModel):
+    """Build ONE section's six-phase lesson from the section in the body (not stored)."""
+    section: dict                        # the structured.json section, as-is
+    subject: str                         # science / mathematics / social science / english
+    unit_title: str = ""
+    unit_number: int = 0
+    # Social Science part (History / Geography / Civics / Economics) — History if omitted.
+    part: str = ""
+    # English readings: prose / poem / supplementary. Read from the section when omitted.
+    section_kind: Optional[str] = None
+    # These decide where pictures and audio land on S3.
+    board: str = ""
+    class_number: str = ""
+    with_visuals: bool = True
+    with_audio: bool = True
+    voices: List[str] = ["male", "female"]
+    speed: Optional[float] = None
+    upload: bool = True
+    # True answers 202 with a job id; poll GET /avatar/lesson/build/jobs/{job_id}.
+    background: bool = False
+
+
+class AvatarHookRequest(BaseModel):
+    """Student answers the hook MCQ."""
+    session_id: str
+    option_id: str
+
+
+class AvatarExploreRequest(BaseModel):
+    """Student responds to the explore activity (or its challenge)."""
+    session_id: str
+    # choice: option id · order: list of item ids · match: list of [left, right]
+    # · numeric: number · free_text / picture_walkthrough: text
+    response: Any
+    part: str = "interaction"        # or "challenge"
+    step: Optional[int] = None       # picture_walkthrough only: retry one step
+
+
+class AvatarRealWorldRequest(BaseModel):
+    """Student taps to reveal the real-world example."""
+    session_id: str
+
+
+class AvatarMysteryRequest(BaseModel):
+    """Student says what is going on in a mystery picture."""
+    session_id: str
+    mystery_id: str
+    option_id: str
+
+
+class AvatarExplainRequest(BaseModel):
+    """Student explains the topic in their own words."""
+    session_id: str
+    explanation: str
+
+
 # ── Avatar Teaching Endpoints ─────────────────────────────────────────────────
 
 
@@ -2773,7 +3327,10 @@ def avatar_start(request: AvatarStartRequest):
     If `segments` is provided, local enrichment data is NOT fetched — the session is
     built entirely from the request body segments.
 
-    Returns session_id, all segments, and an empty session history.
+    Returns session_id, all segments, an empty session history, and every doubt-popup
+    question for the lesson in `suggested_questions_by_segment` ({segment_id: 3
+    questions}). Show the set for whichever segment the student pauses at — no
+    further call is needed.
     """
     try:
         from avatar_engine import get_avatar_engine
@@ -2809,7 +3366,7 @@ def avatar_get_enrichment(
     subject: str = Query(..., description="Subject name"),
     unit_number: int = Query(..., description="Unit number"),
     section_title: str = Query(..., description="Section title"),
-    class_number: Optional[str] = Query(None, description="Class number"),
+    class_number: Annotated[OptionalClassNumber, Query(description="Class number")] = None,
 ):
     """
     Pre-fetch enrichment data for a section (no session created).
@@ -2845,6 +3402,12 @@ def avatar_get_enrichment(
 def avatar_raise_hand(request: AvatarRaiseHandRequest):
     """
     Student raises hand during avatar teaching or responds to a flashcard offer.
+
+    Pass `segment_id` to say which segment is on screen. If that segment (or
+    the latest one before it) carries a picture, the doubt is answered by a
+    vision model looking at the actual image — `answered_from_visual: true`
+    and `visual_context` say so and what the avatar is pointing at. There is
+    no separate "ask about the picture" endpoint.
     """
     try:
         from avatar_engine import get_avatar_engine
@@ -2861,10 +3424,337 @@ def avatar_raise_hand(request: AvatarRaiseHandRequest):
     elif request.student_doubt:
         return engine.raise_hand(
             session_id=request.session_id,
-            student_doubt=request.student_doubt
+            student_doubt=request.student_doubt,
+            segment_id=request.segment_id,
         )
     else:
         raise HTTPException(400, "Must provide either student_doubt or student_response")
+
+
+@app.get("/avatar/voices")
+def avatar_voices():
+    """List the Kokoro voices available, with their published quality grades.
+
+    Useful for picking a different avatar voice: the grades are Kokoro's own,
+    and the gap between an A and a D voice is obvious by ear. Set
+    AVATAR_TTS_VOICE_MALE / AVATAR_TTS_VOICE_FEMALE to switch.
+    """
+    import avatar_tts
+
+    ok, reason = avatar_tts.is_available()
+    return {
+        "success": ok,
+        "available": ok,
+        "reason": reason,
+        "defaults": {"male": avatar_tts.VOICE_MALE,
+                     "female": avatar_tts.VOICE_FEMALE,
+                     "speed": avatar_tts.TTS_SPEED},
+        "voices": avatar_tts.list_voices(),
+    }
+
+
+@app.post("/avatar/section")
+def avatar_section_audio(request: AvatarSectionAudioRequest):
+    """Generate the avatar's narration audio for every segment in a section.
+
+    Runs Kokoro locally (no API key, no per-character billing) and renders each
+    spoken line in both the male and the female avatar voice, so a client can
+    let the student choose a teacher.
+
+    Two ways to call it:
+      * pass `segments` directly — the quickest way to test a script you already
+        have;
+      * or name board/class/subject/unit_number/section_title and the enriched
+        section on disk supplies them.
+
+    Teaching segments are voiced from `text`, flashcards from `avatar_line` —
+    the same rule the enrichment audio pass uses. A picture's spoken
+    explanation is folded into `text` at enrichment time, so it is narrated
+    here for free.
+
+    Audio is WAV. With `upload: true` (default) each file goes to S3 and the
+    response carries URLs; with `upload: false` it is written under
+    `avatar_audio/` locally, which is the easy path when testing without AWS.
+    """
+    import time as _time
+    import uuid
+
+    import avatar_tts
+
+    ok, reason = avatar_tts.is_available()
+    if not ok:
+        raise HTTPException(503, f"Avatar TTS unavailable: {reason}")
+
+    voices = [v for v in request.voices if v in ("male", "female")]
+    if not voices:
+        raise HTTPException(400, "voices must contain 'male' and/or 'female'")
+
+    # ── Source the segments ───────────────────────────────────────────────────
+    segments = request.segments
+    if segments is None:
+        if not request.section_title:
+            raise HTTPException(
+                400, "Provide `segments`, or `section_title` (with board / "
+                     "class_number / subject / unit_number) to load them.")
+        try:
+            from avatar_engine import _load_section_enrichment
+        except ImportError:
+            raise HTTPException(500, "Avatar engine module not available.")
+        data = _load_section_enrichment(
+            board=request.board, class_number=request.class_number,
+            subject=request.subject, unit_number=request.unit_number,
+            section_title=request.section_title, term=request.term,
+        )
+        if not data:
+            raise HTTPException(
+                404, f"No enrichment found for section '{request.section_title}'")
+        segments = ((data.get("enrichment") or {})
+                    .get("avatar_explanation") or {}).get("segments") or []
+
+    if not segments:
+        raise HTTPException(404, "No segments to narrate")
+    if request.max_segments > 0:
+        segments = segments[:request.max_segments]
+
+    # ── Narrate ───────────────────────────────────────────────────────────────
+    result = avatar_tts.narrate_segments(
+        segments, board=request.board, class_number=request.class_number,
+        subject=request.subject, unit_number=request.unit_number,
+        voices=voices, speed=request.speed, upload=request.upload,
+    )
+    return {"success": True, "section_title": request.section_title, **result}
+
+
+# ── Background jobs for the long avatar call ─────────────────────────────────
+# /avatar/section/enrich runs for minutes: Gemini writes the script, pictures
+# are searched and judged, then every segment is narrated in two voices by the
+# hosted Kokoro service - a serial worker shared across projects, so that step
+# alone can be ten minutes. No gateway holds a connection that long: ALB and
+# nginx answer 504 at 60 s while the container keeps working and the finished
+# lesson is thrown away. `background: true` hands the work to a worker thread
+# and lets the client poll instead.
+#
+# In-memory on purpose. The container is one uvicorn process, and the audio and
+# pictures of a finished lesson are on S3 anyway, so a restart losing the job
+# table costs a re-poll, not the work.
+import threading
+import time as _job_time
+import uuid as _job_uuid
+from concurrent.futures import ThreadPoolExecutor
+
+_AVATAR_JOBS: Dict[str, Dict[str, Any]] = {}
+_AVATAR_JOBS_LOCK = threading.Lock()
+_AVATAR_JOB_TTL_SECONDS = 60 * 60
+# Two at a time: each job already fans out into Gemini, Commons and TTS calls.
+_AVATAR_JOB_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="avatar-job")
+
+
+def _avatar_job_update(job_id: str, **fields: Any) -> None:
+    with _AVATAR_JOBS_LOCK:
+        job = _AVATAR_JOBS.get(job_id)
+        if job is not None:
+            job.update(fields)
+
+
+def _avatar_job_prune() -> None:
+    """Forget finished jobs older than the TTL so the table cannot grow forever."""
+    cutoff = _job_time.time() - _AVATAR_JOB_TTL_SECONDS
+    with _AVATAR_JOBS_LOCK:
+        stale = [jid for jid, j in _AVATAR_JOBS.items()
+                 if j.get("finished_at") and j["finished_at"] < cutoff]
+        for jid in stale:
+            del _AVATAR_JOBS[jid]
+
+
+def _avatar_job_run(job_id: str, request: AvatarSectionEnrichRequest,
+                    section_title: str, content: str) -> None:
+    _avatar_job_update(job_id, status="running", started_at=_job_time.time())
+    try:
+        result = _run_avatar_section_enrich(request, section_title, content)
+    except HTTPException as exc:
+        _avatar_job_update(job_id, status="failed", finished_at=_job_time.time(),
+                           error={"status_code": exc.status_code, "detail": exc.detail})
+    except Exception as exc:  # noqa: BLE001 - a job must never die silently
+        logger.exception(f"avatar job {job_id} crashed: {exc}")
+        _avatar_job_update(job_id, status="failed", finished_at=_job_time.time(),
+                           error={"status_code": 500, "detail": str(exc)})
+    else:
+        _avatar_job_update(job_id, status="done", finished_at=_job_time.time(),
+                           result=result)
+
+
+def _validate_avatar_section(section: dict) -> tuple[str, str]:
+    """The section's title and flattened text, or a 400 explaining why not."""
+    from enrichment_pipeline import _build_section_text, _has_teachable_prose
+
+    section_title = (section.get("title") or section.get("section_title")
+                     or section.get("id") or "Untitled Section")
+
+    content = _build_section_text(section)
+    if not content.strip() or len(content.strip()) < 50:
+        raise HTTPException(
+            400, "Section content is too short or empty to enrich "
+                 "(minimum 50 characters).")
+    if not _has_teachable_prose(content):
+        raise HTTPException(
+            400, "Section appears to contain only images or URLs — no "
+                 "teachable prose found.")
+    return section_title, content
+
+
+@app.post("/avatar/section/enrich")
+def avatar_section_enrich_and_narrate(request: AvatarSectionEnrichRequest):
+    """Turn a raw section into a fully narrated avatar lesson, in one call.
+
+    Send the section in the request body and get back the enriched concept AND
+    the audio URLs for it — the two steps that were previously
+    `/enrichment/section` followed by a separate audio pass. This is the quick
+    single-section PREVIEW and stores nothing; the six-phase lesson that
+    `/avatar/start` plays is built and stored by `POST /avatar/lesson/build`.
+
+    What it does, in order:
+      1. enriches the section into an avatar teaching script (Gemini), with
+         checkpoints and emotions;
+      2. attaches grounded teaching pictures, each with its 3-step walkthrough
+         (skip with `with_visuals: false`);
+      3. narrates every spoken segment with Kokoro in the male AND female
+         voice, uploads to S3, and writes the URLs onto each segment as
+         `audio: {"male": ..., "female": ...}`.
+
+    Request body:
+    ```json
+    {
+      "section": {"title": "Introduction:", "content": "..."},
+      "subject": "social science",
+      "unit_title": "Medieval India",
+      "board": "State Board", "class_number": "7", "unit_number": 1
+    }
+    ```
+
+    The whole thing takes minutes — pictures alone are a minute or more, and
+    narration goes to the hosted Kokoro service (avatar_tts.TTS_SERVICE_URL),
+    one serial worker shared by every project at ~12 characters a second, so
+    two voices of a full section can be ten minutes on their own. Behind a
+    gateway, send `"background": true`: the call answers 202 with a `job_id` and
+    `status_url` immediately, and `GET /avatar/section/enrich/jobs/{job_id}`
+    returns `status` (queued / running / done / failed) plus the lesson under
+    `result` once it is done. Without a gateway, `with_audio: false` returns
+    the lesson without narration and `voices: ["female"]` halves the TTS work.
+    """
+    section_title, content = _validate_avatar_section(request.section)
+
+    if request.background:
+        _avatar_job_prune()
+        job_id = _job_uuid.uuid4().hex
+        with _AVATAR_JOBS_LOCK:
+            _AVATAR_JOBS[job_id] = {
+                "job_id": job_id,
+                "status": "queued",
+                "section_id": request.section.get("id"),
+                "section_title": section_title,
+                "created_at": _job_time.time(),
+                "started_at": None,
+                "finished_at": None,
+                "result": None,
+                "error": None,
+            }
+        _AVATAR_JOB_POOL.submit(_avatar_job_run, job_id, request, section_title, content)
+        return JSONResponse(status_code=202, content={
+            "success": True,
+            "job_id": job_id,
+            "status": "queued",
+            "status_url": f"/avatar/section/enrich/jobs/{job_id}",
+            "section_id": request.section.get("id"),
+            "section_title": section_title,
+        })
+
+    return _run_avatar_section_enrich(request, section_title, content)
+
+
+@app.get("/avatar/section/enrich/jobs/{job_id}")
+def avatar_section_enrich_job_status(job_id: str):
+    """Progress of a `background: true` lesson build.
+
+    `status` is queued, running, done or failed. `result` carries the same body
+    the synchronous call returns once the job is done; `error` carries the
+    status code and detail the synchronous call would have failed with. Jobs
+    are kept for an hour after they finish, then a 404.
+    """
+    with _AVATAR_JOBS_LOCK:
+        job = _AVATAR_JOBS.get(job_id)
+        if job is None:
+            raise HTTPException(404, f"No avatar job '{job_id}' (unknown or older than 1 hour)")
+        snapshot = dict(job)
+
+    elapsed_from = snapshot["started_at"] or snapshot["created_at"]
+    elapsed_to = snapshot["finished_at"] or _job_time.time()
+    snapshot["elapsed_seconds"] = round(elapsed_to - elapsed_from, 1)
+    return snapshot
+
+
+def _run_avatar_section_enrich(request: AvatarSectionEnrichRequest,
+                               section_title: str, content: str) -> Dict[str, Any]:
+    """The actual work behind /avatar/section/enrich: enrich, illustrate, narrate.
+
+    Raises HTTPException the same way the endpoint used to, so the synchronous
+    path can let it propagate and the job runner can record it.
+    """
+    from enrichment_pipeline import EnrichmentOrchestrator
+
+    import avatar_tts
+
+    section = request.section
+
+    # ── 1 + 2. Enrich (and illustrate) ───────────────────────────────────────
+    try:
+        orch = EnrichmentOrchestrator(
+            fast_mode=request.fast_mode, subject=request.subject,
+            enrichment_style="avatar_classroom_teaching",
+        )
+        orch.enricher.reset_web_cache(enabled=False)
+        enrichment = orch.enricher.enrich_section_avatar_style(
+            content=content, section_title=section_title,
+            unit_title=request.unit_title, web_context="",
+            board=request.board, class_number=request.class_number,
+            subject=request.subject or "", unit_number=request.unit_number,
+            with_visuals=request.with_visuals,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception(f"/avatar/section/enrich failed during enrichment: {exc}")
+        raise HTTPException(500, f"Enrichment error: {exc}")
+
+    if enrichment is None:
+        raise HTTPException(500, "Enrichment pipeline returned no output for this section.")
+
+    segments = ((enrichment.get("avatar_explanation") or {}).get("segments")) or []
+
+    # ── 3. Narrate ───────────────────────────────────────────────────────────
+    audio_report: Dict[str, Any] = {"skipped": "with_audio was false"}
+    if request.with_audio and segments:
+        available, reason = avatar_tts.is_available()
+        if not available:
+            # The lesson is already built and worth returning; say plainly why
+            # it has no sound rather than failing the whole call.
+            audio_report = {"skipped": f"TTS unavailable: {reason}"}
+            logger.warning(f"[avatar/section/enrich] no audio — {reason}")
+        else:
+            audio_report = avatar_tts.narrate_segments(
+                segments, board=request.board, class_number=request.class_number,
+                subject=request.subject or "", unit_number=request.unit_number,
+                voices=request.voices, speed=request.speed,
+                upload=request.upload, attach=True,
+            )
+
+    return {
+        "success": True,
+        "section_id": section.get("id"),
+        "section_title": section_title,
+        "enrichment_style": "avatar_classroom_teaching",
+        "enrichment": enrichment,
+        "audio": audio_report,
+    }
 
 
 @app.post("/avatar/flashcard/generate")
@@ -2982,6 +3872,346 @@ def avatar_end(request: AvatarEndRequest):
         raise HTTPException(status, result["error"])
 
     return {"success": True, **result}
+
+
+# ── Six-phase lesson: build + store, then the phase endpoints ────────────────
+
+
+def _avatar_lesson_job_run(job_id: str, request: AvatarLessonBuildRequest) -> None:
+    from avatar_lesson_builder import build_document_lessons
+
+    _avatar_job_update(job_id, status="running", started_at=_job_time.time())
+
+    def _progress(report: Dict[str, Any]) -> None:
+        _avatar_job_update(job_id, progress={k: report.get(k) for k in
+                                             ("total", "done", "built", "skipped", "failed", "current")})
+
+    try:
+        result = build_document_lessons(
+            request.document_id, unit_number=request.unit_number,
+            section_title=request.section_title, force=request.force,
+            with_visuals=request.with_visuals, with_audio=request.with_audio,
+            voices=request.voices, speed=request.speed, upload=request.upload,
+            subject=request.subject, progress_cb=_progress,
+        )
+    except FileNotFoundError as exc:
+        _avatar_job_update(job_id, status="failed", finished_at=_job_time.time(),
+                           error={"status_code": 404, "detail": str(exc)})
+    except Exception as exc:  # noqa: BLE001 - a job must never die silently
+        logger.exception(f"avatar lesson build job {job_id} crashed: {exc}")
+        _avatar_job_update(job_id, status="failed", finished_at=_job_time.time(),
+                           error={"status_code": 500, "detail": str(exc)})
+    else:
+        _avatar_job_update(job_id, status="done", finished_at=_job_time.time(), result=result)
+
+
+@app.post("/avatar/lesson/build")
+def avatar_lesson_build(request: AvatarLessonBuildRequest):
+    """Build the six-phase avatar lesson for a document and STORE it, section by section.
+
+    For every eligible section of `outputs/<document_id>/structured.json` (science
+    and social science: introduction + sections; maths: sections; English: prose,
+    poem and supplementary readings only) this generates, in play order:
+
+      1. **hook** — a FOUR-option MCQ asked before teaching, with a stored reason
+         for every option and TWO pictures: `visual`, the question scene (the
+         calm moment before anything happens — it never shows an outcome), and
+         `options_visual`, ONE picture made of four panels — one per option,
+         badged A/B/C/D in the corners (`layout: "option_grid"`, `panels` maps
+         each option to its corner) — so the student sees the four possible
+         outcomes side by side and picks;
+      2. **explanation** — the teaching script, its length set by the section
+         (short section, short explanation), spoken straight through: no
+         checkpoints, no cards, no questions. Two pictures sit INSIDE the text:
+         the segment's `text` carries `[<image_url>]` at the exact spot where
+         the avatar says "let me show you" (the client pops the picture up
+         there; narration never reads the URL) and the segment also carries
+         `visual` (`image_url`, `prompt`, `char_offset`); the last segment
+         answers the hook;
+      3. **real_world** — a question, and the example revealed on tap with a picture;
+      4. **explore** — the subject's activity (the textbook's own Activity when it
+         has one) plus an optional challenge, with a picture of the set-up when
+         the planner asked for one;
+      5. **mystery** — ONE picture where the idea is at work, with "what is going
+         on here?" options, stored reasons and a spoken reveal (needs
+         `with_visuals`);
+      6. **explain_back** — the student explains the topic in their own words; the
+         stored key points and model explanation are what the model judges against;
+
+    Every picture is either a GENERATED 3D render (`AVATAR_IMAGE_MODEL`, Google
+    direct on `GEMINI_API_KEY`) of a scene the planner wrote, or — where the
+    subject's picture policy says the real thing matters (history and geography:
+    an inscription, a copper-plate grant, a monument, a map) — a REAL photo found
+    by the web search + vision gate (`avatar_visuals.find_visual`; `visual.kind:
+    "photo"` with provenance). A search that finds nothing clean falls back to a
+    render marked `fallback_from: "search"`. At most seven pictures a section.
+    The teaching script's voice is per subject (`LessonPattern.teach_guidance`):
+    a historian telling a story for history, a geographer reading a map, and so on.
+    The lesson then narrates every spoken line (Kokoro) and writes the section into
+    `enriched.json` as `avatar_lesson.phases[]` **before moving to the next
+    section**, so a crash or gateway timeout keeps every finished section.
+    `/avatar/start` then reads it — nothing is generated at session time.
+
+    `unit_number` / `section_title` narrow the run; a section that already has a
+    lesson is skipped unless `force`. A whole document with two voices runs for
+    tens of minutes, so behind a gateway send `background: true` and poll
+    `GET /avatar/lesson/build/jobs/{job_id}` (`progress` counts sections as they
+    land; `result` is the full report when done).
+    """
+    from config import OUTPUTS_DIR
+
+    doc_dir = OUTPUTS_DIR / request.document_id
+    if not (doc_dir / "structured.json").exists():
+        raise HTTPException(404, f"No structured.json for document '{request.document_id}'")
+    voices = [v for v in request.voices if v in ("male", "female")]
+    if request.with_audio and not voices:
+        raise HTTPException(400, "voices must contain 'male' and/or 'female'")
+
+    if request.background:
+        _avatar_job_prune()
+        job_id = _job_uuid.uuid4().hex
+        with _AVATAR_JOBS_LOCK:
+            _AVATAR_JOBS[job_id] = {
+                "job_id": job_id, "kind": "lesson_build", "status": "queued",
+                "document_id": request.document_id,
+                "unit_number": request.unit_number, "section_title": request.section_title,
+                "created_at": _job_time.time(), "started_at": None, "finished_at": None,
+                "progress": None, "result": None, "error": None,
+            }
+        _AVATAR_JOB_POOL.submit(_avatar_lesson_job_run, job_id, request)
+        return JSONResponse(status_code=202, content={
+            "success": True, "job_id": job_id, "status": "queued",
+            "status_url": f"/avatar/lesson/build/jobs/{job_id}",
+            "document_id": request.document_id,
+        })
+
+    from avatar_lesson_builder import build_document_lessons
+    try:
+        report = build_document_lessons(
+            request.document_id, unit_number=request.unit_number,
+            section_title=request.section_title, force=request.force,
+            with_visuals=request.with_visuals, with_audio=request.with_audio,
+            voices=voices, speed=request.speed, upload=request.upload,
+            subject=request.subject,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc))
+    except Exception as exc:
+        logger.exception(f"/avatar/lesson/build failed: {exc}")
+        raise HTTPException(500, f"Lesson build error: {exc}")
+    if report.get("error") and not report.get("total"):
+        raise HTTPException(404, report["error"])
+    return {"success": True, **report}
+
+
+def _run_avatar_lesson_section(request: AvatarLessonSectionRequest) -> Dict[str, Any]:
+    """The work behind /avatar/lesson/section. Raises HTTPException like the route."""
+    import avatar_lesson_patterns as lesson_patterns
+    from avatar_lesson_builder import build_section_lesson
+    from enrichment_pipeline import EnrichmentOrchestrator
+
+    section = dict(request.section)
+    if request.section_kind and isinstance(section.get("metadata"), dict):
+        section["metadata"] = {**section["metadata"], "content_kind": request.section_kind}
+    elif request.section_kind:
+        section["metadata"] = {"content_kind": request.section_kind}
+
+    # Same eligibility rules as the document build, applied to this one section.
+    doc = {"units": [{"unit_number": request.unit_number, "title": request.unit_title,
+                      "part": request.part, "sections": [section]}]}
+    targets = lesson_patterns.eligible_sections(doc, request.subject)
+    if not targets:
+        kind = lesson_patterns.section_content_kind(section) or section.get("type") or "?"
+        raise HTTPException(
+            400, f"This section (kind '{kind}') gets no avatar lesson for subject "
+                 f"'{request.subject}' — or its content is too short. Science / social "
+                 f"science: introduction + section; maths: section; English: prose, poem, "
+                 f"supplementary.")
+    target = targets[0]
+
+    voices = [v for v in request.voices if v in ("male", "female")]
+    orch = EnrichmentOrchestrator(
+        fast_mode=True, subject=lesson_patterns.normalize_subject(request.subject) or request.subject,
+        enrichment_style="avatar_classroom_teaching")
+    orch.enricher.reset_web_cache(enabled=False)
+    try:
+        enrichment = build_section_lesson(
+            target["content"], target["section_title"], section=target["section"],
+            pattern=target["pattern"], enricher=orch.enricher, subject=request.subject,
+            section_kind=target["section_kind"], part=request.part,
+            unit_title=request.unit_title, board=request.board,
+            class_number=request.class_number, unit_number=request.unit_number,
+            with_visuals=request.with_visuals, with_audio=request.with_audio,
+            voices=voices, speed=request.speed, upload=request.upload,
+        )
+    except Exception as exc:
+        logger.exception(f"/avatar/lesson/section failed: {exc}")
+        raise HTTPException(500, f"Lesson build error: {exc}")
+    if not enrichment:
+        raise HTTPException(500, "The lesson could not be built for this section (teaching script failed twice).")
+
+    report = enrichment.pop("_build_report", {})
+    return {
+        "success": True,
+        "section_id": section.get("id"),
+        "section_title": target["section_title"],
+        "pattern": target["pattern"].key,
+        "stored_under": "section_enrichment" if target["is_math"] else "enrichment",
+        "enrichment": enrichment,
+        "report": report,
+    }
+
+
+def _avatar_lesson_section_job_run(job_id: str, request: AvatarLessonSectionRequest) -> None:
+    _avatar_job_update(job_id, status="running", started_at=_job_time.time())
+    try:
+        result = _run_avatar_lesson_section(request)
+    except HTTPException as exc:
+        _avatar_job_update(job_id, status="failed", finished_at=_job_time.time(),
+                           error={"status_code": exc.status_code, "detail": exc.detail})
+    except Exception as exc:  # noqa: BLE001
+        logger.exception(f"avatar lesson section job {job_id} crashed: {exc}")
+        _avatar_job_update(job_id, status="failed", finished_at=_job_time.time(),
+                           error={"status_code": 500, "detail": str(exc)})
+    else:
+        _avatar_job_update(job_id, status="done", finished_at=_job_time.time(), result=result)
+
+
+@app.post("/avatar/lesson/section")
+def avatar_lesson_section(request: AvatarLessonSectionRequest):
+    """Build the six-phase lesson for ONE section sent in the body — with audio — and
+    return the enrichment as it would be stored. Nothing is written to disk: this is
+    the way to test the lesson on a section before running `/avatar/lesson/build`.
+
+    Request body:
+    ```json
+    {
+      "section": {"type": "section", "title": "INERTIA", "content": "...", "sub_sections": [...]},
+      "subject": "science", "unit_title": "LAWS OF MOTION", "unit_number": 1,
+      "board": "State Board", "class_number": "10"
+    }
+    ```
+    The response's `enrichment` carries `avatar_lesson.phases[]` in play order —
+    hook → explanation → real_world → explore → mystery → explain_back —
+    with every spoken node narrated (`audio: {male, female}`) when TTS is up, plus the
+    section's `concept_overview`, `faqs`, `practice_questions` and `doubt_context`;
+    `stored_under` says which key the document build would put it under. `report`
+    counts segments, hook options, generated images by phase and audio files.
+
+    Pictures and narration take minutes; behind a gateway send `background: true`
+    and poll `GET /avatar/lesson/build/jobs/{job_id}`. `with_audio: false` /
+    `with_visuals: false` shorten a test run (no pictures means no mystery phase).
+    """
+    if request.with_audio and not [v for v in request.voices if v in ("male", "female")]:
+        raise HTTPException(400, "voices must contain 'male' and/or 'female'")
+
+    if request.background:
+        _avatar_job_prune()
+        job_id = _job_uuid.uuid4().hex
+        with _AVATAR_JOBS_LOCK:
+            _AVATAR_JOBS[job_id] = {
+                "job_id": job_id, "kind": "lesson_section", "status": "queued",
+                "section_id": request.section.get("id"),
+                "section_title": request.section.get("title") or request.section.get("section_title"),
+                "created_at": _job_time.time(), "started_at": None, "finished_at": None,
+                "progress": None, "result": None, "error": None,
+            }
+        _AVATAR_JOB_POOL.submit(_avatar_lesson_section_job_run, job_id, request)
+        return JSONResponse(status_code=202, content={
+            "success": True, "job_id": job_id, "status": "queued",
+            "status_url": f"/avatar/lesson/build/jobs/{job_id}",
+        })
+
+    return _run_avatar_lesson_section(request)
+
+
+@app.get("/avatar/lesson/build/jobs/{job_id}")
+def avatar_lesson_build_job_status(job_id: str):
+    """Progress of a `background: true` lesson build (document or single section).
+
+    `status` is queued / running / done / failed; `progress` carries
+    `{total, done, built, skipped, failed, current}` while it runs (each built
+    section is already in enriched.json by then); `result` is the full report
+    once done. Jobs are kept for an hour after they finish.
+    """
+    with _AVATAR_JOBS_LOCK:
+        job = _AVATAR_JOBS.get(job_id)
+        if job is None:
+            raise HTTPException(404, f"No avatar job '{job_id}' (unknown or older than 1 hour)")
+        snapshot = dict(job)
+    elapsed_from = snapshot["started_at"] or snapshot["created_at"]
+    elapsed_to = snapshot["finished_at"] or _job_time.time()
+    snapshot["elapsed_seconds"] = round(elapsed_to - elapsed_from, 1)
+    return snapshot
+
+
+def _phase_result(result: Dict[str, Any]) -> Dict[str, Any]:
+    if result.get("error"):
+        status = 404 if "not found" in result["error"].lower() else 400
+        raise HTTPException(status, result["error"])
+    return {"success": True, **result}
+
+
+@app.post("/avatar/phase/hook")
+def avatar_phase_hook(request: AvatarHookRequest):
+    """Phase 1 — the student answers the hook MCQ shown before the lesson.
+
+    Returns `is_correct`, the stored `explanation` for the chosen option and the
+    same reason as a spoken `resolution` node (text + audio) — play it right
+    after the explanation's `closing_segment_id` segment, which returns to the
+    question — plus the `bridge` line into the topic. No LLM call.
+    """
+    from avatar_engine import get_avatar_engine
+    return _phase_result(get_avatar_engine().submit_hook(request.session_id, request.option_id))
+
+
+@app.post("/avatar/phase/explore")
+def avatar_phase_explore(request: AvatarExploreRequest):
+    """Phase 4 — the student's response to the explore activity (`part:
+    "interaction"`) or its challenge (`part: "challenge"`).
+
+    `choice` / `order` / `match` / `numeric` are graded from the stored keys
+    (no LLM); `free_text` is judged against the stored model answer; a
+    `picture_walkthrough` is judged one step at a time on the real image and
+    returns `next_step` until `finished`. When the activity is done and a
+    challenge exists, the response carries `challenge` to show next; otherwise
+    `wrap_up` and `next_phase`.
+    """
+    from avatar_engine import get_avatar_engine
+    return _phase_result(get_avatar_engine().submit_explore(
+        request.session_id, request.response, part=request.part, step=request.step))
+
+
+@app.post("/avatar/phase/real-world/reveal")
+def avatar_phase_real_world_reveal(request: AvatarRealWorldRequest):
+    """Phase 3 — the student taps to see the real-world example: the stored
+    `reveal` (text + audio), `why_it_matters` and the picture. No LLM call."""
+    from avatar_engine import get_avatar_engine
+    return _phase_result(get_avatar_engine().reveal_real_world(request.session_id))
+
+
+@app.post("/avatar/phase/mystery")
+def avatar_phase_mystery(request: AvatarMysteryRequest):
+    """Phase 5 — the student says what is going on in the mystery picture
+    (`mystery_id` from `avatar_lesson.phases[].mysteries` at start - one per
+    lesson). Graded from the stored key; returns `is_correct`, the stored
+    `explanation` for the chosen option, the spoken `reveal` (text + audio) and
+    the picture, then `outro` and `next_phase`. No LLM call."""
+    from avatar_engine import get_avatar_engine
+    return _phase_result(get_avatar_engine().submit_mystery(
+        request.session_id, request.mystery_id, request.option_id))
+
+
+@app.post("/avatar/phase/explain")
+def avatar_phase_explain(request: AvatarExplainRequest):
+    """Phase 6 (last) — the student explains the topic in their own words. The
+    model judges it against the stored key points and model explanation and
+    returns `level` (1–5), `covered`, `missing`, `misconceptions`, the avatar's
+    `feedback` (text only) and the stored `closing` line; `next_phase` is
+    `done`."""
+    from avatar_engine import get_avatar_engine
+    return _phase_result(get_avatar_engine().submit_explanation(
+        request.session_id, request.explanation))
 
 
 # ── 1-on-1 AI Debate Endpoints ───────────────────────────────────────────────
@@ -3396,7 +4626,7 @@ async def seminar_start(
     subject: str = Form(...),
     unit_number: int = Form(...),
     board: str = Form(...),
-    class_number: str = Form(...),
+    class_number: Annotated[ClassNumber, Form()] = ...,
     unit_name: str = Form(""),
     topic: str = Form(...),
     session_mode: str = Form("main"),
@@ -3902,7 +5132,7 @@ def _ppt_deck_context(deck_ref: str, current_index: int):
         import mcp_slides_client
         deck = mcp_slides_client.get_deck_content(deck_ref)
     except Exception as e:
-        print(f"  [ppt] deck context read failed: {e}")
+        logger.error(f"[ppt] deck context read failed: {e}")
         return None, None
     from ppt.ppt_review import _readable_slide_text
     titles, others = [], []
@@ -3914,6 +5144,291 @@ def _ppt_deck_context(deck_ref: str, current_index: int):
         snippet = " ".join(_readable_slide_text(s).split())[:140]
         others.append(f"{title or 'Untitled'}: {snippet}" if snippet else (title or "Untitled"))
     return titles, others
+
+
+# ── "use this image" → put a chosen image on the slide ────────────────────────
+#
+# The image search (intent "image") only shows pictures in the chat. When the student then
+# picks one — by clicking it (frontend sends image_url) or by saying "use this img" — we
+# place it on the slide instead of running another search.
+
+_IMG_URL_RX = re.compile(r"https?://[^\s\"'<>]+", re.I)
+_IMG_FILE_RX = re.compile(r"\.(png|jpe?g|gif|webp|bmp)(\?|#|$)", re.I)
+_IMG_APPLY_VERB_RX = re.compile(
+    r"\b(use|insert|add|put|place|apply|set|keep|choose|pick|select|want|take)\b", re.I)
+_IMG_NOUN_RX = re.compile(
+    r"\b(image|img|images|imgs|picture|pic|photo|photograph|diagram|illustration|"
+    r"visual|graphic|one|it)\b", re.I)
+# A demonstrative or a position is what separates "use THIS img" (one already shown) from
+# "add an image about photosynthesis" (a fresh search).
+_IMG_DEICTIC_RX = re.compile(
+    r"\b(this|that|these|those|it|above|shown|first|second|third|fourth|last|"
+    r"1st|2nd|3rd|4th)\b", re.I)
+_IMG_ORDINALS = {
+    "first": 1, "1st": 1, "one": 1, "second": 2, "2nd": 2, "two": 2, "third": 3, "3rd": 3,
+    "three": 3, "fourth": 4, "4th": 4, "four": 4, "fifth": 5, "5th": 5, "five": 5,
+    "sixth": 6, "6th": 6, "six": 6,
+}
+# Results are numbered in the chat, so the whole reply is often just the number: "2",
+# "no 3", "#1", "option 4", "img 2.".
+_IMG_NUMBER_REPLY_RX = re.compile(
+    r"^\s*(?:#|no\.?|number|option|choice|img|image|pic|photo|take|use|pick|select|want)?\s*"
+    r"#?\s*(\d{1,2})\s*(?:st|nd|rd|th)?\s*(?:one|please)?\s*[.!]*\s*$", re.I)
+# The number inside a longer sentence: "add img 5 to this slide", "use picture no. 2".
+# Read as the result the student picked — the alternative is defaulting to image 1 and
+# silently inserting the wrong picture.
+_IMG_PICK_NUMBER_RX = re.compile(
+    r"\b(?:image|img|images|imgs|picture|pic|photo|graphic|visual|option|choice|number|no\.?)"
+    r"\s*#?\s*(\d{1,2})\b"
+    r"|#\s*(\d{1,2})\b"
+    r"|\b(?:use|add|insert|put|place|apply|take|pick|select|want|choose)\s+(?:the\s+)?#?(\d{1,2})\b",
+    re.I)
+# "…on slide 3" is a slide index, never an image pick — dropped before the number hunt.
+_SLIDE_NUMBER_RX = re.compile(r"\bslides?\s*#?\s*\d{1,2}\b", re.I)
+
+
+def _ppt_pick_image(request, query: str) -> Optional[dict]:
+    """Resolve which image the student means, or None when they aren't picking one.
+
+    Ways in, most explicit first: an image_index (the number shown against a result), an
+    image_url, a URL pasted in the message, a bare number reply ("2", "#3", "option 1"), or
+    a phrase referring to one of the images last shown ("use this img", "the 2nd picture").
+    Returns {"url", "title", "n", "how"} — `n` is the number the student saw.
+    """
+    from ppt.ppt_session import get_last_images
+
+    if request.image_url:
+        return {"url": request.image_url.strip(), "title": "", "n": None, "how": "picked"}
+
+    msg = query or ""
+    in_msg = _IMG_URL_RX.search(msg)
+    # A pasted link counts only when it looks like an image file or comes with an
+    # apply verb — a bare link the student is asking *about* isn't a pick.
+    if in_msg and (_IMG_FILE_RX.search(in_msg.group(0)) or _IMG_APPLY_VERB_RX.search(msg)):
+        return {"url": in_msg.group(0), "title": "", "n": None, "how": "pasted"}
+
+    idx, how = request.image_index, "numbered"
+    if idx is None:
+        # The results are numbered in the chat, so a reply that is just a number IS the pick.
+        number_reply = _IMG_NUMBER_REPLY_RX.match(msg)
+        if number_reply:
+            idx = int(number_reply.group(1))
+        elif (_IMG_APPLY_VERB_RX.search(msg) and _IMG_NOUN_RX.search(msg)
+              and (_IMG_DEICTIC_RX.search(msg) or _IMG_PICK_NUMBER_RX.search(msg))):
+            ordinal = next((_IMG_ORDINALS[w.lower()] for w in re.findall(r"[A-Za-z0-9]+", msg)
+                            if w.lower() in _IMG_ORDINALS), None)
+            numbered = _IMG_PICK_NUMBER_RX.search(_SLIDE_NUMBER_RX.sub(" ", msg))
+            picked = int(next(g for g in numbered.groups() if g)) if numbered else None
+            idx = picked or ordinal or 1
+            how = "referenced"
+        else:
+            return None
+
+    shown = get_last_images(request.session_id)
+    if not shown or idx < 1 or idx > len(shown):
+        return None
+    chosen = shown[idx - 1]
+    return {"url": chosen.get("url") or chosen.get("origin_url") or "",
+            "title": chosen.get("title") or "", "n": idx, "how": how}
+
+
+# ── a pending proposal must never trap the chat ───────────────────────────────
+
+_VAGUE_REPLY_RX = re.compile(
+    r"^\s*(h+m+|u+h+|u+m+|er+|what|huh|idk|dunno|not sure|maybe|\?+)\s*[?.!]*\s*$", re.I)
+
+
+def _ppt_is_vague_reply(msg: str) -> bool:
+    """True when a reply is too thin to be either a decision or a new request.
+
+    Only these get the "approve, reject, or skip?" re-prompt. Anything with real content
+    is treated as a new request so the student is never stuck answering a question they
+    have moved on from.
+    """
+    m = (msg or "").strip()
+    if not m or _VAGUE_REPLY_RX.match(m):
+        return True
+    return len(re.findall(r"[A-Za-z0-9]+", m)) < 2
+
+
+def _ppt_abandon_pending(session: dict, session_id: str) -> None:
+    """Drop a proposal the student never answered, leaving no paused run behind.
+
+    The agent is resumed with "skip" so its checkpoint completes normally (the skip path
+    touches nothing in the deck); the pending flag is cleared either way.
+    """
+    from ppt.ppt_session import clear_pending_approval
+    try:
+        from langgraph.types import Command
+        ctx, needs = _ppt_auth_context(session["student_id"])
+        if not needs:
+            agent = _ppt_agent(session["deck_ref"])
+            with ctx:
+                agent.invoke(Command(resume="skip"),
+                             {"configurable": {"thread_id": session_id}})
+    except Exception as e:
+        logger.error(f"[ppt_suggest] could not close the pending proposal: {e}")
+    clear_pending_approval(session_id)
+
+
+# The student is willing to have the slide's content reflowed so a picture fits.
+_IMG_MAKE_ROOM_RX = re.compile(
+    r"\b(make (?:room|space)|free up|redesign|re-?design|rearrange|reorganis[ez]e|reflow|"
+    r"shrink|resize|fewer points?|less text|shorten|trim|move the text|fit (?:it|the|this)|"
+    r"squeeze|adjust the slide)\b", re.I)
+
+# Horizontal, multi-column layouts read badly once a picture takes a third of the width —
+# the planner is steered to a vertical one instead.
+_PPT_NARROW_UNFRIENDLY_LAYOUTS = ["icon_grid", "cards", "comparison"]
+_PPT_MAKE_ROOM_MAX_ITEMS = 4
+
+
+def _ppt_make_room_and_place(session: dict, slide_index: int, url: str, query: str,
+                             image_n: Optional[int] = None) -> dict:
+    """Reflow a full slide into a narrower column, then place the image in the freed one.
+
+    This is the answer to "use this image and redesign the slide with fewer points": the
+    slide's content is rebuilt as a vertical layout inside ~64% of the width, and the
+    picture goes in the reserved column beside it.
+    """
+    import mcp_slides_client
+    from ppt.ppt_review import llm_build_slide_layout
+    from ppt.ppt_session import layout_of, record_layout
+
+    ctx, needs = _ppt_auth_context(session["student_id"])
+    if needs:
+        return needs
+
+    deck_ref = session["deck_ref"]
+    unit_title = session.get("unit_title") or ""
+    layout, rendered, result, reserve = {}, False, {"status": "no_room"}, 0.0
+    try:
+        with ctx:
+            snap = mcp_slides_client.get_slide_content(deck_ref, slide_index)
+            page_w = (snap.get("page_size_pt") or [720.0, 405.0])[0]
+            reserve = round(page_w * mcp_slides_client.IMAGE_COLUMN_RATIO, 1)
+
+            rag_chunks = []
+            try:
+                from ppt.ppt_rag import retrieve_context
+                coords = {k: session.get(k) for k in
+                          ("board", "class_number", "subject", "unit", "unit_title", "term")}
+                rag_chunks, _ = retrieve_context(snap.get("title") or unit_title, coords, limit=5)
+            except Exception as e:
+                logger.error(f"[ppt_suggest] RAG for the image redesign failed: {e}")
+
+            instruction = (
+                f"{(query or '').strip()} — a picture now fills the right third of this slide, "
+                f"so the text must fit a narrow column: at most {_PPT_MAKE_ROOM_MAX_ITEMS} "
+                "items, each one short line.")
+            layout = llm_build_slide_layout(
+                snap, rag_chunks, unit_title,
+                avoid_layouts=_PPT_NARROW_UNFRIENDLY_LAYOUTS,
+                student_instruction=instruction,
+                current_layout=layout_of(session["session_id"], slide_index))
+            if layout.get("layout"):
+                rendered = mcp_slides_client.render_layout(
+                    deck_ref, slide_index, layout, session.get("theme_spec"),
+                    reserve_right_pt=reserve)
+            result = mcp_slides_client.place_image(deck_ref, slide_index, url)
+    except Exception as e:
+        logger.error(f"[ppt_suggest] make-room-and-place failed: {e}")
+        return {"status": "error", "intent": "image_apply", "images": [], "image_url": url,
+                "image_number": image_n,
+                "ai_feedback": "I couldn't rearrange the slide for that image. Try a different "
+                               "picture, or ask me to edit the slide first."}
+
+    kind = layout.get("layout") or ""
+    if rendered and kind:
+        try:
+            record_layout(session["session_id"], slide_index, kind)
+        except Exception as e:
+            logger.error(f"[ppt_suggest] record_layout failed: {e}")
+
+    which = f"image {image_n}" if image_n else "the image"
+    if result.get("status") == "no_room":
+        return {"status": "no_room", "intent": "image_apply", "images": [], "image_url": url,
+                "image_number": image_n,
+                "ai_feedback": (f"I slimmed the slide's content down but still couldn't fit "
+                                f"{which}. Ask me to cut this slide to a few short points, "
+                                "then add the image again."),
+                "applied_ops": []}
+
+    box = result.get("box_pt") or []
+    size_note = f" ({int(box[2])}×{int(box[3])}pt)" if len(box) == 4 else ""
+    ops = []
+    if rendered:
+        ops.append({"op": "set_layout", "value": layout, "reserve_right_pt": reserve,
+                    "reason": f"Reflowed the slide into a narrower {kind} to clear space "
+                              "for the image."})
+    ops.append({"op": "set_image", "value": url,
+                "reason": "Placed the image in the column freed beside the text.",
+                "result": result})
+    lead = (f"Rebuilt this slide's points as a narrower {kind} and put {which} beside them"
+            if rendered else f"Placed {which} on this slide")
+    # Reflowing rewrites points the student didn't ask us to touch — say so when they
+    # only asked for the picture.
+    note = ("" if not rendered or _IMG_MAKE_ROOM_RX.search(query or "")
+            else " I shortened this slide's points to make the space.")
+    return {
+        "status": "image_applied", "intent": "image_apply", "images": [], "image_url": url,
+        "image_number": image_n,
+        "ai_feedback": f"{lead}{size_note}.{note}",
+        "applied_ops": ops, "suggestions": [],
+    }
+
+
+def _ppt_place_image(session: dict, slide_index: int, image: dict, query: str = "") -> dict:
+    """Place the chosen image on the slide and describe what happened, for the chat."""
+    import mcp_slides_client
+
+    url = (image.get("url") or "").strip()
+    if not url:
+        return {"status": "error", "intent": "image_apply", "images": [],
+                "ai_feedback": "I couldn't work out which image you meant — tap the one you want."}
+
+    ctx, needs = _ppt_auth_context(session["student_id"])
+    if needs:
+        return needs
+    try:
+        with ctx:
+            result = mcp_slides_client.place_image(session["deck_ref"], slide_index, url)
+    except Exception as e:
+        logger.error(f"[ppt_suggest] place_image failed: {e}")
+        return {
+            "status": "error", "intent": "image_apply", "images": [], "image_url": url,
+            "image_number": image.get("n"),
+            "ai_feedback": "That image couldn't be added — some sites block their pictures "
+                           "from being reused. Pick a different one and I'll place it.",
+        }
+
+    if result["status"] == "no_room":
+        # The slide is full. The student has already named the picture they want, so
+        # rebuild the slide's content into a narrower column and put it in the freed one —
+        # answering a specific pick with "say the magic words" is a dead end.
+        return _ppt_make_room_and_place(session, slide_index, url, query, image.get("n"))
+
+    box = result.get("box_pt") or []
+    size_note = f" ({int(box[2])}×{int(box[3])}pt)" if len(box) == 4 else ""
+    replaced = result["status"] == "replaced"
+    which = f"Image {image['n']}" if image.get("n") else "The image"
+    feedback = (
+        f"{which} is in — it keeps the same position and size as the picture that was "
+        f"there{size_note}."
+        if replaced else
+        f"{which} is on the slide, sized to fit its free space{size_note}."
+    )
+    return {
+        "status": "image_applied", "intent": "image_apply", "images": [], "image_url": url,
+        "image_number": image.get("n"),
+        "ai_feedback": feedback,
+        "applied_ops": [{"op": "set_image", "value": url,
+                         "reason": ("Replaced the slide's image, keeping its box."
+                                    if replaced
+                                    else "Placed the image in the slide's free area."),
+                         "result": result}],
+        "suggestions": [],
+    }
 
 
 def _record_applied_layout(session_id: str, slide_index: int, applied_ops) -> None:
@@ -3934,7 +5449,8 @@ def _ppt_agent_state(session: dict, slide_index: int,
                      student_instruction: str = "",
                      all_slide_titles: Optional[List[str]] = None,
                      other_slides: Optional[List[str]] = None,
-                     avoid_layouts: Optional[List[str]] = None) -> dict:
+                     avoid_layouts: Optional[List[str]] = None,
+                     current_layout: str = "") -> dict:
     """
     Build the agent input state from the session's stored curriculum coordinates.
 
@@ -3970,6 +5486,8 @@ def _ppt_agent_state(session: dict, slide_index: int,
         "other_slides": other_slides or [],
         # Design variety: layout kinds already used on other slides (avoid repeating).
         "avoid_layouts": avoid_layouts or [],
+        # What THIS slide already looks like — so a re-edit changes it instead of repeating it.
+        "current_layout": current_layout or "",
         # Upgrade #7: adaptive severity — downgrade significant→minor after N rejections
         "rejection_count": session.get("rejection_count", 0),
         # Upgrade #8: deck mode for context
@@ -3985,10 +5503,11 @@ def ppt_edit(request: PPTEditRequest):
     The agent autonomously reads the slide, plans content + theme ops via RAG + LLM,
     and acts based on severity:
       - good        → verbal feedback only, no change.
-      - minor       → auto-applies the fix (font tweak, small bullet correction) and
-                       enforces the uniform theme across all slides — no student input needed.
-      - significant → returns {"status": "awaiting_approval", "proposed_change": {...}}
-                       (a content rewrite or structural change); call /ppt/decide next.
+      - minor       → auto-applies a formatting-only fix (font size) and enforces the
+                       uniform theme across all slides — no student input needed.
+      - significant → returns {"status": "awaiting_approval", "proposed_change": {...}}.
+                       Every content write lands here — a rewrite, a spelling fix, or
+                       filling a blank slide; call /ppt/decide next.
 
     Students have no manual edit controls — do NOT send an `edit` field.
     """
@@ -4023,7 +5542,9 @@ def ppt_suggest(request: PPTSuggestRequest):
 
     - If a change is awaiting the student's yes/no (set on a previous turn), this reply
       is read as the decision (approve / reject / skip) and the paused agent is resumed —
-      the student approves the change right in the chat.
+      the student approves the change right in the chat. A reply that is plainly a NEW
+      request instead ("fetch an image for this slide") sets the stale proposal aside and
+      is answered on the spot — a pending change must never trap the conversation.
     - Otherwise the message is routed by ppt_source_router.decide_source() into:
         · "image"  : web image search — results for the CHAT (nothing touches the deck).
         · "edit"   : the agent reviews the slide; a significant change pauses and returns
@@ -4035,7 +5556,7 @@ def ppt_suggest(request: PPTSuggestRequest):
         raise HTTPException(400, "Session already ended")
 
     query = request.query or ""
-    coords = {"unit_title": session.get("unit_title")}
+    note = ""
 
     # 0) APPROVAL TURN — a change from a previous turn is waiting for the student's yes/no.
     #    Interpret this chat message as the decision and resume the paused agent in place.
@@ -4044,40 +5565,62 @@ def ppt_suggest(request: PPTSuggestRequest):
         from ppt.ppt_session import clear_pending_approval, record_skill
         dec = parse_decision(query)
         if dec is None:
-            # Not a clear yes/no — re-show the pending change and keep waiting.
-            return {"status": "awaiting_approval", "intent": "edit",
-                    "ai_feedback": "Do you want me to apply this change? Reply approve, reject, or skip.",
-                    "proposed_change": session.get("pending_proposal")}
+            # Not a decision. Only an empty or throwaway reply gets re-prompted — anything
+            # with real content is a new request, so drop the proposal and serve it.
+            if _ppt_is_vague_reply(query):
+                return {"status": "awaiting_approval", "intent": "edit",
+                        "ai_feedback": "Do you want me to apply this change? Reply approve, reject, or skip.",
+                        "proposed_change": session.get("pending_proposal")}
+            _ppt_abandon_pending(session, request.session_id)
+            note = "I've set aside the slide change I offered — ask for it again any time. "
+        else:
+            ctx, needs = _ppt_auth_context(session["student_id"])
+            if needs:
+                return needs
+            from langgraph.types import Command
+            agent = _ppt_agent(session["deck_ref"])
+            config = {"configurable": {"thread_id": request.session_id}}
+            with ctx:
+                result = agent.invoke(Command(resume=dec), config)
+            clear_pending_approval(request.session_id)
+            record_skill(request.session_id, result.get("skill_delta"))
+            if dec == "approve":
+                _record_applied_layout(request.session_id, request.slide_index, result.get("applied_ops"))
+            if dec == "reject":
+                try:
+                    from ppt.ppt_session import record_rejection
+                    record_rejection(request.session_id)
+                except Exception as e:
+                    logger.error(f"[ppt_suggest] record_rejection failed: {e}")
+            payload = _ppt_result_payload(result)
+            payload["intent"] = "edit"
+            payload["decision"] = dec
+            return payload
 
-        ctx, needs = _ppt_auth_context(session["student_id"])
-        if needs:
-            return needs
-        from langgraph.types import Command
-        agent = _ppt_agent(session["deck_ref"])
-        config = {"configurable": {"thread_id": request.session_id}}
-        with ctx:
-            result = agent.invoke(Command(resume=dec), config)
-        clear_pending_approval(request.session_id)
-        record_skill(request.session_id, result.get("skill_delta"))
-        if dec == "approve":
-            _record_applied_layout(request.session_id, request.slide_index, result.get("applied_ops"))
-        if dec == "reject":
-            try:
-                from ppt.ppt_session import record_rejection
-                record_rejection(request.session_id)
-            except Exception as e:
-                print(f"  [ppt_suggest] record_rejection failed: {e}")
-        payload = _ppt_result_payload(result)
-        payload["intent"] = "edit"
-        payload["decision"] = dec
-        return payload
+    payload = _ppt_suggest_turn(session, request, query)
+    if note:
+        payload["ai_feedback"] = note + (payload.get("ai_feedback") or "")
+    return payload
+
+
+def _ppt_suggest_turn(session: dict, request: PPTSuggestRequest, query: str) -> dict:
+    """Run one fresh co-pilot turn: place a chosen image, search images, coach, or run
+    the agent (edit / answer). Split out of /ppt/suggest so the same turn can run right
+    after a stale proposal is set aside."""
+    coords = {"unit_title": session.get("unit_title")}
+
+    # 0b) IMAGE PICK — the student chose one of the images we showed (clicked it, pasted a
+    #     URL, or said "use this img"). Place it on the slide instead of searching again.
+    chosen_image = _ppt_pick_image(request, query)
+    if chosen_image:
+        return _ppt_place_image(session, request.slide_index, chosen_image, query)
 
     # 1) Route the student's message (intent + source). Never raises.
     try:
         from ppt.ppt_source_router import decide_source
         decision = decide_source(query, coords=coords)
     except Exception as e:
-        print(f"  [ppt_suggest] routing failed: {e}")
+        logger.error(f"[ppt_suggest] routing failed: {e}")
         decision = {"intent": "answer", "source": "rag", "reason": "router-error"}
     intent, source = decision["intent"], decision["source"]
 
@@ -4099,7 +5642,7 @@ def ppt_suggest(request: PPTSuggestRequest):
             from ppt.ppt_review import _readable_slide_text
             slide_text = _readable_slide_text(snap)
         except Exception as e:
-            print(f"  [ppt_suggest] slide read for image query failed: {e}")
+            logger.error(f"[ppt_suggest] slide read for image query failed: {e}")
 
         unit_title = session.get("unit_title") or ""
         # Prefer an LLM query grounded in the slide content; fall back to the heuristic.
@@ -4108,7 +5651,7 @@ def ppt_suggest(request: PPTSuggestRequest):
             from ppt.ppt_review import llm_image_query
             llm_q = llm_image_query(query, slide_title, slide_text, unit_title)
         except Exception as e:
-            print(f"  [ppt_suggest] llm_image_query failed: {e}")
+            logger.error(f"[ppt_suggest] llm_image_query failed: {e}")
 
         # Try progressively simpler queries so a flaky/empty result still yields images:
         # the LLM query → a heuristic subject → the chapter topic. First non-empty wins.
@@ -4129,12 +5672,24 @@ def ppt_suggest(request: PPTSuggestRequest):
                         img_query = cand
                         break
         except Exception as e:
-            print(f"  [ppt_suggest] image search failed: {e}")
-        feedback = (f"Here are some images for “{img_query}” — pick any to use in your slide."
-                    if images else "I couldn't find images for that right now.")
+            logger.error(f"[ppt_suggest] image search failed: {e}")
+        # Number the results so the student can answer with a number and the client never
+        # has to send a URL back — "2" or {"image_index": 2} both resolve here next turn.
+        for i, img in enumerate(images, start=1):
+            img["n"] = i
+        try:
+            from ppt.ppt_session import set_last_images
+            set_last_images(request.session_id, images, img_query)
+        except Exception as e:
+            logger.error(f"[ppt_suggest] set_last_images failed: {e}")
+
+        feedback = (
+            f"Here are {len(images)} images for “{img_query}”. Reply with a number "
+            f"(1–{len(images)}) and I'll put that one on this slide."
+            if images else "I couldn't find images for that right now.")
         return {"status": "images", "intent": "image", "source": "web",
                 "ai_feedback": feedback, "image_query": img_query,
-                "images": images, "suggestions": []}
+                "images": images, "image_count": len(images), "suggestions": []}
 
     # 2b) GUIDE intent — the student wants to be TAUGHT how to design this slide (options,
     #     step-by-step, how to match the deck theme). We don't edit the deck; we coach.
@@ -4151,7 +5706,7 @@ def ppt_suggest(request: PPTSuggestRequest):
             from ppt.ppt_review import _readable_slide_text
             slide_text = _readable_slide_text(snap)
         except Exception as e:
-            print(f"  [ppt_suggest] slide read for guidance failed: {e}")
+            logger.error(f"[ppt_suggest] slide read for guidance failed: {e}")
         guide = {"guidance": "(Design guidance unavailable right now.)", "options": [], "theme_guidance": ""}
         try:
             from ppt.ppt_review import llm_design_guidance
@@ -4159,7 +5714,7 @@ def ppt_suggest(request: PPTSuggestRequest):
                 slide_title, slide_text, session.get("unit_title") or "",
                 session.get("theme_spec") or {}, query)
         except Exception as e:
-            print(f"  [ppt_suggest] design guidance failed: {e}")
+            logger.error(f"[ppt_suggest] design guidance failed: {e}")
         return {"status": "guidance", "intent": "guide",
                 "ai_feedback": guide["guidance"],
                 "options": guide.get("options", []),
@@ -4180,7 +5735,7 @@ def ppt_suggest(request: PPTSuggestRequest):
     student_query = "" if intent == "edit" else query
     agent = _ppt_agent(session["deck_ref"])
     config = {"configurable": {"thread_id": request.session_id}}
-    avoid_layouts = None
+    avoid_layouts, current_layout = None, ""
     with ctx:
         # For an edit, read the whole deck so the redesign stays distinct from other slides
         # (avoids two slides ending up with identical content), and gather the layouts already
@@ -4188,8 +5743,9 @@ def ppt_suggest(request: PPTSuggestRequest):
         all_titles, other_slides = (None, None)
         if intent == "edit":
             all_titles, other_slides = _ppt_deck_context(session["deck_ref"], request.slide_index)
-            from ppt.ppt_session import layouts_used_elsewhere
+            from ppt.ppt_session import layouts_used_elsewhere, layout_of
             avoid_layouts = layouts_used_elsewhere(request.session_id, request.slide_index)
+            current_layout = layout_of(request.session_id, request.slide_index)
         result = agent.invoke(
             _ppt_agent_state(
                 session, request.slide_index,
@@ -4200,6 +5756,7 @@ def ppt_suggest(request: PPTSuggestRequest):
                 all_slide_titles=all_titles,
                 other_slides=other_slides,
                 avoid_layouts=avoid_layouts,
+                current_layout=current_layout,
             ), config)
 
     # Edit path may pause for approval (significant change). Remember the pending change
@@ -4252,7 +5809,7 @@ def ppt_decide(request: PPTDecideRequest):
             from ppt.ppt_session import record_rejection
             record_rejection(request.session_id)
         except Exception as e:
-            print(f"  [ppt_decide] record_rejection failed: {e}")
+            logger.error(f"[ppt_decide] record_rejection failed: {e}")
     return _ppt_result_payload(result)
 
 

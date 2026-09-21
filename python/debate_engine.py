@@ -20,6 +20,11 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
 
 import requests
+from langfuse_utils import traced_post
+from langfuse_utils import with_student_context
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 DEBATE_DATA_DIR = Path("debate_data")
 DEBATE_MODEL = "gpt-4o-mini"
@@ -108,7 +113,7 @@ class DebateEngine:
         }
 
         try:
-            resp = requests.post(
+            resp = traced_post("debate-turn",
                 "https://api.openai.com/v1/chat/completions",
                 headers=headers,
                 json=payload,
@@ -116,7 +121,7 @@ class DebateEngine:
             )
             if not resp.ok:
                 payload["model"] = DEBATE_FALLBACK_MODEL
-                resp = requests.post(
+                resp = traced_post("debate-turn",
                     "https://api.openai.com/v1/chat/completions",
                     headers=headers,
                     json=payload,
@@ -125,10 +130,10 @@ class DebateEngine:
             if resp.ok:
                 return resp.json()["choices"][0]["message"]["content"].strip()
             else:
-                print(f"  ❌ [DebateEngine] API error: {resp.status_code}")
+                logger.error(f"[DebateEngine] API error: {resp.status_code}")
                 return "I'm having trouble right now. Please try again."
         except Exception as e:
-            print(f"  ❌ [DebateEngine] Error: {e}")
+            logger.error(f"[DebateEngine] Error: {e}")
             return "Something went wrong. Please try again."
 
     def _call_llm_json(self, messages: List[Dict], temperature: float = 0.3) -> Optional[Dict]:
@@ -309,6 +314,7 @@ Return ONLY valid JSON:
                 continue
         return best_match
 
+    @with_student_context()
     def start_debate(
         self,
         candidate_id: str,
@@ -577,7 +583,7 @@ Keep it engaging and under 5 sentences."""
             scores["total_score"] = sum(
                 scores.get(k, 0) for k in ("reasoning", "textbook_knowledge", "argumentation", "communication")
             )
-            print(f"  ⚠️ [DebateEngine] Off-topic cap applied (5+ off-topic): total={scores['total_score']}")
+            logger.warning(f"[DebateEngine] Off-topic cap applied (5+ off-topic): total={scores['total_score']}")
         elif off_topic >= 3:
             # Moderate disengagement: cap each category at 10, max total 40
             cap = 10
@@ -586,7 +592,7 @@ Keep it engaging and under 5 sentences."""
             scores["total_score"] = sum(
                 scores.get(k, 0) for k in ("reasoning", "textbook_knowledge", "argumentation", "communication")
             )
-            print(f"  ⚠️ [DebateEngine] Off-topic cap applied (3-4 off-topic): total={scores['total_score']}")
+            logger.warning(f"[DebateEngine] Off-topic cap applied (3-4 off-topic): total={scores['total_score']}")
 
         session.data["status"] = "ended"
         session.data["end_reason"] = "completed"
@@ -624,7 +630,7 @@ Keep it engaging and under 5 sentences."""
                 unit_title=session.data.get("unit_name", ""),
             )
         except Exception as e:
-            print(f"  ⚠️ [DebateEngine] Failed to update performance: {e}")
+            logger.warning(f"[DebateEngine] Failed to update performance: {e}")
 
         # ── Post-debate recommendations ───────────────────────────────────
         recommendations = self.get_post_debate_recommendations(
@@ -743,6 +749,7 @@ Keep it engaging and under 5 sentences."""
                 continue
         return topics
 
+    @with_student_context(session_arg="session_id")
     def get_post_debate_recommendations(
         self,
         session_id: str,

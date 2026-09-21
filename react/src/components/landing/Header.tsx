@@ -1,6 +1,7 @@
 import React from "react";
 import { motion, useScroll, useTransform } from "framer-motion";
 import { Link } from "wouter";
+import gradeupLogo from "../../assets/new-logo-g.png";
 
 export default function Header() {
   const { scrollY } = useScroll();
@@ -20,20 +21,13 @@ export default function Header() {
     >
       <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
         {/* Logo */}
-        <Link href="/" className="group flex items-center gap-2">
-          <motion.div
-            whileHover={{ rotate: 10, scale: 1.05 }}
-            className="text-2xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent"
-          >
-            GradeUp
-          </motion.div>
-          <motion.div
-            animate={{ opacity: [0.6, 1, 0.6] }}
-            transition={{ duration: 2, repeat: Infinity }}
-            className="text-sm font-semibold text-indigo-500"
-          >
-            AI
-          </motion.div>
+        <Link href="/" className="group flex items-center" aria-label="GradeUp AI home">
+          <motion.img
+            src={gradeupLogo}
+            alt="GradeUp AI"
+            whileHover={{ scale: 1.05 }}
+            className="h-10 w-auto object-contain"
+          />
         </Link>
 
         {/* Navigation */}

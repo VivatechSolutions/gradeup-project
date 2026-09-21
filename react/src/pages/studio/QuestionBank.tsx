@@ -6,6 +6,12 @@ import "react-pdf/dist/Page/TextLayer.css";
 import { useAuth } from "../../hooks/use-auth";
 import Navigation from "../../components/navigation";
 import { PARTS } from "../../lib/mock-paper-data";
+// TEMP DEMO CHANGE: Local Science Class 10 question paper until DB JSON upload is available.
+import {
+  mathsQuestionBankDemo,
+  scienceQuestionBankDemo,
+  socialQuestionBankDemo,
+} from "../../lib/demo-question-bank-data";
 import {
   ArrowLeft,
   Download,
@@ -41,6 +47,7 @@ interface Question {
   bloom_level: string;
   topic: string;
   unit_number: number;
+  section_title?: string;
   question_type_refined: string;
   estimated_time_minutes: number;
 }
@@ -65,6 +72,38 @@ interface QuestionBankResponse {
     questions: Question[];
   };
 }
+
+// TEMP DEMO CHANGE: Keep backend response shape same as API data, so existing paper UI is reused.
+const DEMO_SCIENCE_QUESTION_BANK: QuestionBankResponse["data"] = scienceQuestionBankDemo;
+const DEMO_MATHS_QUESTION_BANK: QuestionBankResponse["data"] = mathsQuestionBankDemo;
+const DEMO_SOCIAL_QUESTION_BANK: QuestionBankResponse["data"] = socialQuestionBankDemo;
+const DEMO_QUESTION_BANKS: QuestionBankResponse["data"][] = [
+  DEMO_SCIENCE_QUESTION_BANK,
+  DEMO_MATHS_QUESTION_BANK,
+  DEMO_SOCIAL_QUESTION_BANK,
+];
+
+const findDemoQuestionBank = (
+  subject: string,
+  subjectGroupKey: string,
+): QuestionBankResponse["data"] | null => {
+  const searchText = `${subject} ${subjectGroupKey}`.toLowerCase();
+  if (!searchText.trim()) return DEMO_SCIENCE_QUESTION_BANK;
+  const filters = [subject, subjectGroupKey]
+    .map((value) => value.toLowerCase().trim())
+    .filter(Boolean);
+  const exactMatch = DEMO_QUESTION_BANKS.find((bank) => {
+    const bankSearchText = `${bank.subject} ${bank.subjectGroupKey}`.toLowerCase();
+    return filters.some((filter) => bankSearchText.includes(filter));
+  });
+  if (exactMatch) return exactMatch;
+
+  if (searchText.includes("math")) return DEMO_MATHS_QUESTION_BANK;
+  if (searchText.includes("social") || searchText.includes("sst")) return DEMO_SOCIAL_QUESTION_BANK;
+  if (searchText.includes("science")) return DEMO_SCIENCE_QUESTION_BANK;
+
+  return null;
+};
 
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
@@ -746,8 +785,22 @@ export default function QuestionBank() {
       const classNumber = params.get("classNumber") || "";
       const subject = params.get("subject") || "";
       const subjectGroupKey = params.get("subjectGroupKey") || "";
+      // TEMP DEMO CHANGE: If Science/Maths/Social is opened and DB has no uploaded JSON yet,
+      // load the local Class 10 paper instead of changing/removing API logic.
+      const demoQuestionBank = findDemoQuestionBank(subject, subjectGroupKey);
+      const loadDemoQuestionBank = () => {
+        if (!demoQuestionBank) return false;
+        setApiDataList([demoQuestionBank]);
+        setError(null);
+        return true;
+      };
 
       if (!board || !classNumber || !subject || !subjectGroupKey) {
+        if (loadDemoQuestionBank()) {
+          setLoading(false);
+          return;
+        }
+
         setError("Missing required parameters");
         setLoading(false);
         return;
@@ -776,11 +829,18 @@ export default function QuestionBank() {
         if (data.status && data.data) {
         const bankData = Array.isArray(data.data) ? data.data : [data.data];
           setApiDataList(bankData);
+        } else if (loadDemoQuestionBank()) {
+          return;
         } else {
           setError(data?.message || "Question bank not added");
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to fetch data");
+        const message = err instanceof Error ? err.message : "Failed to fetch data";
+        if (!message.toLowerCase().includes("session") && loadDemoQuestionBank()) {
+          return;
+        } else {
+          setError(message);
+        }
       } finally {
         setLoading(false);
       }

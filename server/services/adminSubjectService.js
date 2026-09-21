@@ -566,7 +566,7 @@ async function processSingleUnitUpload(upload) {
           fileName: path.basename(filePath),
           payload: {
             board: upload.board,
-            standard: upload.standard,
+            class_name: upload.standard,
             subject: upload.subject,
             processing_mode: "single_unit",
             skip_enrichment: upload.skipEnrichment,

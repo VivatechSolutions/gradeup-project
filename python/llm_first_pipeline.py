@@ -26,14 +26,14 @@ Old flow (regex-first):
     → extract_unit_content() slices text per unit
     → LLM structures each unit slice
     → merge into structured.json
-  ❌ Breaks when OCR uses unexpected header format
+  Breaks when OCR uses unexpected header format
 
 New flow (LLM-first):
   content.md
     → LLM reads EVERYTHING in one pass (or semantic chunks for large files)
     → LLM identifies units, lessons, sections from meaning — not regex
     → LLM outputs complete structured.json directly
-  ✓ Works regardless of OCR header format
+  Works regardless of OCR header format
 
 TOKEN BUDGET
 ------------
@@ -54,6 +54,10 @@ from typing import Any, Dict, List, Optional
 
 import orjson
 import requests
+from langfuse_utils import traced_post
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 # ── Limits ────────────────────────────────────────────────────────────────────
 # Keep input well under 128K context. At ~4 chars/token:
@@ -450,7 +454,7 @@ def _parse_json_safe(raw: str) -> Optional[Dict[str, Any]]:
         if cleaned[end - 1] in ('}', ']'):
             try:
                 result = orjson.loads(cleaned[:end].encode())
-                print(f"  ✅ [LLM-First] Salvaged JSON up to char {end}/{len(cleaned)}")
+                logger.info(f"[LLM-First] Salvaged JSON up to char {end}/{len(cleaned)}")
                 return result
             except Exception:
                 continue
@@ -542,14 +546,14 @@ def structure_with_llm_first(
     total_chunks = len(chunks)
 
     if total_chunks > 1:
-        print(f"  📦 [LLM-First] Content too large for one call — splitting into "
+        logger.info(f"[LLM-First] Content too large for one call — splitting into "
               f"{total_chunks} semantic chunks")
 
     chunk_results: List[Dict[str, Any]] = []
 
     for chunk_idx, chunk_content in enumerate(chunks, 1):
         if total_chunks > 1:
-            print(f"  🔀 [LLM-First] Chunk {chunk_idx}/{total_chunks} "
+            logger.info(f"[LLM-First] Chunk {chunk_idx}/{total_chunks} "
                   f"({len(chunk_content):,} chars)...")
 
         unit_data = None
@@ -563,7 +567,7 @@ def structure_with_llm_first(
             try:
                 if attempt > 0:
                     wait = _RETRY_BASE_DELAY * (3 ** attempt)
-                    print(f"  ⏳ [LLM-First] Retry {attempt+1}/{max_retries} after {wait}s...")
+                    logger.info(f"[LLM-First] Retry {attempt+1}/{max_retries} after {wait}s...")
                     time.sleep(wait)
 
                 user_prompt = _build_user_prompt(
@@ -588,12 +592,12 @@ def structure_with_llm_first(
                     # salvage with _parse_json_safe()'s partial-JSON recovery logic.
                 }
 
-                print(f"  🔄 [LLM-First] Calling {model} "
+                logger.info(f"[LLM-First] Calling {model} "
                       f"(attempt {attempt+1}/{max_retries}, "
                       f"{len(effective_chunk):,} chars input)...")
                 t0 = time.time()
 
-                resp = requests.post(
+                resp = traced_post("structure-unit",
                     "https://api.openai.com/v1/chat/completions",
                     headers=headers,
                     json=payload,
@@ -601,29 +605,29 @@ def structure_with_llm_first(
                 )
 
                 elapsed = time.time() - t0
-                print(f"  ✅ [LLM-First] Response in {elapsed:.1f}s (HTTP {resp.status_code})")
+                logger.info(f"[LLM-First] Response in {elapsed:.1f}s (HTTP {resp.status_code})")
 
                 if not resp.ok:
                     try:
                         err = resp.json()
-                        print(f"  ❌ [LLM-First] API error: {err}")
+                        logger.error(f"[LLM-First] API error: {err}")
                     except Exception:
-                        print(f"  ❌ [LLM-First] API error (raw): {resp.text[:300]}")
+                        logger.error(f"[LLM-First] API error (raw): {resp.text[:300]}")
                     resp.raise_for_status()
 
                 resp_data = resp.json()
                 choice = resp_data["choices"][0]
                 raw_content = choice["message"]["content"]
                 finish_reason = choice.get("finish_reason", "stop")
-                print(f"  📊 [LLM-First] Output: {len(raw_content):,} chars "
+                logger.info(f"[LLM-First] Output: {len(raw_content):,} chars "
                       f"(finish_reason={finish_reason})")
 
                 # Handle content_filter — retry with gpt-4o fallback
                 if finish_reason == "content_filter":
                     if model != "gpt-4o":
-                        print(f"  ⚠️  [LLM-First] content_filter — retrying with gpt-4o...")
+                        logger.warning(f"[LLM-First] content_filter — retrying with gpt-4o...")
                         fb_payload = {**payload, "model": "gpt-4o"}
-                        fb_resp = requests.post(
+                        fb_resp = traced_post("structure-unit",
                             "https://api.openai.com/v1/chat/completions",
                             headers=headers, json=fb_payload, timeout=timeout
                         )
@@ -633,7 +637,7 @@ def structure_with_llm_first(
                                 raw_content = fb_choice["message"]["content"]
                                 finish_reason = fb_choice.get("finish_reason", "stop")
                     if finish_reason == "content_filter":
-                        print(f"  ❌ [LLM-First] Both models blocked — skipping chunk")
+                        logger.error(f"[LLM-First] Both models blocked — skipping chunk")
                         break
 
                 # Truncation recovery — raw_content may be partial JSON or empty
@@ -649,11 +653,11 @@ def structure_with_llm_first(
                         para_break = effective_chunk.rfind('\n\n')
                         if para_break > reduced_size * 0.5:
                             effective_chunk = effective_chunk[:para_break]
-                        print(f"  ⚠️  [LLM-First] Empty output — reducing chunk to "
+                        logger.warning(f"[LLM-First] Empty output — reducing chunk to "
                               f"{len(effective_chunk):,} chars and retrying...")
                         continue  # retry with smaller chunk
 
-                    print(f"  ⚠️  [LLM-First] Output truncated — attempting continuation...")
+                    logger.warning(f"[LLM-First] Output truncated — attempting continuation...")
                     rec_msgs = payload["messages"] + [
                         {"role": "assistant", "content": raw_content},
                         {"role": "user", "content": (
@@ -669,7 +673,7 @@ def structure_with_llm_first(
                         "max_completion_tokens": _MAX_COMPLETION_TOKENS,
                     }
                     try:
-                        rec_resp = requests.post(
+                        rec_resp = traced_post("recover-structure-json",
                             "https://api.openai.com/v1/chat/completions",
                             headers=headers, json=rec_payload, timeout=timeout
                         )
@@ -677,13 +681,13 @@ def structure_with_llm_first(
                             continuation_text = rec_resp.json()["choices"][0]["message"]["content"]
                             if continuation_text.strip():
                                 raw_content += continuation_text
-                                print(f"  ✅ [LLM-First] Continuation added "
+                                logger.info(f"[LLM-First] Continuation added "
                                       f"{len(continuation_text):,} chars")
                             else:
-                                print(f"  ⚠️  [LLM-First] Continuation also empty — "
+                                logger.warning(f"[LLM-First] Continuation also empty — "
                                       f"attempting JSON salvage on partial output")
                     except Exception as rec_err:
-                        print(f"  ⚠️  [LLM-First] Continuation failed: {rec_err}")
+                        logger.warning(f"[LLM-First] Continuation failed: {rec_err}")
 
                 # Parse JSON
                 unit_data = _parse_json_safe(raw_content)
@@ -693,18 +697,18 @@ def structure_with_llm_first(
                         # Only override if the content doesn't actually say "Unit 1"
                         if not re.search(r'\bUNIT\s+1\b', content_md, re.IGNORECASE):
                             unit_data["unit_number"] = hint_unit_number
-                            print(f"  🔧 [LLM-First] Corrected unit_number → {hint_unit_number}")
+                            logger.info(f"[LLM-First] Corrected unit_number → {hint_unit_number}")
                     break  # success
 
             except Exception as e:
-                print(f"  ❌ [LLM-First] Attempt {attempt+1} error: {e}")
+                logger.error(f"[LLM-First] Attempt {attempt+1} error: {e}")
                 if attempt == max_retries - 1:
-                    print(f"  ❌ [LLM-First] All retries failed for chunk {chunk_idx}")
+                    logger.error(f"[LLM-First] All retries failed for chunk {chunk_idx}")
 
         if unit_data:
             chunk_results.append(unit_data)
         else:
-            print(f"  ⚠️  [LLM-First] Chunk {chunk_idx} failed — no usable output")
+            logger.warning(f"[LLM-First] Chunk {chunk_idx} failed — no usable output")
 
     if not chunk_results:
         return None
@@ -722,7 +726,7 @@ def structure_with_llm_first(
     type_summary = ", ".join(
         f"{t}:{section_types.count(t)}" for t in sorted(set(section_types))
     )
-    print(f"  ✅ [LLM-First] Unit {merged.get('unit_number')}: "
+    logger.info(f"[LLM-First] Unit {merged.get('unit_number')}: "
           f"{section_count} sections [{type_summary}]")
 
     return merged
@@ -855,7 +859,7 @@ def fill_prose_from_source(unit_data: Dict[str, Any], source_md: str) -> Dict[st
             pos = source_md.find(first_line[:30], search_cursor)
             if pos > 0:
                 search_cursor = pos + len(extracted)
-            print(f"  ✅ [Fill-Prose] Injected {len(extracted):,} chars into "
+            logger.info(f"[Fill-Prose] Injected {len(extracted):,} chars into "
                   f"'{section.get('id', stype)}' from source markdown")
 
             # For poem: if sub_items are empty, fill stanzas from extracted content
@@ -868,7 +872,7 @@ def fill_prose_from_source(unit_data: Dict[str, Any], source_md: str) -> Dict[st
                     if not re.match(r'^[A-Z\s]+$', stanza)  # skip author line
                 ]
         else:
-            print(f"  ⚠️  [Fill-Prose] Could not extract text for '{section.get('id', stype)}' "
+            logger.warning(f"[Fill-Prose] Could not extract text for '{section.get('id', stype)}' "
                   f"— content remains placeholder")
 
     return unit_data
@@ -923,7 +927,7 @@ def detect_unit_number_from_markdown(markdown: str) -> Optional[int]:
         if m:
             val = extractor(m)
             if val and 1 <= val <= 50:
-                print(f"  🔍 [LLM-First] Detected unit number from markdown: {val}")
+                logger.info(f"[LLM-First] Detected unit number from markdown: {val}")
                 return val
 
     # Beehive/First Flight/Honeydew: numbered lessons like "1. The Fun They Had"
@@ -936,7 +940,7 @@ def detect_unit_number_from_markdown(markdown: str) -> Optional[int]:
     if m:
         val = int(m.group(1))
         if 1 <= val <= 30:
-            print(f"  🔍 [LLM-First] Detected Beehive lesson number: {val}")
+            logger.info(f"[LLM-First] Detected Beehive lesson number: {val}")
             return val
 
     return None

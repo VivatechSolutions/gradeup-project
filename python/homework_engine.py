@@ -7,6 +7,9 @@ Features:
 - Progressive difficulty (slightly above student's current level)
 - LLM-based answer evaluation with RAG grading
 - Points awarded on completion
+- Interactive Socratic chat: the student can attempt answers, ask the tutor to
+  teach a concept, request hints or move between questions, and every turn comes
+  back with tappable suggested follow-up questions
 """
 
 import os
@@ -19,6 +22,11 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
 
 import requests
+from langfuse_utils import traced_post
+from langfuse_utils import with_student_context
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 HOMEWORK_DATA_DIR = Path("homework_data")
 HOMEWORK_MAX_POINTS = 100  # Points per homework assignment
@@ -146,7 +154,7 @@ class HomeworkEngine:
             if results:
                 return "\n---\n".join(r.get("text", "")[:600] for r in results)
         except Exception as e:
-            print(f"  ⚠️  [HomeworkEngine] RAG retrieval failed: {e}")
+            logger.warning(f"[HomeworkEngine] RAG retrieval failed: {e}")
         return ""
 
     def _generate_homework_with_llm(
@@ -224,7 +232,7 @@ Return ONLY the JSON array."""
         }
 
         try:
-            resp = requests.post(
+            resp = traced_post("generate-homework",
                 "https://api.openai.com/v1/chat/completions",
                 headers=headers,
                 json=payload,
@@ -246,7 +254,7 @@ Return ONLY the JSON array."""
 
                 return questions[:num_questions]
         except Exception as e:
-            print(f"  ⚠️  [HomeworkEngine] LLM generation failed: {e}")
+            logger.warning(f"[HomeworkEngine] LLM generation failed: {e}")
 
         return self._fallback_homework(subject, unit_number, num_questions)
 
@@ -351,7 +359,7 @@ Return ONLY the JSON array."""
         }
 
         try:
-            resp = requests.post(
+            resp = traced_post("evaluate-homework-answers",
                 "https://api.openai.com/v1/chat/completions",
                 headers=headers,
                 json=payload,
@@ -363,7 +371,7 @@ Return ONLY the JSON array."""
                 if evals:
                     return evals
         except Exception as e:
-            print(f"  ⚠️  [HomeworkEngine] LLM evaluation failed: {e}")
+            logger.warning(f"[HomeworkEngine] LLM evaluation failed: {e}")
 
         return self._simple_evaluate(questions, answers)
 
@@ -389,7 +397,7 @@ Return ONLY the JSON array."""
             if cleaned[end - 1] in ('}', ']'):
                 try:
                     result = json.loads(cleaned[:end])
-                    print(f"  ✅ [HomeworkEngine] Salvaged JSON up to char {end}/{len(cleaned)}")
+                    logger.info(f"[HomeworkEngine] Salvaged JSON up to char {end}/{len(cleaned)}")
                     return result
                 except Exception:
                     continue
@@ -436,6 +444,7 @@ Return ONLY the JSON array."""
 
     # ── Public API ────────────────────────────────────────────────────────────
 
+    @with_student_context()
     def assign_homework(
         self,
         candidate_id: str,
@@ -581,7 +590,7 @@ Return ONLY the JSON array."""
                 unit_title=unit_title,
             )
         except Exception as e:
-            print(f"  ⚠️  [HomeworkEngine] Failed to log assignment: {e}")
+            logger.warning(f"[HomeworkEngine] Failed to log assignment: {e}")
 
         # Return (hide expected answers from student)
         student_questions = []
@@ -608,6 +617,7 @@ Return ONLY the JSON array."""
             "weak_sections_targeted": weak_sections_targeted,
         }
 
+    @with_student_context()
     def submit_homework(
         self,
         homework_id: str,
@@ -732,7 +742,7 @@ Return ONLY the JSON array."""
                 data["interaction_history"] = data["interaction_history"][-200:]
             tracker._save(candidate_id, data)
         except Exception as e:
-            print(f"  ⚠️  [HomeworkEngine] Failed to update performance: {e}")
+            logger.warning(f"[HomeworkEngine] Failed to update performance: {e}")
 
         # Get updated total points
         try:
@@ -824,28 +834,184 @@ Return ONLY the JSON array."""
         path = self.get_homework_session_path(candidate_id, homework_id)
         session = self._load_json(path)
         if not session:
-            first_question = homework_details["questions"][0]["question"]
+            first_q = homework_details["questions"][0]
+            first_topic = (first_q.get("section_title")
+                           or homework_details.get("unit_title")
+                           or homework_details.get("subject") or "this topic")
             session = {
                 "homework_id": homework_id,
                 "candidate_id": candidate_id,
                 "current_question_index": 0,
                 "attempts_count": 0,
+                "hints_used": 0,
+                "concepts_explored": 0,
                 "status": "pending",
+                "pending_offer": first_topic,
+                "suggested_questions": self._offer_suggestions(
+                    first_topic, self._greeting_suggestions(first_topic)
+                ),
                 "chat_history": [
                     {
                         "role": "assistant",
-                        "content": (
-                            f"Hello! I am your GradeUp Socratic Homework Helper. "
-                            f"I've loaded your homework assignment for {homework_details.get('subject', 'Studies')}. "
-                            f"Let's work on Question 1:\n\n{first_question}\n\n"
-                            f"How would you approach solving this problem?"
-                        ),
+                        "content": self._greeting(homework_details, first_q, first_topic),
                         "timestamp": datetime.now(timezone.utc).isoformat()
                     }
                 ]
             }
             self._save_json(path, session)
+        else:
+            # Backfill interactive-chat fields on sessions created before the
+            # helper became conversational.
+            session.setdefault("hints_used", 0)
+            session.setdefault("concepts_explored", 0)
+            session.setdefault("suggested_questions", [])
+            session.setdefault("pending_offer", "")
         return session
+
+    # ── Interactive chat helpers ──────────────────────────────────────────────
+
+    @staticmethod
+    def _greeting(homework: Dict[str, Any], first_q: Dict[str, Any],
+                  topic: str) -> str:
+        """
+        Opening message: greet the student, show the question has been read,
+        put it on screen, and hand them the choice of being taught the concept
+        or diving straight in.
+        """
+        lines = [
+            "Hey buddy! I'm here to help with your homework — let's work through this together.",
+            "",
+            "I've analysed your question.",
+            "",
+            "**Question:**",
+            first_q.get("question", ""),
+        ]
+        if topic and topic != "this topic":
+            lines += ["", f"This one is really about **{topic}**."]
+        lines += [
+            "",
+            "So, where would you like to begin — should I explain the concept behind this "
+            "question first, or would you rather take a shot at it and I'll help from there?",
+        ]
+        return "\n".join(lines)
+
+    @staticmethod
+    def _greeting_suggestions(topic: str) -> List[str]:
+        """The two paths the greeting offers, plus one way in for a stuck student."""
+        return [
+            "I'll try it myself first",
+            "What is this question asking me to do?",
+        ]
+
+    @staticmethod
+    def _starter_suggestions(
+        question: Dict[str, Any], homework: Dict[str, Any]
+    ) -> List[str]:
+        """Fallback follow-ups offered when the LLM returns none of its own."""
+        topic = (question.get("section_title")
+                 or homework.get("unit_title")
+                 or homework.get("subject") or "this topic")
+        return [
+            f"Can you explain {topic} with a simple example?",
+            "What is this question asking me to do?",
+            "Can you give me a hint to get started?",
+        ]
+
+    @staticmethod
+    def _offer_suggestions(offer: str, suggestions: List[str]) -> List[str]:
+        """
+        Put a one-tap acceptance at the top of the suggestion chips whenever the
+        tutor has offered to explain something ("Would you like me to explain X?").
+        """
+        if not offer:
+            return suggestions[:3]
+        accept = f"Yes, explain {offer}"
+        rest = [q for q in suggestions if q.strip().lower() != accept.lower()]
+        return [accept] + rest[:2]
+
+    def _retrieve_textbook_context(
+        self,
+        queries: List[str],
+        homework: Dict[str, Any],
+        per_query: int = 3,
+        max_chunks: int = 4,
+    ) -> str:
+        """
+        Pull textbook passages from Qdrant for each query, deduplicated.
+
+        The student's own message is searched alongside the homework question, so
+        a "teach me this concept" turn retrieves the concept itself and not only
+        the question it was asked from.
+        """
+        try:
+            from qdrant_integration import search_qdrant
+        except ImportError:
+            return ""
+
+        seen: set = set()
+        chunks: List[str] = []
+        for query in queries:
+            if not query or not query.strip():
+                continue
+            try:
+                results = search_qdrant(
+                    query=query,
+                    limit=per_query,
+                    unit_filter=homework.get("unit_number"),
+                    subject_filter=homework.get("subject"),
+                    board_filter=homework.get("board"),
+                    class_filter=homework.get("class_number"),
+                    term_filter=homework.get("term"),
+                )
+            except Exception as q_err:
+                logger.error(f"[HomeworkEngine] RAG retrieval failed: {q_err}")
+                continue
+
+            for r in results or []:
+                text = (r.get("text") or "").strip()
+                if not text:
+                    continue
+                key = text[:120].lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                chunks.append(text[:600])
+                if len(chunks) >= max_chunks:
+                    return "\n---\n".join(chunks)
+
+        return "\n---\n".join(chunks)
+
+    def get_chat_transcript(
+        self, candidate_id: str, homework_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """Full chat transcript plus live progress for a helper session."""
+        session = self._load_json(
+            self.get_homework_session_path(candidate_id, homework_id)
+        )
+        if not session:
+            return None
+
+        homework = self.get_homework_detail(candidate_id, homework_id) or {}
+        questions = homework.get("questions", [])
+        idx = session.get("current_question_index", 0)
+
+        return {
+            "homework_id": homework_id,
+            "candidate_id": candidate_id,
+            "subject": homework.get("subject"),
+            "unit_number": homework.get("unit_number"),
+            "status": session.get("status", "pending"),
+            "chat_history": session.get("chat_history", []),
+            "current_question": questions[idx]["question"] if idx < len(questions) else "",
+            "current_question_index": idx,
+            "total_questions": len(questions),
+            "attempts_count": session.get("attempts_count", 0),
+            "hints_used": session.get("hints_used", 0),
+            "concepts_explored": session.get("concepts_explored", 0),
+            "suggested_questions": session.get("suggested_questions", []),
+            "pending_offer": session.get("pending_offer", ""),
+            "awaiting_offer_reply": bool(session.get("pending_offer")),
+        }
 
     def save_homework_session(
         self, candidate_id: str, homework_id: str, session: Dict[str, Any]
@@ -853,6 +1019,7 @@ Return ONLY the JSON array."""
         path = self.get_homework_session_path(candidate_id, homework_id)
         self._save_json(path, session)
 
+    @with_student_context()
     def ingest_school_homework(
         self,
         candidate_id: str,
@@ -925,7 +1092,7 @@ Return ONLY the JSON array."""
             "temperature": 0.2,
         }
 
-        resp = requests.post(
+        resp = traced_post("ingest-school-homework",
             "https://api.openai.com/v1/chat/completions",
             headers=headers,
             json=payload,
@@ -975,6 +1142,7 @@ Return ONLY the JSON array."""
 
         return homework
 
+    @with_student_context(session_arg="homework_id")
     def execute_socratic_chat_turn(
         self,
         candidate_id: str,
@@ -988,9 +1156,13 @@ Return ONLY the JSON array."""
         term: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """
-        Executes a Socratic tutoring turn.
+        Executes one interactive tutoring turn.
+
         If homework_id is 'new' or 'school', it will first ingest the school homework sheet.
-        Otherwise, it loads the existing session and evaluates the student's message conceptually.
+        Otherwise it loads the existing session, works out what the student is actually
+        doing — attempting the answer, asking to be taught a concept, asking for a hint,
+        or moving between questions — and responds accordingly. Every turn also returns
+        suggested follow-up questions the student can tap to keep exploring the topic.
         """
         # Load homework assignment
         homework = None
@@ -1031,6 +1203,12 @@ Return ONLY the JSON array."""
                 "current_question_index": 0,
                 "total_questions": len(homework["questions"]),
                 "action": "provide_hint",
+                "intent": "session_start",
+                "suggested_questions": session.get("suggested_questions", []),
+                "pending_offer": session.get("pending_offer", ""),
+                "awaiting_offer_reply": bool(session.get("pending_offer")),
+                "attempts_count": 0,
+                "hints_used": 0,
                 "status": "pending"
             }
 
@@ -1047,11 +1225,17 @@ Return ONLY the JSON array."""
                 "current_question_index": idx,
                 "total_questions": len(questions),
                 "action": "complete_homework",
+                "intent": "completed",
+                "suggested_questions": [],
+                "pending_offer": "",
+                "awaiting_offer_reply": False,
+                "attempts_count": session.get("attempts_count", 0),
+                "hints_used": session.get("hints_used", 0),
                 "status": "completed"
             }
 
         current_q = questions[idx]
-        
+
         # Append student message to history
         session["chat_history"].append({
             "role": "user",
@@ -1059,49 +1243,105 @@ Return ONLY the JSON array."""
             "timestamp": datetime.now(timezone.utc).isoformat()
         })
 
-        # Retrieve textbook context from Qdrant using the current question (RAG integration)
-        textbook_context = ""
-        try:
-            from qdrant_integration import search_qdrant
-            results = search_qdrant(
-                query=current_q["question"],
-                limit=3,
-                unit_filter=homework["unit_number"],
-                subject_filter=homework["subject"],
-                board_filter=homework.get("board"),
-                class_filter=homework.get("class_number"),
-                term_filter=homework.get("term"),
-            )
-            if results:
-                textbook_context = "\n---\n".join(r.get("text", "")[:600] for r in results)
-        except Exception as q_err:
-            print(f"  [HomeworkEngine] RAG retrieval failed: {q_err}")
+        # Retrieve textbook context from Qdrant (RAG integration). The student's own
+        # words are searched first so a "teach me X" turn pulls X, not just the question.
+        rag_queries = [current_q["question"]]
+        if message and len(message.split()) >= 3:
+            rag_queries.insert(0, message)
+        textbook_context = self._retrieve_textbook_context(rag_queries, homework)
 
         # Call OpenAI to run Socratic feedback
         api_key = os.environ.get("OPENAI_API_KEY_TEXT") or os.environ.get("OPENAI_API_KEY")
         if not api_key:
             raise Exception("OpenAI API Key is missing.")
 
+        pending_offer = (session.get("pending_offer") or "").strip()
+        offer_block = (
+            f"## YOUR PREVIOUS OFFER (the student is replying to this):\n"
+            f"You offered to explain the concept behind the question — {pending_offer} — and asked whether\n"
+            f"they wanted that or would rather attempt it themselves.\n"
+            f"- If the student ACCEPTS in any form (\"yes\", \"yes please\", \"sure\", \"ok\", \"go on\", \"explain\",\n"
+            f"  or they tap 'Yes, explain {pending_offer}') → intent \"accept_offer\": now TEACH {pending_offer}\n"
+            f"  properly, then bring them back to the question.\n"
+            f"- If the student would rather START (\"no\", \"not now\", \"I'll try it myself first\", \"let's begin\",\n"
+            f"  \"where do I start?\") → intent \"decline_offer\": cheer them on in a line, do NOT explain the\n"
+            f"  concept, and ask the one opening question that gets them into the problem.\n\n"
+            if pending_offer else ""
+        )
+
         system_prompt = (
-            "You are the GradeUp Socratic Homework Helper.\n"
-            "Your job is to guide the student to solve their active homework question step-by-step.\n"
-            "You MUST NEVER provide the direct solution, final calculation, or answers.\n\n"
+            "You are the GradeUp Homework Helper — a warm, friendly teacher sitting beside a school student.\n"
+            "The student is working through a homework assignment, but this is a real conversation: they may\n"
+            "attempt the question, ask you to TEACH them a concept they don't understand, ask for a hint, or\n"
+            "want to move around the assignment. Handle whichever they do.\n\n"
+            "## THIS IS NOT A TEST — THERE IS NO PENALTY:\n"
+            "- Nothing the student says costs them marks. A wrong answer is just a step on the way.\n"
+            "- NEVER scold, mark them down, or say things like \"that's wrong\", \"incorrect\", \"you failed\",\n"
+            "  \"you should already know this\", or \"this is your third try\".\n"
+            "- NEVER mention attempt counts, scores, or how many hints they have used.\n"
+            "- NEVER number the questions out loud (\"Question 3 of 5\") — just talk about \"this question\".\n"
+            "- Asking questions is the BEST thing they can do — praise curiosity every time it shows up.\n"
+            "- Always keep the conversation going: end with something they can reply to, never a dead end.\n\n"
             "## CURRENT ACTIVE QUESTION INFO:\n"
-            f"- Question: {current_q['question']}\n"
+            f"- Question {idx + 1} of {len(questions)}: {current_q['question']}\n"
+            f"- Topic: {current_q.get('section_title', homework.get('unit_title', ''))}\n"
             f"- Hints: {current_q.get('hints', [])}\n"
             f"- Confidential Rubric/Expected Answer (NEVER REVEAL): {current_q.get('expected_answer', '')}\n"
-            f"- Student's Attempts on this question so far: {session['attempts_count']}\n\n"
-            "## CRITICAL INSTRUCTIONS:\n"
-            "1. Acknowledge and evaluate the student's reasoning/attempt.\n"
-            "2. If their answer is correct: set 'correct': true, congratulate them, briefly explain why they are correct, and set 'action': 'advance_question'.\n"
-            "3. If their answer is incorrect or stuck: set 'correct': false, explain where their thinking might be off without giving the answer, offer the next hint from the list, and ask them a supportive guiding question.\n"
-            "4. Keep explanations short, clear, and age-appropriate (school level).\n"
-            "5. Use LaTeX inline \\( ... \\) or display \\[ ... \\] for formulas where helpful.\n\n"
+            f"- Exchanges on this question so far (for YOUR pacing only — never mention it): {session['attempts_count']}\n"
+            f"- Hints already given on this question (never mention it): {session.get('hints_used', 0)}\n\n"
+            + offer_block +
+            "## STEP 1 — CLASSIFY the student's message into 'intent':\n"
+            "- \"answer_attempt\"     — they are trying to answer the active question\n"
+            "- \"concept_question\"   — they want to LEARN or understand something (a definition, a formula,\n"
+            "  'why does...', 'what is...', 'explain...', 'I don't understand...')\n"
+            "- \"accept_offer\"       — a plain yes to the explanation you just offered\n"
+            "- \"decline_offer\"      — a plain no to the explanation you just offered\n"
+            "- \"hint_request\"       — they explicitly want a hint or say they are stuck with no attempt\n"
+            "- \"next_question\"      — skip ahead / 'next question'\n"
+            "- \"previous_question\"  — go back to the previous question\n"
+            "- \"repeat_question\"    — read the current question again\n"
+            "- \"smalltalk\"          — greeting, thanks, or off-topic chat\n"
+            "A bare \"yes\"/\"no\" is ONLY accept_offer/decline_offer when you actually made an offer above;\n"
+            "otherwise treat it as an answer_attempt.\n\n"
+            "## STEP 2 — RESPOND according to the intent:\n"
+            "- answer_attempt: evaluate their reasoning. If correct → 'correct': true, congratulate, briefly say\n"
+            "  WHY it is right, 'action': 'advance_question'. If not yet right → 'correct': false, first name the\n"
+            "  part they DID get right, then gently open up the step that needs another look WITHOUT revealing\n"
+            "  the answer, give the next unused hint, and end with a guiding question, 'action': 'provide_hint'.\n"
+            "- concept_question / accept_offer: TEACH them. Explain the concept clearly from the textbook context\n"
+            "  with a short everyday example, then tie it back to what the question is asking. You may fully\n"
+            "  explain the CONCEPT — that is how they learn — but NEVER the specific answer to the active\n"
+            "  homework question. 'correct': false, 'action': 'explain_concept'.\n"
+            "- decline_offer: one encouraging line pointing them back at the question. 'action': 'chat'.\n"
+            "- hint_request: give exactly ONE next hint, never the answer. 'action': 'provide_hint'.\n"
+            "- next_question / previous_question / repeat_question: acknowledge in one line and set 'action' to\n"
+            "  the matching value.\n"
+            "- smalltalk: reply warmly in a line or two and steer back to the work. 'action': 'chat'.\n\n"
+            "## ALWAYS:\n"
+            "1. Be encouraging and age-appropriate (school level). 2-5 sentences, except when teaching a concept.\n"
+            "2. Use LaTeX inline \\( ... \\) or display \\[ ... \\] for formulas where helpful.\n"
+            "3. Ground every explanation in the TEXTBOOK REFERENCE CONTEXT when it is provided. Do not invent facts.\n"
+            "4. OFFER TO TEACH. Unless the student just finished the last question, end 'assistant_response' by\n"
+            "   naming ONE specific concept they need and asking: \"Would you like me to explain <concept>?\"\n"
+            "   Put that exact concept name — and nothing else — in 'offer_concept'. Pick a concept the student\n"
+            "   has not just had explained; when you have run out of useful offers, use \"\" instead.\n"
+            "5. Give exactly 3 'suggested_questions' that CONTINUE THIS CONVERSATION. Read the messages above and\n"
+            "   build them on what you and the student have just been discussing — the idea you just explained,\n"
+            "   the step they got stuck on, the word they used. Make the three DIFFERENT in kind, e.g. one that\n"
+            "   digs into the 'why' behind what was just said, one that asks for a concrete example or a worked\n"
+            "   step, and one that links it to something the student already knows or sees in daily life.\n"
+            "   Rules: written in the STUDENT'S voice ('Why does the rate slow down at night?'), under 14 words,\n"
+            "   naming the actual concept rather than saying 'this' or 'it', never a vague opener like 'tell me\n"
+            "   more', never repeating a question already asked in this conversation, and NEVER a question that\n"
+            "   asks you for the answer to the homework question.\n\n"
             "Respond ONLY with a JSON object matching this structure:\n"
             "{\n"
+            "  \"intent\": \"answer_attempt\" | \"concept_question\" | \"accept_offer\" | \"decline_offer\" | \"hint_request\" | \"next_question\" | \"previous_question\" | \"repeat_question\" | \"smalltalk\",\n"
             "  \"correct\": true | false,\n"
-            "  \"assistant_response\": \"Socratic feedback text here...\",\n"
-            "  \"action\": \"advance_question\" | \"provide_hint\"\n"
+            "  \"assistant_response\": \"Your reply to the student here, ending with the offer...\",\n"
+            "  \"offer_concept\": \"the concept you just offered to explain, or \\\"\\\"\",\n"
+            "  \"action\": \"advance_question\" | \"provide_hint\" | \"explain_concept\" | \"next_question\" | \"previous_question\" | \"repeat_question\" | \"chat\",\n"
+            "  \"suggested_questions\": [\"...\", \"...\", \"...\"]\n"
             "}"
         )
 
@@ -1109,14 +1349,19 @@ Return ONLY the JSON array."""
         user_prompt = f"Student Message: {message}\n\n"
         if textbook_context:
             user_prompt += f"--- TEXTBOOK REFERENCE CONTEXT ---\n{textbook_context}\n----------------------------------\n\n"
-        user_prompt += "Evaluate the student's response against the question and expected answer."
+        user_prompt += (
+            "Classify what the student is doing, then reply as instructed. "
+            "Remember: teaching a concept is encouraged, revealing the homework answer is not, "
+            "and nothing here is graded. Base your suggested_questions on the conversation above."
+        )
 
         messages = [
             {"role": "system", "content": system_prompt}
         ]
         
-        # Add last 6 messages from session chat history for context
-        for msg in session["chat_history"][-6:]:
+        # Replay recent turns so the tutor answers in the flow of the conversation
+        # and can build its follow-up suggestions on what was actually discussed.
+        for msg in session["chat_history"][-10:]:
             messages.append({"role": msg["role"], "content": msg["content"]})
 
         if image_base64:
@@ -1145,7 +1390,7 @@ Return ONLY the JSON array."""
             "temperature": 0.3,
         }
 
-        resp = requests.post(
+        resp = traced_post("socratic-chat-turn",
             "https://api.openai.com/v1/chat/completions",
             headers=headers,
             json=payload,
@@ -1156,25 +1401,88 @@ Return ONLY the JSON array."""
             raise Exception(f"Socratic LLM request failed: {resp.text}")
 
         eval_result = json.loads(resp.json()["choices"][0]["message"]["content"])
-        is_correct = eval_result.get("correct", False)
+        intent = str(eval_result.get("intent") or "answer_attempt").strip().lower()
+        is_correct = bool(eval_result.get("correct", False))
         assistant_resp = eval_result.get("assistant_response", "Let's keep trying! What do you think is the next step?")
+        new_offer = str(eval_result.get("offer_concept") or "").strip()
+        suggested = [
+            str(q).strip() for q in (eval_result.get("suggested_questions") or [])
+            if str(q).strip()
+        ][:3]
+        if not suggested:
+            suggested = self._starter_suggestions(current_q, homework)
 
-        # Update state based on correctness
-        action = "provide_hint"
-        if is_correct:
-            session["current_question_index"] += 1
+        # A bare yes/no only means accept/decline when an offer was actually open.
+        if intent in ("accept_offer", "decline_offer") and not pending_offer:
+            intent = "answer_attempt"
+
+        # ── Update state from the intent ──────────────────────────────────────
+        # Only a real answer attempt costs an attempt; asking to be taught a
+        # concept or requesting a hint never counts against the student.
+        if intent in ("concept_question", "accept_offer"):
+            action = "explain_concept"
+            session["concepts_explored"] = session.get("concepts_explored", 0) + 1
+        elif intent == "decline_offer":
+            action = "chat"
+        elif intent == "hint_request":
+            action = "provide_hint"
+            session["hints_used"] = session.get("hints_used", 0) + 1
+        elif intent == "next_question":
+            action = "next_question"
+            if idx + 1 < len(questions):
+                session["current_question_index"] = idx + 1
+                session["attempts_count"] = 0
+                session["hints_used"] = 0
+            else:
+                assistant_resp += "\n\nThat was the last question — we can go back to any earlier one if you'd like."
+        elif intent == "previous_question":
+            action = "previous_question"
+            if idx > 0:
+                session["current_question_index"] = idx - 1
+                session["attempts_count"] = 0
+                session["hints_used"] = 0
+            else:
+                assistant_resp += "\n\nWe're already on the first question."
+        elif intent == "repeat_question":
+            action = "repeat_question"
+        elif intent == "smalltalk":
+            action = "chat"
+        elif is_correct:
+            # Correct answer — advance
+            session["current_question_index"] = idx + 1
             session["attempts_count"] = 0
+            session["hints_used"] = 0
             action = "advance_question"
-            
+
             # If all questions are now complete
             if session["current_question_index"] >= len(questions):
                 session["status"] = "completed"
                 # Update status in general index
                 self._update_index_status(candidate_id, homework_id, "completed", score=100.0, points=100)
                 action = "complete_homework"
+                suggested = []
+                new_offer = ""
                 assistant_resp += "\n\n🎉 **Congratulations! You have completed all questions in this homework assignment!**"
         else:
+            action = "provide_hint"
             session["attempts_count"] += 1
+
+        # Keep the open offer so the next bare "yes" / "no" resolves against it.
+        # Repeating the concept just declined would be pestering, so drop it.
+        if intent == "decline_offer" and new_offer.lower() == pending_offer.lower():
+            new_offer = ""
+        session["pending_offer"] = new_offer
+        if new_offer:
+            suggested = self._offer_suggestions(new_offer, suggested)
+
+        current_idx = session["current_question_index"]
+
+        # When the active question changed, put it in the reply so the chat reads
+        # as one continuous conversation.
+        if current_idx != idx and current_idx < len(questions):
+            assistant_resp += f"\n\n**Question:**\n{questions[current_idx]['question']}"
+        elif action == "repeat_question":
+            assistant_resp += f"\n\n**Question:**\n{current_q['question']}"
 
         # Append assistant feedback to session history
         session["chat_history"].append({
@@ -1182,12 +1490,12 @@ Return ONLY the JSON array."""
             "content": assistant_resp,
             "timestamp": datetime.now(timezone.utc).isoformat()
         })
+        session["suggested_questions"] = suggested
 
         # Save session
         self.save_homework_session(candidate_id, homework_id, session)
 
         next_q = ""
-        current_idx = session["current_question_index"]
         if current_idx < len(questions):
             next_q = questions[current_idx]["question"]
 
@@ -1199,6 +1507,13 @@ Return ONLY the JSON array."""
             "current_question_index": current_idx,
             "total_questions": len(questions),
             "action": action,
+            "intent": intent,
+            "suggested_questions": suggested,
+            "pending_offer": new_offer,
+            "awaiting_offer_reply": bool(new_offer),
+            "attempts_count": session["attempts_count"],
+            "hints_used": session.get("hints_used", 0),
+            "concepts_explored": session.get("concepts_explored", 0),
             "status": session["status"]
         }
 

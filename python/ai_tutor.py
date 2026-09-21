@@ -19,10 +19,65 @@ from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime, timezone
 
 import requests
+from langfuse_utils import traced_post, in_current_context
 from dotenv import load_dotenv
+from langfuse_utils import with_student_context
+from logger import get_logger
+
+logger = get_logger(__name__)
+load_dotenv()
+
 # ── Configuration ─────────────────────────────────────────────────────────────
-TUTOR_MODEL = "gpt-4o-mini"
-TUTOR_FALLBACK_MODEL = "gpt-4o"
+# ── LLM configuration (AI Tutor only) ─────────────────────────────────────────
+# The tutor runs on OpenRouter's Llama 4 Scout, matching the extraction
+# pipeline. Every other module in the codebase is untouched.
+#
+# IMPORTANT — the answer and the retrieval run on different providers.
+# qdrant_integration embeds the student's question with whatever
+# EMBEDDING_PROVIDER names (Gemini's gemini-embedding-001, 3072-dim, by
+# default), because a query vector is only comparable with the vectors the
+# collection was built from. So the tutor needs BOTH keys funded: without
+# OPENROUTER_API_KEY it cannot answer, and without the embedding provider's key
+# it answers with no textbook context at all.
+#
+#   AI_TUTOR_MODEL           primary model      (default: meta-llama/llama-4-scout)
+#   AI_TUTOR_FALLBACK_MODEL  optional second OpenRouter model tried on failure
+#
+# OpenRouter exposes an OpenAI-compatible endpoint, so request shape, JSON
+# mode, vision payloads and response parsing all stay as they were.
+TUTOR_MODEL = os.getenv("AI_TUTOR_MODEL", "meta-llama/llama-4-scout")
+TUTOR_FALLBACK_MODEL = os.getenv("AI_TUTOR_FALLBACK_MODEL", "").strip()
+
+_OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+
+try:
+    from config import openrouter_routing
+except Exception:                                    # config not importable in tests
+    def openrouter_routing(model=None):
+        return {}
+
+
+def _tutor_llm(model: Optional[str] = None):
+    """Return the OpenRouter request configuration for one tutor LLM call.
+
+    The fourth element carries provider-routing body fields: one upstream
+    provider's shared pool can be rate-limited while the others sit idle, and
+    without them that 429 is simply the answer the student gets.
+    """
+    openrouter_key = os.environ.get("OPENROUTER_API_KEY")
+    resolved = model or TUTOR_MODEL
+    return (
+        _OPENROUTER_CHAT_URL,
+        {
+            "Authorization": f"Bearer {openrouter_key or ''}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": os.getenv("OPENROUTER_APP_URL", "https://gradeupapi.careeriq.ai"),
+            "X-Title": os.getenv("OPENROUTER_APP_NAME", "GradeUp-AI"),
+        },
+        resolved,
+        openrouter_routing(resolved),
+    )
 TUTOR_MAX_HISTORY = 20          # Max messages kept per conversation
 TUTOR_RAG_TOP_K = 5             # Number of RAG chunks to retrieve
 TUTOR_TIMEOUT = 30              # API call timeout in seconds (reduced for faster UX)
@@ -182,14 +237,23 @@ def retrieve_context(
     unit 1 matches unit 1 of EVERY term book for that subject.
     """
     try:
-        from qdrant_integration import search_qdrant, initialize_qdrant_client
+        from qdrant_integration import (
+            DEFAULT_COLLECTION_NAME,
+            search_qdrant,
+            initialize_qdrant_client,
+        )
     except ImportError:
-        print("  ⚠️  [AI Tutor] qdrant_integration not available")
+        logger.warning("[AI Tutor] qdrant_integration not available")
         return []
 
     all_results: List[Dict[str, Any]] = []
 
-    base_collection = os.environ.get("QDRANT_COLLECTION_NAME", "GradeupAI_Books")
+    # Fall back to the name qdrant_integration derives from the embedding
+    # provider and dimension, never to a bare literal: a hardcoded
+    # "GradeupAI_Books" points the tutor at the pre-Gemini 1536-dim collection,
+    # whose vectors the 3072-dim query cannot be compared against — retrieval
+    # then returns nothing and the tutor answers with no textbook context.
+    base_collection = os.environ.get("QDRANT_COLLECTION_NAME", DEFAULT_COLLECTION_NAME)
 
     # Pass 1: Strict search with unit_filter
     for collection_name in (base_collection,):
@@ -206,11 +270,11 @@ def retrieve_context(
             )
             all_results.extend(results)
         except Exception as e:
-            print(f"  ⚠️  [AI Tutor] Search failed on {collection_name}: {e}")
+            logger.warning(f"[AI Tutor] Search failed on {collection_name}: {e}")
 
     # Pass 2: Fallback search if nothing found (relax unit_number but keep subject + class filters)
     if not all_results and unit_number is not None:
-        print(f"  ⚠️  [AI Tutor] No chunks found for unit {unit_number}. Retrying without unit filter...")
+        logger.warning(f"[AI Tutor] No chunks found for unit {unit_number}. Retrying without unit filter...")
         for collection_name in (base_collection,):
             try:
                 results = search_qdrant(
@@ -227,7 +291,7 @@ def retrieve_context(
                 )
                 all_results.extend(results)
             except Exception as e:
-                print(f"  ⚠️  [AI Tutor] Fallback search failed on {collection_name}: {e}")
+                logger.warning(f"[AI Tutor] Fallback search failed on {collection_name}: {e}")
 
     # Deduplicate by content (first 200 chars)
     seen = set()
@@ -262,7 +326,7 @@ def _extract_suggested_questions(answer: str) -> Tuple[List[str], str]:
     """Parse follow-up question suggestions from the LLM response text and remove them from the answer."""
     suggestions = []
 
-    # Look for the suggestions section (💡 **You could ask next:** or similar)
+    # Look for the suggestions section ( **You could ask next:** or similar)
     # Match numbered lines (1. ..., 2. ..., 3. ...) after the marker
     marker_pattern = re.compile(
         r"(?:💡|\*\*You could ask next\*\*|You could ask next)[:\s]*",
@@ -423,9 +487,10 @@ def generate_tutor_response(
     candidate_name: str = "Student",
     topic_count: int = 0,
 ) -> str:
-    """Call OpenAI to generate the tutor response."""
-    api_key = os.environ.get("OPENAI_API_KEY_TEXT") or os.environ.get("OPENAI_API_KEY")
-    if not api_key:
+    """Call OpenRouter / Llama 4 Scout to generate the tutor response."""
+    url, headers, model, routing = _tutor_llm()
+    if not headers.get("Authorization", "").removeprefix("Bearer ").strip():
+        logger.error("[AI Tutor] OPENROUTER_API_KEY is not set — the tutor cannot answer")
         return "Sorry, the AI tutor is not configured correctly. Please contact your administrator."
 
     # Build system prompt
@@ -468,32 +533,34 @@ def generate_tutor_response(
 
     messages.append({"role": "user", "content": user_message})
 
-    # Call OpenAI
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-
     payload = {
-        "model": TUTOR_MODEL,
+        "model": model,
+        **routing,
         "messages": messages,
-        "max_completion_tokens": 2048,
+        "max_tokens": 2048,
         "temperature": 0.4,
     }
 
     try:
-        resp = requests.post(
-            "https://api.openai.com/v1/chat/completions",
+        resp = traced_post("answer-tutor-question",
+            url,
             headers=headers,
             json=payload,
             timeout=TUTOR_TIMEOUT,
         )
 
-        if not resp.ok:
-            # Try fallback model
+        if not resp.ok and TUTOR_FALLBACK_MODEL:
+            # Optional second OpenRouter model. The provider's own message is
+            # logged because a 404 here is almost always a model name that is
+            # retired or unavailable to this key, which the status alone hides.
+            logger.warning(
+                f"[AI Tutor] {model} returned {resp.status_code} — retrying on "
+                f"{TUTOR_FALLBACK_MODEL}. Provider said: {resp.text[:300]}"
+            )
             payload["model"] = TUTOR_FALLBACK_MODEL
-            resp = requests.post(
-                "https://api.openai.com/v1/chat/completions",
+            payload.update(openrouter_routing(TUTOR_FALLBACK_MODEL))
+            resp = traced_post("answer-tutor-question",
+                url,
                 headers=headers,
                 json=payload,
                 timeout=TUTOR_TIMEOUT,
@@ -503,13 +570,13 @@ def generate_tutor_response(
             data = resp.json()
             return data["choices"][0]["message"]["content"].strip()
         else:
-            print(f"  ❌ [AI Tutor] API error: {resp.status_code} {resp.text[:300]}")
+            logger.error(f"[AI Tutor] API error: {resp.status_code} {resp.text[:300]}")
             return "I'm having trouble connecting right now. Please try again in a moment!"
 
     except requests.Timeout:
         return "The response is taking too long. Please try a shorter question!"
     except Exception as e:
-        print(f"  ❌ [AI Tutor] Error: {e}")
+        logger.error(f"[AI Tutor] Error: {e}")
         return "Something went wrong. Please try again!"
 
 # Image Analyais Space  ###########
@@ -526,13 +593,10 @@ def analyze_student_image(
         - Check educational relevance
         - Describe image
         """
-        api_key = os.environ.get("OPENAI_API_KEY")
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
+        url, headers, model, routing = _tutor_llm()
         payload = {
-            "model": "gpt-4o",
+            "model": model,
+            **routing,
             "messages": [
                 {
                     "role": "system",
@@ -592,7 +656,7 @@ def analyze_student_image(
             }
         }
         resp = requests.post(
-            "https://api.openai.com/v1/chat/completions",
+            url,
             headers=headers,
             json=payload,
             timeout=60,
@@ -609,13 +673,10 @@ def score_image_relevance(
         subject: str,
         unit_name: str,
     ):
-        api_key = os.environ.get("OPENAI_API_KEY")
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
+        url, headers, model, routing = _tutor_llm()
         payload = {
-            "model": "gpt-4o-mini",
+            "model": model,
+            **routing,
             "messages": [
                 {
                     "role": "system",
@@ -664,7 +725,7 @@ def score_image_relevance(
         }
 
         resp = requests.post(
-            "https://api.openai.com/v1/chat/completions",
+            url,
             headers=headers,
             json=payload,
             timeout=60,
@@ -677,6 +738,7 @@ def score_image_relevance(
 # ── Main Orchestrator ─────────────────────────────────────────────────────────
 
 
+@with_student_context()
 def ask_tutor(
     query: str,
     board: str,
@@ -746,7 +808,7 @@ def ask_tutor(
                     "context_chunks_used": 0,
                     "is_relevant": False,
                 }
-            print(f"Vision Error: {e}")
+            logger.error(f"Vision Error: {e}")
     retrieval_query = query
 
     # ── Parallel: Guardrail check + RAG retrieval ─────────────────────────────
@@ -765,7 +827,7 @@ def ask_tutor(
                 image_description=img_desc,
             )
         except Exception as g_err:
-            print(f"  [AI Tutor Middleware] Guardrail error, bypass check: {g_err}")
+            logger.error(f"[AI Tutor Middleware] Guardrail error, bypass check: {g_err}")
             return None  # fail-open
 
     if image_base64 and image_context:
@@ -782,12 +844,15 @@ def ask_tutor(
             term=term,
         )
 
+    # in_current_context keeps both workers inside the request's trace. A bare
+    # submit() starts the thread with an empty context, which detaches the
+    # guardrail and RAG spans into traces of their own.
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        future_guardrail = executor.submit(_run_guardrail)
-        future_rag = executor.submit(_run_rag)
+        future_guardrail = executor.submit(in_current_context(_run_guardrail))
+        future_rag = executor.submit(in_current_context(_run_rag))
         guardrail_result = future_guardrail.result()  # wait for guardrail first
         if guardrail_result:
-            print(f"  [AI Tutor Middleware] Intercepted homework query for candidate {candidate_id}")
+            logger.info(f"[AI Tutor Middleware] Intercepted homework query for candidate {candidate_id}")
             executor.shutdown(wait=False, cancel_futures=True)  # discard pending RAG
             return guardrail_result
         chunks = future_rag.result()  # guardrail passed — get RAG results
@@ -805,7 +870,7 @@ def ask_tutor(
                 unit_name=unit_name,
             )
             score = relevance.get("relevance_score", 0)
-            print(f"📸 Image relevance score: {score}")
+            logger.info(f"Image relevance score: {score}")
             if score < 20:
                 return {
                     "answer": (
@@ -821,7 +886,7 @@ def ask_tutor(
                     "is_relevant": False,
                 }
         except Exception as e:
-            print(f"Image relevance scoring error: {e}")
+            logger.error(f"Image relevance scoring error: {e}")
 
     # 1.5 Extract topic and get conversation count BEFORE LLM call
     top_section = ""
@@ -855,7 +920,7 @@ def ask_tutor(
                     import threading
                     from homework_engine import get_homework_engine
                     hw_engine = get_homework_engine()
-                    print(f"  🚀 [AI Tutor] Auto-triggering homework for {candidate_id} on '{top_section}'")
+                    logger.info(f"[AI Tutor] Auto-triggering homework for {candidate_id} on '{top_section}'")
 
                     def _auto_assign():
                         try:
@@ -869,13 +934,15 @@ def ask_tutor(
                                 unit_title=unit_name,
                                 specific_topic=top_section,
                             )
-                            print(f"  ✅ [AI Tutor] Auto-homework assigned for {candidate_id}")
+                            logger.info(f"[AI Tutor] Auto-homework assigned for {candidate_id}")
                         except Exception as bg_err:
-                            print(f"  ❌ [AI Tutor] Background homework failed: {bg_err}")
+                            logger.error(f"[AI Tutor] Background homework failed: {bg_err}")
 
-                    threading.Thread(target=_auto_assign).start()
+                    # Keeps the background assignment's LLM calls attached to
+                    # the request that triggered them.
+                    threading.Thread(target=in_current_context(_auto_assign)).start()
                 except Exception as ex:
-                    print(f"  ⚠️  [AI Tutor] Failed to auto-trigger homework: {ex}")
+                    logger.warning(f"[AI Tutor] Failed to auto-trigger homework: {ex}")
 
         # Log interaction in unified history
         tracker.record_tutor_interaction(
@@ -888,7 +955,7 @@ def ask_tutor(
             unit_title=unit_name,
         )
     except Exception as e:
-        print(f"  ⚠️  [AI Tutor] Failed to track interaction: {e}")
+        logger.warning(f"[AI Tutor] Failed to track interaction: {e}")
 
     # 2. Load chat history
     history = hm.get_history(candidate_id, subject, unit_number)

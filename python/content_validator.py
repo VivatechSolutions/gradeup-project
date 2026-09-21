@@ -15,6 +15,9 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Set
 from dataclasses import dataclass, field
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 try:
     import orjson
@@ -416,16 +419,16 @@ def validate_extraction(
     )
 
     # Log summary
-    status = "✅ COMPLETE" if report.is_complete else f"⚠️  {unmatched} GAPS"
-    print(f"  📊 [Validator] {status} — {matched}/{total} blocks matched ({coverage:.0f}%)")
+    status = "COMPLETE" if report.is_complete else f"{unmatched} GAPS"
+    logger.info(f"[Validator] {status} — {matched}/{total} blocks matched ({coverage:.0f}%)")
     if warnings:
         for w in warnings:
-            print(f"  ⚠️  [Validator] {w}")
+            logger.warning(f"[Validator] {w}")
     if gaps:
         for g in gaps[:5]:  # Show first 5 gaps
-            print(f"  📋 [Gap] L{g.block.line_start}: {g.reason} (sim={g.similarity:.2f})")
+            logger.info(f"[Gap] L{g.block.line_start}: {g.reason} (sim={g.similarity:.2f})")
         if len(gaps) > 5:
-            print(f"  📋 [Gap] ... and {len(gaps)-5} more gaps")
+            logger.info(f"[Gap] ... and {len(gaps)-5} more gaps")
 
     return report
 
@@ -435,9 +438,9 @@ def fill_gaps_with_llm(
     gaps: List[GapItem],
     content_md: str,
     existing_data: Dict[str, Any],
-    api_key: str,
+    api_key: str = "",
     subject: str = "unknown",
-    model: str = "gpt-5-mini",
+    model: str = "",
     timeout: int = 300,
 ) -> Dict[str, Any]:
     """
@@ -448,6 +451,7 @@ def fill_gaps_with_llm(
     Returns the updated structured data with gaps filled.
     """
     import requests
+    from langfuse_utils import traced_post
     import time
 
     if not gaps:
@@ -456,10 +460,10 @@ def fill_gaps_with_llm(
     # Filter to only significant gaps (>10 words, similarity < threshold)
     significant_gaps = [g for g in gaps if g.block.word_count > 10 and g.similarity < 0.40]
     if not significant_gaps:
-        print(f"  ℹ️  [Gap Filler] {len(gaps)} gaps but none significant enough to re-extract")
+        logger.info(f"[Gap Filler] {len(gaps)} gaps but none significant enough to re-extract")
         return existing_data
 
-    print(f"  🔧 [Gap Filler] Re-extracting {len(significant_gaps)} significant gap(s)...")
+    logger.info(f"[Gap Filler] Re-extracting {len(significant_gaps)} significant gap(s)...")
 
     # Group nearby gaps to minimize LLM calls
     # Collect the raw text for gaps (expand to surrounding context)
@@ -477,9 +481,32 @@ def fill_gaps_with_llm(
     if len(combined_gap_text) > 30_000:
         combined_gap_text = combined_gap_text[:30_000]
 
+    # Gap filling runs on the same OpenRouter/Llama endpoint as the rest of
+    # extraction. Previously this was the last OpenAI call in the repair path,
+    # so a dead OpenAI key meant every gap the validator found stayed unfixed
+    # and the verification loop reported "Fixes made: 0".
+    try:
+        from config import (
+            OPENROUTER_BASE_URL, OPENROUTER_APP_NAME, OPENROUTER_APP_URL, EXTRACTION_MODEL,
+            openrouter_routing,
+        )
+        gap_url = OPENROUTER_BASE_URL
+        extra_headers = {"HTTP-Referer": OPENROUTER_APP_URL, "X-Title": OPENROUTER_APP_NAME}
+    except Exception:
+        gap_url = "https://openrouter.ai/api/v1/chat/completions"
+        extra_headers = {}
+        EXTRACTION_MODEL = "qwen/qwen3-235b-a22b-2507"
+
+        def openrouter_routing(model=None):
+            return {}
+
+    model = model or EXTRACTION_MODEL
+    api_key = api_key or os.environ.get("OPENROUTER_API_KEY", "")
+
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
+        **extra_headers,
     }
 
     # Subject-aware labels and system prompt
@@ -525,13 +552,14 @@ def fill_gaps_with_llm(
             )},
             {"role": "user", "content": gap_prompt},
         ],
-        "max_completion_tokens": 8192,
+        "max_tokens": 8192,
         "response_format": {"type": "json_object"},
+        **openrouter_routing(model),
     }
 
     try:
-        resp = requests.post(
-            "https://api.openai.com/v1/chat/completions",
+        resp = traced_post("fill-content-gap",
+            gap_url,
             headers=headers, json=payload, timeout=timeout,
         )
         if resp.ok:
@@ -544,7 +572,7 @@ def fill_gaps_with_llm(
                 else:
                     gap_data = json.loads(cleaned)
             except Exception:
-                print(f"  ⚠️  [Gap Filler] Failed to parse gap extraction JSON")
+                logger.warning(f"[Gap Filler] Failed to parse gap extraction JSON")
                 return existing_data
 
             new_sections = gap_data.get("sections", [])
@@ -566,13 +594,13 @@ def fill_gaps_with_llm(
                             sec["type"] = "section"  # remap unknown → section
                 existing_data.setdefault("sections", []).extend(new_sections)
                 types_added = [s.get("type", "?") for s in new_sections]
-                print(f"  ✅ [Gap Filler] Added {len(new_sections)} missing section(s): {types_added}")
+                logger.info(f"[Gap Filler] Added {len(new_sections)} missing section(s): {types_added}")
             else:
-                print(f"  ℹ️  [Gap Filler] No additional sections extracted from gaps")
+                logger.info(f"[Gap Filler] No additional sections extracted from gaps")
         else:
-            print(f"  ⚠️  [Gap Filler] API returned {resp.status_code}")
+            logger.warning(f"[Gap Filler] API returned {resp.status_code}")
     except Exception as e:
-        print(f"  ❌ [Gap Filler] Error: {e}")
+        logger.error(f"[Gap Filler] Error: {e}")
 
     return existing_data
 
@@ -625,7 +653,7 @@ if __name__ == "__main__":
 
     outputs_dir = Path("outputs")
     if not outputs_dir.exists():
-        print("No outputs/ directory found")
+        logger.info("No outputs/ directory found")
         sys.exit(1)
 
     total_gaps = 0
@@ -641,18 +669,18 @@ if __name__ == "__main__":
         if not content_path.exists() or not structured_path.exists():
             continue
 
-        print(f"\n{'='*60}")
-        print(f"  Validating: {unit_dir.name}")
-        print(f"{'='*60}")
+        logger.info(f"{'='*60}")
+        logger.info(f"Validating: {unit_dir.name}")
+        logger.info(f"{'='*60}")
 
         report = validate_from_files(str(content_path), str(structured_path))
         total_gaps += report.unmatched_blocks
         total_blocks += report.total_blocks
 
-    print(f"\n{'='*60}")
-    print(f"  SUMMARY: {total_blocks - total_gaps}/{total_blocks} blocks matched "
+    logger.info(f"{'='*60}")
+    logger.info(f"SUMMARY: {total_blocks - total_gaps}/{total_blocks} blocks matched "
           f"({(total_blocks - total_gaps) / max(1, total_blocks) * 100:.0f}% coverage)")
     if total_gaps > 0:
-        print(f"  ⚠️  {total_gaps} total gaps across all units")
+        logger.warning(f"{total_gaps} total gaps across all units")
     else:
-        print(f"  ✅ All content matched!")
+        logger.info(f"All content matched!")

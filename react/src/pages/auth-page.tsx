@@ -10,6 +10,7 @@ import {
   ChevronRight, ChevronLeft, Check,
 } from "lucide-react";
 import { FaGoogle, FaMicrosoft } from "react-icons/fa";
+import gradeupLogo from "../assets/new-logo-g.png";
 
 // ─── CSS — full dark/light theme via [data-theme="dark"] on <html> ────────────
 const CSS = `
@@ -119,29 +120,128 @@ const CSS = `
 }
 
 .ap-hero {
-  flex:1; background:linear-gradient(135deg,#6366f1 0%,#8b5cf6 50%,#ec4899 100%);
+  flex:1;
+  background:#071226;
   display:flex; align-items:center; justify-content:center;
   padding:48px 40px; position:relative; overflow:hidden;
+  isolation:isolate;
 }
-.ap-hero::before { content:''; position:absolute; top:-100px; right:-100px; width:360px; height:360px; border-radius:50%; background:rgba(255,255,255,.08); pointer-events:none; }
-.ap-hero::after  { content:''; position:absolute; bottom:-80px; left:-60px; width:260px; height:260px; border-radius:50%; background:rgba(255,255,255,.06); pointer-events:none; }
-.ap-hero-blob    { position:absolute; top:40%; left:10%; width:120px; height:120px; border-radius:50%; background:rgba(255,255,255,.05); }
+.ap-hero::before {
+  content:''; position:absolute; inset:-18%;
+  background:
+    radial-gradient(circle at 72% 18%, rgba(37,99,235,.34), transparent 30%),
+    radial-gradient(circle at 76% 76%, rgba(217,70,239,.22), transparent 28%),
+    radial-gradient(circle at 18% 68%, rgba(6,182,212,.18), transparent 30%);
+  filter:blur(20px);
+  animation:apAurora 14s ease-in-out infinite alternate;
+  pointer-events:none;
+  z-index:-3;
+}
+.ap-hero::after {
+  content:''; position:absolute; inset:0;
+  background-image:
+    radial-gradient(circle, rgba(148,213,255,.15) 1px, transparent 1.6px);
+  background-size:34px 34px;
+  -webkit-mask-image:radial-gradient(circle at 50% 48%, #000 0%, transparent 74%);
+  mask-image:radial-gradient(circle at 50% 48%, #000 0%, transparent 74%);
+  opacity:.32;
+  animation:apStars 18s linear infinite;
+  pointer-events:none;
+  z-index:-2;
+}
+.ap-hero-circuit { position:absolute; inset:0; pointer-events:none; z-index:-1; opacity:.66; }
+.ap-circuit-line { position:absolute; background:rgba(96,165,250,.24); box-shadow:0 0 18px rgba(56,189,248,.24); animation:apLineDrift 8s ease-in-out infinite; }
+.ap-circuit-line.l1 { width:42%; height:1px; top:20%; left:8%; }
+.ap-circuit-line.l2 { width:1px; height:32%; top:12%; left:24%; animation-delay:-2s; }
+.ap-circuit-line.l3 { width:34%; height:1px; right:9%; top:61%; animation-delay:-4s; }
+.ap-circuit-line.l4 { width:1px; height:26%; right:20%; bottom:10%; animation-delay:-1s; }
+.ap-circuit-node { position:absolute; width:7px; height:7px; border-radius:50%; background:#38bdf8; box-shadow:0 0 16px rgba(56,189,248,.68); animation:apNodePulse 2.8s ease-in-out infinite; }
+.ap-circuit-node.n1 { top:19%; left:49%; }
+.ap-circuit-node.n2 { top:43%; left:24%; animation-delay:-.9s; }
+.ap-circuit-node.n3 { right:28%; bottom:38%; animation-delay:-1.6s; }
+.ap-floating-card {
+  position:absolute; min-width:116px; padding:11px 12px; border-radius:14px;
+  background:rgba(15,23,42,.58);
+  border:1px solid rgba(147,197,253,.22);
+  box-shadow:0 18px 50px rgba(2,6,23,.3);
+  backdrop-filter:blur(14px);
+  color:rgba(255,255,255,.88);
+  font-size:11px; font-weight:700;
+  animation:apCardFloat 7s ease-in-out infinite;
+}
+.ap-floating-card.c1 { top:15%; right:11%; }
+.ap-floating-card.c2 { bottom:17%; left:8%; animation-delay:-2.5s; }
+.ap-floating-card.c3 { right:15%; bottom:10%; animation-delay:-4s; }
+.ap-floating-icon { width:28px; height:28px; border-radius:9px; display:flex; align-items:center; justify-content:center; background:rgba(59,130,246,.22); color:#dbeafe; margin-bottom:10px; }
+.ap-floating-line { height:6px; border-radius:99px; background:rgba(219,234,254,.48); margin-bottom:7px; }
+.ap-floating-line.short { width:64%; background:rgba(147,197,253,.26); }
 .ap-hero-inner   { position:relative; z-index:1; max-width:420px; width:100%; }
 .ap-hero-logo    { display:inline-flex; align-items:center; gap:12px; margin-bottom:36px; }
+.ap-hero-logo .nav-brand {
+  display:inline-flex;
+  padding:8px 14px;
+  border-radius:20px;
+  background:rgba(3,7,18,.52);
+  border:1px solid rgba(191,219,254,.18);
+  box-shadow:0 16px 42px rgba(2,6,23,.36), inset 0 1px 0 rgba(255,255,255,.08);
+  backdrop-filter:blur(12px);
+}
+.ap-hero-logo .nav-brand-logo {
+  filter:drop-shadow(0 4px 12px rgba(0,0,0,.42)) drop-shadow(0 0 12px rgba(59,130,246,.18));
+}
 .ap-hero-logo-icon { width:52px; height:52px; border-radius:16px; background:rgba(255,255,255,.2); border:1.5px solid rgba(255,255,255,.35); display:flex; align-items:center; justify-content:center; }
-.ap-hero-logo-text { font-size:26px; font-weight:800; color:#fff; letter-spacing:-.3px; }
-.ap-hero-heading { font-size:clamp(26px,3.5vw,38px); font-weight:800; color:#fff; line-height:1.2; letter-spacing:-.5px; margin-bottom:14px; }
-.ap-hero-sub     { font-size:15px; color:rgba(255,255,255,.72); line-height:1.7; margin-bottom:36px; }
+.ap-hero-logo-text { font-size:26px; font-weight:800; color:#fff; letter-spacing:0; }
+.ap-hero-heading { font-size:clamp(26px,3.5vw,38px); font-weight:800; color:#fff; line-height:1.2; letter-spacing:0; margin-bottom:14px; text-shadow:0 8px 32px rgba(0,0,0,.28); animation:apTextGlow 4.8s ease-in-out infinite; }
+.ap-hero-sub     { font-size:15px; color:rgba(255,255,255,.76); line-height:1.7; margin-bottom:36px; }
 .ap-hero-features { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
-.ap-feat { background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.18); border-radius:16px; padding:16px 14px; backdrop-filter:blur(8px); transition:background .2s; }
-.ap-feat:hover { background:rgba(255,255,255,.18); }
-.ap-feat-icon  { width:36px; height:36px; border-radius:10px; background:rgba(255,255,255,.2); display:flex; align-items:center; justify-content:center; margin-bottom:10px; }
+.ap-feat { background:rgba(15,23,42,.66); border:1px solid rgba(147,197,253,.18); border-radius:16px; padding:16px 14px; backdrop-filter:blur(10px); transition:background .2s, transform .2s, border-color .2s; }
+.ap-feat:hover { background:rgba(30,41,59,.72); transform:translateY(-3px); border-color:rgba(56,189,248,.42); }
+.ap-feat-icon  { width:36px; height:36px; border-radius:10px; background:rgba(59,130,246,.24); display:flex; align-items:center; justify-content:center; margin-bottom:10px; box-shadow:inset 0 0 0 1px rgba(255,255,255,.15); }
+.ap-feat:nth-child(2) .ap-feat-icon { background:rgba(6,182,212,.22); }
+.ap-feat:nth-child(3) .ap-feat-icon { background:rgba(217,70,239,.22); }
+.ap-feat:nth-child(4) .ap-feat-icon { background:rgba(99,102,241,.24); }
 .ap-feat-title { font-size:13px; font-weight:700; color:#fff; margin-bottom:3px; }
-.ap-feat-desc  { font-size:11.5px; color:rgba(255,255,255,.65); line-height:1.5; }
+.ap-feat-desc  { font-size:11.5px; color:rgba(255,255,255,.68); line-height:1.5; }
 .ap-hero-stats { display:flex; gap:20px; margin-top:32px; }
 .ap-stat   { text-align:center; }
 .ap-stat-n { font-size:24px; font-weight:800; color:#fff; line-height:1; }
-.ap-stat-l { font-size:11px; color:rgba(255,255,255,.6); margin-top:2px; }
+.ap-stat-l { font-size:11px; color:rgba(255,255,255,.64); margin-top:2px; }
+
+@keyframes apAurora {
+  0% { transform:translate3d(-2%, -1%, 0) scale(1); opacity:.92; }
+  50% { transform:translate3d(3%, 2%, 0) scale(1.06); opacity:1; }
+  100% { transform:translate3d(-1%, 4%, 0) scale(1.02); opacity:.86; }
+}
+@keyframes apStars {
+  from { background-position:0 0; }
+  to { background-position:68px 34px; }
+}
+@keyframes apLineDrift {
+  0%,100% { transform:translate3d(0,0,0); opacity:.45; }
+  50% { transform:translate3d(12px,-8px,0); opacity:.9; }
+}
+@keyframes apNodePulse {
+  0%,100% { transform:scale(.8); opacity:.55; }
+  50% { transform:scale(1.35); opacity:1; }
+}
+@keyframes apCardFloat {
+  0%,100% { transform:translate3d(0,0,0) rotate(-1deg); }
+  50% { transform:translate3d(0,-14px,0) rotate(1deg); }
+}
+@keyframes apTextGlow {
+  0%,100% { text-shadow:0 8px 32px rgba(0,0,0,.28); }
+  50% { text-shadow:0 8px 32px rgba(34,211,238,.28); }
+}
+@media(prefers-reduced-motion:reduce) {
+  .ap-hero::before,
+  .ap-hero::after,
+  .ap-circuit-line,
+  .ap-circuit-node,
+  .ap-floating-card,
+  .ap-hero-heading {
+    animation:none;
+  }
+}
 
 .ap-form-panel {
   flex:1; display:flex; align-items:center; justify-content:center;
@@ -771,18 +871,69 @@ export default function AuthPage() {
 
         {/* ── Hero panel ── */}
         <div className="ap-hero">
-          <div className="ap-hero-blob"/>
-          <div className="ap-hero-inner">
-            <div className="ap-hero-logo">
-              <div className="ap-hero-logo-icon"><GraduationCap size={26} color="#fff"/></div>
-              <span className="ap-hero-logo-text">GradeUp!</span>
-            </div>
-            <h2 className="ap-hero-heading">Transform Your Learning Experience</h2>
-            <p className="ap-hero-sub">Join thousands of students and teachers achieving academic excellence together.</p>
+          <div className="ap-hero-circuit" aria-hidden="true">
+            <span className="ap-circuit-line l1"/>
+            <span className="ap-circuit-line l2"/>
+            <span className="ap-circuit-line l3"/>
+            <span className="ap-circuit-line l4"/>
+            <span className="ap-circuit-node n1"/>
+            <span className="ap-circuit-node n2"/>
+            <span className="ap-circuit-node n3"/>
+          </div>
+          <div className="ap-floating-card c1" aria-hidden="true">
+            <div className="ap-floating-icon"><Brain size={15}/></div>
+            <div className="ap-floating-line"/>
+            <div className="ap-floating-line short"/>
+          </div>
+          <div className="ap-floating-card c2" aria-hidden="true">
+            <div className="ap-floating-icon"><Target size={15}/></div>
+            <div className="ap-floating-line"/>
+            <div className="ap-floating-line short"/>
+          </div>
+          <div className="ap-floating-card c3" aria-hidden="true">
+            <div className="ap-floating-icon"><Sparkles size={15}/></div>
+            <div className="ap-floating-line"/>
+            <div className="ap-floating-line short"/>
+          </div>
+          <motion.div
+            className="ap-hero-inner"
+            initial={{opacity:0, y:18}}
+            animate={{opacity:1, y:0}}
+            transition={{duration:.55, ease:"easeOut"}}
+          >
+            <motion.div
+              className="ap-hero-logo"
+              initial={{opacity:0, y:12}}
+              animate={{opacity:1, y:0}}
+              transition={{delay:.05, duration:.45}}
+            >
+              <Link href="/dashboard" className="nav-brand" aria-label="GradeUp AI dashboard">
+                <img src={gradeupLogo} alt="GradeUp AI" style={{height:70,width:200,objectFit:"contain",display:"block",marginBottom:14}} className="nav-brand-logo" />
+              </Link>
+            </motion.div>
+            <motion.h2
+              className="ap-hero-heading"
+              initial={{opacity:0, y:18}}
+              animate={{opacity:1, y:0}}
+              transition={{delay:.12, duration:.5}}
+            >
+              Transform Your Learning Experience
+            </motion.h2>
+            <motion.p
+              className="ap-hero-sub"
+              initial={{opacity:0, y:14}}
+              animate={{opacity:1, y:0}}
+              transition={{delay:.2, duration:.48}}
+            >
+              Join thousands of students and teachers achieving academic excellence together.
+            </motion.p>
             <div className="ap-hero-features">
               {features.map((f, i) => (
                 <motion.div key={i} className="ap-feat"
-                  initial={{opacity:0,y:12}} animate={{opacity:1,y:0}} transition={{delay:i*.08}}>
+                  initial={{opacity:0,y:16,scale:.98}}
+                  animate={{opacity:1,y:0,scale:1}}
+                  transition={{delay:.28 + i*.08,duration:.42,ease:"easeOut"}}
+                >
                   <div className="ap-feat-icon">{f.icon}</div>
                   <div className="ap-feat-title">{f.title}</div>
                   <div className="ap-feat-desc">{f.desc}</div>
@@ -791,13 +942,19 @@ export default function AuthPage() {
             </div>
             <div className="ap-hero-stats">
               {[{n:"10K+",l:"Students"},{n:"500+",l:"Courses"},{n:"4.9★",l:"Rating"}].map((s,i)=>(
-                <div key={i} className="ap-stat">
+                <motion.div
+                  key={i}
+                  className="ap-stat"
+                  initial={{opacity:0,y:10}}
+                  animate={{opacity:1,y:0}}
+                  transition={{delay:.35 + i*.08,duration:.35}}
+                >
                   <div className="ap-stat-n">{s.n}</div>
                   <div className="ap-stat-l">{s.l}</div>
-                </div>
+                </motion.div>
               ))}
             </div>
-          </div>
+          </motion.div>
         </div>
 
         {/* ── Form panel ── */}

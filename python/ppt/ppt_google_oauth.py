@@ -25,6 +25,9 @@ The redirect URI MUST be added to the OAuth client's Authorized redirect URIs in
 import json
 import os
 from typing import Optional
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 # Google often returns MORE scopes than requested (it auto-adds openid/userinfo, and merges
 # previously-granted scopes). oauthlib raises "Scope has changed" on any mismatch — relax it,
@@ -112,5 +115,5 @@ def get_access_token(student_id: str) -> Optional[str]:
                 f.write(creds.to_json())
         return creds.token if creds else None
     except Exception as e:
-        print(f"  [ppt_google_oauth] token load/refresh failed for {student_id}: {e}")
+        logger.error(f"[ppt_google_oauth] token load/refresh failed for {student_id}: {e}")
         return None

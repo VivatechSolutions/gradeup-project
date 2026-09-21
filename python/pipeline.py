@@ -25,6 +25,9 @@ from config import (
     MISTRAL_API_KEY, OPENAI_API_KEY_TEXT,
     LLM_TIMEOUT, LLM_MAX_CONTENT_LENGTH
 )
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 SUBJECT_AWARE_AVAILABLE = False
 try:
@@ -101,7 +104,7 @@ class DocumentPipeline:
             try:
                 self._qdrant_client = initialize_qdrant_client()
             except Exception as e:
-                print(f"Warning: Could not initialize Qdrant client: {e}")
+                logger.warning(f"Warning: Could not initialize Qdrant client: {e}")
                 self._qdrant_client = None
         return self._qdrant_client
     
@@ -138,7 +141,7 @@ class DocumentPipeline:
             outputs_dir=OUTPUTS_DIR,
             use_upload_flow=True,
             filter_qr_codes=filter_qr_codes,
-            openai_api_key=OPENAI_API_KEY_TEXT,  # ✅ Pass OpenAI key for GPT-4o-mini structuring
+            openai_api_key=OPENAI_API_KEY_TEXT,  # Pass OpenAI key for GPT-4o-mini structuring
             skip_llm_refinement=skip_llm_refinement,
             llm_timeout=LLM_TIMEOUT,
             llm_max_length=LLM_MAX_CONTENT_LENGTH,
@@ -160,7 +163,7 @@ class DocumentPipeline:
             structured_path = doc_out_dir / "structured.json"
             content_path = doc_out_dir / "content.md"
             if structured_path.exists() and content_path.exists():
-                print(f"\n  🤖 Running Agentic Verification Workflow (LangGraph)...")
+                logger.info(f"Running Agentic Verification Workflow (LangGraph)...")
                 try:
                     if AGENTIC_VERIFICATION_AVAILABLE:
                         verify_report = run_verification_graph(
@@ -169,10 +172,18 @@ class DocumentPipeline:
                             content_md_path=content_path,
                             subject=result.get("subject", "unknown"),
                             api_key=OPENAI_API_KEY_TEXT,
+                            # What the upload declared. The audit checks the
+                            # unit fields against it, so a subject or part the
+                            # model invented is caught rather than indexed.
+                            declared={
+                                "subject": result.get("subject"),
+                                "part":    result.get("part"),
+                                "term":    result.get("term"),
+                            },
                         )
                     elif VERIFICATION_AVAILABLE:
                         # Fallback to legacy single-pass agent
-                        print("  ⚠️  LangGraph not available — falling back to legacy verifier")
+                        logger.warning("LangGraph not available — falling back to legacy verifier")
                         verify_report = run_verification_agent(
                             structured_json_path=structured_path,
                             content_md_path=content_path,
@@ -190,7 +201,7 @@ class DocumentPipeline:
                         "s3_uploaded":    verify_report.get("s3_uploaded", False),
                     }
                 except Exception as ve:
-                    print(f"  ⚠️  Verification workflow error: {ve}")
+                    logger.warning(f"Verification workflow error: {ve}")
 
         # ── Enrichment & Qdrant Upload (Moved here to run AFTER Verification) ──
         if result.get("has_structured"):
@@ -199,7 +210,7 @@ class DocumentPipeline:
             
             # Enrichment
             if not skip_enrichment and ENRICHMENT_AVAILABLE:
-                print(f"\n  🧠 Running subject-aware enrichment...")
+                logger.info(f"Running subject-aware enrichment...")
                 try:
                     enriched_path = doc_out_dir / "enriched.json"
                     enrichment_ok = enrich_document(
@@ -210,29 +221,27 @@ class DocumentPipeline:
                     )
                     result["has_enriched"] = enrichment_ok
                     if enrichment_ok:
-                        print(f"  ✅ Enrichment complete → {enriched_path.name}")
+                        logger.info(f"Enrichment complete → {enriched_path.name}")
                     else:
-                        print(f"  ⚠️  Enrichment finished with errors — check enriched.json")
+                        logger.warning(f"Enrichment finished with errors — check enriched.json")
                 except Exception as e:
-                    print(f"  ⚠️  Enrichment failed: {e}")
-                    import traceback
-                    traceback.print_exc()
+                    logger.exception(f"Enrichment failed: {e}")
                     result["has_enriched"] = False
             
             # Qdrant Upload
             if not skip_qdrant and QDRANT_AVAILABLE:
-                print(f"\n  📦 Uploading to Qdrant vector DB...")
+                logger.info(f"Uploading to Qdrant vector DB...")
                 try:
                     _q_client = self.qdrant_client
                     if _q_client is None:
-                        print(f"  ⚠️  Qdrant upload skipped — could not connect to Qdrant")
+                        logger.warning(f"Qdrant upload skipped — could not connect to Qdrant")
                         result["qdrant_uploaded"] = False
                     else:
                         _doc_id = result["document_id"]
                         _doc_name = pdf_path.name
                         _uploaded = False
                         if structured_path.exists():
-                            print(f"  📤 Uploading structured.json to Qdrant...")
+                            logger.info(f"Uploading structured.json to Qdrant...")
                             _uploaded = process_and_upload_document(
                                 structured_json_path=structured_path,
                                 document_id=_doc_id,
@@ -245,13 +254,11 @@ class DocumentPipeline:
                             )
                         result["qdrant_uploaded"] = _uploaded
                         if _uploaded:
-                            print(f"  ✅ Qdrant upload complete (document_id={_doc_id})")
+                            logger.info(f"Qdrant upload complete (document_id={_doc_id})")
                         else:
-                            print(f"  ⚠️  Qdrant upload failed for structured data")
+                            logger.warning(f"Qdrant upload failed for structured data")
                 except Exception as _qe:
-                    print(f"  ⚠️  Qdrant upload error: {_qe}")
-                    import traceback
-                    traceback.print_exc()
+                    logger.exception(f"Qdrant upload error: {_qe}")
                     result["qdrant_uploaded"] = False
             
             # Re-save summary.json with updated has_enriched and qdrant_uploaded
@@ -264,7 +271,7 @@ class DocumentPipeline:
                     summary_data["qdrant_uploaded"] = result.get("qdrant_uploaded", False)
                     summary_path.write_bytes(_orjson.dumps(summary_data, option=_orjson.OPT_INDENT_2))
             except Exception as e:
-                print(f"  ⚠️  Failed to update summary.json: {e}")
+                logger.warning(f"Failed to update summary.json: {e}")
         
         return {"success": True, **result}
     
@@ -314,7 +321,7 @@ class DocumentPipeline:
         ensure_outputs_dir(OUTPUTS_DIR)
         
         # Accept any arbitrary subject from the user.
-        print(f"  Processing PDF with custom user subject: {subject}")
+        logger.info(f"Processing PDF with custom user subject: {subject}")
         
         # Call process_pdf directly
         # The ocr_pipeline.py will use the auto schema extractor
@@ -352,7 +359,7 @@ class DocumentPipeline:
                 
                 # Enrichment
                 if not skip_enrichment and ENRICHMENT_AVAILABLE:
-                    print(f"\n  🧠 Running subject-aware enrichment...")
+                    logger.info(f"Running subject-aware enrichment...")
                     try:
                         enriched_path = doc_out_dir / "enriched.json"
                         enrichment_ok = enrich_document(
@@ -363,29 +370,27 @@ class DocumentPipeline:
                         )
                         result["has_enriched"] = enrichment_ok
                         if enrichment_ok:
-                            print(f"  ✅ Enrichment complete → {enriched_path.name}")
+                            logger.info(f"Enrichment complete → {enriched_path.name}")
                         else:
-                            print(f"  ⚠️  Enrichment finished with errors — check enriched.json")
+                            logger.warning(f"Enrichment finished with errors — check enriched.json")
                     except Exception as e:
-                        print(f"  ⚠️  Enrichment failed: {e}")
-                        import traceback
-                        traceback.print_exc()
+                        logger.exception(f"Enrichment failed: {e}")
                         result["has_enriched"] = False
                 
                 # Qdrant Upload
                 if not skip_qdrant and QDRANT_AVAILABLE:
-                    print(f"\n  📦 Uploading to Qdrant vector DB...")
+                    logger.info(f"Uploading to Qdrant vector DB...")
                     try:
                         _q_client = self.qdrant_client
                         if _q_client is None:
-                            print(f"  ⚠️  Qdrant upload skipped — could not connect to Qdrant")
+                            logger.warning(f"Qdrant upload skipped — could not connect to Qdrant")
                             result["qdrant_uploaded"] = False
                         else:
                             _doc_id = result["document_id"]
                             _doc_name = pdf_path.name
                             _uploaded = False
                             if structured_path.exists():
-                                print(f"  📤 Uploading structured.json to Qdrant...")
+                                logger.info(f"Uploading structured.json to Qdrant...")
                                 _uploaded = process_and_upload_document(
                                     structured_json_path=structured_path,
                                     document_id=_doc_id,
@@ -401,13 +406,11 @@ class DocumentPipeline:
                                 )
                             result["qdrant_uploaded"] = _uploaded
                             if _uploaded:
-                                print(f"  ✅ Qdrant upload complete (document_id={_doc_id})")
+                                logger.info(f"Qdrant upload complete (document_id={_doc_id})")
                             else:
-                                print(f"  ⚠️  Qdrant upload failed for structured data")
+                                logger.warning(f"Qdrant upload failed for structured data")
                     except Exception as _qe:
-                        print(f"  ⚠️  Qdrant upload error: {_qe}")
-                        import traceback
-                        traceback.print_exc()
+                        logger.exception(f"Qdrant upload error: {_qe}")
                         result["qdrant_uploaded"] = False
                 
                 # Re-save summary.json with updated has_enriched and qdrant_uploaded
@@ -420,14 +423,12 @@ class DocumentPipeline:
                         summary_data["qdrant_uploaded"] = result.get("qdrant_uploaded", False)
                         summary_path.write_bytes(_orjson.dumps(summary_data, option=_orjson.OPT_INDENT_2))
                 except Exception as e:
-                    print(f"  ⚠️  Failed to update summary.json: {e}")
+                    logger.warning(f"Failed to update summary.json: {e}")
             
             return {"success": True, **result}
             
         except Exception as e:
-            print(f"Error in subject-aware processing: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.exception(f"Error in subject-aware processing: {e}")
             return {"success": False, "error": f"Subject-aware processing failed: {str(e)}"}
     
     def process_textbooks_directory(
@@ -458,7 +459,7 @@ class DocumentPipeline:
         
         results = []
         for pdf in pdfs:
-            print(f"Processing: {pdf.name}")
+            logger.info(f"Processing: {pdf.name}")
             result = self.process_pdf_file(
                 pdf_path=pdf,
                 skip_llm_refinement=skip_llm_refinement,
@@ -642,7 +643,7 @@ class DocumentPipeline:
             shutil.rmtree(doc_dir)
             return True
         except Exception as e:
-            print(f"Error deleting document {document_id}: {e}")
+            logger.error(f"Error deleting document {document_id}: {e}")
             return False
 
 
@@ -667,10 +668,10 @@ def get_pipeline() -> DocumentPipeline:
                 _pipeline.mistral_client = Mistral(api_key=current_key)
                 # Mask key for logging
                 mk = f"{current_key[:4]}...{current_key[-4:]}" if len(current_key) > 8 else "***"
-                print(f"  🔄 Pipeline refreshed with current MISTRAL_API_KEY: {mk}")
+                logger.info(f"Pipeline refreshed with current MISTRAL_API_KEY: {mk}")
             else:
                 _pipeline.mistral_client = None
-                print("  ⚠️  Mistral library not available - client remains None")
+                logger.warning("Mistral library not available - client remains None")
     
     return _pipeline
 
@@ -682,15 +683,15 @@ def main():
     # Test with a sample PDF
     test_pdf = TEXTBOOKS_DIR / "sample.pdf"
     if test_pdf.exists():
-        print(f"Processing: {test_pdf.name}")
+        logger.info(f"Processing: {test_pdf.name}")
         result = pipeline.process_pdf_file(test_pdf)
-        print(f"Result: {result}")
+        logger.info(f"Result: {result}")
     else:
-        print(f"No test PDF found at {test_pdf}")
-        print("Listing all documents:")
+        logger.info(f"No test PDF found at {test_pdf}")
+        logger.info("Listing all documents:")
         docs = pipeline.list_documents()
         for doc in docs:
-            print(f"  - {doc['id']}: {doc}")
+            logger.info(f"- {doc['id']}: {doc}")
 
 
 if __name__ == "__main__":

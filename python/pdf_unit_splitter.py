@@ -12,7 +12,7 @@ Works for ALL subjects and textbook formats:
 
 Detection pipeline (in priority order):
   1. OCR markdown  (content.md)  — richest signal, zero extra API calls
-  2. GPT mode      (OpenAI key)  — subject-aware LLM prompt per book
+  2. Llama mode    (OpenRouter key) — subject-aware LLM prompt per book
   3. Regex mode    (no API)      — multi-pattern fallback, always works
 
 Usage (CLI):
@@ -23,7 +23,7 @@ Usage (CLI):
     python pdf_unit_splitter.py --pdf any_book.pdf --mode regex
 
 Environment:
-    OPENAI_API_KEY or OPENAI_API_KEY_TEXT  — enables GPT detection
+    OPENROUTER_API_KEY  — enables Llama 4 Scout detection
 """
 
 from __future__ import annotations
@@ -35,11 +35,13 @@ import time
 import argparse
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+from logger import get_logger
 
+logger = get_logger(__name__)
 
 # Constants
 
-GPT_MODEL = "gpt-4o-mini"
+LLAMA_MODEL = "meta-llama/llama-4-scout"
 
 # How many pages to skip at the start when no OCR markdown is available.
 # This is the MINIMUM front-matter estimate; the smart detector will
@@ -288,9 +290,9 @@ def _detect_from_markdown(
     # Require ≥2 chapters found (to avoid false matches on other book formats)
     if len(plain_chapter_first) >= 2 and plain_front_pages:
         front_matter_pdf = max(plain_front_pages)
-        print(f"  \U0001f4d6 [MD-F] Found {len(plain_chapter_first)} chapter(s) "
+        logger.info(f"\U0001f4d6 [MD-F] Found {len(plain_chapter_first)} chapter(s) "
               f"(plain continuous-page format)")
-        print(f"  \U0001f4cb Front matter = {front_matter_pdf} pages (PreliminaryT-Combine)")
+        logger.info(f"\U0001f4cb Front matter = {front_matter_pdf} pages (PreliminaryT-Combine)")
 
         boundaries: List[Dict] = []
         for ch_num, data in sorted(plain_chapter_first.items()):
@@ -311,9 +313,9 @@ def _detect_from_markdown(
                 "source":      "md_indd_exact" if has_page_markers else "md_indd",
             })
             if has_page_markers:
-                print(f"    {display}: exact PDF page {pdf_idx + 1}")
+                logger.info(f"{display}: exact PDF page {pdf_idx + 1}")
             else:
-                print(f"    {display}: book page {book_pg} \u2192 PDF page {pdf_idx + 1}")
+                logger.info(f"{display}: book page {book_pg} \u2192 PDF page {pdf_idx + 1}")
 
         return boundaries
 
@@ -325,9 +327,9 @@ def _detect_from_markdown(
         parts_found = sorted(set(p for p, _ in part_unit_first_indd if p))
         total_found = len(part_unit_first_indd)
         parts_str   = f" across parts: {parts_found}" if parts_found else ""
-        print(f"  📖 [MD] Found {total_found} unit(s) via .indd stamps{parts_str}")
+        logger.info(f"[MD] Found {total_found} unit(s) via .indd stamps{parts_str}")
         if not has_page_markers:
-            print(f"  📑 Front matter = {front_matter_pdf} indd pages")
+            logger.info(f"Front matter = {front_matter_pdf} indd pages")
 
         for (part_name, u_num), data in sorted(
             part_unit_first_indd.items(), key=lambda x: x[1]["indd"]
@@ -354,20 +356,20 @@ def _detect_from_markdown(
                 "source":      "md_indd_exact" if has_page_markers else "md_indd",
             })
             if has_page_markers:
-                print(f"    {display}: exact PDF page {pdf_idx + 1}  [md_indd_exact]")
+                logger.info(f"{display}: exact PDF page {pdf_idx + 1}  [md_indd_exact]")
             else:
-                print(f"    {display}: indd page {indd_pg} → PDF page {pdf_idx + 1}  [md_indd]")
+                logger.info(f"{display}: indd page {indd_pg} → PDF page {pdf_idx + 1}  [md_indd]")
 
     # Get fallback boundaries from page markers or headers
     fallback_boundaries: List[Dict] = []
     if has_page_markers:
         # Don't print the info message if we already found some indd boundaries
         if not indd_boundaries:
-            print("  ℹ️  [MD] No .indd stamps found — using <!-- PAGE N --> markers for exact mapping...")
+            logger.info("[MD] No .indd stamps found — using <!-- PAGE N --> markers for exact mapping...")
         fallback_boundaries = _detect_from_markdown_page_markers(content, lines, subject, total_pdf_pages)
     else:
         if not indd_boundaries:
-            print("  ℹ️  [MD] No .indd stamps found — scanning markdown headers...")
+            logger.info("[MD] No .indd stamps found — scanning markdown headers...")
         fallback_boundaries = _detect_from_markdown_headers(lines, subject, total_pdf_pages)
 
     if not indd_boundaries:
@@ -389,7 +391,7 @@ def _detect_from_markdown(
                 fb_copy["part"] = ""
             
             merged_boundaries.append(fb_copy)
-            print(f"  ➕ Merged missing unit {fb_copy['unit_number']} from fallback (PDF page {fb_copy['page_number']})")
+            logger.info(f"Merged missing unit {fb_copy['unit_number']} from fallback (PDF page {fb_copy['page_number']})")
     
     # Sort by page index
     merged_boundaries.sort(key=lambda x: x["page_idx"])
@@ -487,7 +489,7 @@ def _detect_from_markdown_page_markers(
             "title":       title,
             "source":      "md_page_markers",
         })
-        print(f"    {label.capitalize()} {u_num}: PDF page {pdf_idx + 1} (exact, from page marker at line {found[u_num]['line_idx']})")
+        logger.info(f"{label.capitalize()} {u_num}: PDF page {pdf_idx + 1} (exact, from page marker at line {found[u_num]['line_idx']})")
 
     return boundaries
 
@@ -577,7 +579,7 @@ def _detect_from_markdown_headers(
     # ── Step 1: find the end of the TOC so we can skip it ────────────────────
     toc_end_line = _find_toc_end_line(lines)
     if toc_end_line > 0:
-        print(f"  ℹ️  [MD] Skipping TOC section (lines 0–{toc_end_line - 1})")
+        logger.info(f"[MD] Skipping TOC section (lines 0–{toc_end_line - 1})")
 
     # ── Step 2: scan for chapter/unit headers, TOC-excluded ──────────────────
     # We collect ALL matches per unit_number (list of line indices) so we can
@@ -657,7 +659,7 @@ def _detect_from_markdown_headers(
             "title":       found[u_num]["title"],
             "source":      "md_headers",
         })
-        print(f"    {label.capitalize()} {u_num}: estimated PDF page {pdf_idx + 1} (header at line {found[u_num]['line_idx']})")
+        logger.info(f"{label.capitalize()} {u_num}: estimated PDF page {pdf_idx + 1} (header at line {found[u_num]['line_idx']})")
 
     return boundaries
 
@@ -720,7 +722,7 @@ def regex_detect_boundaries(
     if front_matter_pages is None:
         front_matter_pages = _find_front_matter_end(page_texts)
 
-    print(f"  [Regex] Skipping first {front_matter_pages} page(s) as front matter")
+    logger.warning(f"[Regex] Skipping first {front_matter_pages} page(s) as front matter")
 
     seen: set = set()
     boundaries: List[Dict] = []
@@ -750,7 +752,7 @@ def regex_detect_boundaries(
                     if is_top_of_page or len(text.split('\n')) < 20:
                         seen.add(u_num)
                         title = f"{label.capitalize()} {u_num}"
-                        print(f"    Page {i+1}: ✓ {title.upper()} (regex, pattern={pat.pattern[:30]}…)")
+                        logger.info(f"Page {i+1}: {title.upper()} (regex, pattern={pat.pattern[:30]}…)")
                         boundaries.append({
                             "page_idx":    i,
                             "page_number": i + 1,
@@ -764,26 +766,53 @@ def regex_detect_boundaries(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3. GPT detection  (high quality — requires OpenAI key)
+# 3. Llama detection  (high quality — requires OpenRouter key)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _call_openai(prompt: str, api_key: str, max_tokens: int = 120) -> str:
+def _call_llama(prompt: str, api_key: str = "", max_tokens: int = 120) -> str:
+    """
+    Boundary detection, on the same OpenRouter/Llama endpoint as extraction.
+
+    Kept the OpenAI SDK because it speaks the same protocol — only base_url,
+    key and model change. When this failed the splitter fell through to regex,
+    which found no boundaries at all on a term-split social science book.
+    """
     try:
-        from openai import OpenAI
+        # Langfuse ships a drop-in for the OpenAI client that records each call
+        # as a generation - model, tokens and cost - without any wrapping here.
+        # Preferred over hand-rolled instrumentation wherever an integration
+        # exists. Falls back to the plain client if Langfuse is absent.
+        from langfuse.openai import OpenAI
+        _traced_client = True
     except ImportError:
-        raise ImportError("openai not installed: pip install openai")
-    client = OpenAI(api_key=api_key)
+        try:
+            from openai import OpenAI
+            _traced_client = False
+        except ImportError:
+            raise ImportError("openai not installed: pip install openai")
+
+    try:
+        from config import EXTRACTION_MODEL
+        model = EXTRACTION_MODEL
+    except Exception:
+        model = "meta-llama/llama-4-scout"
+
+    key = api_key or os.environ.get("OPENROUTER_API_KEY", "")
+    client = OpenAI(api_key=key, base_url="https://openrouter.ai/api/v1")
     resp = client.chat.completions.create(
-        model=GPT_MODEL,
+        model=model,
         messages=[{"role": "user", "content": prompt}],
         max_tokens=max_tokens,
         temperature=0,
+        # Names the generation in Langfuse. Only the drop-in accepts it - the
+        # plain client raises TypeError on an unknown keyword.
+        **({"name": "detect-unit-boundaries"} if _traced_client else {}),
     )
     return resp.choices[0].message.content.strip()
 
 
-def _build_gpt_prompt(subject: str, page_num: int, prev_ctx: str, snippet: str) -> str:
-    """Build a subject-adaptive GPT prompt for unit/chapter boundary detection."""
+def _build_llama_prompt(subject: str, page_num: int, prev_ctx: str, snippet: str) -> str:
+    """Build a subject-adaptive Llama prompt for unit/chapter boundary detection."""
     s = subject.lower()
 
     if s == "mathematics":
@@ -855,14 +884,14 @@ Reply ONLY with compact JSON — no extra text:
 {{"is_unit_start": true/false, "unit_number": <integer or null>, "title": "<string or null>"}}"""
 
 
-def gpt_detect_boundaries(
+def llama_detect_boundaries(
     page_texts: List[str],
     subject: str,
     api_key: str,
     front_matter_pages: Optional[int] = None,
 ) -> List[Dict]:
     """
-    Detect boundaries via GPT — subject-aware prompts, pre-filtered to candidate pages.
+    Detect boundaries via Llama — subject-aware prompts, pre-filtered to candidate pages.
     """
     if front_matter_pages is None:
         front_matter_pages = _find_front_matter_end(page_texts)
@@ -874,7 +903,7 @@ def gpt_detect_boundaries(
 
     seen: set = set()
     boundaries: List[Dict] = []
-    print(f"  [GPT] Subject={subject}, skipping {front_matter_pages} front-matter page(s)…")
+    logger.warning(f"[Llama] Subject={subject}, skipping {front_matter_pages} front-matter page(s)…")
 
     for i in range(front_matter_pages, len(page_texts)):
         text = page_texts[i]
@@ -886,18 +915,18 @@ def gpt_detect_boundaries(
         prev_ctx = page_texts[i - 1][:300] if i > 0 else ""
         snippet = text[:800]
 
-        prompt = _build_gpt_prompt(subject, i + 1, prev_ctx, snippet)
+        prompt = _build_llama_prompt(subject, i + 1, prev_ctx, snippet)
 
         result = {"is_unit_start": False, "unit_number": None, "title": None}
         for attempt in range(3):
             try:
-                raw = _call_openai(prompt, api_key)
+                raw = _call_llama(prompt, api_key)
                 raw = re.sub(r"```[a-z]*\n?", "", raw).strip().rstrip("`")
                 result = json.loads(raw)
                 break
             except Exception as e:
                 if attempt == 2:
-                    print(f"    [GPT error page {i+1}]: {e}")
+                    logger.error(f"[Llama error page {i+1}]: {e}")
                 time.sleep(1)
 
         if result.get("is_unit_start"):
@@ -906,13 +935,13 @@ def gpt_detect_boundaries(
                 u_num = int(u_num)
                 seen.add(u_num)
                 title = result.get("title") or f"{label.capitalize()} {u_num}"
-                print(f"    Page {i+1}: ✓ {label.upper()} {u_num} — \"{title}\" (GPT)")
+                logger.info(f"Page {i+1}: {label.upper()} {u_num} — \"{title}\" (Llama)")
                 boundaries.append({
                     "page_idx":    i,
                     "page_number": i + 1,
                     "unit_number": u_num,
                     "title":       title,
-                    "source":      "gpt",
+                    "source":      "llama",
                 })
         else:
             pass  # silent for non-boundary pages
@@ -927,7 +956,7 @@ def gpt_detect_boundaries(
         first_found_unit = min(b["unit_number"] for b in boundaries)
         if first_found_unit > 1:
             rescue_end = boundaries[0]["page_idx"]  # stop just before first found
-            print(f"  [GPT] Rescue scan: checking pages 0–{rescue_end} for "
+            logger.info(f"[Llama] Rescue scan: checking pages 0–{rescue_end} for "
                   f"{label}(s) 1–{first_found_unit - 1}…")
             for i in range(rescue_end):
                 text = page_texts[i]
@@ -938,18 +967,18 @@ def gpt_detect_boundaries(
 
                 prev_ctx = page_texts[i - 1][:300] if i > 0 else ""
                 snippet  = text[:800]
-                prompt   = _build_gpt_prompt(subject, i + 1, prev_ctx, snippet)
+                prompt   = _build_llama_prompt(subject, i + 1, prev_ctx, snippet)
 
                 result = {"is_unit_start": False, "unit_number": None, "title": None}
                 for attempt in range(3):
                     try:
-                        raw = _call_openai(prompt, api_key)
+                        raw = _call_llama(prompt, api_key)
                         raw = re.sub(r"```[a-z]*\n?", "", raw).strip().rstrip("`")
                         result = json.loads(raw)
                         break
                     except Exception as e:
                         if attempt == 2:
-                            print(f"    [GPT rescue error page {i+1}]: {e}")
+                            logger.error(f"[Llama rescue error page {i+1}]: {e}")
                         time.sleep(1)
 
                 if result.get("is_unit_start"):
@@ -958,13 +987,13 @@ def gpt_detect_boundaries(
                         u_num = int(u_num)
                         seen.add(u_num)
                         title = result.get("title") or f"{label.capitalize()} {u_num}"
-                        print(f"    Page {i+1}: ✓ {label.upper()} {u_num} — \"{title}\" (GPT rescue)")
+                        logger.info(f"Page {i+1}: {label.upper()} {u_num} — \"{title}\" (Llama rescue)")
                         boundaries.append({
                             "page_idx":    i,
                             "page_number": i + 1,
                             "unit_number": u_num,
                             "title":       title,
-                            "source":      "gpt_rescue",
+                            "source":      "llama_rescue",
                         })
 
                 time.sleep(0.05)
@@ -986,7 +1015,7 @@ def extract_page_texts(pdf_path: str) -> List[str]:
     with pdfplumber.open(pdf_path) as pdf:
         for page in pdf.pages:
             texts.append((page.extract_text() or "").strip())
-    print(f"  Extracted text from {len(texts)} PDF pages.")
+    logger.info(f"Extracted text from {len(texts)} PDF pages.")
     return texts
 
 
@@ -1018,7 +1047,7 @@ def _split_pdf(
         num_pages = end - start + 1
 
         if num_pages < min_pages:
-            print(f"  {b.get('part','') or label.capitalize()} {b['unit_number']:>2}: ⚠️  only {num_pages} pages — skipped")
+            logger.warning(f"{b.get('part','') or label.capitalize()} {b['unit_number']:>2}: only {num_pages} pages — skipped")
             continue
 
         u_num     = b["unit_number"]
@@ -1046,7 +1075,7 @@ def _split_pdf(
             writer.write(f)
 
         display = f"{part_name} Unit {u_num}" if part_name else f"{label.capitalize()} {u_num}"
-        print(f"  ✅ {filename}  ({display}, {num_pages} pages, PDF pp {start+1}–{end+1})")
+        logger.info(f"{filename}  ({display}, {num_pages} pages, PDF pp {start+1}–{end+1})")
         results.append({
             "unit_number":      u_num,
             "part":             part_name,
@@ -1092,7 +1121,7 @@ def _validate_boundaries(boundaries: List[Dict], total_pages: int) -> List[Dict]
         if b["page_idx"] - cleaned[-1]["page_idx"] >= 2:
             cleaned.append(b)
         else:
-            print(f"  ⚠️  Dropping {b['title']} (page {b['page_number']}) — too close to previous boundary")
+            logger.warning(f"Dropping {b['title']} (page {b['page_number']}) — too close to previous boundary")
 
     return cleaned
 
@@ -1167,13 +1196,13 @@ def _refine_boundaries_from_pdf(
                 break  # take the first (earliest) matching page in the window
 
         if best_idx is not None and best_idx != est_idx:
-            print(f"    ✅ {label.capitalize()} {u_num}: corrected page {est_idx + 1} → {best_idx + 1} (PDF text match)")
+            logger.info(f"{label.capitalize()} {u_num}: corrected page {est_idx + 1} → {best_idx + 1} (PDF text match)")
             b = dict(b)
             b["page_idx"]    = best_idx
             b["page_number"] = best_idx + 1
             b["source"]      = "md_headers+pdf_verified"
         elif best_idx is None:
-            print(f"    ⚠️  {label.capitalize()} {u_num}: no PDF text match in window [{lo+1}–{hi+1}], keeping estimate p{est_idx+1}")
+            logger.warning(f"{label.capitalize()} {u_num}: no PDF text match in window [{lo+1}–{hi+1}], keeping estimate p{est_idx+1}")
 
         refined.append(b)
 
@@ -1203,7 +1232,7 @@ def split_pdf_by_units(
 
     Detection priority (mode="auto"):
       1. content.md (Mistral OCR markdown)  — zero API cost, richest signal
-      2. GPT-4o-mini                        — if OPENAI_API_KEY[_TEXT] is set
+      2. Llama 4 Scout via OpenRouter       — if OPENROUTER_API_KEY is set
       3. Regex                              — always available, no API needed
 
     Args:
@@ -1220,7 +1249,7 @@ def split_pdf_by_units(
     try:
         from pypdf import PdfReader
     except ImportError:
-        print("❌ pypdf not installed: pip install pypdf")
+        logger.error("pypdf not installed: pip install pypdf")
         return []
 
     pdf_path_str = str(pdf_path)
@@ -1230,44 +1259,45 @@ def split_pdf_by_units(
     total_pages = len(PdfReader(pdf_path_str).pages)
     _, label = _patterns_for_subject(subject)
 
-    print(f"\n{'='*62}")
-    print(f"  PDF Unit Splitter — UNIVERSAL EDITION")
-    print(f"  Subject : {subject.upper()}")
-    print(f"  PDF     : {Path(pdf_path_str).name}")
-    print(f"  Pages   : {total_pages}")
-    print(f"  Mode    : {mode}")
-    print(f"{'='*62}")
+    logger.info(f"{'='*62}")
+    logger.info(f"PDF Unit Splitter — UNIVERSAL EDITION")
+    logger.info(f"Subject : {subject.upper()}")
+    logger.info(f"PDF     : {Path(pdf_path_str).name}")
+    logger.info(f"Pages   : {total_pages}")
+    logger.info(f"Mode    : {mode}")
+    logger.info(f"{'='*62}")
 
-    api_key = (
-        os.environ.get("OPENAI_API_KEY_TEXT") or
-        os.environ.get("OPENAI_API_KEY") or
-        ""
-    )
+    api_key = os.environ.get("OPENROUTER_API_KEY", "")
 
     boundaries: List[Dict] = []
 
     # ── Choose detection method ───────────────────────────────────────────────
     if mode == "md" or (md_path and mode == "auto"):
-        print(f"\n[Detection] OCR markdown mode (content.md)")
+        logger.info(f"[Detection] OCR markdown mode (content.md)")
         boundaries = _detect_from_markdown(md_path, subject, total_pages)
 
         # If markdown detection found nothing, cascade to next method
         if not boundaries:
-            print("  ⚠️  Markdown detection found nothing — cascading to next method")
+            logger.warning("Markdown detection found nothing — cascading to next method")
             mode = "auto"
             md_path = None  # prevent infinite loop
 
     if not boundaries and (mode == "gpt" or (api_key and mode == "auto")):
-        print(f"\n[Detection] GPT-4o-mini mode (subject={subject})")
+        try:
+            from config import EXTRACTION_MODEL
+            model = EXTRACTION_MODEL
+        except Exception:
+            model = LLAMA_MODEL
+        logger.info(f"[Detection] Llama mode ({model}, subject={subject})")
         page_texts = extract_page_texts(pdf_path_str)
         try:
-            boundaries = gpt_detect_boundaries(page_texts, subject, api_key)
+            boundaries = llama_detect_boundaries(page_texts, subject, api_key)
         except Exception as e:
-            print(f"  ⚠️  GPT detection failed ({e}) — falling back to regex")
+            logger.warning(f"Llama detection failed ({e}) — falling back to regex")
             boundaries = []
 
     if not boundaries:
-        print(f"\n[Detection] Regex mode (multi-pattern, subject={subject})")
+        logger.info(f"[Detection] Regex mode (multi-pattern, subject={subject})")
         page_texts = page_texts if "page_texts" in dir() else extract_page_texts(pdf_path_str)
         boundaries = regex_detect_boundaries(page_texts, subject)
 
@@ -1275,19 +1305,19 @@ def split_pdf_by_units(
     boundaries = _validate_boundaries(boundaries, total_pages)
 
     if not boundaries:
-        print("\n  ❌ No unit/chapter boundaries detected!")
-        print("  Tips:")
-        print("    • Provide --md path/to/content.md  (from Mistral OCR)")
-        print("    • Set OPENAI_API_KEY for smarter GPT detection")
-        print("    • Try --mode regex")
-        print("    • Check that your PDF has readable text (not image-only)")
+        logger.error("No unit/chapter boundaries detected!")
+        logger.info("Tips:")
+        logger.info("• Provide --md path/to/content.md  (from Mistral OCR)")
+        logger.info("• Set OPENROUTER_API_KEY for smarter Llama detection")
+        logger.info("• Try --mode regex")
+        logger.info("• Check that your PDF has readable text (not image-only)")
         return []
 
     # ── Single unit → no split needed ─────────────────────────────────────────
     # If only 1 boundary is found, the entire PDF is already a single unit.
     # No need to create a split copy — the caller can use the original PDF directly.
     if len(boundaries) == 1:
-        print(f"\n  ℹ️  Only 1 {label} boundary detected — PDF is already a single unit, no split needed.")
+        logger.info(f"Only 1 {label} boundary detected — PDF is already a single unit, no split needed.")
         return []
 
     # ── PDF verification pass (for md_headers only) ───────────────────────────
@@ -1296,26 +1326,26 @@ def split_pdf_by_units(
     # where the chapter heading actually appears.  Fixes drift from uneven line
     # density (math diagram pages have very few lines, inflating the estimate).
     if any(b.get("source") == "md_headers" for b in boundaries):
-        print("\n[Verification] Scanning PDF text to refine md_headers page estimates...")
+        logger.info("[Verification] Scanning PDF text to refine md_headers page estimates...")
         boundaries = _refine_boundaries_from_pdf(
             boundaries, pdf_path_str, total_pages, subject, window=8
         )
 
-    print(f"\n  Detected {len(boundaries)} {label}(s):")
+    logger.info(f"Detected {len(boundaries)} {label}(s):")
     for b in boundaries:
-        print(f"    {label.capitalize()} {b['unit_number']:>2}: starts at PDF page {b['page_number']}  [{b.get('source','?')}]")
+        logger.info(f"{label.capitalize()} {b['unit_number']:>2}: starts at PDF page {b['page_number']}  [{b.get('source','?')}]")
 
     # ── Split ─────────────────────────────────────────────────────────────────
-    print(f"\n[Splitting] Writing to {out_dir}/")
+    logger.info(f"[Splitting] Writing to {out_dir}/")
     results = _split_pdf(pdf_path_str, boundaries, out_dir, total_pages, min_pages, label)
 
     manifest_path = out_dir / "unit_manifest.json"
     with open(manifest_path, "w") as f:
         json.dump(results, f, indent=2)
 
-    print(f"\n  ✅ Done! {len(results)} {label} PDFs → {out_dir}/")
-    print(f"  📋 Manifest → unit_manifest.json")
-    print(f"{'='*62}\n")
+    logger.info(f"Done! {len(results)} {label} PDFs → {out_dir}/")
+    logger.info(f"Manifest → unit_manifest.json")
+    logger.info(f"{'='*62}")
     return results
 
 
@@ -1350,10 +1380,10 @@ if __name__ == "__main__":
     )
 
     if results:
-        print(f"\nSplit complete — {len(results)} PDF(s):")
+        logger.info(f"Split complete — {len(results)} PDF(s):")
         for r in results:
-            print(f"  {r['unit_number']:>2} | {r['num_pages']:>3}pp | "
+            logger.info(f"{r['unit_number']:>2} | {r['num_pages']:>3}pp | "
                   f"PDF pp {r['start_page_label']}-{r['end_page_label']} | "
                   f"{r['filename']}  [{r.get('source','?')}]")
     else:
-        print("\n⚠️  No splits produced.")
+        logger.warning("No splits produced.")

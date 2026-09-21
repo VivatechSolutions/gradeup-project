@@ -479,8 +479,8 @@ export default function Sidebar({
   }, [location]); // eslint-disable-line
 
   const menu  = currentRole === "student" ? STUDENT_MENU : TEACHER_MENU;
-  const first = user?.firstName ?? "Alex";
-  const last  = user?.lastName  ?? "Johnson";
+  const first = user?.firstName?.trim() || "Student";
+  const last  = user?.lastName?.trim() || "";
 
   const isActive = (href: string) =>
     location === href || (href === "/dashboard" && (location === "/" || location === "/dashboard"));
@@ -525,7 +525,7 @@ export default function Sidebar({
           {/* Avatar + name (hidden when desktop-collapsed) */}
           {!isCollapsed && (
             <>
-              <div className="sb-ava">{first[0]}{last[0]}</div>
+              <div className="sb-ava">{first[0]}{last[0] || ""}</div>
               <div className="sb-profile-text">
                 <div className="sb-pname">{first} {last}</div>
                 <div className="sb-prole">{currentRole}</div>

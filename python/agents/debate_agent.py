@@ -7,6 +7,10 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+from logger import get_logger
+
+logger = get_logger(__name__)
+
 
 # ── LangGraph Node ────────────────────────────────────────────────────────────
 
@@ -23,13 +27,13 @@ def debate_unit_node(state: Dict[str, Any]) -> Dict[str, Any]:
     unit_num   = unit.get("unit_number") or unit.get("chapter_number", 1)
     unit_title = unit.get("title", f"Unit {unit_num}")
 
-    print(f"\n  🎯 Generating debate topics — Unit {unit_num}: {unit_title}")
+    logger.info(f"Generating debate topics — Unit {unit_num}: {unit_title}")
 
     try:
         from debate_topic_generator import generate_debate_topics_for_unit
         result = generate_debate_topics_for_unit(unit=unit, subject=subject)
     except Exception as e:
-        print(f"  ⚠️  Debate generation failed for unit {unit_num}: {e}")
+        logger.warning(f"Debate generation failed for unit {unit_num}: {e}")
         result = {
             "unit_number": unit_num,
             "unit_title":  unit_title,
@@ -41,7 +45,7 @@ def debate_unit_node(state: Dict[str, Any]) -> Dict[str, Any]:
         len(s.get("debate_topics", []))
         for s in result.get("sections", [])
     )
-    print(f"  ✅ Unit {unit_num}: {topics_count} debate topic(s) generated")
+    logger.info(f"Unit {unit_num}: {topics_count} debate topic(s) generated")
 
     return {
         "debate_unit_results": [result],

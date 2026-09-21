@@ -28,6 +28,9 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 # ── config ────────────────────────────────────────────────────────────────────
 SEARXNG_URL = os.getenv("SEARXNG_URL", "http://localhost:8081").rstrip("/")
@@ -78,9 +81,9 @@ def _searxng(query: str, top_k: int, categories: str = "general") -> List[Dict[s
             if results:
                 return results[:top_k]
             if attempt == 1:
-                print(f"  [ppt_websearch] SearXNG '{categories}' returned 0 — retrying once")
+                logger.warning(f"[ppt_websearch] SearXNG '{categories}' returned 0 — retrying once")
         except Exception as e:
-            print(f"  [ppt_websearch] SearXNG '{categories}' query failed (attempt {attempt}): {e}")
+            logger.error(f"[ppt_websearch] SearXNG '{categories}' query failed (attempt {attempt}): {e}")
     return []
 
 
@@ -129,7 +132,7 @@ def _crawl(url: str) -> str:
             if md:
                 return md[:_MAX_CHARS_PER_PAGE]
     except Exception as e:
-        print(f"  [ppt_websearch] Crawl4AI /md failed for {url}: {e}")
+        logger.error(f"[ppt_websearch] Crawl4AI /md failed for {url}: {e}")
 
     # Attempt 2: /crawl (batch endpoint).
     try:
@@ -143,7 +146,7 @@ def _crawl(url: str) -> str:
         md = _extract_markdown(resp.json())
         return md[:_MAX_CHARS_PER_PAGE] if md else ""
     except Exception as e:
-        print(f"  [ppt_websearch] Crawl4AI /crawl failed for {url}: {e}")
+        logger.error(f"[ppt_websearch] Crawl4AI /crawl failed for {url}: {e}")
         return ""
 
 
@@ -242,7 +245,7 @@ def _upload_to_s3(image_url: str) -> Optional[str]:
         img = requests.get(image_url, headers={"User-Agent": _BROWSER_UA},
                            timeout=WEB_SEARCH_TIMEOUT)
         if img.status_code != 200 or not img.content:
-            print(f"  [ppt_websearch] S3: source fetch {img.status_code} for {image_url}")
+            logger.info(f"[ppt_websearch] S3: source fetch {img.status_code} for {image_url}")
             return None
         # Detect extension from URL (strip query params); default to jpg.
         raw_ext = image_url.rsplit(".", 1)[-1].split("?")[0].lower()
@@ -250,10 +253,10 @@ def _upload_to_s3(image_url: str) -> Optional[str]:
         s3_key = f"ppt-search/{uuid.uuid4().hex}.{ext}"
         url = upload_image_to_s3(img.content, s3_key)
         if not url:
-            print(f"  [ppt_websearch] S3 upload returned None for {image_url}")
+            logger.info(f"[ppt_websearch] S3 upload returned None for {image_url}")
         return url
     except Exception as e:
-        print(f"  [ppt_websearch] S3 upload failed for {image_url}: {e}")
+        logger.error(f"[ppt_websearch] S3 upload failed for {image_url}: {e}")
     return None
 
 

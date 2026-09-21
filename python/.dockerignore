@@ -1,0 +1,23 @@
+# Secrets must never be baked into the image. Production gets its configuration
+# from the host .env that scripts/start_application.sh writes from AWS Secrets
+# Manager and docker-compose passes in via env_file - a copy inside the image
+# would shadow those values (core/secrets_manager.py) and leak on every push to
+# the public registry.
+.env
+.env.*
+!.env.example
+!.env.sample
+*service-account*.json
+*.key.json
+*client_secret*.json
+oauth_client.json
+google_token.json
+google_student_tokens/
+
+# Build noise
+.git/
+.vscode/
+venv/
+.venv/
+__pycache__/
+*.pyc

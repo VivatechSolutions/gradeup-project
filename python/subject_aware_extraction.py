@@ -14,6 +14,10 @@ minimal built-in prompt.
 
 from typing import Any, Dict, List, Optional
 
+from logger import get_logger
+
+logger = get_logger(__name__)
+
 
 # ─── Try to delegate to auto_schema_extractor for real implementations ────────
 try:
@@ -23,9 +27,12 @@ try:
         TYPE_CATALOG,
     )
     _HAS_AUTO_SCHEMA = True
-except ImportError:
+except ImportError as e:
     _HAS_AUTO_SCHEMA = False
     TYPE_CATALOG = {}
+    # Extraction still runs, on this module's built-in prompts instead of the
+    # catalog-driven ones — worth knowing when output quality looks off.
+    logger.warning(f"[SubjectAware] auto_schema_extractor unavailable, using built-in prompts: {e}")
 
 
 # ─── Universal System Prompt ──────────────────────────────────────────────────

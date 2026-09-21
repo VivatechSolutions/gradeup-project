@@ -27,8 +27,8 @@ const FunnyLoader: React.FC<FunnyLoaderProps> = ({
         🎓
       </motion.div>
       <div className="flex flex-col items-center gap-2 text-center">
-        <div className="text-[15px] font-bold text-foreground tracking-[0.05em]">{text}</div>
-        {subtext && <div className="text-[11px] text-muted-foreground tracking-[0.08em] uppercase">{subtext}</div>}
+        <div className="text-[15px] font-bold text-blue-500 tracking-[0.05em]">{text}</div>
+        {subtext && <div className="text-[11px] text-gray-500 tracking-[0.08em] uppercase">{subtext}</div>}
       </div>
       
       {/* Loading Bar */}

@@ -18,7 +18,7 @@ export default function GroupChatJoinPage({ token }: { token: string }) {
   const [, setLocation] = useLocation();
   const [invite, setInvite] = useState<any>(null);
   const [message, setMessage] = useState("Loading invite...");
-
+console.log(token)
   useEffect(() => {
     api(`/api/v1/group-chat/invites/${token}`)
       .then((data) => {

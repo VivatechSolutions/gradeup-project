@@ -18,6 +18,9 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Tuple
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 # ── SQLite setup ────────────────────────────────────────────────────────────────
 _DB_PATH = os.environ.get(
@@ -108,12 +111,12 @@ def create_or_connect_deck(tool: str, deck_ref: Optional[str], title: Optional[s
                 from ppt.ppt_rag import unit_topics
                 sections = unit_topics(coords) or None
             except Exception as e:
-                print(f"  [ppt_session] unit_topics failed, generic outline: {e}")
+                logger.error(f"[ppt_session] unit_topics failed, generic outline: {e}")
             presentation_id = mcp_slides_client.create_and_scaffold(
                 title, coords.get("unit"), sections, theme_spec)
             return f"gslides:{presentation_id}", _slides_urls(presentation_id), "real"
     except Exception as e:
-        print(f"  [ppt_session] deck creation failed, using stub id: {e}")
+        logger.error(f"[ppt_session] deck creation failed, using stub id: {e}")
 
     presentation_id = "STUB-" + uuid.uuid4().hex[:12]
     return f"gslides:{presentation_id}", _slides_urls(presentation_id), "stub"
@@ -128,7 +131,7 @@ def _cleanup_stale():
         with _db() as conn:
             conn.execute("DELETE FROM ppt_sessions WHERE created_at < ?", (cutoff,))
     except Exception as e:
-        print(f"  [ppt_session] stale-session cleanup failed: {e}")
+        logger.error(f"[ppt_session] stale-session cleanup failed: {e}")
 
 
 def start_session(student_id: str, board: str, class_number: str, unit: int, title: str,
@@ -151,7 +154,7 @@ def start_session(student_id: str, board: str, class_number: str, unit: int, tit
         from ppt.ppt_design import llm_choose_theme
         theme_spec = llm_choose_theme(board, class_number, subject, title)
     except Exception as e:
-        print(f"  [ppt_session] llm_choose_theme failed, using default: {e}")
+        logger.error(f"[ppt_session] llm_choose_theme failed, using default: {e}")
         from ppt.ppt_theme import DEFAULT_THEME_SPEC
         theme_spec = dict(DEFAULT_THEME_SPEC)
 
@@ -328,6 +331,30 @@ def layouts_used_elsewhere(session_id: str, slide_index: int) -> List[str]:
     session = get_session(session_id) or {}
     used = session.get("used_layouts", {}) or {}
     return sorted({k for idx, k in used.items() if idx != str(slide_index) and k})
+
+
+def layout_of(session_id: str, slide_index: int) -> str:
+    """The layout kind THIS slide already uses ("" if it was never laid out by the agent)."""
+    session = get_session(session_id) or {}
+    return (session.get("used_layouts", {}) or {}).get(str(slide_index), "") or ""
+
+
+# ── last image results (so "use this img" refers to something) ──────────────────
+
+def set_last_images(session_id: str, images: List[Dict[str, Any]], query: str = "") -> None:
+    """Remember the images just shown in chat, so the student can pick one by reference."""
+    session = get_session(session_id)
+    if not session:
+        return
+    session["last_images"] = (images or [])[:10]
+    session["last_image_query"] = query or ""
+    _save_session(session)
+
+
+def get_last_images(session_id: str) -> List[Dict[str, Any]]:
+    """The images most recently shown in this session's chat ([] if none)."""
+    session = get_session(session_id) or {}
+    return session.get("last_images") or []
 
 
 def update_slide_titles(session_id: str, titles: List[str]) -> None:

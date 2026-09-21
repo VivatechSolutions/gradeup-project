@@ -21,6 +21,14 @@ import unicodedata
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 import requests
+from langfuse_utils import traced_post
+from logger import get_logger
+from section_types import (collapse_english_reading_types,
+                           merge_split_english_readings, section_content_kind,
+                           strip_english_section_ids,
+                           title_untitled_english_readings)
+
+logger = get_logger(__name__)
 
 try:
     import orjson
@@ -67,6 +75,11 @@ def _is_junk_fill(repaired: Dict[str, Any]) -> bool:
     return False
 
 
+# Minimum text a heading must print of its OWN before it counts as a fillable
+# section. Kept equal to the audit's furniture threshold so the two agree.
+_MIN_OWN_BODY = 25
+
+
 def _heading_exists_in_md(section_number: str, unit_md: str) -> bool:
     """True if `section_number` appears as a real heading in the markdown."""
     if not unit_md:
@@ -76,6 +89,14 @@ def _heading_exists_in_md(section_number: str, unit_md: str) -> bool:
         re.MULTILINE,
     )
     return bool(pat.search(unit_md))
+
+
+# A textbook heading prints its number between the hashes and the title
+# ("## 2.1 Distance and Displacement", "## A2.4 Why is ... Important?"), while
+# the extracted section carries the bare title. Without this optional prefix the
+# title anchor below never matches a numbered heading — which silently disabled
+# the no-LLM repair pass for every numbered book, not just appendices.
+_HEAD_NUM_PREFIX = r"(?:[A-Za-z]?\d+(?:\.\d+)*\s*[\.\):]?\s+)?"
 
 
 def _fetch_section_text(
@@ -125,7 +146,8 @@ def _fetch_section_text(
     # Pattern selection by type
     if section_type in ("prose", "supplementary") and search_title:
         pat = re.compile(
-            r"(?:^|\n)(?:#+\s*)?" + search_title + r"[\s\S]{200,}?(?=\n##\s|\Z)",
+            r"(?:^|\n)(?:#+\s*)?" + _HEAD_NUM_PREFIX + search_title
+            + r"[\s\S]{200,}?(?=\n##\s|\Z)",
             re.IGNORECASE | re.MULTILINE,
         )
         m = pat.search(unit_md)
@@ -134,7 +156,8 @@ def _fetch_section_text(
 
     elif section_type == "poem" and search_title:
         pat = re.compile(
-            r"(?:^|\n)(?:#+\s*)?" + search_title + r"[\s\S]*?(?=\n#+|\Z)",
+            r"(?:^|\n)(?:#+\s*)?" + _HEAD_NUM_PREFIX + search_title
+            + r"[\s\S]*?(?=\n#+|\Z)",
             re.IGNORECASE | re.MULTILINE,
         )
         m = pat.search(unit_md)
@@ -143,13 +166,31 @@ def _fetch_section_text(
 
     elif section_type in ("section", "introduction", "activity"):
         if search_title:
+            # A section's OWN body is what sits between its heading and the
+            # next heading of ANY level; the text under a '###' beneath it
+            # belongs to that child, which is its own section in the JSON.
+            # This used to stop only at '#'/'##' and demanded 50+ chars, which
+            # together poured 16,114 chars — thirteen headings, the whole soil
+            # chapter — into a pie-chart caption whose siblings the OCR had
+            # marked '###', and then generated a lesson and debate topics for
+            # it. A heading with no body of its own gets nothing: that is the
+            # audit's furniture rule, and an empty caption is a warning, not a
+            # gap.
             pat = re.compile(
-                r"(?:^|\n)(?:#+\s*)?" + search_title + r"[\s\S]{50,}?(?=\n##?\s|\Z)",
+                r"(?:^|\n)(?:#+\s*)?" + _HEAD_NUM_PREFIX + search_title
+                + r"[ \t]*\n([\s\S]*?)(?=\n#{1,6}\s|\Z)",
                 re.IGNORECASE | re.MULTILINE,
             )
             m = pat.search(unit_md)
             if m:
-                return m.group(0).strip()
+                body = m.group(1).strip()
+                if len(body) >= _MIN_OWN_BODY:
+                    return m.group(0).strip()
+                logger.info(
+                    f"[GapFiller] not filling '{str(section_title)[:40]}' — the "
+                    f"book prints {len(body)} chars under it before the next heading"
+                )
+                return None
 
     elif section_type == "grammar":
         pat = re.compile(
@@ -180,42 +221,93 @@ def fill_empty_sections_regex(
     }
     fill_count = 0
 
-    for sec in unit.get("sections", []):
-        sec_type = sec.get("type", "")
+    # Walk the whole tree: an empty section is just as likely to be a nested
+    # sub_section (1.4.2) as a top-level one, and the hierarchy builder nests
+    # aggressively — iterating only unit["sections"] left those unrepairable.
+    def _walk(secs: List[Dict[str, Any]]) -> None:
+        nonlocal fill_count
+        for sec in secs:
+            _try_fill(sec)
+            subs = sec.get("sub_sections")
+            if isinstance(subs, list):
+                _walk(subs)
+
+    def _try_fill(sec: Dict[str, Any]) -> None:
+        nonlocal fill_count
+        # English readings carry type="section"; the prose/poem/supplementary
+        # kind in metadata.content_kind picks the right extraction pattern.
+        sec_type = section_content_kind(sec)
         if sec_type not in must_have_content:
-            continue
+            return
         if (sec.get("content") or "").strip() or sec.get("sub_items"):
-            continue  # already has content
+            return  # already has content
 
         sec_title = sec.get("title") or sec.get("id")
         fetched = _fetch_section_text(content_md, sec_type, sec_title, unit_number)
+        # The match starts at the heading line itself; the title already lives in
+        # sec["title"], so keeping it would duplicate it into the body of every
+        # repaired section.
+        if fetched:
+            head, sep, rest = fetched.partition("\n")
+            if sep and head.lstrip().startswith("#"):
+                fetched = rest.lstrip("\n")
+        # The LLM extraction path reads cleaned markdown; this one slices the
+        # raw OCR text, so without the same scrub a regex fill carries page
+        # furniture ("102", "7th_SS_History_Unit_1.indd 102", timestamps)
+        # straight into the section content, the enrichment prompt and the
+        # RAG chunk.
+        if fetched:
+            try:
+                from auto_schema_extractor import clean_content_for_extraction
+                fetched = clean_content_for_extraction(fetched)
+            except Exception:
+                pass
         if fetched and len(fetched) > 50:
             sec["content"] = fetched
             fill_count += 1
-            print(
-                f"  📥 [GapFiller] Regex-filled {sec_type} '{sec_title}' "
+            logger.info(
+                f"[GapFiller] Regex-filled {sec_type} '{sec_title}' "
                 f"in unit {unit_number} ({len(fetched)} chars)"
             )
 
+    _walk(unit.get("sections", []))
     return unit, fill_count
 
 
 
-_OPENAI_URL = "https://api.openai.com/v1/chat/completions"
+try:
+    from config import (
+        OPENROUTER_BASE_URL, OPENROUTER_APP_NAME, OPENROUTER_APP_URL, EXTRACTION_MODEL,
+        openrouter_routing,
+    )
+    _OPENAI_URL = OPENROUTER_BASE_URL
+    _OPENROUTER_EXTRA_HEADERS = {
+        "HTTP-Referer": OPENROUTER_APP_URL,
+        "X-Title":      OPENROUTER_APP_NAME,
+    }
+    _GAP_FILL_MODEL = EXTRACTION_MODEL   # qwen/qwen3-235b-a22b-2507
+except Exception:
+    _OPENAI_URL = "https://openrouter.ai/api/v1/chat/completions"
+    _OPENROUTER_EXTRA_HEADERS = {}
+    _GAP_FILL_MODEL = "qwen/qwen3-235b-a22b-2507"
+
+    def openrouter_routing(model=None):
+        return {}
 
 
 def _call_openai(
     system_prompt: str,
     user_prompt: str,
     api_key: str,
-    model: str = "gpt-5-mini",
+    model: str = _GAP_FILL_MODEL,
     max_tokens: int = 8192,
     timeout: int = 300,
 ) -> Optional[Dict[str, Any]]:
-    """Helper: single OpenAI JSON-mode call with retry."""
+    """Helper: single OpenRouter JSON-mode call with retry."""
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
+        **_OPENROUTER_EXTRA_HEADERS,
     }
     payload = {
         "model": model,
@@ -223,13 +315,14 @@ def _call_openai(
             {"role": "system", "content": system_prompt},
             {"role": "user",   "content": user_prompt},
         ],
-        "max_completion_tokens": max_tokens,
+        "max_tokens": max_tokens,
         "response_format": {"type": "json_object"},
+        **openrouter_routing(model),
     }
 
     for attempt in range(3):
         try:
-            resp = requests.post(_OPENAI_URL, headers=headers, json=payload, timeout=timeout)
+            resp = traced_post("fill-content-gap", _OPENAI_URL, headers=headers, json=payload, timeout=timeout)
             resp.raise_for_status()
             raw = resp.json()["choices"][0]["message"]["content"]
             cleaned = re.sub(r"^```[a-z]*\n?", "", raw).strip().rstrip("`")
@@ -238,7 +331,7 @@ def _call_openai(
             if attempt < 2:
                 time.sleep(5 * (attempt + 1))
                 continue
-            print(f"  ❌ [GapFiller] OpenAI error: {exc}")
+            logger.error(f"[GapFiller] OpenRouter error: {exc}")
             return None
     return None
 
@@ -302,7 +395,7 @@ CRITICAL RULES:
     result = _call_openai(system_prompt, user_prompt, api_key, model=model)
     if result:
         n_subs = len(result.get("subsections", []))
-        print(f"  📦 [GapFiller] Section {section_number} re-extracted: {n_subs} subsections")
+        logger.info(f"[GapFiller] Section {section_number} re-extracted: {n_subs} subsections")
     return result
 
 
@@ -431,8 +524,8 @@ RULES:
         if isinstance(s, dict)
         and (s.get("content") or "").strip()
     ]
-    print(
-        f"  🔍 [GapFiller] extract_missing_type '{section_type}': "
+    logger.info(
+        f"[GapFiller] extract_missing_type '{section_type}': "
         f"{len(valid)} valid section(s) found"
     )
     return valid
@@ -558,8 +651,10 @@ def _merge_duplicate_entity_sections(unit: Dict[str, Any]) -> Dict[str, Any]:
 
     if merged:
         unit["sections"] = out
-        print(f"  🔗 [GapFiller] Merged {merged} duplicate entity section(s) "
-              f"into their canonical sections")
+        logger.info(
+            f"[GapFiller] Merged {merged} duplicate entity section(s) "
+            f"into their canonical sections"
+        )
     return unit
 
 
@@ -577,6 +672,109 @@ _CLEANUP_RESET_TYPES: Set[str] = {
     "summary", "glossary", "unit_exercise", "multiple_choice",
     "points_to_remember", "evaluation", "ict_corner",
 }
+
+
+_EXERCISE_GROUP_TYPES: Set[str] = {"exercise", "multiple_choice", "activity", "hots"}
+
+_EXERCISE_TITLE_RE = re.compile(
+    r"^\s*(?:[IVX]{1,5}|\d{1,2})[.)]?\s+\S",
+    re.IGNORECASE,
+)
+
+_EVALUATION_TITLES = {"evaluation", "exercises", "exercise"}
+
+
+_MD_HEADING_LEVEL_RE = re.compile(r"(?m)^[ \t]{0,3}(#{1,6})[ \t]*(\S[^\n]*?)[ \t]*#*[ \t]*$")
+
+
+def _heading_levels(unit_md: str) -> Dict[str, int]:
+    """normalized heading title -> '#' level, for every heading the book prints."""
+    out: Dict[str, int] = {}
+    for m in _MD_HEADING_LEVEL_RE.finditer(unit_md or ""):
+        key = re.sub(r"[^a-z0-9]+", "", m.group(2).strip().strip("*").lower())
+        if key:
+            out.setdefault(key, len(m.group(1)))
+    return out
+
+
+def _group_exercises_under_evaluation(
+    unit: Dict[str, Any],
+    unit_md: str = "",
+) -> Dict[str, Any]:
+    """
+    Collect the numbered exercises (I, II, III ...) under their Evaluation parent.
+
+    The textbook prints them beneath a single "Evaluation" heading, but they
+    arrive as a flat run of top-level sections because "evaluation" is a
+    _CLEANUP_RESET_TYPES entry — everything after it is deliberately left at the
+    top level. That is right for back-matter like References, and wrong for the
+    exercises themselves, which belong to Evaluation.
+
+    The SOURCE decides what is a child. Tamil Nadu prints `## Evaluation` over
+    `### I. Choose the correct answer.` — real children, grouped. NCERT prints
+    "EXERCISES" as plain text and then `### PROJECT/ACTIVITY` as a heading of
+    its own — a sibling. Grouping that by type ("activity" after the exercises)
+    produced a section the book never printed owning one that it did, which the
+    audit rejects as mis-nested and no repair can undo. So: a candidate that the
+    book prints as a heading at the Evaluation heading's level or above — or at
+    all, when the Evaluation title is not itself a heading — stays where it is.
+
+    Runs after _nest_inline_entities so it sees the settled top-level order.
+    """
+    sections = unit.get("sections") or []
+    if not sections:
+        return unit
+
+    def _is_evaluation(sec: Dict[str, Any]) -> bool:
+        stype = str(sec.get("type") or "").strip().lower()
+        title = str(sec.get("title") or "").strip().lower()
+        return stype in ("evaluation", "unit_exercise") or title in _EVALUATION_TITLES
+
+    eval_idx = next((i for i, s in enumerate(sections) if _is_evaluation(s)), None)
+    if eval_idx is None:
+        return unit
+
+    evaluation = sections[eval_idx]
+    levels = _heading_levels(unit_md)
+
+    def _level_of(sec: Dict[str, Any]) -> Optional[int]:
+        key = re.sub(r"[^a-z0-9]+", "", str(sec.get("title") or "").lower())
+        return levels.get(key) if key else None
+
+    eval_level = _level_of(evaluation)
+    out: List[Dict[str, Any]] = []
+    moved = 0
+
+    for i, sec in enumerate(sections):
+        # Only sections printed AFTER the Evaluation heading are its exercises.
+        # Bounding it this way keeps a mid-chapter "activity" where it belongs
+        # instead of dragging it into the back matter, and tolerates other
+        # back-matter (References, ICT Corner) sitting between them.
+        if i > eval_idx and not _is_evaluation(sec):
+            stype = str(sec.get("type") or "").strip().lower()
+            title = str(sec.get("title") or "").strip()
+            if stype in _EXERCISE_GROUP_TYPES or _EXERCISE_TITLE_RE.match(title):
+                sec_level = _level_of(sec)
+                # A printed heading is a child only if it sits BELOW the
+                # Evaluation heading in the book's own outline.
+                is_child = (sec_level is None
+                            or (eval_level is not None and sec_level > eval_level))
+                if is_child:
+                    evaluation.setdefault("sub_sections", []).append(sec)
+                    moved += 1
+                    continue
+                logger.info(
+                    f"[GapFiller] not grouping {title[:40]!r} under Evaluation — "
+                    f"the book prints it as its own heading"
+                )
+
+        out.append(sec)
+
+    if moved:
+        unit["sections"] = out
+        logger.info(f"[GapFiller] Grouped {moved} exercise(s) under Evaluation")
+
+    return unit
 
 
 def _nest_inline_entities(unit: Dict[str, Any]) -> Dict[str, Any]:
@@ -640,8 +838,10 @@ def _nest_inline_entities(unit: Dict[str, Any]) -> Dict[str, Any]:
 
     if moved:
         unit["sections"] = top
-        print(f"  🧭 [GapFiller] Nested {moved} inline/orphan section(s) "
-              f"under their parent sections")
+        logger.info(
+            f"[GapFiller] Nested {moved} inline/orphan section(s) "
+            f"under their parent sections"
+        )
     return unit
 
 
@@ -859,8 +1059,8 @@ def _drop_phantom_numbered_sections(
 
     if dropped:
         unit["sections"] = kept
-        print(
-            f"  🗑️  [GapFiller] Dropped {len(dropped)} phantom section(s) "
+        logger.info(
+            f"[GapFiller] Dropped {len(dropped)} phantom section(s) "
             f"not present in the textbook: {dropped}"
         )
     return unit
@@ -906,7 +1106,7 @@ def run_gap_filler(
         # ── CASE A: Section N.M INCOMPLETE ───────────────────────────────────
         # "[CRITICAL] Section 1.3 is INCOMPLETE: 3/5 subsections missing. Missing: 'X', 'Y'"
         incomplete_m = re.search(
-            r"Section (\d+\.\d+) is INCOMPLETE.*?Missing: (.+?)(?:\s\.\.\.|—|$)",
+            r"Section ([A-Za-z]?\d+\.\d+) is INCOMPLETE.*?Missing: (.+?)(?:\s\.\.\.|—|$)",
             issue,
         )
         if incomplete_m:
@@ -916,7 +1116,7 @@ def run_gap_filler(
             # Extract just that section's raw markdown
             sec_esc = re.escape(broken_sec)
             sec_re  = re.compile(r"^#+\s*" + sec_esc + r"(?:\s|$)", re.IGNORECASE | re.MULTILINE)
-            next_re = re.compile(r"^#+\s*\d+\.\d+(?:\s|$)", re.IGNORECASE | re.MULTILINE)
+            next_re = re.compile(r"^#+\s*[A-Za-z]?\d+\.\d+(?:\s|$)", re.IGNORECASE | re.MULTILINE)
 
             collecting = False
             sec_lines: List[str] = []
@@ -947,8 +1147,8 @@ def run_gap_filler(
                         unit = _merge_repaired_section(unit, broken_sec, repaired)
                         fixes_applied.append(f"section_repair:{broken_sec}")
                     else:
-                        print(
-                            f"  ⚠️  [GapFiller] Skipped empty/junk section_repair for {broken_sec} "
+                        logger.warning(
+                            f"[GapFiller] Skipped empty/junk section_repair for {broken_sec} "
                             f"— LLM returned no usable content"
                         )
             continue
@@ -956,7 +1156,7 @@ def run_gap_filler(
         # ── CASE B: Section N.M MISSING (gap in numbering) ───────────────────
         # "[CRITICAL] Section 1.3 is MISSING (gap: 1.2 → 1.4)."
         gap_m = re.search(
-            r"Section (\d+\.\d+(?:\.\d+)*) is MISSING \(gap: (\d+\.\d+(?:\.\d+)*) → (\d+\.\d+(?:\.\d+)*|END)\)",
+            r"Section ([A-Za-z]?\d+\.\d+(?:\.\d+)*) is MISSING \(gap: ([A-Za-z]?\d+\.\d+(?:\.\d+)*) → ([A-Za-z]?\d+\.\d+(?:\.\d+)*|END)\)",
             issue,
         )
         if gap_m:
@@ -970,8 +1170,8 @@ def run_gap_filler(
             # numbers like "Example 2.54" leaking into section ids) would
             # otherwise spawn phantom sections (2.12 … 2.53) with junk content.
             if not _heading_exists_in_md(missing_sec, unit_md):
-                print(
-                    f"  ⏭️  [GapFiller] Skipped gap_fill for {missing_sec} — "
+                logger.info(
+                    f"[GapFiller] Skipped gap_fill for {missing_sec} — "
                     f"no such heading in the source markdown (phantom gap)"
                 )
                 continue
@@ -1010,8 +1210,8 @@ def run_gap_filler(
                         unit = _merge_repaired_section(unit, missing_sec, repaired)
                         fixes_applied.append(f"gap_fill:{missing_sec}")
                     else:
-                        print(
-                            f"  ⚠️  [GapFiller] Skipped empty/junk gap_fill for {missing_sec} "
+                        logger.warning(
+                            f"[GapFiller] Skipped empty/junk gap_fill for {missing_sec} "
                             f"— LLM returned no usable content"
                         )
             continue
@@ -1077,13 +1277,13 @@ def run_gap_filler(
                 if added:
                     unit = {**unit, "sections": sections_list}
                     fixes_applied.append(f"missing_type_added:{missing_type}:{added}_sections")
-                    print(
-                        f"  ✅ [GapFiller] Added {added} missing '{missing_type}' "
+                    logger.info(
+                        f"[GapFiller] Added {added} missing '{missing_type}' "
                         f"section(s) to unit {unit_number}"
                     )
                 else:
-                    print(
-                        f"  ℹ️  [GapFiller] All '{missing_type}' sections already present "
+                    logger.info(
+                        f"[GapFiller] All '{missing_type}' sections already present "
                         f"— no new sections added"
                     )
             continue
@@ -1116,8 +1316,8 @@ def run_gap_filler(
                 fixes_applied.append(
                     f"duplicate_removed:{dup_type}:{len(hollow)}_hollow"
                 )
-                print(
-                    f"  🗑️  [GapFiller] Removed {len(hollow)} hollow '{dup_type}' "
+                logger.info(
+                    f"[GapFiller] Removed {len(hollow)} hollow '{dup_type}' "
                     f"duplicate(s) from unit {unit_number}: {removed_ids}"
                 )
             continue
@@ -1132,12 +1332,29 @@ def run_gap_filler(
     unit = _dedup_sections_by_title(unit)
     unit = _sort_unit_sections(unit)
     unit = _nest_inline_entities(unit)
+    unit = _group_exercises_under_evaluation(unit, unit_md)
+    # Re-extraction can hand back raw prose/poem/supplementary labels — keep the
+    # English invariant that readings are stored as type="section", rejoined at
+    # their mid-reading comprehension checks and titled even when the book
+    # prints no heading for them (title is a required field on a reading).
+    unit["sections"] = merge_split_english_readings(
+        unit.get("sections", []), subject
+    )
+    unit["sections"] = collapse_english_reading_types(
+        unit.get("sections", []), subject
+    )
+    title_untitled_english_readings(
+        unit.get("sections", []), subject, unit.get("title")
+    )
+    strip_english_section_ids(unit.get("sections", []), subject)
     after_count = len(unit.get("sections", []))
     if fixes_applied or after_count != before_count:
-        print(
-            f"  📐 [GapFiller] Unit {unit_number}: sections cleaned, re-sorted and "
+        logger.info(
+            f"[GapFiller] Unit {unit_number}: sections cleaned, re-sorted and "
             f"de-duplicated ({after_count} sections total)"
         )
+
+    return unit, fixes_applied
 
     return unit, fixes_applied
 

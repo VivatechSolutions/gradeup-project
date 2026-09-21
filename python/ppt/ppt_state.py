@@ -42,6 +42,9 @@ class PPTAgentState(TypedDict, total=False):
     other_slides: List[str]
     # layout kinds already used on other slides — so each slide gets a different design.
     avoid_layouts: List[str]
+    # the layout kind THIS slide already uses (if any) — tells the designer what the
+    # student is looking at, so a re-edit produces something different rather than a repeat.
+    current_layout: str
 
     # ── session history (adaptive behaviour) ─────────────
     rejection_count: int            # how many HITL proposals the student has rejected so far

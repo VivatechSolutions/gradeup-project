@@ -18,6 +18,12 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
 
 import requests
+from langfuse_utils import traced_post
+
+from class_utils import class_number_variants
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 QUESTION_BANK_DIR = Path("question_bank")
 
@@ -108,14 +114,12 @@ class QuestionBankManager:
                     ])
                 )
             if class_number:
-                c_num = str(class_number).replace("Class ", "").replace("class ", "").strip()
-                conditions.append(
-                    Filter(should=[
-                        FieldCondition(key="metadata.class_number", match=MatchValue(value=str(class_number))),
-                        FieldCondition(key="metadata.class_number", match=MatchValue(value=f"Class {c_num}")),
-                        FieldCondition(key="metadata.class_number", match=MatchValue(value=c_num)),
-                    ])
-                )
+                # Canonical "07" plus the legacy spellings still in the corpus.
+                class_variants = class_number_variants(class_number)
+                if class_variants:
+                    conditions.append(
+                        FieldCondition(key="metadata.class_number", match=MatchAny(any=class_variants))
+                    )
             if terms:
                 conditions.append(
                     FieldCondition(key="metadata.term", match=MatchAny(any=list(terms)))
@@ -158,7 +162,7 @@ class QuestionBankManager:
                 key=lambda x: (x["term"] or "", x["unit_number"])
             )
         except Exception as e:
-            print(f"  ⚠️  [QuestionBank] Unit discovery failed: {e}")
+            logger.warning(f"[QuestionBank] Unit discovery failed: {e}")
         return []
 
     def _get_rag_context(self, question: str, subject: str, unit_number: Optional[int] = None,
@@ -195,7 +199,7 @@ class QuestionBankManager:
                     context_parts.append(f"{header}\n{text}")
                 return "\n---\n".join(context_parts)
         except Exception as e:
-            print(f"  ⚠️  [QuestionBank] RAG retrieval failed: {e}")
+            logger.warning(f"[QuestionBank] RAG retrieval failed: {e}")
         return ""
 
     def _score_difficulty_with_llm(
@@ -323,7 +327,7 @@ Rules:
         }
 
         try:
-            resp = requests.post(
+            resp = traced_post("score-question-difficulty",
                 "https://api.openai.com/v1/chat/completions",
                 headers=headers,
                 json=payload,
@@ -335,9 +339,9 @@ Rules:
                 if scored:
                     return scored
             else:
-                print(f"  ⚠️  [QuestionBank] LLM scoring failed: {resp.status_code}")
+                logger.warning(f"[QuestionBank] LLM scoring failed: {resp.status_code}")
         except Exception as e:
-            print(f"  ⚠️  [QuestionBank] LLM scoring error: {e}")
+            logger.warning(f"[QuestionBank] LLM scoring error: {e}")
 
         return self._heuristic_scoring(questions, start_idx=start_idx, terms=terms)
 
@@ -451,12 +455,12 @@ Rules:
                 for u in available_units
             )
             self._valid_unit_numbers = sorted({u["unit_number"] for u in available_units})
-            print(f"  📚  [QuestionBank] Found {len(available_units)} units "
+            logger.info(f"[QuestionBank] Found {len(available_units)} units "
                   f"(terms={terms or 'any'}): {self._valid_unit_numbers}")
         else:
             self._available_units_text = "(No unit information available)"
             self._valid_unit_numbers = []
-            print(f"  ⚠️  [QuestionBank] No units discovered from vector DB")
+            logger.warning(f"[QuestionBank] No units discovered from vector DB")
 
         # unit_number -> the terms it exists in, within this exam's scope.
         # Drives the reverse mapping that gives each question its own term.
@@ -520,7 +524,7 @@ Rules:
                     if un not in self._valid_unit_numbers:
                         # Find closest valid unit number
                         closest = min(self._valid_unit_numbers, key=lambda x: abs(x - un) if isinstance(un, int) else 999)
-                        print(f"  ⚠️  [QuestionBank] Clamped invalid unit {un} -> {closest} for Q{item.get('question_index')}")
+                        logger.warning(f"[QuestionBank] Clamped invalid unit {un} -> {closest} for Q{item.get('question_index')}")
                         item["unit_number"] = closest
                 item["term"] = _resolve_term(item)
 

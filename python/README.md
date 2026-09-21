@@ -87,16 +87,58 @@ QDRANT_URL=                # e.g., http://localhost:6333
 QDRANT_API_KEY=            # Required for Qdrant Cloud
 QDRANT_COLLECTION_NAME=    # e.g., gradeup_collection
 
-# Optional: Langfuse Observability
+# Optional: Langfuse Observability (see "Observability" below)
 LANGFUSE_PUBLIC_KEY=
 LANGFUSE_SECRET_KEY=
-LANGFUSE_BASE_URL=         # Default: https://cloud.langfuse.com
+LANGFUSE_BASE_URL=              # Default: https://cloud.langfuse.com (US: https://us.cloud.langfuse.com)
+LANGFUSE_TRACING_ENVIRONMENT=   # production | staging | development (default: $APP_ENV, else development)
+LANGFUSE_RELEASE=               # Optional build/commit marker, for comparing versions
 
 # Optional: AWS S3 for Audio Storage
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
 AWS_REGION=                # Default: ap-south-1
 S3_BUCKET_NAME=
+
+# Optional: Avatar teaching visuals (clean web images shown mid-lesson)
+AVATAR_VISUALS_ENABLED=true      # Off switch for the whole feature
+AVATAR_VISUALS_PER_SECTION=2     # Max pictures attached per section
+AVATAR_VISUALS_OPEN_WEB=false    # Allow untrusted hosts (blocklist-only)
+AVATAR_VISUALS_MAX_TRIES=6       # Vision checks per picture slot
+AVATAR_VISION_MODEL=gemini-3.6-flash  # Must support image input; Google direct on GEMINI_API_KEY
+
+# Gemini is NEVER routed through OpenRouter: any gemini-* / google/gemini-* slug
+# (AVATAR_MODEL, AVATAR_LESSON_MODEL, AVATAR_VISION_MODEL, HIGHLIGHT_MODEL,
+# AVATAR_IMAGE_MODEL) goes straight to generativelanguage.googleapis.com with
+# GEMINI_API_KEY. gemini-2.5-flash is retired there and is mapped to
+# gemini-3.6-flash with a warning.
+GEMINI_API_KEY=
+GEMINI_REASONING_EFFORT=low      # Gemini 3.x thinking is charged against max_tokens; "low" keeps JSON calls answering
+
+# Picture sources are searched in STAGES; the first stage with a picture that
+# passes the vision gate wins: the self-hosted SearXNG (SEARXNG_URL, Docker)
+# first, then everything else (Commons,
+# Wikipedia, Openverse, NASA). Keys are free; a keyed source is skipped when
+# its key is empty.
+AVATAR_VISUALS_SOURCE_ORDER=searxng,others
+AVATAR_VISUALS_SEARXNG_OPEN=true  # SearXNG hits only need to clear the block list
+
+# Avatar lesson pictures (POST /avatar/lesson/build, /avatar/lesson/section)
+# Lesson pictures are GENERATED, not searched: 3D renders from the scene the
+# planner / teaching writer wrote - hook 2 (question scene + options grid),
+# explanation 2 (inline in the text), real world 1, explore 0-1, mystery 1 -
+# at most seven a section.
+AVATAR_IMAGE_MODEL=gemini-3.1-flash-image   # Google direct on GEMINI_API_KEY
+AVATAR_IMAGE_STYLE=                         # override the 3D style sentence prepended to every scene
+AVATAR_IMAGE_ASPECT=16:9
+AVATAR_IMAGE_GRID_ASPECT=1:1                # the hook's 2x2 option grid
+AVATAR_IMAGE_GRID_STYLE=                    # override the grid's style sentence
+AVATAR_IMAGES_ENABLED=true
+AVATAR_LESSON_EXPLANATION_IMAGES=2          # "[image: ...]" markers the writer places inside the explanation
+AVATAR_LESSON_MAX_IMAGES=7                  # hard ceiling on pictures (renders + photos) per section
+AVATAR_LESSON_PICTURE_TRIES=4               # vision checks per query for a searched photo
+AVATAR_LESSON_PICTURE_GROUNDING=0.34        # share of a search query's words the section must contain
+AVATAR_LESSON_MODEL=gemini-3.6-flash        # plan + teaching script
 ```
 
 ### Running the Server
@@ -136,6 +178,7 @@ The API will be available at `http://localhost:5000`. Interactive docs at `http:
 | POST   | `/split-pdf`           | Split a textbook PDF into unit-level PDFs            |
 | POST   | `/upload`              | Upload a PDF and run the full pipeline               |
 | POST   | `/upload-subject`      | Upload a PDF with subject-aware extraction           |
+| POST   | `/upload-agentic`      | Upload a PDF and run the LangGraph pipeline: OCR, vision pass, extraction, audit, then the six-phase avatar lesson per section (pictures + narration), debate topics, Qdrant |
 | POST   | `/process/textbooks`   | Batch-process all PDFs in the `textbooks/` directory |
 | POST   | `/ocr/{id}`            | Run OCR only on an existing document                 |
 
@@ -162,6 +205,106 @@ The API will be available at `http://localhost:5000`. Interactive docs at `http:
 | GET    | `/enrich/{id}`         | Retrieve enrichment data for a document          |
 | POST   | `/verify/{id}`         | Verify and correct structured JSON against OCR   |
 | POST   | `/validate/{id}`       | Run automated gap-filling validation             |
+| POST   | `/enrichment/section`  | Enrich one section (avatar script + visuals), no audio |
+
+### Avatar Teaching Visuals
+
+Avatar lessons attach real teaching pictures to the segments that are clearer
+with one. Images are sourced from Wikimedia Commons first, then a trusted-host
+allowlist (`.gov`, `.edu`, NASA, NIH, OpenStax, Unsplash), and
+every candidate must clear three gates before it is used:
+
+1. **Host** — coaching platforms (Byju's, Vedantu, Toppr, Doubtnut …) and
+   stock-photo hosts are rejected outright, along with watermark markers in the
+   URL or title.
+2. **Pixels** — decoded with Pillow, rejected if too small, extremely
+   elongated, or near-blank; survivors are re-encoded to JPEG, which strips
+   EXIF and embedded metadata.
+3. **Vision** — a vision model looks at the image and must confirm it is
+   on-topic, is a real photo or diagram, and carries no watermark, stamped logo
+   or site branding.
+
+Only images clearing all three are uploaded to
+`avatar-visuals/{board}/{class}/{subject}/unit-{n}/` on S3. The same vision call
+writes the avatar's spoken explanation, which is folded into that segment's
+`text` — so enrichment-time TTS voices it with no extra call — plus a
+`look_prompt` question that makes the segment two-way. When nothing clean is
+found, the lesson simply plays without a picture.
+
+**Raising a hand is picture-aware.** `/avatar/raise-hand` needs no change from
+the client: when the paused segment is showing a picture, the doubt is answered
+by a model that is looking at that image, so "what is the thick red one on the
+left?" gets a real answer. The response keeps its usual
+`clarification.segments` shape and simply gains `answered_from_visual: true` and
+a `visual_context` block (`image_url`, `shows`, `points_at`). With no picture on
+screen — or if the image cannot be read — it falls back to the normal
+text-only clarification.
+
+| Method | Endpoint                  | Description                                        |
+|--------|---------------------------|----------------------------------------------------|
+| POST   | `/avatar/raise-hand`      | Doubts; answered from the picture automatically when one is on screen |
+
+### The six-phase lesson (`/avatar/lesson/build`, `/avatar/lesson/section`)
+
+Play order: **hook → explanation → real_world → explore → mystery → explain_back**.
+
+- **hook** — a four-option MCQ (`A`–`D`) with a stored reason and a spoken
+  resolution per option, with TWO pictures: `visual` is the question scene
+  (the calm moment before anything happens, never an outcome) and
+  `options_visual` is ONE picture made of four panels, each showing one
+  option's outcome and badged A/B/C/D in its corner (`layout: "option_grid"`,
+  `panels` → corner per option), so the student compares the outcomes
+  visually and picks.
+- **explanation** — teaching segments only, spoken straight through (no
+  checkpoints, cards or questions), as long as the section warrants. Two
+  pictures sit *inside* the text: a segment's `text` carries `[<image_url>]`
+  at the exact spot where the avatar says "let me show you", so the client
+  pops the picture up there and keeps reading; the segment also carries
+  `visual` (`image_url`, `prompt`, `char_offset`). Narration never reads the
+  URL (`avatar_text_utils.strip_inline_images`).
+- **real_world** — question, tap-to-reveal example, picture.
+- **explore** — the activity (the textbook's own when it has one), optional
+  challenge, and a picture of the set-up when the planner asked for one.
+- **mystery** — one picture, "what is going on here?", three options.
+- **explain_back** — the student's own explanation, judged live.
+
+Every picture is either a **generated 3D render** (`avatar_images.py`,
+`AVATAR_IMAGE_MODEL` on `GEMINI_API_KEY`) of a scene the planner or writer
+wrote, or — where the subject's `picture_policy` says the real thing matters
+(history and geography: inscriptions, grants, coins, monuments, maps) — a
+**real photo** found by the web search + vision gate (`avatar_visuals.find_visual`,
+`visual.kind: "photo"` with `source_name` / `page_url` / `license`). The planner
+marks each picture `image_source: "generate" | "search"`; inside the
+explanation the writer uses `[image: scene]` or `[photo: query | must show]`.
+A search that finds nothing clean falls back to a render marked
+`fallback_from: "search"`. At most seven pictures a section. The teaching
+voice is per subject (`teach_guidance`): a historian telling a story for
+history, a geographer reading a map, a scientist predicting and observing.
+Nothing inside the lesson waits for, or has to judge, a picture answer;
+answers are taken in the hook, explore, mystery and explain-back phases.
+
+`/upload-agentic` builds the same lesson: its enrichment stage
+(`agents/enrichment_agent.py`) runs `build_section_lesson` on every section
+`eligible_sections` covers — science / social science: the Introduction and
+each section, maths: each section, English: prose / poem / supplementary —
+and nothing else. An exercise, an activity, a definition box or a figure
+caption never gets a lesson of its own: a box the extractor filed next to a
+section is folded into that section's lesson text (`folded` in the target,
+`doubt_context.covers` in the stored enrichment). Each section is logged as
+it goes (`[enrich] Unit 1 'X' — section 2/7 'Y': building the lesson …`,
+then `[lesson] 'Y': planning … / writing the teaching script … / rendering
+the pictures … / narrating N spoken node(s) … / narration done …`, then
+`stored — 212s, phases=[…], 6 picture(s), 44 audio file(s)`) and written into
+`enriched.json` the moment it is finished, so a crash keeps every finished
+section and `/avatar/lesson/build` (without `force`) can complete the rest.
+
+| Method | Endpoint                          | Description                                   |
+|--------|-----------------------------------|-----------------------------------------------|
+| POST   | `/avatar/phase/hook`              | Phase 1 — answer the hook MCQ                 |
+| POST   | `/avatar/phase/real-world/reveal` | Phase 3 — reveal the real-world example       |
+| POST   | `/avatar/phase/explore`           | Phase 4 — the activity / challenge response   |
+| POST   | `/avatar/phase/mystery`           | Phase 5 — answer the mystery picture          |
+| POST   | `/avatar/phase/explain`           | Phase 6 — the student's own explanation       |
 
 ### Vector Search
 
@@ -180,6 +323,8 @@ The API will be available at `http://localhost:5000`. Interactive docs at `http:
 | POST   | `/tutor/quiz/submit`        | Submit quiz answers and record scores               |
 | POST   | `/tutor/homework/assign`    | Manually assign weakest-area homework               |
 | POST   | `/tutor/homework/submit`    | Submit homework for AI-based grading                |
+| POST   | `/tutor/homework/chat`      | Interactive homework helper chat turn               |
+| GET    | `/tutor/homework/chat/{stu_id}/{hw_id}` | Reopen a helper chat with its full transcript |
 | GET    | `/tutor/history/{stu_id}`   | Get unified interaction history for a student       |
 | POST   | `/admin/question_bank/upload`| Admin PDF upload for Past Paper indexing           |
 
@@ -212,12 +357,17 @@ Mistral OCR Extraction  →  content.md (raw markdown)
     │
     ▼
 Adaptive Structuring    →  structured.json (units, chapters, exercises)
-    │
+    │                        The text under the chapter heading is the unit's
+    │                        "Introduction" section — never a section named
+    │                        after the chapter (auto_schema_extractor.name_unit_intro)
     ▼
 Verification Agent      →  Identifies and fills extraction gaps
     │
     ▼
-Content Enrichment      →  enriched.json (FAQs, pedagogy, teaching hooks)
+Content Enrichment      →  enriched.json — the six-phase avatar lesson per
+    │                        SECTION (hook → explanation → real_world → explore
+    │                        → mystery → explain_back) with pictures, narration,
+    │                        FAQs and practice questions; stored section by section
     │
     ▼
 Qdrant Embedding Upload →  Semantic search index
@@ -258,7 +408,92 @@ Key settings in `config.py`:
 
 ## Observability
 
-The pipeline automatically traces all operations via **Langfuse** if keys are provided, allowing monitoring of token usage, latency, and LLM output quality.
+Tracing runs on **Langfuse** (Python SDK v4) and turns itself on when
+`LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` are set. With no keys, every
+helper degrades to a no-op — tracing is never load-bearing, and a Langfuse
+outage cannot fail a request.
+
+**What is traced**
+
+Every LLM call in the codebase is instrumented. Model, token usage and cost
+land on each `generation`, so per-feature and per-user spend is answerable.
+
+| Surface | What you get |
+| --- | --- |
+| Every API request | One trace per request, named for the route template (`POST /tutor/ask`). Health, docs and unmatched paths (404s, scanner probes) are excluded. |
+| Tutor, homework, quiz, debate, seminar, English, highlighting, guardrails, question bank, PPT review | One `generation` per call via `traced_post`, named for the step (`answer-tutor-question`, `evaluate-homework-answers`, `classify-intent`…). |
+| Extraction, verification, gap filling, schema discovery, repair | Same, named per step (`extract-with-schema`, `re-extract-unit`, `fill-content-gap`…). |
+| Avatar classroom (`avatar_llm.chat`) | One `generation` per HTTP attempt. Retries and model fallbacks appear as their own generations, so a fallback's cost is its own. |
+| Enrichment (LangChain) | Langfuse callback handler on the `ChatOpenAI` clients. |
+| Unit splitting | Langfuse's OpenAI drop-in client. |
+| Mistral OCR / TTS | `generation` with page count / audio size. |
+| Document + verification pipelines | A `chain` root observation, so a whole run is one trace instead of one trace per model call. |
+
+`session_id` and `student_id` are picked up from the query string or the
+`X-Session-Id` / `X-Student-Id` headers. Handlers that read them from a JSON
+body should add them with a nested `trace_context(...)`.
+
+**Instrumenting a new LLM call**
+
+For an OpenAI-compatible endpoint, swap `requests.post` for `traced_post` and
+give it a name — nothing else changes, including the return value:
+
+```python
+from langfuse_utils import traced_post
+
+resp = traced_post("grade-answer", url, headers=headers, json=payload, timeout=60)
+```
+
+For anything else, wrap it by hand:
+
+```python
+from langfuse_utils import trace_context, generation, record_openai_usage
+
+with trace_context(trace_name="grade-homework", session_id=sid, user_id=student_id,
+                   tags=["homework"], metadata={"subject": subject}):
+    with generation(name="grade-answer", model=model, input=messages) as gen:
+        body = call_model(payload)
+        record_openai_usage(gen, body, model=model, output=text)
+```
+
+**Two things that silently break a trace**
+
+*Threads.* `ThreadPoolExecutor.submit` and `threading.Thread` start the worker
+with an empty context, so a span created inside one detaches into a trace of
+its own. Wrap the callable — once per submission:
+
+```python
+from langfuse_utils import in_current_context
+
+pool.submit(in_current_context(work), item)      # not: pool.submit(work, item)
+```
+
+*Identity in a request body.* The middleware cannot read `candidate_id` out of
+a POST body without draining the stream, so engine entry points declare it:
+
+```python
+from langfuse_utils import with_student_context
+
+@with_student_context(session_arg="homework_id")
+def execute_socratic_chat_turn(self, candidate_id, homework_id, ...):
+```
+
+**Two rules worth knowing**
+
+- **Name the call after what it does**, verb first (`classify-intent`, not
+  `gpt-4o-call`). Evaluators and dashboards target observations by name, and
+  names that contain a model or an ID stop matching the moment either changes.
+- **Attributes propagate forward, not backward.** On SDK v4 `user_id`,
+  `session_id`, `tags` and the trace name reach observations created *inside*
+  `trace_context(...)`. Setting them after the work has run records nothing —
+  this is why the old `update_trace_safely(name=...)` calls were silently
+  no-ops.
+
+**Privacy.** Structured PII — emails, phone numbers, Aadhaar-shaped digit runs
+— and any API key or bearer token are redacted from span attributes before
+export. Free-text student names in prompts are *not* detectable by pattern, so
+treat the Langfuse project as holding student-authored content and scope
+access accordingly.
 
 ---
 

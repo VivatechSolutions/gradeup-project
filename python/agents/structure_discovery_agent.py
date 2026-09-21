@@ -9,6 +9,10 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional
 
+from logger import get_logger
+
+logger = get_logger(__name__)
+
 
 # ── TOC / unit boundary helpers ───────────────────────────────────────────────
 
@@ -18,51 +22,70 @@ _UNIT_KEYWORDS = r"(?:Unit|Chapter|Lesson|Module|Part|Topic)"
 
 def _parse_toc_units(content_md: str, subject: Optional[str]) -> List[Dict]:
     """
-    Extract ordered unit list from markdown.
-    Tries: infer_units_or_chapters_from_markdown(), then keyword body scan,
-    then bare numbered top-level headings ("# 1. Title").
-    """
-    # Primary: auto_schema_extractor helper
-    try:
-        from auto_schema_extractor import infer_units_or_chapters_from_markdown
-        units = infer_units_or_chapters_from_markdown(content_md)
-        if units:
-            return units
-    except Exception:
-        pass
+    Extract ordered unit list from markdown, as [{number, title, type}, ...].
 
-    # Fallback 1: regex scan for "Unit N" / "Chapter N" / "Lesson N" ... headers
+    Titles come from the heading scans; ocr_pipeline's TOC inference supplies
+    the authoritative unit NUMBERS and backfills any the scans missed.
+    """
+    unit_type = "chapter" if subject in ("mathematics", "maths") else "unit"
     units: List[Dict] = []
     seen_nums: set = set()
+
+    def _add(num: int, title: str) -> None:
+        if num in seen_nums:
+            return
+        seen_nums.add(num)
+        # `\s+(.+)$` spans the blank line between "# Unit 6" and the
+        # "## Digital Painting" beneath it, so the capture arrives carrying its
+        # own hashes. Strip them: this title is compared against source headings
+        # and ends up in structured.json.
+        units.append({"number": num,
+                      "title": (title or "").strip().strip("*# ").strip(),
+                      "type": unit_type})
+
+    # Pass 1: "## Unit 6 Digital Painting" — number and title on one heading.
     pattern = re.compile(
         rf"^#+\s*{_UNIT_KEYWORDS}\s+(\d+)[:\.\s]+(.+)$",
         re.MULTILINE | re.IGNORECASE,
     )
     for m in pattern.finditer(content_md):
-        num = int(m.group(1))
-        if num in seen_nums:
-            continue
-        seen_nums.add(num)
-        units.append({
-            "number": num,
-            "title":  m.group(2).strip(),
-            "type":   "chapter" if subject in ("mathematics", "maths") else "unit",
-        })
-    if units:
-        return units
+        _add(int(m.group(1)), m.group(2))
 
-    # Fallback 2: bare numbered top-level headings, e.g. "# 1. Nutrition in Plants"
+    # Pass 2: bare numbered top-level headings, e.g. "# 1. Nutrition in Plants"
     bare = re.compile(r"^#\s*(\d{1,2})[\.\)]\s+(.+)$", re.MULTILINE)
     for m in bare.finditer(content_md):
-        num = int(m.group(1))
+        _add(int(m.group(1)), m.group(2))
+
+    # Pass 3: unit numbers the scans above did not reach. This used to import
+    # `infer_units_or_chapters_from_markdown` from auto_schema_extractor, which
+    # no longer defines it — and a bare `except Exception: pass` swallowed the
+    # ImportError, so the call had been silently dead for every document.
+    try:
+        from ocr_pipeline import infer_units_or_chapters_from_markdown
+        numbers = infer_units_or_chapters_from_markdown(content_md, subject or "")
+    except Exception as e:
+        logger.warning(
+            f"[Discovery] TOC number inference unavailable: {type(e).__name__}: {e}")
+        numbers = []
+
+    for num in numbers or []:
         if num in seen_nums:
             continue
-        seen_nums.add(num)
-        units.append({
-            "number": num,
-            "title":  m.group(2).strip(),
-            "type":   "chapter" if subject in ("mathematics", "maths") else "unit",
-        })
+        # No title on the heading line; read the one printed beneath it.
+        title = ""
+        try:
+            from auto_schema_extractor import derive_unit_title
+            title = derive_unit_title(content_md, num) or ""
+        except Exception:
+            pass
+        _add(num, title)
+
+    units.sort(key=lambda u: u["number"])
+    if units:
+        logger.info(
+            f"[Discovery] {len(units)} {unit_type}(s): "
+            + ", ".join(f"{u['number']}={u['title'] or '?'}" for u in units[:8])
+        )
     return units
 
 
@@ -140,7 +163,7 @@ def _discover_types(content_md: str, api_key: str, model: str) -> List[Dict]:
         from auto_schema_extractor import discover_textbook_structure
         return discover_textbook_structure(content_md, api_key, model)
     except Exception as e:
-        print(f"  ⚠️  discover_textbook_structure failed: {e}")
+        logger.warning(f"discover_textbook_structure failed: {e}")
         # Heuristic fallback
         try:
             from auto_schema_extractor import _detect_structure_heuristic
@@ -182,23 +205,25 @@ def structure_discovery_node(state: Dict[str, Any]) -> Dict[str, Any]:
     except Exception:
         pass
 
-    # Model selection mirrors ocr_pipeline.py logic
-    model = "gpt-4o" if subject in ("mathematics", "maths") else "gpt-4o-mini"
+    # Model selection: EXTRACTION_MODEL (Qwen3-235B) for all subjects via OpenRouter
+    try:
+        from config import EXTRACTION_MODEL
+        model = EXTRACTION_MODEL   # qwen/qwen3-235b-a22b-2507
+    except Exception:
+        model = "qwen/qwen3-235b-a22b-2507"
 
-    print(f"\n{'='*60}")
-    print(f"🗂️  Stage 1: Structure Discovery")
-    print(f"{'='*60}")
+    logger.info("Stage 1: Structure Discovery")
 
     # Auto-detect subject if not provided
     if not subject or subject == "auto":
-        print(f"  🔎 Auto-detecting subject...")
+        logger.info("Auto-detecting subject...")
         subject = _detect_subject(content_md) or "unknown"
-        print(f"  ✅ Subject: {subject}")
+        logger.info(f"Subject: {subject}")
 
     # Step A: Parse TOC → unit list
-    print(f"  📚 Parsing TOC...")
+    logger.info("Parsing TOC...")
     toc_units = _parse_toc_units(content_md, subject)
-    print(f"  ✅ Found {len(toc_units)} unit(s) in TOC")
+    logger.info(f"Found {len(toc_units)} unit(s) in TOC")
 
     # Ensure at least one unit entry
     if not toc_units:
@@ -206,18 +231,30 @@ def structure_discovery_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
     # Step B: Compute char boundaries
     unit_boundaries = _build_unit_boundaries(content_md, toc_units)
-    print(f"  📐 Unit boundaries: {list(unit_boundaries.keys())}")
+    logger.info(f"Unit boundaries: {list(unit_boundaries.keys())}")
 
     # Step C: LLM structure discovery
-    print(f"  🤖 Discovering section types (LLM Phase 1)...")
+    logger.info("Discovering section types (LLM Phase 1)...")
     sample = content_md[:80_000]   # matches auto_schema_extractor sampling
     discovered_types = _discover_types(sample, api_key, model) if api_key else []
+
+    # Phase 1 is unstable — the same chapter has returned anywhere from 24 to 69
+    # sections across runs — and the extraction prompt only carries rules for the
+    # types it names, so a thin discovery quietly yields a thin extraction.
+    # Reconcile against the FULL document (not the 80k sample): the source's own
+    # headings are ground truth, and nothing the LLM found is discarded.
+    try:
+        from auto_schema_extractor import reconcile_discovery
+        discovered_types = reconcile_discovery(discovered_types, content_md)
+    except Exception as e:
+        logger.warning(f"Discovery reconciliation skipped: {e}")
+
     if not discovered_types:
         discovered_types = [{"type": "section", "title": "Content"}]
 
     unique_types = list({d["type"] for d in discovered_types})
-    print(f"  ✅ Discovered {len(unique_types)} section type(s): {unique_types}")
-    print(f"  ✅ Stage 1 complete")
+    logger.info(f"Discovered {len(unique_types)} section type(s): {unique_types}")
+    logger.info("Stage 1 complete")
 
     return {
         "subject":         subject,

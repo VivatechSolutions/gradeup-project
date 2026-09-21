@@ -18,7 +18,11 @@ import orjson
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 import requests
+from langfuse_utils import traced_post
 import time
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 try:
     from config import OPENAI_API_KEY_TEXT
@@ -67,7 +71,7 @@ def extract_toc_units_from_markdown(markdown: str) -> List[Dict[str, Any]]:
                 break
 
     if toc_start is None:
-        print("  ⚠️  [VerifyAgent] TOC not found in markdown")
+        logger.warning("[VerifyAgent] TOC not found in markdown")
         return []
 
     toc_end = min(toc_start + 400, len(lines))
@@ -135,9 +139,9 @@ def extract_toc_units_from_markdown(markdown: str) -> List[Dict[str, Any]]:
     units.sort(key=lambda x: x["number"])
 
     if units:
-        print(f"  📖 [VerifyAgent] TOC: {len(units)} units {[u['number'] for u in units]}")
+        logger.info(f"[VerifyAgent] TOC: {len(units)} units {[u['number'] for u in units]}")
     else:
-        print("  ⚠️  [VerifyAgent] Could not extract unit list from TOC")
+        logger.warning("[VerifyAgent] Could not extract unit list from TOC")
     return units
 
 
@@ -300,7 +304,7 @@ def _fill_empty_sections_in_unit(
         if fetched and len(fetched) > 50:
             sec["content"] = fetched
             fill_count += 1
-            print(f"  📥 Filled empty {sec_type} '{sec_title}' from content.md ({len(fetched)} chars)")
+            logger.info(f"Filled empty {sec_type} '{sec_title}' from content.md ({len(fetched)} chars)")
 
     return unit, fill_count
 
@@ -1113,7 +1117,7 @@ CRITICAL RULES:
     }
 
     try:
-        resp = requests.post(
+        resp = traced_post("re-extract-section",
             "https://api.openai.com/v1/chat/completions",
             headers=headers, json=payload, timeout=timeout
         )
@@ -1122,10 +1126,10 @@ CRITICAL RULES:
         cleaned = re.sub(r'^```[a-z]*\n?', '', raw).strip().rstrip('`')
         result  = orjson.loads(cleaned.encode() if isinstance(cleaned, str) else cleaned)
         n_subs  = len(result.get("subsections", []))
-        print(f"    📦 Repair got {n_subs} subsections for section {section_number}")
+        logger.info(f"Repair got {n_subs} subsections for section {section_number}")
         return result
     except Exception as e:
-        print(f"  ❌ [VerifyAgent] Section repair error: {e}")
+        logger.error(f"[VerifyAgent] Section repair error: {e}")
         return None
 
 
@@ -1439,7 +1443,7 @@ def _re_extract_unit(
             if result:
                 return result
         except Exception as e:
-            print(f"  ⚠️  English re-extraction path failed: {e}, falling back to universal")
+            logger.warning(f"English re-extraction path failed: {e}, falling back to universal")
 
     system_prompt = (
         "You are an expert educational content extractor. "
@@ -1464,7 +1468,7 @@ def _re_extract_unit(
     }
 
     try:
-        resp = requests.post(
+        resp = traced_post("re-extract-unit",
             "https://api.openai.com/v1/chat/completions",
             headers=headers, json=payload, timeout=timeout
         )
@@ -1473,7 +1477,7 @@ def _re_extract_unit(
         cleaned = re.sub(r'^```[a-z]*\n?', '', raw).strip().rstrip('`')
         return orjson.loads(cleaned.encode() if isinstance(cleaned, str) else cleaned)
     except Exception as e:
-        print(f"  ❌ [VerifyAgent] Re-extraction error: {e}")
+        logger.error(f"[VerifyAgent] Re-extraction error: {e}")
         return None
 
 
@@ -1518,9 +1522,9 @@ def run_verification_agent(
     if not api_key:
         api_key = OPENAI_API_KEY_TEXT
 
-    print(f"\n{'='*60}")
-    print("  🔍 VERIFICATION AGENT — Checking extraction completeness")
-    print(f"{'='*60}\n")
+    logger.info(f"{'='*60}")
+    logger.info("VERIFICATION AGENT — Checking extraction completeness")
+    logger.info(f"{'='*60}")
 
     # ── Load ───────────────────────────────────────────────────────────────────
     if not structured_json_path.exists():
@@ -1543,8 +1547,8 @@ def run_verification_agent(
                 break
     subject = subject or "unknown"
 
-    print(f"  Subject : {subject}")
-    print(f"  Extracted units: {len(extracted_units)}")
+    logger.info(f"Subject : {subject}")
+    logger.info(f"Extracted units: {len(extracted_units)}")
 
     # ── TOC comparison ─────────────────────────────────────────────────────────
     toc_units = extract_toc_units_from_markdown(markdown)
@@ -1566,7 +1570,7 @@ def run_verification_agent(
         toc_units.sort(key=lambda x: x["number"])
         
         if original_toc_len > len(toc_units):
-            print(f"  ℹ️  [VerifyAgent] Split-unit mode: filtering TOC to expected units {expected_units}")
+            logger.info(f"[VerifyAgent] Split-unit mode: filtering TOC to expected units {expected_units}")
 
     # ── Stamp-based sanity check ─────────────────────────────────────────────
     # PDFs carry indd printer stamps that encode the exact unit/chapter number.
@@ -1616,7 +1620,7 @@ def run_verification_agent(
             )
             if _override_num:
                 toc_set = {u["number"] for u in toc_units}
-                print(f"  ⚠️  [VerifyAgent] TOC list {sorted(toc_set)} looks like body-text "
+                logger.warning(f"[VerifyAgent] TOC list {sorted(toc_set)} looks like body-text "
                       f"sentences (stop-word ratio={_body_like_ratio:.0%}) — "
                       f"overriding TOC with chapter/unit {_override_num}")
                 toc_units = [{"number": _override_num,
@@ -1631,13 +1635,30 @@ def run_verification_agent(
         # If stamp unit is missing from TOC, or TOC has multiple numbers but
         # body only has one real unit/chapter header → TOC is wrong, override
         if _stamp_unit not in toc_set or len(real_unit_headers) <= 1:
-            print(f"  ⚠️  [VerifyAgent] TOC list {sorted(toc_set)} appears to be a "
+            logger.warning(f"[VerifyAgent] TOC list {sorted(toc_set)} appears to be a "
                   f"body-content list (stamp=Chapter/Unit {_stamp_unit}, "
                   f"real unit headers={real_unit_headers or {_stamp_unit}}) — "
                   f"overriding TOC with stamp")
             toc_units = [{"number": _stamp_unit,
                           "title": f"Chapter/Unit {_stamp_unit}",
                           "type": "unit"}]
+
+    # ── Content-presence filter ───────────────────────────────────────────────
+    # A single-unit PDF often carries the full textbook TOC (listing all
+    # 5 units) on its cover page. Filter out TOC entries for units that have
+    # NO actual body content in the uploaded markdown, so the verifier does
+    # not flag units 2-5 as "missing" when only unit 1 was uploaded.
+    if len(toc_units) > 1:
+        toc_units_with_content = []
+        for tu in toc_units:
+            tu_md = extract_unit_markdown(markdown, tu["number"])
+            if tu_md and len(tu_md) >= 200:
+                toc_units_with_content.append(tu)
+            else:
+                logger.info(f"[VerifyAgent] TOC unit {tu['number']} has no body content "
+                      f"in this PDF — removing from expected set (single-unit upload?)")
+        if toc_units_with_content:
+            toc_units = toc_units_with_content
 
     expected = {u["number"] for u in toc_units}
 
@@ -1650,13 +1671,13 @@ def run_verification_agent(
 
     toc_found = len(toc_units) > 0
     if missing:
-        print(f"  ❌ MISSING units: {sorted(missing)}")
+        logger.error(f"MISSING units: {sorted(missing)}")
     if extra and toc_found:
         # Only warn about extra units when a real TOC was parsed.
         # No TOC → every extracted unit looks "extra" — that's a false positive.
-        print(f"  ⚠️  Extra units (not in TOC): {sorted(extra)}")
+        logger.warning(f"Extra units (not in TOC): {sorted(extra)}")
     if not missing and (not extra or not toc_found):
-        print(f"  ✅ All TOC units accounted for")
+        logger.info(f"All TOC units accounted for")
 
     # ── Section completeness ───────────────────────────────────────────────────
     unit_reports: List[Dict] = []
@@ -1670,12 +1691,12 @@ def run_verification_agent(
         rpt = check_unit_completeness(unit, unit_md, subject)
         unit_reports.append(rpt)
         if rpt["issues"]:
-            print(f"  ⚠️  Unit {n} — {len(rpt['issues'])} issue(s):")
+            logger.warning(f"Unit {n} — {len(rpt['issues'])} issue(s):")
             for issue in rpt["issues"]:
-                print(f"       • {issue}")
+                logger.info(f"• {issue}")
         if rpt["warnings"]:
             for w in rpt["warnings"]:
-                print(f"  ℹ️   Unit {n} — {w}")
+                logger.info(f"Unit {n} — {w}")
 
     # ── Auto-fix ───────────────────────────────────────────────────────────────
     fixes = 0
@@ -1690,19 +1711,19 @@ def run_verification_agent(
                 extracted_units[i] = updated_unit
                 total_fills += fill_count
         if total_fills > 0:
-            print(f"  📥 Filled {total_fills} empty section(s) from content.md")
+            logger.info(f"Filled {total_fills} empty section(s) from content.md")
 
     if auto_fix and api_key:
         # 1. Re-extract completely missing units
         for toc_u in toc_units:
             n = toc_u["number"]
             if n not in extracted_nums and fixes < max_fixes:
-                print(f"\n  🔧 Re-extracting missing Unit {n}: {toc_u['title']}")
+                logger.info(f"Re-extracting missing Unit {n}: {toc_u['title']}")
                 unit_md = extract_unit_markdown(markdown, n)
                 if not unit_md or len(unit_md) < 500:
                     unit_md = markdown
                 if len(unit_md) < 200:
-                    print(f"  ⚠️  Not enough markdown for Unit {n} — skipping")
+                    logger.warning(f"Not enough markdown for Unit {n} — skipping")
                     continue
                 new_data = _re_extract_unit(unit_md, n, subject, api_key,
                                             issue_hint="This unit was completely missing.")
@@ -1718,15 +1739,15 @@ def run_verification_agent(
                     extracted_nums.add(n)
                     fixes += 1
                     fixed_nums.append(n)
-                    print(f"  ✅ Unit {n} re-extracted")
+                    logger.info(f"Unit {n} re-extracted")
                 else:
-                    print(f"  ❌ Failed to re-extract Unit {n}")
+                    logger.error(f"Failed to re-extract Unit {n}")
 
         # 2. Fix incomplete units — prefer targeted section repair over full re-extraction
         for i, rpt in enumerate(unit_reports):
             n = rpt["unit_number"]
             if not rpt["is_complete"] and fixes < max_fixes and n not in fixed_nums:
-                print(f"\n  🔧 Fixing incomplete Unit {n}: {rpt['title'][:50]}")
+                logger.info(f"Fixing incomplete Unit {n}: {rpt['title'][:50]}")
                 unit_md = extract_unit_markdown(markdown, n)
                 if not unit_md or len(unit_md) < 500:
                     unit_md = markdown
@@ -1752,10 +1773,10 @@ def run_verification_agent(
                         before_sec  = gap_match.group(3)
                         gap_raw = _extract_unnumbered_section_raw(unit_md, after_sec, before_sec)
                         if not gap_raw or len(gap_raw) < 100:
-                            print(f"    ⚠️  No content between {after_sec} and {before_sec} — skipping gap")
+                            logger.warning(f"No content between {after_sec} and {before_sec} — skipping gap")
                             continue
-                        print(f"    🔎 Gap repair: section {missing_sec} ")
-                        print(f"      ({len(gap_raw):,} chars of unnumbered content between {after_sec}→{before_sec})")
+                        logger.info(f"Gap repair: section {missing_sec} ")
+                        logger.info(f"({len(gap_raw):,} chars of unnumbered content between {after_sec}→{before_sec})")
                         repaired = _re_extract_section(
                             section_content=gap_raw,
                             section_number=missing_sec,
@@ -1775,13 +1796,13 @@ def run_verification_agent(
                                         extracted_units[j]["part"] = original_part
                                     section_repaired = True
                                     subs_count = len(repaired.get("subsections", []))
-                                    print(f"    ✅ Section {missing_sec} created ({subs_count} subs) in Unit {n}")
+                                    logger.info(f"Section {missing_sec} created ({subs_count} subs) in Unit {n}")
                                     break
                             fixes += 1
                             if n not in fixed_nums:
                                 fixed_nums.append(n)
                         else:
-                            print(f"    ❌ Gap repair for {missing_sec} returned no result")
+                            logger.error(f"Gap repair for {missing_sec} returned no result")
                         if fixes >= max_fixes:
                             break
                         continue  # done with this issue
@@ -1798,10 +1819,10 @@ def run_verification_agent(
 
                     sec_raw = _extract_section_raw(unit_md, broken_sec)
                     if not sec_raw or len(sec_raw) < 100:
-                        print(f"    ⚠️  No raw content for section {broken_sec} — skipping")
+                        logger.warning(f"No raw content for section {broken_sec} — skipping")
                         continue
 
-                    print(f"    🔎 Targeted repair: section {broken_sec} "
+                    logger.info(f"Targeted repair: section {broken_sec} "
                           f"({len(sec_raw):,} chars, {len(missing_titles)} known missing subs)")
                     repaired = _re_extract_section(
                         section_content=sec_raw,
@@ -1821,13 +1842,13 @@ def run_verification_agent(
                                 if original_part and not extracted_units[j].get("part"):
                                     extracted_units[j]["part"] = original_part
                                 section_repaired = True
-                                print(f"    ✅ Section {broken_sec} repaired in Unit {n}")
+                                logger.info(f"Section {broken_sec} repaired in Unit {n}")
                                 break
                         fixes += 1
                         if n not in fixed_nums:
                             fixed_nums.append(n)
                     else:
-                        print(f"    ❌ Section {broken_sec} repair returned no result")
+                        logger.error(f"Section {broken_sec} repair returned no result")
                     if fixes >= max_fixes:
                         break
 
@@ -1850,13 +1871,13 @@ def run_verification_agent(
                             if original_part and not new_data.get("part"):
                                 new_data["part"] = original_part
                             elif original_part and new_data.get("part") != original_part:
-                                print(f"  ⚠️  Correcting re-extracted part "
+                                logger.warning(f"Correcting re-extracted part "
                                       f"'{new_data.get('part')}' → '{original_part}'")
                                 new_data["part"] = original_part
                             extracted_units[j] = new_data
                             fixes += 1
                             fixed_nums.append(n)
-                            print(f"  ✅ Unit {n} fixed")
+                            logger.info(f"Unit {n} fixed")
                             break
 
     # ── Sort + save ────────────────────────────────────────────────────────────
@@ -1867,7 +1888,7 @@ def run_verification_agent(
         output_path = structured_json_path
 
     output_path.write_bytes(orjson.dumps(structured_data, option=orjson.OPT_INDENT_2))
-    print(f"\n  💾 [VerifyAgent] Saved → {output_path.name}")
+    logger.info(f"[VerifyAgent] Saved → {output_path.name}")
 
     # ── Final report ───────────────────────────────────────────────────────────
     final_nums = {_unit_num(u) for u in structured_data.get(units_key, []) if _unit_num(u)}
@@ -1890,12 +1911,12 @@ def run_verification_agent(
                         and (not extra or not toc_found)),
     }
 
-    print(f"\n  📊 [VerifyAgent] FINAL SUMMARY")
-    print(f"     TOC expected  : {sorted(expected)}")
-    print(f"     After fix     : {sorted(final_nums)}")
-    print(f"     Still missing : {sorted(still_missing) or 'none ✅'}")
-    print(f"     Fixes made    : {fixes}")
-    print(f"     Complete      : {'✅ YES' if report['is_complete'] else '⚠️  NO (check issues above)'}")
+    logger.info(f"[VerifyAgent] FINAL SUMMARY")
+    logger.info(f"TOC expected  : {sorted(expected)}")
+    logger.info(f"After fix     : {sorted(final_nums)}")
+    logger.info(f"Still missing : {sorted(still_missing) or 'none '}")
+    logger.info(f"Fixes made    : {fixes}")
+    logger.warning(f"Complete      : {' YES' if report['is_complete'] else '  NO (check issues above)'}")
 
     return report
 
@@ -2014,7 +2035,7 @@ def verify_and_extract_missing_content_with_llm(
         f"Content:\n{unit_content[:15000]}\n\nReturn ONLY valid JSON."
     )
     try:
-        resp = requests.post(
+        resp = traced_post("verify-missing-content",
             "https://api.openai.com/v1/chat/completions",
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             json={
@@ -2033,7 +2054,7 @@ def verify_and_extract_missing_content_with_llm(
             raw_stripped = raw.strip()
             return orjson.loads(raw_stripped.encode() if isinstance(raw_stripped, str) else raw_stripped)
     except Exception as e:
-        print(f"  ❌ [VerifyAgent legacy] LLM error: {e}")
+        logger.error(f"[VerifyAgent legacy] LLM error: {e}")
     return None
 
 
@@ -2080,7 +2101,7 @@ def main():
     c_path = doc_dir / "content.md"
 
     if not s_path.exists() or not c_path.exists():
-        print(f"Error: Missing files for '{args.document_id}' in {OUTPUTS_DIR}")
+        logger.error(f"Error: Missing files for '{args.document_id}' in {OUTPUTS_DIR}")
         sys.exit(1)
 
     report = run_verification_agent(
@@ -2094,7 +2115,7 @@ def main():
 
     rpt_path = doc_dir / "verification_report.json"
     rpt_path.write_bytes(orjson.dumps(report, option=orjson.OPT_INDENT_2))
-    print(f"\n  📄 Report saved: {rpt_path}")
+    logger.info(f"Report saved: {rpt_path}")
     sys.exit(0 if report.get("is_complete") else 1)
 
 

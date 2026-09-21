@@ -89,11 +89,20 @@ function resetAuthActivity() {
   localStorage.setItem(AUTH_ACTIVITY_KEY, Date.now().toString());
 }
 
+function clearClientAuthState() {
+  localStorage.removeItem(AUTH_ACTIVITY_KEY);
+  localStorage.removeItem(POST_AUTH_REDIRECT_KEY);
+  queryClient.setQueryData(["/api/v1/auth/me"], null);
+  queryClient.removeQueries({
+    predicate: (query) => query.queryKey[0] !== "/api/v1/auth/me",
+  });
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
 
-  const { data: apiUser, error, isLoading } = useQuery<SelectUser | null, Error>({
+  const { data: apiUser, error, isLoading } = useQuery<any, Error>({
     queryKey: ["/api/v1/auth/me"],
     queryFn: getQueryFn({ on401: "returnNull" }),
   });
@@ -160,19 +169,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     mutationFn: async () => {
       await apiRequest("POST", "/api/v1/auth/logout");
     },
-    onSuccess: () => {
-      localStorage.removeItem(AUTH_ACTIVITY_KEY);
-      queryClient.setQueryData(["/api/v1/auth/me"], null);
-      queryClient.clear();
+    onSettled: (_data, error) => {
+      clearClientAuthState();
       toast({ title: "Logged out", description: "You have been successfully logged out." });
       setLocation("/auth");
-    },
-    onError: (error: Error) => {
-      toast({ title: "Logout failed", description: error.message, variant: "destructive" });
+      if (error) {
+        console.warn("Server logout failed after clearing client auth state:", error);
+      }
     },
   });
 
-  const user = apiUser ?? null;
+  const user = apiUser ? unwrapUser(apiUser) : null;
 
   return (
     <AuthContext.Provider

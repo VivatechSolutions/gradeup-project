@@ -15,6 +15,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime, timezone
 
+from logger import get_logger
+
+logger = get_logger(__name__)
+
 STUDENT_DATA_DIR = Path("student_data")
 
 
@@ -68,8 +72,10 @@ class StudentPerformanceTracker:
         if path.exists():
             try:
                 return json.loads(path.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError):
-                pass
+            except (json.JSONDecodeError, OSError) as e:
+                # The blank record below resets this student's points history to
+                # zero, so a corrupt or unreadable file must not pass unnoticed.
+                logger.warning(f"[Performance] Could not read {path.name}, starting a blank record: {e}")
         return {
             "candidate_id": candidate_id,
             "candidate_name": "",

@@ -5,9 +5,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Hand,
-  Mic,
   Pause,
   Play,
+  Mic,
   Send,
   Settings,
   Sparkles,
@@ -20,8 +20,11 @@ import {
   resumeAvatarSession,
   startAvatarSession,
   synthesizeDebateSpeech,
-  transcribeDebateAudio,
+  transcribeDebateAudio
 } from "../../lib/gradeupApi";
+import { buildApiUrl } from "../../lib/apiBase";
+import maleTeacherGif from "../../assets/male-teacher.gif";
+import femaleTeacherGif from "../../assets/female-teacher.gif";
 
 type GeniusContext = {
   unitId: string;
@@ -103,9 +106,10 @@ function getSegments(payload: any): AvatarSegment[] {
 
 function getAudioUrl(segment: AvatarSegment | null, teacher: "man" | "woman") {
   if (!segment?.audio) return "";
-  return teacher === "woman"
+  const audioUrl = teacher === "woman"
     ? segment.audio.female || segment.audio.male || ""
     : segment.audio.male || segment.audio.female || "";
+  return audioUrl ? buildApiUrl(audioUrl) : "";
 }
 
 function segmentText(segment: AvatarSegment | null) {
@@ -192,9 +196,54 @@ function AvatarFigure({
   speaking: boolean;
   teacher: "man" | "woman";
 }) {
+  const imageRef = useRef<HTMLImageElement | null>(null);
+  const freezeRef = useRef<HTMLCanvasElement | null>(null);
+  const teacherGif = teacher === "woman" ? femaleTeacherGif : maleTeacherGif;
+
+  useEffect(() => {
+    if (speaking) return;
+    const image = imageRef.current;
+    const canvas = freezeRef.current;
+    const context = canvas?.getContext("2d");
+    if (!image || !canvas || !context) return;
+
+    const drawFreezeFrame = () => {
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    };
+
+    if (image.complete) {
+      drawFreezeFrame();
+    } else {
+      image.addEventListener("load", drawFreezeFrame, { once: true });
+      return () => image.removeEventListener("load", drawFreezeFrame);
+    }
+  }, [speaking, teacherGif]);
+
   return (
-    <div className={`avatar-wrap ${teacher === "woman" ? "teacher-woman" : "teacher-man"} ${emotionClass(emotion)} ${speaking ? "emo-talking" : ""}`}>
+    <div className={`avatar-wrap ${teacher === "woman" ? "teacher-woman" : "teacher-man"} ${emotionClass(emotion)} ${speaking ? "avatar-speaking emo-talking" : "avatar-paused"}`}>
       <div className="av-r action-open">
+        <div className="teacher-gif-frame">
+          <img
+            ref={imageRef}
+            key={teacherGif}
+            className="teacher-avatar-gif"
+            src={teacherGif}
+            alt={`${teacher === "woman" ? "Female" : "Male"} AI teacher avatar`}
+            onLoad={() => {
+              if (!speaking) {
+                const canvas = freezeRef.current;
+                const context = canvas?.getContext("2d");
+                if (canvas && context && imageRef.current) {
+                  context.clearRect(0, 0, canvas.width, canvas.height);
+                  context.drawImage(imageRef.current, 0, 0, canvas.width, canvas.height);
+                }
+              }
+            }}
+          />
+          <canvas ref={freezeRef} className="teacher-avatar-freeze" width="512" height="512" />
+        </div>
+        {/*
         <div className="av-shadow" />
         <div className="av-shoe l" />
         <div className="av-shoe r" />
@@ -236,6 +285,7 @@ function AvatarFigure({
           </div>
         </div>
         <div className="av-book" />
+        */}
       </div>
     </div>
   );
@@ -259,17 +309,14 @@ export default function AvatarGeniusView() {
   const [doubtInputMode, setDoubtInputMode] = useState<"type" | "voice">("type");
   const [raiseHandChat, setRaiseHandChat] = useState<RaiseHandMessage[]>([]);
   const [isRaisingHand, setIsRaisingHand] = useState(false);
-  const [isRecordingDoubt, setIsRecordingDoubt] = useState(false);
+    const [isRecordingDoubt, setIsRecordingDoubt] = useState(false);
   const [isTranscribingDoubt, setIsTranscribingDoubt] = useState(false);
   const [isResuming, setIsResuming] = useState(false);
+  const [isVoiceActive, setIsVoiceActive] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioKeyRef = useRef("");
   const flashcardAudioCacheRef = useRef<Record<string, FlashcardAudioEntry>>({});
   const flashcardAudioPromiseRef = useRef<Record<string, Promise<FlashcardAudioEntry>>>({});
-  const doubtRecorderRef = useRef<MediaRecorder | null>(null);
-  const doubtStreamRef = useRef<MediaStream | null>(null);
-  const doubtAudioChunksRef = useRef<Blob[]>([]);
-  const doubtRecordingCancelledRef = useRef(false);
   const mediaRequestTokenRef = useRef(0);
   const statusRef = useRef(status);
   const fallbackTimerRef = useRef<number | null>(null);
@@ -277,7 +324,10 @@ export default function AvatarGeniusView() {
   const endedRef = useRef(false);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const doubtMessagesRef = useRef<HTMLDivElement | null>(null);
-
+  const doubtRecorderRef = useRef<MediaRecorder | null>(null);
+  const doubtStreamRef = useRef<MediaStream | null>(null);
+  const doubtAudioChunksRef = useRef<Blob[]>([]);
+  const doubtRecordingCancelledRef = useRef(false);
   const current = segments[index] || null;
   const currentKey = String(current?.segment_id || `segment-${index}`);
   const display = current;
@@ -374,7 +424,7 @@ export default function AvatarGeniusView() {
 
   useEffect(() => {
     return () => {
-      cleanupDoubtRecording();
+      cleanupDoubtRecording()
       destroyLessonAudio();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -414,13 +464,28 @@ export default function AvatarGeniusView() {
       fallbackTimerRef.current = null;
     }
   }
-
+ function cleanupDoubtRecording() {
+    doubtRecordingCancelledRef.current = true;
+    try {
+      if (doubtRecorderRef.current?.state === "recording") {
+        doubtRecorderRef.current.stop();
+      }
+    } catch {}
+    doubtStreamRef.current?.getTracks().forEach((track) => track.stop());
+    doubtStreamRef.current = null;
+    doubtRecorderRef.current = null;
+    doubtAudioChunksRef.current = [];
+    setIsRecordingDoubt(false);
+  }
   function stopCurrentMedia() {
     clearFallbackTimer();
     mediaRequestTokenRef.current += 1;
+    setIsVoiceActive(false);
     statusRef.current = status === "completed" || status === "error" ? status : "paused";
     if (audioRef.current) {
       audioRef.current.pause();
+      audioRef.current.onplaying = null;
+      audioRef.current.onpause = null;
       audioRef.current.onended = null;
       audioRef.current.onerror = null;
     }
@@ -455,23 +520,10 @@ export default function AvatarGeniusView() {
     audioKeyRef.current = "";
   }
 
-  function cleanupDoubtRecording() {
-    doubtRecordingCancelledRef.current = true;
-    try {
-      if (doubtRecorderRef.current?.state === "recording") {
-        doubtRecorderRef.current.stop();
-      }
-    } catch {}
-    doubtStreamRef.current?.getTracks().forEach((track) => track.stop());
-    doubtStreamRef.current = null;
-    doubtRecorderRef.current = null;
-    doubtAudioChunksRef.current = [];
-    setIsRecordingDoubt(false);
-  }
-
   function pauseCurrentMedia() {
     clearFallbackTimer();
     mediaRequestTokenRef.current += 1;
+    setIsVoiceActive(false);
     audioRef.current?.pause();
     if (status === "playing") {
       statusRef.current = "paused";
@@ -511,8 +563,7 @@ export default function AvatarGeniusView() {
 
     const audioUrl = getAudioUrl(segment, teacher);
     if (!audioUrl) {
-      clearFallbackTimer();
-      fallbackTimerRef.current = window.setTimeout(() => handleAudioEnded(segment, segmentIndex), 900);
+      playGeneratedTeachingSpeech(segment, segmentIndex);
       return;
     }
 
@@ -531,8 +582,11 @@ export default function AvatarGeniusView() {
     audio.currentTime = 0;
     audio.playbackRate = speed;
     audioKeyRef.current = nextAudioKey;
+    audio.onplaying = () => setIsVoiceActive(true);
+    audio.onpause = () => setIsVoiceActive(false);
     audio.onended = () => handleAudioEnded(segment, segmentIndex);
     audio.onerror = () => {
+      setIsVoiceActive(false);
       setError("Audio could not be played for this segment.");
       handleAudioEnded(segment, segmentIndex);
     };
@@ -629,12 +683,88 @@ export default function AvatarGeniusView() {
     audio.currentTime = 0;
     audio.playbackRate = speed;
     audioKeyRef.current = nextAudioKey;
-    audio.onended = () => handleAudioEnded(segment, segmentIndex);
+    audio.onplaying = () => setIsVoiceActive(true);
+    audio.onpause = () => setIsVoiceActive(false);
+    audio.onended = () => {
+      setIsVoiceActive(false);
+      handleAudioEnded(segment, segmentIndex);
+    };
     audio.onerror = () => {
+      setIsVoiceActive(false);
       setError("Flashcard audio could not be played.");
       handleAudioEnded(segment, segmentIndex);
     };
     playAudioWithRetry(audio, "Flashcard audio was blocked by the browser. Press Play to continue.");
+  }
+
+  async function playGeneratedTeachingSpeech(segment: AvatarSegment, segmentIndex: number) {
+    clearFallbackTimer();
+    setIsVoiceActive(false);
+
+    const speechText = segmentText(segment);
+    if (!speechText.trim()) {
+      fallbackTimerRef.current = window.setTimeout(() => handleAudioEnded(segment, segmentIndex), 900);
+      return;
+    }
+
+    const segmentKey = String(segment.segment_id || `segment-${segmentIndex}`);
+    const generatedKey = `teaching:${segmentKey}:${teacher}:${speechText}`;
+    const cachedAudioEntry = flashcardAudioCacheRef.current[generatedKey];
+    const nextAudioKey = `generated:${generatedKey}`;
+
+    if (audioRef.current && audioKeyRef.current === nextAudioKey) {
+      audioRef.current.playbackRate = speed;
+      playAudioWithRetry(audioRef.current, "Teaching audio was blocked by the browser. Press Play to continue.");
+      return;
+    }
+
+    const requestToken = mediaRequestTokenRef.current;
+    let audioEntry = cachedAudioEntry;
+    if (!audioEntry) {
+      try {
+        const response = await synthesizeDebateSpeech({
+          text: speechText,
+          voice: teacher === "woman" ? "shimmer" : "echo",
+          format: "mp3",
+        });
+        const dataUrl = response?.dataUrl || "";
+        if (dataUrl) {
+          audioEntry = { dataUrl };
+          flashcardAudioCacheRef.current[generatedKey] = audioEntry;
+        }
+      } catch (err: any) {
+        setError(err?.message || "Teaching audio could not be generated.");
+        handleAudioEnded(segment, segmentIndex);
+        return;
+      }
+    }
+
+    if (!audioEntry) {
+      handleAudioEnded(segment, segmentIndex);
+      return;
+    }
+
+    if (requestToken !== mediaRequestTokenRef.current || statusRef.current !== "playing") return;
+
+    const audio = getLessonAudio();
+    audio.pause();
+    audio.src = audioEntry.dataUrl;
+    audio.currentTime = 0;
+    audio.playbackRate = speed;
+    audioRef.current = audio;
+    audioKeyRef.current = nextAudioKey;
+    audio.onplaying = () => setIsVoiceActive(true);
+    audio.onpause = () => setIsVoiceActive(false);
+    audio.onended = () => {
+      setIsVoiceActive(false);
+      handleAudioEnded(segment, segmentIndex);
+    };
+    audio.onerror = () => {
+      setIsVoiceActive(false);
+      setError("Teaching audio could not be played.");
+      handleAudioEnded(segment, segmentIndex);
+    };
+    playAudioWithRetry(audio, "Teaching audio was blocked by the browser. Press Play to continue.");
   }
 
   function openDoubtModal() {
@@ -644,7 +774,7 @@ export default function AvatarGeniusView() {
   }
 
   function closeDoubtModal({ resume = true } = {}) {
-    cleanupDoubtRecording();
+      cleanupDoubtRecording();
     setDoubtOpen(false);
     if (resume && wasPlayingBeforeDoubtRef.current) resumeCurrentMedia();
     wasPlayingBeforeDoubtRef.current = false;
@@ -708,21 +838,21 @@ export default function AvatarGeniusView() {
     window.close();
   }
 
-  async function sendRaiseHandDoubt(studentText: string) {
+ async function sendRaiseHandDoubt(studentText: string) {
     if (!sessionId || !studentText.trim() || isRaisingHand) return;
     pauseCurrentMedia();
-    const finalStudentText = studentText.trim();
+  const finalStudentText = studentText.trim();
     const messageSeed = Date.now();
     setRaiseHandChat((prev) => [
       ...prev,
-      { id: `student-${messageSeed}`, role: "student", text: finalStudentText },
+     { id: `student-${messageSeed}`, role: "student", text: finalStudentText },
     ]);
     setDoubtText("");
     setIsRaisingHand(true);
     try {
       const response = await raiseAvatarHand({
         sessionId,
-        studentDoubt: finalStudentText,
+     studentDoubt: finalStudentText,
       });
       const nextClarifications = response?.clarification?.segments;
       const aiMessages = Array.isArray(nextClarifications)
@@ -751,8 +881,7 @@ export default function AvatarGeniusView() {
       setIsRaisingHand(false);
     }
   }
-
-  async function submitDoubt() {
+ async function submitDoubt() {
     await sendRaiseHandDoubt(doubtText);
   }
 
@@ -820,7 +949,6 @@ export default function AvatarGeniusView() {
     }
     cleanupDoubtRecording();
   }
-
   async function resumeLesson() {
     if (!sessionId || isResuming) return;
     setIsResuming(true);
@@ -1037,18 +1165,18 @@ export default function AvatarGeniusView() {
         <aside id="avatar-panel" className={teacher === "woman" ? "teacher-woman" : "teacher-man"}>
           <div id="av-stage">
             <div className="av-name-badge">{teacherName}</div>
-            <div className="speech-bub visible">{segmentText(display) || "Ready when you are."}</div>
-            <AvatarFigure emotion={display?.emotion || display?.avatar_emotion} speaking={status === "playing"} teacher={teacher} />
+            {/* <div className="speech-bub visible">{segmentText(display) || "Ready when you are."}</div> */}
+            <AvatarFigure emotion={display?.emotion || display?.avatar_emotion} speaking={isVoiceActive} teacher={teacher} />
             <div className="av-status">
               <span className="status-dot" />
-              {status === "playing" ? "Speaking" : status === "waiting_flashcard" ? "Waiting for you" : status}
+              {isVoiceActive ? "Speaking" : status === "waiting_flashcard" ? "Waiting for you" : status}
             </div>
             <button id="raise-btn" onClick={openDoubtModal}>
               <Hand size={16} />
               Raise hand
             </button>
           </div>
-          <div id="topics-area">
+          {/* <div id="topics-area">
             <div className="topic-label">Lesson Map</div>
             {segmentChapters.map((chapter, topicIndex) => (
               <button
@@ -1065,7 +1193,7 @@ export default function AvatarGeniusView() {
                 </span>
               </button>
             ))}
-          </div>
+          </div> */}
         </aside>
       </main>
 
@@ -1134,13 +1262,8 @@ export default function AvatarGeniusView() {
                 <div className="db-bubble db-thinking">Thinking...</div>
               </div>
             )}
-            {isTranscribingDoubt && (
-              <div className="db-msg ai">
-                <div className="db-bubble db-thinking">Listening back...</div>
-              </div>
-            )}
           </div>
-          <div className="db-mode-row">
+  <div className="db-mode-row">
             <button
               className={`db-mode-btn ${doubtInputMode === "type" ? "active" : ""}`}
               onClick={() => setDoubtInputMode("type")}
@@ -1157,8 +1280,8 @@ export default function AvatarGeniusView() {
             >
               Voice
             </button>
-          </div>
-          {doubtInputMode === "type" ? (
+          </div>  
+           {doubtInputMode === "type" ? (
             <div className="db-input-row open">
               <input
                 className="db-input"
@@ -1228,8 +1351,8 @@ const styles = `
   --r:14px;--r2:20px;--ah:52px;
 }
 [data-theme="dark"],.genius-shell[data-theme="dark"]{
-  --bg:#06070f;--surface:#0e1120;--surface2:#141726;--border:rgba(255,255,255,.08);
-  --text:#eef0f8;--sub:#9aa0bf;--muted:#4a5270;
+  --bg:#050816;--surface:#111827;--surface2:#1f2937;--border:rgba(226,232,240,.16);
+  --text:#f8fafc;--sub:#e2e8f0;--muted:#cbd5e1;
   --sh:0 2px 20px rgba(0,0,0,.4);--sh2:0 12px 50px rgba(0,0,0,.6);
 }
 html,body,#root{height:100%;}
@@ -1251,12 +1374,17 @@ body{overflow:hidden;}
 #content-panel{display:flex;flex-direction:column;overflow:hidden;min-height:0;}#content-scroll{flex:1;overflow-y:auto;padding:32px 36px 120px;scroll-behavior:smooth;scrollbar-width:none;-ms-overflow-style:none;}#content-scroll::-webkit-scrollbar{display:none;}
 .ch-eyebrow{font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:8px;}.ch-title{font-size:clamp(1.4rem,3vw,2rem);font-weight:800;color:var(--text);line-height:1.2;margin-bottom:6px;}.ch-meta{font-size:12px;color:var(--muted);margin-bottom:28px;}.ch-divider{height:2px;width:48px;background:linear-gradient(90deg,var(--accent),transparent);border-radius:2px;margin-bottom:28px;}
 .typed-para{font-family:'Lora',Georgia,serif;font-size:1rem;line-height:1.9;color:var(--sub);margin-bottom:1.2rem;opacity:0;transform:translateY(8px);transition:opacity .4s ease,transform .4s ease;}.genius-shell[data-theme="dark"] .typed-para{color:#f8fafc;text-shadow:0 1px 1px rgba(0,0,0,.28);}.typed-para.visible{opacity:1;transform:none;}.cursor{display:inline-block;width:2px;height:1em;background:var(--accent);margin-left:2px;vertical-align:middle;animation:blink .7s step-end infinite;}@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+.genius-shell[data-theme="dark"] #content-panel,.genius-shell[data-theme="dark"] #avatar-panel{background:linear-gradient(180deg,#0b1120,#111827);}
+.genius-shell[data-theme="dark"] .ch-meta,.genius-shell[data-theme="dark"] .ic-flip-hint,.genius-shell[data-theme="dark"] .db-sub,.genius-shell[data-theme="dark"] .av-status,.genius-shell[data-theme="dark"] .vb-label,.genius-shell[data-theme="dark"] .vb-spd{color:#cbd5e1;}
+.genius-shell[data-theme="dark"] .inline-card,.genius-shell[data-theme="dark"] .speech-bub,.genius-shell[data-theme="dark"] .mcq-option,.genius-shell[data-theme="dark"] .db-input,.genius-shell[data-theme="dark"] .db-bubble,.genius-shell[data-theme="dark"] #doubt-box,.genius-shell[data-theme="dark"] .cs-card{background:#1e293b;color:#f8fafc;border-color:rgba(226,232,240,.18);}
+.genius-shell[data-theme="dark"] .flash-a,.genius-shell[data-theme="dark"] .db-small-btn,.genius-shell[data-theme="dark"] .db-thinking{color:#e2e8f0;}
+.genius-shell[data-theme="dark"] .speech-bub::after{border-top-color:#1e293b;}
 #prog-bar{height:3px;background:rgba(91,94,247,.1);}#prog-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));width:0%;transition:width .5s ease;border-radius:0 3px 3px 0;}
 .inline-card{margin:28px 0;border-radius:var(--r2);overflow:hidden;border:1px solid rgba(91,94,247,.25);background:linear-gradient(145deg,rgba(91,94,247,.06),rgba(91,94,247,.02));box-shadow:0 4px 20px rgba(91,94,247,.1);opacity:0;transform:translateY(12px) scale(.98);transition:opacity .5s ease,transform .5s ease;}.inline-card.visible{opacity:1;transform:none;}.inline-card.active{border-color:rgba(91,94,247,.45);box-shadow:0 10px 30px rgba(91,94,247,.14);}
 .ic-header{padding:14px 18px 10px;display:flex;align-items:center;gap:8px;border-bottom:1px solid rgba(91,94,247,.12);}.ic-tag{font-size:9px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);background:rgba(91,94,247,.1);padding:3px 9px;border-radius:20px;}.ic-flip-hint{font-size:10px;color:var(--muted);margin-left:auto;display:flex;align-items:center;gap:4px;}.ic-scene{perspective:900px;padding:14px 18px;}.ic-q{font-size:.92rem;font-weight:600;color:var(--text);line-height:1.55;}.ic-footer{padding:10px 18px 14px;display:flex;gap:8px;}.ic-fb-btn{flex:1;padding:7px;border-radius:10px;font-size:11px;font-weight:700;border:none;cursor:pointer;font-family:inherit;transition:all .2s;color:#fff;}.ic-fb-got{background:rgba(16,185,129,.75);}
 .mcq-options{display:grid;gap:8px;margin-top:12px;}.mcq-option{display:grid;grid-template-columns:28px minmax(0,1fr);gap:10px;align-items:start;width:100%;padding:10px 12px;border-radius:12px;background:var(--surface);border:1px solid var(--border);font-family:inherit;font-size:.88rem;line-height:1.45;color:var(--text);text-align:left;cursor:pointer;transition:background .18s,border-color .18s,transform .18s,box-shadow .18s;}.mcq-option:hover:not(:disabled){border-color:rgba(91,94,247,.45);box-shadow:0 8px 20px rgba(91,94,247,.1);transform:translateY(-1px);}.mcq-option:disabled{cursor:default;}.mcq-option b{color:var(--accent);}.mcq-option.selected{border-color:rgba(91,94,247,.7);background:rgba(91,94,247,.1);}.mcq-option.correct{border-color:rgba(16,185,129,.72);background:rgba(16,185,129,.14);}.mcq-option.correct b{color:#047857;}.mcq-option.wrong{border-color:rgba(239,68,68,.7);background:rgba(239,68,68,.12);}.mcq-option.wrong b{color:#dc2626;}
 .db-input{min-width:0;flex:1;border-radius:12px;border:1px solid var(--border);background:var(--surface);color:var(--text);padding:10px 12px;outline:none;}
-.feedback{display:grid;grid-template-columns:22px minmax(0,1fr);gap:10px;margin-top:14px;padding:12px;border-radius:14px;}.feedback.correct{background:rgba(16,185,129,.12);color:#047857;}.feedback.wrong{background:rgba(245,158,11,.13);color:#92400e;}.feedback strong{display:block;margin-bottom:3px;}.feedback p{margin:0;line-height:1.55;font-size:.86rem;}.option-explain{margin-top:10px;display:grid;gap:6px;}
+.feedback{display:grid;grid-template-columns:22px minmax(0,1fr);gap:10px;margin-top:14px;padding:12px;border-radius:14px;}.feedback.correct{background:rgba(16,185,129,.12);color:#089970;}.feedback.wrong{background:rgb(0 0 0 / 25%);color:#ff0000;}.feedback strong{display:block;margin-bottom:3px;}.feedback p{margin:0;line-height:1.55;font-size:.86rem;}.option-explain{margin-top:10px;display:grid;gap:6px;}
 .loading-card,.error-card{padding:16px 18px;border-radius:16px;margin:18px 0;font-size:13px;font-weight:700;}.loading-card{background:rgba(91,94,247,.1);color:var(--accent);}.error-card{background:rgba(239,68,68,.1);color:#dc2626;}
 #avatar-panel{display:flex;flex-direction:column;min-height:calc(100vh - var(--ah));overflow:hidden;}#av-stage{flex:1 1 auto;min-height:0;padding:18px 20px 0;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:8px;position:relative;overflow:hidden;}.av-name-badge{background:linear-gradient(135deg,#ec4899,#8b5cf6);color:#fff;font-size:10px;font-weight:700;padding:4px 14px;border-radius:99px;letter-spacing:.06em;text-transform:uppercase;box-shadow:0 4px 12px rgba(91,94,247,.3);}
 .speech-bub{display:block;background:var(--surface2);border:1px solid rgba(91,94,247,.2);border-radius:14px 14px 14px 4px;padding:10px 14px;font-size:12px;line-height:1.55;color:var(--text);width:min(260px,100%);min-height:36px;max-height:78px;overflow:hidden;text-overflow:ellipsis;position:relative;transition:all .25s ease;animation:bubIn .3s ease;}.speech-bub::after{content:'';position:absolute;bottom:-7px;left:14px;border:7px solid transparent;border-top-color:var(--surface2);}@keyframes bubIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
@@ -1290,6 +1418,18 @@ body{overflow:hidden;}
 .teacher-woman .av-arm.l{transform:rotate(-32deg);}
 .teacher-woman .av-arm.r{transform:rotate(22deg);}
 .emo-talking .av-mouth-shape{animation:tlk .22s ease-in-out infinite alternate;}@keyframes tlk{from{width:26px;height:7px;border-radius:7px 7px 12px 12px}to{width:30px;height:20px;border-radius:10px 10px 18px 18px}}.emo-enthusiastic .av-arm.l,.emo-excited .av-arm.l,.emo-playful .av-arm.l,.emo-inspiring .av-arm.l{transform:rotate(-52deg)!important;}.emo-enthusiastic .av-r,.emo-inspiring .av-r{animation:avatarLift 1.4s ease-in-out infinite;}@keyframes avatarLift{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}.emo-curious .av-brow.l,.emo-thinking .av-brow.l,.emo-thoughtful .av-brow.l{top:37px;transform:rotate(15deg) translateY(-1px);}.emo-curious .av-mouth-shape,.emo-thinking .av-mouth-shape,.emo-thoughtful .av-mouth-shape{width:18px;height:6px;border-radius:10px;border-top:2px solid #8e3b38;}.emo-empathetic .av-brow.l,.emo-warm .av-brow.l,.emo-encouraging .av-brow.l{top:40px;transform:rotate(10deg) translateY(2px);}.emo-empathetic .av-brow.r,.emo-warm .av-brow.r,.emo-encouraging .av-brow.r{top:40px;transform:rotate(-10deg) translateY(2px);}.emo-warm .av-cheek,.emo-encouraging .av-cheek{background:rgba(236,72,153,.34);}.emo-confident .av-torso{transform:translateY(-2px) scale(1.02);}.emo-confident .av-brow.l{transform:rotate(-10deg);}.emo-confident .av-brow.r{transform:rotate(10deg);}.emo-surprised .av-eye{height:27px;}.emo-surprised .av-mouth-shape{width:22px;height:22px;border-radius:50%;border:3px solid #8e3b38;background:#5b151c;}.emo-playful .av-head{transform:rotate(-5deg);}.emo-playful .av-r{transform:rotate(-1.5deg);}
+/* GIF teacher avatar. The previous CSS-built avatar remains above and its JSX is commented in AvatarFigure. */
+.avatar-wrap{width:min(365px,100%);height:clamp(430px,calc(100vh - 270px),600px);display:flex;align-items:flex-end;justify-content:center;margin-top:100px;align-self:center;}
+.avatar-wrap .av-r{width:100%;height:100%;position:relative;left:auto;bottom:auto;display:flex;align-items:flex-end;justify-content:center;transition:transform .25s ease,filter .25s ease,opacity .25s ease;}
+.teacher-gif-frame{position:relative;width:min(365px,100%);height:min(570px,100%);display:flex;align-items:flex-end;justify-content:center;filter:drop-shadow(0 18px 22px rgba(15,23,42,.16));}
+.teacher-gif-frame::after{content:'';position:absolute;left:50%;bottom:1px;width:58%;height:18px;border-radius:999px;background:rgba(15,23,42,.22);filter:blur(8px);transform:translateX(-50%);z-index:-1;}
+.teacher-avatar-gif,.teacher-avatar-freeze{position:absolute;inset:auto 0 0;width:100%;height:100%;object-fit:contain;transform:scaleX(-1) scale(1.16);transform-origin:center bottom;display:block;}
+.teacher-avatar-freeze{display:none;}
+.avatar-paused .teacher-avatar-gif{display:none;}
+.avatar-paused .teacher-avatar-freeze{display:block;}
+.avatar-speaking{filter:saturate(1.04);}
+
+@keyframes teacherTeachBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
 .av-status{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);}.status-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pdot 2s infinite;}@keyframes pdot{0%,100%{box-shadow:0 0 0 0 rgba(16,185,129,.4)}50%{box-shadow:0 0 0 5px rgba(16,185,129,0)}}
 #raise-btn{position:relative;z-index:4;display:flex;align-items:center;gap:8px;padding:10px 20px;border-radius:20px;background:linear-gradient(135deg,var(--amber),#f97316);color:#fff;border:none;cursor:pointer;font-family:inherit;font-size:13px;font-weight:700;box-shadow:0 6px 20px rgba(245,158,11,.4);transition:all .2s;animation:btnPulse 2.5s ease-in-out infinite;margin:10px 0 16px;}#raise-btn:hover{transform:translateY(-3px);box-shadow:0 10px 28px rgba(245,158,11,.5);}@keyframes btnPulse{0%,100%{box-shadow:0 6px 20px rgba(245,158,11,.4)}50%{box-shadow:0 6px 30px rgba(245,158,11,.65)}}
 #topics-area{width:100%;padding:0 14px 14px;display:grid;gap:5px;overflow:auto;max-height:25vh;}.topic-label{font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:4px 6px 2px;}.topic-item{display:flex;align-items:center;gap:10px;width:100%;padding:8px 9px;border-radius:11px;cursor:pointer;transition:all .18s;border:1px solid transparent;background:transparent;text-align:left;font-family:inherit;}.topic-item:hover,.topic-item.active{background:rgba(91,94,247,.08);border-color:rgba(91,94,247,.18);}.topic-item.done{opacity:.68;}.ti-num{width:24px;height:24px;border-radius:7px;background:var(--surface2);font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;color:var(--accent);flex-shrink:0;}.topic-item.active .ti-num{background:var(--accent);color:#fff;}.ti-body{flex:1;min-width:0;display:grid;gap:1px;}.ti-name{font-size:12px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}.ti-type{font-size:9px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);}

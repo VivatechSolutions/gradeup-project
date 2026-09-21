@@ -7,7 +7,8 @@ RAG-powered highlighting actions for GradeUp:
 - Ask AI: Multi-turn chat about highlighted text (stateless, no history stored)
 
 All responses are generated using RAG (retrieval-augmented generation) from Qdrant.
-TTS audio is generated via OpenAI TTS API and stored in S3.
+Text goes through avatar_llm (Gemini 2.5 Flash by default - same model, key and
+fallback as the avatar classroom); audio through avatar_tts (Kokoro) and into S3.
 Highlight metadata is stored in Qdrant for future reference.
 
 Content Safety: All prompts enforce study-only content for school students up to 12th class.
@@ -20,25 +21,41 @@ import hashlib
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
 
-import requests
+from langfuse_utils import (
+    generation as _lf_generation,
+    record_error as _lf_record_error,
+    update_observation as _lf_update_observation,
+)
 from dotenv import load_dotenv
+
+import avatar_llm
+
+from class_utils import class_display, class_number_variants
 
 load_dotenv()
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
-HIGHLIGHT_MODEL = "gpt-4o-mini"
-HIGHLIGHT_FALLBACK_MODEL = "gpt-4o"
+# Same model and fallback the avatar classroom settled on (see AVATAR_MODEL in
+# avatar_engine.py for the benchmark): Gemini 2.5 Flash through OpenRouter, so
+# it runs on OPENROUTER_API_KEY - the one key the build already provisions -
+# with Llama 4 Scout behind it. Provider routing lives in avatar_llm, so any
+# slug it understands works here (a bare "gemini-2.5-flash" goes direct to
+# Google on GEMINI_API_KEY).
+HIGHLIGHT_MODEL = os.getenv("HIGHLIGHT_MODEL", "gemini-3.6-flash")   # Google direct on GEMINI_API_KEY
+HIGHLIGHT_FALLBACK_MODEL = os.getenv("HIGHLIGHT_FALLBACK_MODEL",
+                                     "meta-llama/llama-4-scout")
 HIGHLIGHT_TIMEOUT = 60
 HIGHLIGHT_RAG_TOP_K = 5
 
-TTS_MODEL = "gpt-4o-mini-tts"
-TTS_VOICE = "alloy"
-TTS_SPEED = 1.0
-
-import logging
-
-logger = logging.getLogger("gradeup-highlight")
+# Read-aloud voice: a Kokoro voice name. Empty means "the avatar's female
+# voice" (af_heart, the model's only grade-A voice), resolved at call time so
+# an AVATAR_TTS_VOICE_FEMALE override carries over.
+TTS_VOICE = os.getenv("HIGHLIGHT_TTS_VOICE", "").strip()
+TTS_SPEED = float(os.getenv("HIGHLIGHT_TTS_SPEED", "1.0"))
+from logger import get_logger
+ 
+logger = get_logger("gradeup.highlight")
 
 
 # ── RAG Context Retrieval ─────────────────────────────────────────────────────
@@ -190,98 +207,85 @@ def _call_llm(
     max_tokens: int = 2048,
     temperature: float = 0.7,
 ) -> str:
-    """Call OpenAI chat completion API."""
-    api_key = os.environ.get("OPENAI_API_KEY_TEXT") or os.environ.get("OPENAI_API_KEY")
-    if not api_key:
+    """One chat completion for a highlight action. Always returns text: on any
+    failure it is the same student-facing apology the OpenAI version returned,
+    so the endpoints and the frontend keep their contract.
+
+    Provider routing, the token-budget field and the fallback-model retry all
+    live in avatar_llm; ``messages`` is sent whole because Ask-AI is a
+    multi-turn conversation, not a system/user pair.
+    """
+    result = avatar_llm.chat(
+        model,
+        messages=messages,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        force_json=False,                 # prose for the student, never JSON
+        timeout=HIGHLIGHT_TIMEOUT,
+        fallback_model=HIGHLIGHT_FALLBACK_MODEL,
+        trace_name="highlight-key-points",
+    )
+    if result.ok:
+        return result.text
+
+    err = result.error or ""
+    logger.error(f"LLM call failed ({model}): {err[:300]}")
+    if err.startswith("no API key"):
         return "Sorry, the AI service is not configured correctly. Please contact your administrator."
-
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-
-    payload = {
-        "model": model,
-        "messages": messages,
-        "max_completion_tokens": max_tokens,
-        "temperature": temperature,
-    }
-
-    try:
-        resp = requests.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=HIGHLIGHT_TIMEOUT,
-        )
-
-        if not resp.ok:
-            # Try fallback model
-            payload["model"] = HIGHLIGHT_FALLBACK_MODEL
-            resp = requests.post(
-                "https://api.openai.com/v1/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=HIGHLIGHT_TIMEOUT,
-            )
-
-        if resp.ok:
-            data = resp.json()
-            return data["choices"][0]["message"]["content"].strip()
-        else:
-            logger.error(f"LLM API error: {resp.status_code} {resp.text[:300]}")
-            return "I'm having trouble generating a response right now. Please try again!"
-
-    except requests.Timeout:
+    if err.startswith("timeout"):
         return "The response is taking too long. Please try again with a shorter text!"
-    except Exception as e:
-        logger.error(f"LLM call error: {e}")
-        return "Something went wrong. Please try again!"
+    return "I'm having trouble generating a response right now. Please try again!"
 
 
 # ── TTS Audio Generation ─────────────────────────────────────────────────────
 
 
-def _generate_tts_audio(text: str) -> Optional[bytes]:
-    """Generate TTS audio using OpenAI TTS API.
+def _generate_tts_audio(text: str) -> Optional[tuple]:
+    """Read ``text`` aloud with Kokoro via avatar_tts.
 
-    Returns audio bytes (MP3) or None on failure.
+    Returns ``(audio_bytes, ext)`` or None on failure. The extension comes back
+    with the bytes because avatar_tts can switch container mid-run - mp3 from
+    the hosted service, wav when it falls through to local Kokoro - and the
+    S3 filename has to say which one it actually got.
     """
-    api_key = os.environ.get("OPENAI_API_KEY_TTS") or os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        logger.error("No TTS API key configured")
+    tts_text = (text or "").strip()
+    if not tts_text:
         return None
 
-    # Truncate very long text for TTS (OpenAI TTS has a 4096 char limit)
-    tts_text = text[:4000] if len(text) > 4000 else text
+    try:
+        import avatar_tts
+    except ImportError as e:
+        logger.error(f"avatar_tts unavailable ({e}) - cannot generate audio")
+        return None
 
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
+    available, reason = avatar_tts.is_available()
+    if not available:
+        logger.error(f"TTS unavailable: {reason}")
+        return None
 
-    payload = {
-        "model": TTS_MODEL,
-        "input": tts_text,
-        "voice": TTS_VOICE,
-        "speed": TTS_SPEED,
-        "response_format": "mp3",
-    }
+    voice = TTS_VOICE or avatar_tts.VOICE_FEMALE
 
     try:
-        resp = requests.post(
-            "https://api.openai.com/v1/audio/speech",
-            headers=headers,
-            json=payload,
-            timeout=120,
-        )
+        # Not a chat completion, so nothing reads usage off a response body -
+        # recorded by hand so the voice, the text and the audio size still show
+        # up next to the LLM calls in the same trace.
+        with _lf_generation(name="synthesize-speech", model="kokoro",
+                            input=tts_text[:2000],
+                            model_parameters={"voice": voice, "speed": TTS_SPEED,
+                                              "backend": avatar_tts.active_backend()}) as _gen:
+            audio = avatar_tts.synthesize(tts_text, voice, TTS_SPEED)
+            ext = avatar_tts.output_format()   # after the call: see synthesize()
+            if audio:
+                _lf_update_observation(_gen, output={"audio_bytes": len(audio),
+                                                     "format": ext})
+            else:
+                _lf_record_error(_gen, "synthesis returned no audio")
 
-        if resp.ok:
-            logger.info(f"TTS generated: {len(resp.content)} bytes")
-            return resp.content
-        else:
-            logger.error(f"TTS API error: {resp.status_code} {resp.text[:300]}")
+        if not audio:
+            logger.error(f"TTS synthesis failed (voice={voice})")
             return None
+        logger.info(f"TTS generated: {len(audio)} bytes ({ext})")
+        return audio, ext
 
     except Exception as e:
         logger.error(f"TTS generation error: {e}")
@@ -297,11 +301,16 @@ def _upload_audio_to_s3(
     class_number: str,
     subject: str,
     action: str,
+    ext: str = "mp3",
 ) -> Optional[str]:
-    """Upload TTS audio to S3 and return the public URL."""
+    """Upload TTS audio to S3 and return the public URL.
+
+    ``ext`` is whatever _generate_tts_audio reported; upload_audio_to_s3 sets
+    the S3 content type from it.
+    """
     try:
         from s3_storage import upload_audio_to_s3
-        filename = f"{action}_{uuid.uuid4().hex[:12]}.mp3"
+        filename = f"{action}_{uuid.uuid4().hex[:12]}.{ext}"
         return upload_audio_to_s3(
             audio_bytes=audio_bytes,
             filename=filename,
@@ -338,6 +347,7 @@ def _store_highlight_in_qdrant(
     """
     try:
         from qdrant_integration import (
+            HIGHLIGHTS_COLLECTION_NAME,
             initialize_qdrant_client,
             create_collection_if_not_exists,
             get_embeddings_model,
@@ -350,7 +360,7 @@ def _store_highlight_in_qdrant(
         if not client:
             return False
 
-        collection = "Gradeup_Highlights"
+        collection = HIGHLIGHTS_COLLECTION_NAME
         create_collection_if_not_exists(client, collection)
 
         embeddings_model = get_embeddings_model()
@@ -425,15 +435,16 @@ def _search_existing_highlight(
     """
     try:
         from qdrant_integration import (
+            HIGHLIGHTS_COLLECTION_NAME,
             initialize_qdrant_client,
             get_embeddings_model,
         )
-        from qdrant_client.models import Filter, FieldCondition, MatchValue
+        from qdrant_client.models import Filter, FieldCondition, MatchValue, MatchAny
 
         client = initialize_qdrant_client()
         if not client: return None
 
-        collection = "Gradeup_Highlights"
+        collection = HIGHLIGHTS_COLLECTION_NAME
         embeddings_model = get_embeddings_model()
         if not embeddings_model: return None
 
@@ -444,7 +455,8 @@ def _search_existing_highlight(
 
         conditions = [
             FieldCondition(key="metadata.board", match=MatchValue(value=board)),
-            FieldCondition(key="metadata.class_number", match=MatchValue(value=class_number)),
+            FieldCondition(key="metadata.class_number",
+                           match=MatchAny(any=class_number_variants(class_number) or [class_number])),
             FieldCondition(key="metadata.subject", match=MatchValue(value=subject)),
             FieldCondition(key="action", match=MatchValue(value=action)),
         ]
@@ -528,7 +540,7 @@ def highlight_explain(
     system_prompt = _EXPLAIN_SYSTEM_PROMPT.format(
         subject=subject or "General",
         board=board,
-        class_number=class_number or "Not specified",
+        class_number=class_display(class_number) or "Not specified",
     )
 
     user_message = ""
@@ -639,7 +651,7 @@ def highlight_summarize(
     system_prompt = _SUMMARIZE_SYSTEM_PROMPT.format(
         subject=subject or "General",
         board=board,
-        class_number=class_number or "Not specified",
+        class_number=class_display(class_number) or "Not specified",
     )
 
     user_message = ""
@@ -742,22 +754,22 @@ def highlight_ask_ai(
     system_prompt = _ASK_AI_SYSTEM_PROMPT.format(
         subject=subject or "General",
         board=board,
-        class_number=class_number or "Not specified",
+        class_number=class_display(class_number) or "Not specified",
         highlighted_text=highlighted_text,
     )
 
-    llm_messages = [{"role": "system", "content": system_prompt}]
-
-    # Add RAG context as a system-level injection before the conversation
+    # RAG context rides inside the one system message rather than as a second
+    # system turn: OpenAI tolerated two, but Gemini's OpenAI-compatible surface
+    # folds "system" into a single system_instruction and the OpenRouter
+    # providers behind the fallback are not uniform about it either.
     if context_text:
-        llm_messages.append({
-            "role": "system",
-            "content": (
-                f"Here is relevant content from the student's textbook:\n\n"
-                f"---BEGIN TEXTBOOK CONTEXT---\n{context_text}\n---END TEXTBOOK CONTEXT---\n\n"
-                f"Use this context to answer the student's questions accurately."
-            ),
-        })
+        system_prompt += (
+            f"\n\nHere is relevant content from the student's textbook:\n\n"
+            f"---BEGIN TEXTBOOK CONTEXT---\n{context_text}\n---END TEXTBOOK CONTEXT---\n\n"
+            f"Use this context to answer the student's questions accurately."
+        )
+
+    llm_messages = [{"role": "system", "content": system_prompt}]
 
     # Add conversation history (last 20 messages to stay within context window)
     for msg in messages_history[-20:]:
@@ -862,9 +874,10 @@ def highlight_read(
         }
 
     # 4. Generate TTS audio (Read the response text)
-    audio_bytes = _generate_tts_audio(final_response_text)
-    if not audio_bytes:
+    tts = _generate_tts_audio(final_response_text)
+    if not tts:
         return {"success": False, "error": "TTS generation failed"}
+    audio_bytes, audio_ext = tts
 
     # 5. Upload to S3
     audio_url = _upload_audio_to_s3(
@@ -873,6 +886,7 @@ def highlight_read(
         class_number=class_number,
         subject=subject,
         action=action,
+        ext=audio_ext,
     )
 
     if not audio_url:

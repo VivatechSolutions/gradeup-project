@@ -25,6 +25,10 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
 
 import requests
+from langfuse_utils import traced_post
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 ROOM_DATA_DIR = Path("debate_data") / "rooms"
 MULTI_DEBATE_MODEL = "gpt-4o-mini"
@@ -98,20 +102,20 @@ class MultiDebateEngine:
         }
 
         try:
-            resp = requests.post(
+            resp = traced_post("multi-debate-turn",
                 "https://api.openai.com/v1/chat/completions",
                 headers=headers, json=payload, timeout=MULTI_DEBATE_TIMEOUT,
             )
             if not resp.ok:
                 payload["model"] = MULTI_DEBATE_FALLBACK
-                resp = requests.post(
+                resp = traced_post("multi-debate-turn",
                     "https://api.openai.com/v1/chat/completions",
                     headers=headers, json=payload, timeout=MULTI_DEBATE_TIMEOUT,
                 )
             if resp.ok:
                 return resp.json()["choices"][0]["message"]["content"].strip()
         except Exception as e:
-            print(f"  ❌ [MultiDebate] Error: {e}")
+            logger.error(f"[MultiDebate] Error: {e}")
         return "Something went wrong. Please try again."
 
     def _call_llm_json(self, messages: List[Dict], temperature: float = 0.3) -> Optional[Any]:
@@ -542,7 +546,7 @@ You are on {team_label}.
         try:
             if path.exists():
                 path.unlink()
-                print(f"  🗑️ [MultiDebate] Deleted AI student context: {path.name}")
+                logger.info(f"[MultiDebate] Deleted AI student context: {path.name}")
         except OSError:
             pass
 
@@ -849,7 +853,7 @@ Return JSON:
                     candidate_name=participant.get("candidate_name", ""),
                 )
             except Exception as e:
-                print(f"  ⚠️ [MultiDebate] Performance update failed for {candidate_id}: {e}")
+                logger.warning(f"[MultiDebate] Performance update failed for {candidate_id}: {e}")
 
         return {
             "success": True,

@@ -7,7 +7,7 @@ Features:
 - Contextual enrichment (unit > section > subsection hierarchy in each chunk)
 - Deduplication on re-processing (deletes old chunks before uploading)
 - Class-based filtering for multi-grade support
-- Uses OpenAI for generating embeddings
+- Embeddings from Gemini or OpenAI (EMBEDDING_PROVIDER), rate limited and retried
 """
 
 import os
@@ -21,6 +21,16 @@ from dataclasses import dataclass, field
 import orjson
 from dotenv import load_dotenv
 
+from class_utils import (
+    class_label,
+    class_matches,
+    class_number_variants,
+    normalize_class_number,
+)
+from logger import get_logger
+
+logger = get_logger(__name__)
+
 try:
     from qdrant_client import QdrantClient
     from qdrant_client.models import (
@@ -31,22 +41,78 @@ try:
     from langchain_qdrant import QdrantVectorStore
     from langchain_openai import OpenAIEmbeddings
     from langchain_core.documents import Document
+    from langchain_core.embeddings import Embeddings
     from langchain_experimental.text_splitter import SemanticChunker
     QDRANT_AVAILABLE = True
 except ImportError:
     QDRANT_AVAILABLE = False
-    print("Warning: qdrant-client or langchain-qdrant not installed. "
+    logger.warning("Warning: qdrant-client or langchain-qdrant not installed. "
           "Install with: pip install qdrant-client langchain-qdrant langchain-openai")
 
 
 
 
-DEFAULT_COLLECTION_NAME = "gradeup_collection"
 DEFAULT_QDRANT_URL = "http://localhost:6333"
 
+# ── Embedding provider ────────────────────────────────────────────────────────
+# Covers ingestion AND query — a question is embedded on every search, which is
+# why retrieval needs this provider to be funded and reachable.
+#
+#   EMBEDDING_PROVIDER=gemini   (default) Gemini via its OpenAI-compatible API
+#   EMBEDDING_PROVIDER=openai             text-embedding-3-small
+#   EMBEDDING_MODEL                       override the model name
+#   EMBEDDING_DIMENSION                   must match the model's output length
+#
+# Vectors from different models are not comparable, so switching provider means
+# re-ingesting into a NEW collection. Run detect_embedding_dimension() first to
+# confirm the model name and the size to build that collection with.
+EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "gemini").strip().lower()
+
+GEMINI_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+
 OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
-VECTOR_SIZE = 1536
+_DEFAULT_EMBEDDING_MODEL = {
+    "gemini": "gemini-embedding-001",
+    "openai": OPENAI_EMBEDDING_MODEL,
+}.get(EMBEDDING_PROVIDER, OPENAI_EMBEDDING_MODEL)
+
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", _DEFAULT_EMBEDDING_MODEL)
+VECTOR_SIZE = int(os.getenv("EMBEDDING_DIMENSION", "3072" if EMBEDDING_PROVIDER == "gemini" else "1536"))
 BATCH_SIZE = 10
+
+# ── Embedding rate limiting ───────────────────────────────────────────────────
+# Gemini meters embed_content by REQUESTS per minute per base model, and one
+# ingest fires far more requests than the final upload suggests: SemanticChunker
+# embeds the sentences of every long section before a single chunk is stored.
+# The burst exhausts the quota mid-document, the upload 429s, and the chunks are
+# lost — so pace the requests and retry the ones that still bounce.
+#
+#   EMBEDDING_BATCH_SIZE   texts per request (fewer requests = less quota burn)
+#   EMBEDDING_RPM          requests per minute; 0 disables pacing
+#   EMBEDDING_MAX_RETRIES  attempts per batch before giving up
+EMBEDDING_BATCH_SIZE = int(os.getenv("EMBEDDING_BATCH_SIZE", "100"))
+EMBEDDING_RPM = int(os.getenv("EMBEDDING_RPM", "90" if EMBEDDING_PROVIDER == "gemini" else "0"))
+EMBEDDING_MAX_RETRIES = int(os.getenv("EMBEDDING_MAX_RETRIES", "6"))
+
+# The collection name carries the provider and dimension, so vectors from two
+# different embedding models can never land in one collection. Switching
+# provider therefore points at a fresh collection automatically, and the old one
+# survives untouched as a rollback.
+#
+#   QDRANT_COLLECTION_BASE=GradeupAI_Books  ->  GradeupAI_Books_gemini_3072
+#   QDRANT_COLLECTION_NAME                      explicit override, wins if set
+QDRANT_COLLECTION_BASE = os.getenv("QDRANT_COLLECTION_BASE", "GradeupAI_Books")
+DEFAULT_COLLECTION_NAME = f"{QDRANT_COLLECTION_BASE}_{EMBEDDING_PROVIDER}_{VECTOR_SIZE}"
+
+# The highlight-reuse cache is embedded by the same model, so it needs the same
+# provider/dimension suffix. Left as a bare "Gradeup_Highlights" it kept
+# pointing at the 1536-dim collection built under OpenAI, and every write of a
+# 3072-dim vector was rejected.
+QDRANT_HIGHLIGHTS_BASE = os.getenv("QDRANT_HIGHLIGHTS_BASE", "Gradeup_Highlights")
+HIGHLIGHTS_COLLECTION_NAME = os.getenv(
+    "QDRANT_HIGHLIGHTS_COLLECTION",
+    f"{QDRANT_HIGHLIGHTS_BASE}_{EMBEDDING_PROVIDER}_{VECTOR_SIZE}",
+)
 
 # Smart chunk sizing
 CHUNK_TARGET_SIZE = 1500     # Target chars per chunk (optimal for embeddings)
@@ -96,7 +162,7 @@ def initialize_qdrant_client(qdrant_url: Optional[str] = None) -> Optional["Qdra
         return _global_qdrant_client
 
     if not QDRANT_AVAILABLE:
-        print("Error: Qdrant client not available. Please install qdrant-client.")
+        logger.error("Error: Qdrant client not available. Please install qdrant-client.")
         return None
 
     url = qdrant_url or os.environ.get("QDRANT_URL", DEFAULT_QDRANT_URL)
@@ -109,12 +175,12 @@ def initialize_qdrant_client(qdrant_url: Optional[str] = None) -> Optional["Qdra
             timeout=120
         )
         client.get_collections()
-        print(f"Connected to Qdrant at {url}")
+        logger.info(f"Connected to Qdrant at {url}")
         _global_qdrant_client = client
         return client
     except Exception as e:
-        print(f"Failed to connect to Qdrant at {url}: {e}")
-        print(f"  Make sure Qdrant is running: docker run -p 6333:6333 qdrant/qdrant")
+        logger.error(f"Failed to connect to Qdrant at {url}: {e}")
+        logger.info(f"Make sure Qdrant is running: docker run -p 6333:6333 qdrant/qdrant")
         return None
 
 
@@ -145,6 +211,26 @@ def ensure_payload_indexes(client: "QdrantClient", collection: str):
         except Exception:
             pass
 
+def _warn_on_dimension_mismatch(collection: str, info: Any) -> None:
+    """Shout when a collection's vector size does not match the current model.
+
+    Qdrant only reports the mismatch per rejected write, one opaque 400 at a
+    time. Naming it once, up front, is the difference between "embeddings are
+    failing" and "this collection was built for a different model".
+    """
+    try:
+        params = info.config.params.vectors
+        size = getattr(params, "size", None)
+    except AttributeError:
+        return
+    if size is not None and size != VECTOR_SIZE:
+        logger.error(
+            f"[Qdrant] Collection '{collection}' stores {size}-dim vectors but "
+            f"{EMBEDDING_MODEL} produces {VECTOR_SIZE}. Every read and write against "
+            f"it will fail — re-ingest into a collection built for {VECTOR_SIZE}."
+        )
+
+
 def create_collection_if_not_exists(
     client: "QdrantClient",
     collection_name: Optional[str] = None,
@@ -159,8 +245,9 @@ def create_collection_if_not_exists(
 
     try:
         try:
-            client.get_collection(collection)
-            print(f"Collection '{collection}' already exists")
+            existing = client.get_collection(collection)
+            logger.info(f"Collection '{collection}' already exists")
+            _warn_on_dimension_mismatch(collection, existing)
             ensure_payload_indexes(client, collection)
             return True
         except Exception:
@@ -173,31 +260,196 @@ def create_collection_if_not_exists(
                 distance=Distance.COSINE,
             ),
         )
-        print(f"Created collection '{collection}' with vector size {VECTOR_SIZE}")
+        logger.info(f"Created collection '{collection}' with vector size {VECTOR_SIZE}")
 
         ensure_payload_indexes(client, collection)
-        print(f"Created payload indexes for efficient filtering")
+        logger.info(f"Created payload indexes for efficient filtering")
 
         return True
 
     except Exception as e:
         error_str = str(e)
         if "already exists" in error_str.lower():
-            print(f"Collection '{collection}' already exists (found in storage)")
+            logger.info(f"Collection '{collection}' already exists (found in storage)")
             ensure_payload_indexes(client, collection)
             return True
-        print(f"Failed to create collection '{collection}': {e}")
+        logger.error(f"Failed to create collection '{collection}': {e}")
         return False
 
 
 
+class RateLimitedEmbeddings(Embeddings if QDRANT_AVAILABLE else object):
+    """Paces and retries embedding requests so a quota burst cannot lose chunks.
+
+    Wraps any LangChain embeddings object and keeps its interface, so it drops
+    straight into SemanticChunker and QdrantVectorStore. Three behaviours the
+    bare client does not have:
+
+    - Splits a call into EMBEDDING_BATCH_SIZE-sized requests, so one oversized
+      list cannot be rejected whole.
+    - Spaces requests to EMBEDDING_RPM, which is what actually keeps a document
+      under Gemini's per-minute request quota.
+    - Retries a rate-limited batch with exponential backoff instead of
+      surfacing a 429 the caller turns into a silent skip.
+    """
+
+    def __init__(self, inner: Any, batch_size: int = EMBEDDING_BATCH_SIZE,
+                 rpm: int = EMBEDDING_RPM, max_retries: int = EMBEDDING_MAX_RETRIES):
+        self._inner = inner
+        self._batch_size = max(1, batch_size)
+        self._min_interval = (60.0 / rpm) if rpm > 0 else 0.0
+        self._max_retries = max(1, max_retries)
+        self._last_request_at = 0.0
+
+    def _wait_for_slot(self) -> None:
+        if self._min_interval <= 0:
+            return
+        gap = time.monotonic() - self._last_request_at
+        if gap < self._min_interval:
+            time.sleep(self._min_interval - gap)
+
+    @staticmethod
+    def _is_rate_limit(exc: Exception) -> bool:
+        text = str(exc).lower()
+        return (
+            "429" in text
+            or "rate limit" in text
+            or "resource_exhausted" in text
+            or "quota" in text
+        )
+
+    def _call(self, fn, payload, label: str):
+        """Run one paced request, retrying while the provider says 'slow down'."""
+        for attempt in range(self._max_retries):
+            self._wait_for_slot()
+            try:
+                result = fn(payload)
+                self._last_request_at = time.monotonic()
+                return result
+            except Exception as e:
+                self._last_request_at = time.monotonic()
+                if not self._is_rate_limit(e) or attempt == self._max_retries - 1:
+                    raise
+                # 2s, 4s, 8s … a per-minute quota needs seconds to refill, not ms.
+                delay = 2.0 * (2 ** attempt)
+                logger.warning(
+                    f"[Embeddings] rate limited on {label} "
+                    f"(attempt {attempt + 1}/{self._max_retries}) — retrying in {delay:.0f}s"
+                )
+                time.sleep(delay)
+        raise RuntimeError(f"[Embeddings] exhausted retries for {label}")
+
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        vectors: List[List[float]] = []
+        total = len(texts)
+        for start in range(0, total, self._batch_size):
+            batch = texts[start:start + self._batch_size]
+            vectors.extend(
+                self._call(
+                    self._inner.embed_documents, batch,
+                    f"documents {start + 1}-{start + len(batch)} of {total}",
+                )
+            )
+        return vectors
+
+    def embed_query(self, text: str) -> List[float]:
+        return self._call(self._inner.embed_query, text, "query")
+
+    def __getattr__(self, name):
+        # Anything else (model name, client, dimensions) belongs to the wrapped
+        # model — LangChain introspects these. Guard "_inner" itself, or a copy
+        # or unpickle that runs before __init__ recurses forever.
+        if name == "_inner":
+            raise AttributeError(name)
+        return getattr(self._inner, name)
+
+
+_embeddings_model_cache: Optional["RateLimitedEmbeddings"] = None
+
+
 def get_embeddings_model(api_key: Optional[str] = None):
-    """Return a LangChain OpenAIEmbeddings model."""
-    key = api_key or os.environ.get("OPENAI_API_KEY")
-    if not key:
-        print("Error: OPENAI_API_KEY not set.")
+    """
+    The embedding model for both ingestion and query, per EMBEDDING_PROVIDER.
+
+    Gemini is reached through its OpenAI-compatible endpoint, so no extra SDK is
+    needed and one code path serves both providers.
+
+    The result is wrapped in RateLimitedEmbeddings and cached, so every caller in
+    a run — semantic chunking, upload, search — shares ONE pacer. Handing each
+    caller its own client is what let a document fire an unmetered burst of
+    requests and 429 halfway through.
+
+    A vector is only comparable with vectors made by the same model. Switching
+    provider therefore invalidates an existing collection — re-ingest into a NEW
+    collection name rather than pointing this at the old one, or searches return
+    confident nonsense instead of an error.
+    """
+    global _embeddings_model_cache
+    if api_key is None and _embeddings_model_cache is not None:
+        return _embeddings_model_cache
+
+    if EMBEDDING_PROVIDER == "gemini":
+        key = api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+        if not key:
+            logger.error("Error: GEMINI_API_KEY not set (EMBEDDING_PROVIDER=gemini).")
+            return None
+        inner = OpenAIEmbeddings(
+            model=EMBEDDING_MODEL,
+            openai_api_key=key,
+            base_url=GEMINI_OPENAI_BASE_URL,
+            # Required for any non-OpenAI backend: without it LangChain
+            # pre-tokenises with tiktoken and posts integer arrays, which
+            # Gemini's compatibility layer rejects.
+            check_embedding_ctx_length=False,
+            chunk_size=EMBEDDING_BATCH_SIZE,
+            max_retries=EMBEDDING_MAX_RETRIES,
+        )
+    else:
+        key = api_key or os.environ.get("OPENAI_API_KEY")
+        if not key:
+            logger.error("Error: OPENAI_API_KEY not set.")
+            return None
+        inner = OpenAIEmbeddings(
+            model=EMBEDDING_MODEL,
+            openai_api_key=key,
+            chunk_size=EMBEDDING_BATCH_SIZE,
+            max_retries=EMBEDDING_MAX_RETRIES,
+        )
+
+    model = RateLimitedEmbeddings(inner)
+    if api_key is None:
+        _embeddings_model_cache = model
+    return model
+
+
+def detect_embedding_dimension() -> Optional[int]:
+    """
+    Embed a probe string and report the vector length.
+
+    Run this before creating a collection: it confirms the model name is valid
+    for your key and tells you the exact VECTOR_SIZE to configure, instead of
+    guessing and discovering the mismatch after a full re-ingest.
+    """
+    model = get_embeddings_model()
+    if not model:
         return None
-    return OpenAIEmbeddings(model=OPENAI_EMBEDDING_MODEL, openai_api_key=key)
+    try:
+        vector = model.embed_query("dimension probe")
+        logger.info(
+            f"[Embeddings] provider={EMBEDDING_PROVIDER} model={EMBEDDING_MODEL} "
+            f"dimension={len(vector)} (configured VECTOR_SIZE={VECTOR_SIZE})"
+        )
+        if len(vector) != VECTOR_SIZE:
+            logger.warning(
+                f"[Embeddings] VECTOR_SIZE is {VECTOR_SIZE} but this model returns "
+                f"{len(vector)} — set EMBEDDING_DIMENSION={len(vector)} before creating the collection"
+            )
+        return len(vector)
+    except Exception as e:
+        # Surface the provider's reason: a 404 here is usually a model name that
+        # is unavailable to this key.
+        logger.error(f"[Embeddings] Probe failed for '{EMBEDDING_MODEL}': {e}")
+        return None
 
 
 def generate_embeddings(
@@ -211,7 +463,7 @@ def generate_embeddings(
     try:
         return embeddings_model.embed_documents(texts)
     except Exception as e:
-        print(f"Failed to generate embeddings: {e}")
+        logger.error(f"Failed to generate embeddings: {e}")
         return None
 
 
@@ -239,7 +491,8 @@ def _build_context_header(
     if board:
         parts.append(board)
     if class_number:
-        parts.append(f"Class {class_number}")
+        # Prose, not a filter key: "Class 7", never the padded "Class 07".
+        parts.append(class_label(class_number) or f"Class {class_number}")
     if subject:
         parts.append(subject)
     if part:
@@ -276,7 +529,7 @@ def _smart_split_text(
         docs = text_splitter.create_documents([text])
         return [doc.page_content for doc in docs]
     except Exception as e:
-        print(f"    ⚠️  SemanticChunker failed: {e}. Falling back to basic chunking.")
+        logger.warning(f"SemanticChunker failed: {e}. Falling back to basic chunking.")
         # Fallback to basic newline splitting
         paragraphs = re.split(r'\n\n+', text)
         chunks = []
@@ -511,6 +764,10 @@ def chunk_structured_content(
     subject used to land as None on every chunk it produced.
     """
     from term_utils import normalize_term
+
+    # Canonicalize on write so every chunk carries "07", never "7"/"Class 7".
+    # A label with no numeric form (LKG) is kept as the caller spelled it.
+    class_number = normalize_class_number(class_number) or class_number
 
     doc_term = normalize_term(term)
     doc_subject = subject
@@ -781,24 +1038,32 @@ def _delete_existing_chunks(
     """Delete all existing chunks for a document before re-uploading.
 
     Returns the number of deleted points.
+
+    The key must be "metadata.document_id", not "document_id": LangChain nests
+    every field under a "metadata" object, which is also the only shape the
+    payload index is built for. A bare "document_id" matches nothing and Qdrant
+    rejects it as un-indexed, so re-ingesting a book used to leave the previous
+    copy of its chunks in place and quietly double the collection.
     """
+    selector = Filter(
+        must=[
+            FieldCondition(
+                key="metadata.document_id",
+                match=MatchValue(value=document_id),
+            )
+        ]
+    )
     try:
-        # Use scroll to find all points with this document_id
-        deleted = client.delete(
-            collection_name=collection_name,
-            points_selector=Filter(
-                must=[
-                    FieldCondition(
-                        key="document_id",
-                        match=MatchValue(value=document_id),
-                    )
-                ]
-            ),
-        )
-        print(f"  🗑️  Deleted existing chunks for document '{document_id}'")
-        return 1  # Qdrant batch delete doesn't return count
+        existing = client.count(
+            collection_name=collection_name, count_filter=selector, exact=True
+        ).count
+        if not existing:
+            return 0
+        client.delete(collection_name=collection_name, points_selector=selector)
+        logger.info(f"Deleted {existing} existing chunks for document '{document_id}'")
+        return existing
     except Exception as e:
-        print(f"  ⚠️  Could not delete old chunks: {e}")
+        logger.warning(f"Could not delete old chunks: {e}")
         return 0
 
 
@@ -849,12 +1114,30 @@ def upsert_chunks_to_qdrant(
             embedding=embeddings_model,
         )
 
-        vector_store.add_documents(documents)
-        print(f"Successfully uploaded {len(documents)} chunks to '{collection}'")
+        # Upload in batches so a failure late in a long document keeps the
+        # chunks already stored, and the log says exactly where it stopped.
+        uploaded = 0
+        for start in range(0, len(documents), EMBEDDING_BATCH_SIZE):
+            batch = documents[start:start + EMBEDDING_BATCH_SIZE]
+            try:
+                vector_store.add_documents(batch)
+                uploaded += len(batch)
+            except Exception as e:
+                logger.error(
+                    f"Failed to upload chunks {start + 1}-{start + len(batch)} of "
+                    f"{len(documents)} to '{collection}': {type(e).__name__}: {e}"
+                )
+                logger.error(
+                    f"{uploaded}/{len(documents)} chunks stored — the rest are NOT "
+                    f"searchable. Re-run the upload for this document."
+                )
+                return False
+
+        logger.info(f"Successfully uploaded {uploaded} chunks to '{collection}'")
         return True
 
     except Exception as e:
-        print(f"Failed to upload chunks to Qdrant: {e}")
+        logger.error(f"Failed to upload chunks to Qdrant: {type(e).__name__}: {e}")
         return False
 
 
@@ -880,7 +1163,7 @@ def process_and_upload_document(
     - Supports term metadata for term-split state books
     """
     if not QDRANT_AVAILABLE:
-        print("Warning: Qdrant integration skipped: missing dependencies")
+        logger.warning("Warning: Qdrant integration skipped: missing dependencies")
         return False
 
     if not qdrant_client:
@@ -899,14 +1182,14 @@ def process_and_upload_document(
         with open(structured_json_path, 'rb') as f:
             structured_data = orjson.loads(f.read())
     except Exception as e:
-        print(f"Failed to load {structured_json_path}: {e}")
+        logger.error(f"Failed to load {structured_json_path}: {e}")
         return False
 
     # ── Deduplication: delete old chunks first ──
     _delete_existing_chunks(qdrant_client, document_id, collection)
 
     # ── Chunk with advanced engine ──
-    print(f"  Chunking document: {document_name} (board={board}, class={class_number}, "
+    logger.info(f"Chunking document: {document_name} (board={board}, class={class_number}, "
           f"subject={subject or 'from-units'}, term={term or 'n/a'}, book_content={book_content})")
     chunks = chunk_structured_content(
         structured_data, document_id, document_name, board,
@@ -919,22 +1202,22 @@ def process_and_upload_document(
     if chunks:
         missing = sum(1 for c in chunks if not c.metadata.subject)
         if missing:
-            print(f"  WARNING: {missing}/{len(chunks)} chunks have no subject - "
+            logger.warning(f"WARNING: {missing}/{len(chunks)} chunks have no subject - "
                   f"they will not match subject-filtered searches")
 
     if not chunks:
-        print(f"Warning: No chunks generated from {document_name}")
+        logger.warning(f"Warning: No chunks generated from {document_name}")
         return False
 
-    print(f"  Generated {len(chunks)} chunks (semantic chunking)")
+    logger.info(f"Generated {len(chunks)} chunks (semantic chunking)")
 
     # ── Generate embeddings & upload ──
-    print(f"  Generating embeddings...")
+    logger.info(f"Generating embeddings...")
     embeddings_model = get_embeddings_model()
     if not embeddings_model:
         return False
 
-    print(f"  Uploading to Qdrant...")
+    logger.info(f"Uploading to Qdrant...")
     success = upsert_chunks_to_qdrant(
         qdrant_client, chunks, embeddings_model, collection
     )
@@ -1024,14 +1307,13 @@ def search_qdrant(
                 FieldCondition(key="metadata.content_type", match=MatchValue(value=content_type_filter))
             )
         if class_filter is not None:
-            class_num_str = str(class_filter).replace("Class ", "").replace("class ", "").strip()
-            conditions.append(
-                Filter(should=[
-                    FieldCondition(key="metadata.class_number", match=MatchValue(value=class_filter)),
-                    FieldCondition(key="metadata.class_number", match=MatchValue(value=f"Class {class_num_str}")),
-                    FieldCondition(key="metadata.class_number", match=MatchValue(value=class_num_str)),
-                ])
-            )
+            # Requests arrive canonical ("07"), but chunks ingested before that
+            # rule carry "7" / "Class 7", so match every spelling of the class.
+            class_variants = class_number_variants(class_filter)
+            if class_variants:
+                conditions.append(
+                    FieldCondition(key="metadata.class_number", match=MatchAny(any=class_variants))
+                )
         if subject_filter is not None:
             conditions.append(
                 Filter(should=[
@@ -1083,13 +1365,13 @@ def search_qdrant(
                 # cp1252 (Windows). A UnicodeEncodeError here would be caught by
                 # the outer handler and silently turn a recoverable missing-index
                 # into an empty result set.
-                print("  [Qdrant] WARNING: missing index detected. Attempting to create indexes...")
+                logger.warning("[Qdrant] WARNING: missing index detected. Attempting to create indexes...")
                 try:
                     ensure_payload_indexes(client, collection)
                     time.sleep(1) # Wait briefly for background indexing to start
                     results = vector_store.similarity_search(query, k=limit, filter=filter_qdrant)
                 except Exception as retry_e:
-                    print(f"  [Qdrant] WARNING: index retry failed: {retry_e}. Falling back to manual filtering.")
+                    logger.warning(f"[Qdrant] WARNING: index retry failed: {retry_e}. Falling back to manual filtering.")
                     raw_results = vector_store.similarity_search(query, k=limit * 10, filter=None)
                     
                     results = []
@@ -1102,10 +1384,7 @@ def search_qdrant(
                             except (ValueError, TypeError): pass
                             
                         if unit_title_filter is not None and meta.get("unit_title") != unit_title_filter: continue
-                        if class_filter is not None:
-                            meta_class = str(meta.get("class_number", ""))
-                            c_num = str(class_filter).replace("Class ", "").replace("class ", "").strip()
-                            if meta_class != class_filter and meta_class != f"Class {c_num}" and meta_class != c_num: continue
+                        if class_filter is not None and not class_matches(meta.get("class_number"), class_filter): continue
                             
                         if subject_filter is not None and str(meta.get("subject", "")).lower() != str(subject_filter).lower(): continue
                         
@@ -1133,7 +1412,7 @@ def search_qdrant(
         ]
 
     except Exception as e:
-        print(f"Error searching Qdrant: {e}")
+        logger.error(f"Error searching Qdrant: {e}")
         return []
 
 

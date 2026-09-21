@@ -24,6 +24,11 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone, timedelta
 
 import requests
+from langfuse_utils import traced_post
+from langfuse_utils import with_student_context
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -178,20 +183,20 @@ class EnglishTestEngine:
         }
 
         try:
-            resp = requests.post(
+            resp = traced_post("english-test-turn",
                 "https://api.openai.com/v1/chat/completions",
                 headers=headers, json=payload, timeout=TEST_TIMEOUT,
             )
             if not resp.ok:
                 payload["model"] = TEST_FALLBACK_MODEL
-                resp = requests.post(
+                resp = traced_post("english-test-turn",
                     "https://api.openai.com/v1/chat/completions",
                     headers=headers, json=payload, timeout=TEST_TIMEOUT,
                 )
             if resp.ok:
                 return resp.json()["choices"][0]["message"]["content"].strip()
         except Exception as e:
-            print(f"  ❌ [EnglishTestEngine] LLM error: {e}")
+            logger.error(f"[EnglishTestEngine] LLM error: {e}")
         return ""
 
     def _parse_json_from_llm(self, raw: str) -> Optional[Any]:
@@ -296,7 +301,7 @@ Return ONLY valid JSON. No markdown fences, no commentary. Do NOT include a spea
         questions = self._parse_json_from_llm(raw)
 
         if not questions:
-            print(f"  ❌ [EnglishTestEngine] Failed to generate questions for {level}")
+            logger.error(f"[EnglishTestEngine] Failed to generate questions for {level}")
             return self._fallback_questions(level)
 
         # Safety: strip speaking if LLM included it despite instructions
@@ -357,9 +362,9 @@ Return ONLY valid JSON. No markdown fences, no commentary. Do NOT include a spea
                 try:
                     path.unlink()
                     deleted.append(path.name)
-                    print(f"  [EnglishTestEngine] Deleted stale questions: {path.name}")
+                    logger.info(f"[EnglishTestEngine] Deleted stale questions: {path.name}")
                 except OSError as e:
-                    print(f"  [EnglishTestEngine] Failed to delete {path.name}: {e}")
+                    logger.error(f"[EnglishTestEngine] Failed to delete {path.name}: {e}")
         return deleted
 
     def get_or_generate_test(self, level: str) -> Dict[str, Any]:
@@ -387,7 +392,7 @@ Return ONLY valid JSON. No markdown fences, no commentary. Do NOT include a spea
         if cached and self._is_stale(cached):
             try:
                 path.unlink()
-                print(f"  [EnglishTestEngine] Auto-deleted stale questions: {path.name}")
+                logger.info(f"[EnglishTestEngine] Auto-deleted stale questions: {path.name}")
             except OSError:
                 pass
             cached = None  # Force regeneration
@@ -416,7 +421,7 @@ Return ONLY valid JSON. No markdown fences, no commentary. Do NOT include a spea
             }
 
         # Generate fresh questions (grammar, listening, writing only)
-        print(f"  [EnglishTestEngine] Generating fresh questions for level: {level}")
+        logger.info(f"[EnglishTestEngine] Generating fresh questions for level: {level}")
         questions = self._generate_questions_for_level(level)
 
         now = datetime.now(timezone.utc)
@@ -465,6 +470,7 @@ Return ONLY valid JSON. No markdown fences, no commentary. Do NOT include a spea
                 stripped[category].append(sq)
         return stripped
 
+    @with_student_context()
     def submit_test(
         self,
         candidate_id: str,
@@ -722,6 +728,7 @@ Return ONLY valid JSON:
         safe_id = candidate_id.strip().lower().replace(" ", "_")
         return self.data_dir / f"speaking_{safe_id}_{level}.json"
 
+    @with_student_context()
     def start_speaking_assessment(
         self,
         candidate_id: str,
@@ -815,6 +822,7 @@ You must evaluate: fluency, vocabulary range, grammar accuracy, coherence, and p
             "note": "Respond naturally. The AI will assess your speaking through conversation.",
         }
 
+    @with_student_context()
     def respond_speaking(
         self,
         candidate_id: str,
@@ -879,6 +887,7 @@ You must evaluate: fluency, vocabulary range, grammar accuracy, coherence, and p
             "note": f"Turn {turn}/{SPEAKING_MAX_TURNS}." + (" You can end the assessment now if ready." if can_end else ""),
         }
 
+    @with_student_context()
     def end_speaking_assessment(
         self,
         candidate_id: str,
@@ -1054,7 +1063,7 @@ Return ONLY valid JSON:
         results["tests"] = tests
         self._save_json(results_path, results)
 
-        print(f"  ✅ [EnglishTestEngine] Test finalized for {candidate_id}: "
+        logger.info(f"[EnglishTestEngine] Test finalized for {candidate_id}: "
               f"{total_score}/{TOTAL_MARKS} ({percentage}%) → {recommended_level}")
 
         return {

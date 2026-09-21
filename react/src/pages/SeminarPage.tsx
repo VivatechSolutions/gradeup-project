@@ -5432,44 +5432,23 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
           selectedUnit?.subject || selectedSubjectLabel || subject || null,
         term: selectedUnit?.term || null,
         deck_ref: null,
-        tool: "gslides",
+        tool: "gradeup" as const,
+        request_id: crypto.randomUUID(),
       };
 
-      const startSlidesSession = () => startSeminarPptSession(pptPayload);
-      let pptSession = await startSlidesSession();
+      const startKey = 'gradeup_presentation_start';
+      const fingerprint = JSON.stringify({ ...pptPayload, request_id: undefined });
+      const pendingStart = JSON.parse(sessionStorage.getItem(startKey) || 'null');
+      if (pendingStart?.fingerprint === fingerprint) pptPayload.request_id = pendingStart.requestId;
+      sessionStorage.setItem(startKey, JSON.stringify({ fingerprint, requestId: pptPayload.request_id }));
+      const pptSession = await startSeminarPptSession(pptPayload);
 
-      if (
-        pptSession?.status === "needs_connection" &&
-        pptSession?.authorization_url
-      ) {
-        window.open(
-          pptSession.authorization_url,
-          "_blank",
-          "noopener,noreferrer",
-        );
-        toast$(
-          "Google connection opened. Complete it in the new tab; we'll continue automatically.",
-          "info",
-        );
-        for (let attempt = 0; attempt < 40; attempt += 1) {
-          await new Promise((resolve) => setTimeout(resolve, 3000));
-          pptSession = await startSlidesSession();
-          if (pptSession?.session_id && pptSession?.edit_url) break;
-        }
-      }
-
-      if (pptSession?.status === "needs_connection") {
-        throw new Error(
-          "Google connection is still pending. Complete the Google authorization tab, then try Create with AI again.",
-        );
-      }
-
-      if (!pptSession?.session_id || !pptSession?.edit_url) {
+      if (!pptSession?.session_id || !pptSession?.deck_id || !pptSession?.edit_url || pptSession?.deck_mode !== "gradeup") {
         throw new Error("Slides session did not return an edit URL.");
       }
 
       const createdDocument = {
-        id: pptSession.session_id,
+        id: pptSession.deck_id,
         name,
         subject: selectedSubjectLabel,
         unit,
@@ -5491,9 +5470,10 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
       setCreateDocConfig(createdDocument);
       setCreateDocLink(pptSession.edit_url);
       setShowCreateLinkModal(true);
-      window.open(pptSession.edit_url, "_blank", "noopener,noreferrer");
+      sessionStorage.removeItem(startKey);
+      window.location.assign(pptSession.edit_url);
       toast$(
-        "Google Slides deck is ready. Open the GradeUp Copilot add-on inside Slides.",
+        "Your GradeUp presentation is ready.",
         "success",
       );
     } catch (error) {
@@ -5517,7 +5497,7 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
     if (
       externalEditUrl &&
       /^https?:\/\//i.test(externalEditUrl) &&
-      /docs\.google\.com\/presentation/i.test(externalEditUrl)
+      /\/seminar\/slides\//i.test(externalEditUrl)
     ) {
       window.open(externalEditUrl, "_blank", "noopener,noreferrer");
       return;

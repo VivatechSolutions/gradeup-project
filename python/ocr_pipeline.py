@@ -25,6 +25,10 @@ import base64
 import os
 import re
 import sys
+from logger import get_logger
+
+logger = get_logger(__name__)
+
 try:
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8')
@@ -38,6 +42,12 @@ from typing import Any, Dict, List, Optional, Tuple
 import orjson
 import requests
 from dotenv import load_dotenv
+
+from class_utils import normalize_class_number
+from section_types import (collapse_english_reading_types,
+                           merge_split_english_readings,
+                           strip_english_section_ids,
+                           title_untitled_english_readings)
 try:
     from mistralai import Mistral
 except ImportError:
@@ -76,10 +86,16 @@ try:
         discover_textbook_structure,
         detect_unit_number as auto_detect_unit_number,
         clean_content_for_extraction,
+        demote_top_level_introduction,
     )
     AUTO_SCHEMA_AVAILABLE = True
 except ImportError:
     AUTO_SCHEMA_AVAILABLE = False
+    def demote_top_level_introduction(unit):
+        """Fallback no-op used only if auto_schema_extractor is unavailable."""
+        if isinstance(unit, dict):
+            unit.pop("introduction", None)
+        return unit
 
 try:
     from content_validator import (
@@ -95,11 +111,33 @@ try:
     from langfuse_utils import (
         get_langfuse_client, safe_observe, update_trace_safely,
         update_generation_safely, flush_safely, score_trace_safely,
-        create_span_context, link_to_parent_trace
+        create_span_context, link_to_parent_trace,
+        generation, observation, record_error, record_openai_usage,
+        extract_usage_from_mistral_response,
+        trace_context, update_observation,
     )
     LANGFUSE_AVAILABLE = True
 except ImportError:
     LANGFUSE_AVAILABLE = False
+
+    from contextlib import contextmanager as _contextmanager
+
+    @_contextmanager
+    def generation(*_a, **_kw):
+        yield None
+
+    @_contextmanager
+    def observation(*_a, **_kw):
+        yield None
+
+    @_contextmanager
+    def trace_context(**_kw):
+        yield
+
+    def record_error(*_a, **_kw): pass
+    def record_openai_usage(*_a, **_kw): pass
+    def update_observation(*_a, **_kw): pass
+    def extract_usage_from_mistral_response(*_a, **_kw): return None
 
 try:
     from qdrant_integration import (
@@ -151,10 +189,14 @@ _IMAGE_ONLY_RE = _re.compile(r'^\s*!\[.*?\]\(.*?\)\s*$')
 
 _MD_IMAGE_RE = _re.compile(r'!\[.*?\]\(.*?\)')
 
-def _normalize_section_types(sections: list, subject: str = "") -> list:
+def _normalize_section_types(sections: list, subject: str = "",
+                             unit_title: str = "") -> list:
     """
     Post-process sections[] to fix type inconsistencies.
     Returns cleaned list of sections.
+
+    `unit_title` names an English reading the book prints without a heading —
+    in NCERT English the chapter title IS the story's title.
 
     NOTE: Only operates on Universal-schema sections (those with a 'type' field).
     Subject-specific schema sections (section_number / section_title / subsections)
@@ -217,7 +259,7 @@ def _normalize_section_types(sections: list, subject: str = "") -> list:
                     {"number": f"stanza_{i+1}", "content": stanza, "options": []}
                     for i, stanza in enumerate(raw_stanzas)
                 ]
-                print(f"  🎵 Auto-split poem '{title or sec_id}' into {len(raw_stanzas)} stanzas")
+                logger.info(f"Auto-split poem '{title or sec_id}' into {len(raw_stanzas)} stanzas")
 
 
         # ── SKIP image-only sections ─────────────────────────────────────────
@@ -294,6 +336,22 @@ def _normalize_section_types(sections: list, subject: str = "") -> list:
 
     # ── Merge consecutive prose sections (same story) ────────────────────────
     result = _merge_consecutive_prose(result)
+
+    # ── Rejoin a reading split at its 'Oral Comprehension Check' headings ────
+    # Those checks sit in the MIDDLE of a story, so the parts around them are
+    # not consecutive and _merge_consecutive_prose above cannot see them.
+    result = merge_split_english_readings(result, subject)
+
+    # ── English readings are stored as plain sections ────────────────────────
+    # prose / poem / supplementary → type="section"; the reading kind is kept
+    # in metadata.content_kind for downstream consumers.
+    result = collapse_english_reading_types(result, subject)
+
+    # ── Name readings the book prints with no heading of their own ──────────
+    result = title_untitled_english_readings(result, subject, unit_title)
+
+    # English units print no section numbers — drop any id extraction invented.
+    result = strip_english_section_ids(result, subject)
 
     return result
 
@@ -531,7 +589,7 @@ def _render_pdf_page_to_b64(pdf_path: Path, page_num: int, dpi: int = 200) -> st
         images[0].save(buf, format="JPEG", quality=85)
         return base64.b64encode(buf.getvalue()).decode("utf-8")
     except Exception as e:
-        print(f"    ⚠️  pdf2image render failed for page {page_num}: {e}")
+        logger.warning(f"pdf2image render failed for page {page_num}: {e}")
         return ""
 
 
@@ -568,14 +626,14 @@ def _reocr_page_via_image(client: Any, page: dict, page_num: int,
     # ── Strategy 2: render from original PDF if no embedded image ─────────────
     if not b64:
         if pdf_path is None:
-            print(f"    ⚠️  Page {page_num}: no embedded image and no pdf_path — cannot re-OCR")
+            logger.warning(f"Page {page_num}: no embedded image and no pdf_path — cannot re-OCR")
             return ""
-        print(f"    ℹ️  Page {page_num}: no embedded image — rendering from PDF at 200 DPI...")
+        logger.info(f"Page {page_num}: no embedded image — rendering from PDF at 200 DPI...")
         b64 = _render_pdf_page_to_b64(pdf_path, page_num)
         if not b64:
-            print(f"    ⚠️  Page {page_num}: PDF render failed — cannot re-OCR")
+            logger.warning(f"Page {page_num}: PDF render failed — cannot re-OCR")
             return ""
-        print(f"    ✅  Page {page_num}: rendered from PDF ({len(b64):,} bytes b64)")
+        logger.info(f"Page {page_num}: rendered from PDF ({len(b64):,} bytes b64)")
 
     # Send image to Mistral OCR
     # Strip data URI prefix if present (Mistral returns full data URIs in image_base64)
@@ -598,7 +656,7 @@ def _reocr_page_via_image(client: Any, page: dict, page_num: int,
             )
         return ""
     except Exception as e:
-        print(f"    ⚠️  Page {page_num}: Mistral image OCR call failed: {e}")
+        logger.warning(f"Page {page_num}: Mistral image OCR call failed: {e}")
         return ""
 
 
@@ -634,20 +692,20 @@ def _extract_markdown(ocr_response: Any, raw: Dict[str, Any],
 
         # Page is corrupted — attempt recovery
         corrupted.append(page_num)
-        print(f"  ⚠️  Page {page_num}: watermark corruption detected — re-OCRing via page image...")
+        logger.warning(f"Page {page_num}: watermark corruption detected — re-OCRing via page image...")
         recovered = ""
         if client is not None:
             recovered = _reocr_page_via_image(client, page, page_num, model, pdf_path)
 
         if recovered and not _is_watermark_corrupted(recovered):
-            print(f"  ✅  Page {page_num}: recovered {len(recovered):,} chars via image re-OCR")
+            logger.info(f"Page {page_num}: recovered {len(recovered):,} chars via image re-OCR")
             pages_content.append(f"<!-- PAGE {page_num} -->\n{recovered}")
         else:
-            print(f"  ❌  Page {page_num}: recovery failed — content will be missing from output")
+            logger.error(f"Page {page_num}: recovery failed — content will be missing from output")
             pages_content.append(f"<!-- PAGE {page_num} -->")  # placeholder keeps page count correct
 
     if corrupted:
-        print(f"  📊 {len(corrupted)} corrupted page(s) detected: {corrupted}")
+        logger.info(f"{len(corrupted)} corrupted page(s) detected: {corrupted}")
 
     return "\n\n".join(pages_content)
 
@@ -738,8 +796,8 @@ def _vision_reocr_pages(
             has_pdfium = True
         except ImportError:
             has_pdfium = False
-            print("    ❌ Neither PyMuPDF (fitz) nor pypdfium2 installed. Required for Vision re-OCR.")
-            print("    Run: pip install pymupdf  (or: pip install pypdfium2)")
+            logger.error("Neither PyMuPDF (fitz) nor pypdfium2 installed. Required for Vision re-OCR.")
+            logger.info("Run: pip install pymupdf  (or: pip install pypdfium2)")
             return results
 
     import base64
@@ -753,7 +811,7 @@ def _vision_reocr_pages(
         else:
             doc = pdfium.PdfDocument(str(pdf_path))
     except Exception as e:
-        print(f"    ❌ Failed to open PDF for vision re-OCR: {e}")
+        logger.error(f"Failed to open PDF for vision re-OCR: {e}")
         return results
     
     for page_num in page_numbers:
@@ -762,7 +820,7 @@ def _vision_reocr_pages(
         try:
             num_pages = len(doc) if has_fitz else len(doc)
             if page_idx < 0 or page_idx >= num_pages:
-                print(f"    ⚠️  Page {page_num} out of range (PDF has {num_pages} pages)")
+                logger.warning(f"Page {page_num} out of range (PDF has {num_pages} pages)")
                 continue
 
             if has_fitz:
@@ -834,10 +892,10 @@ def _vision_reocr_pages(
             
             extracted = data["choices"][0]["message"]["content"]
             results[page_num] = extracted
-            print(f"    ✅ Page {page_num}: Vision re-OCR extracted {len(extracted)} chars")
+            logger.info(f"Page {page_num}: Vision re-OCR extracted {len(extracted)} chars")
             
         except Exception as e:
-            print(f"    ❌ Vision re-OCR failed for page {page_num}: {e}")
+            logger.error(f"Vision re-OCR failed for page {page_num}: {e}")
     
     doc.close()
     return results
@@ -877,7 +935,7 @@ def _patch_markdown_pages(markdown: str, vision_results: Dict[int, str]) -> str:
     return "".join(result_parts)
 
 
-def _extract_text_from_images(markdown: str, raw_ocr_response: Dict[str, Any], api_key: str, model: str = "gpt-4o-mini") -> Tuple[str, int, Dict[str, Dict[str, str]]]:
+def _extract_text_from_images(markdown: str, raw_ocr_response: Dict[str, Any], api_key: str = "", model: str = "") -> Tuple[str, int, Dict[str, Dict[str, str]]]:
     """
     Finds isolated image references in markdown, looks up their base64 in the OCR response,
     and uses a Vision LLM to see if they are text boxes (like 'DO YOU KNOW').
@@ -915,12 +973,57 @@ def _extract_text_from_images(markdown: str, raw_ocr_response: Dict[str, Any], a
     replacements = 0
     new_markdown = markdown
     
-    print(f"  🔍 Vision Pass: Checking {len(matches)} images using {model}...")
+    # Llama 4 is multimodal, so the vision pass runs on the same OpenRouter
+    # endpoint as extraction. It used to be the only OpenAI call left in this
+    # stage, and a dead key meant every image failed 401 and no text-box
+    # content was recovered.
+    try:
+        from config import (
+            OPENROUTER_BASE_URL, OPENROUTER_APP_NAME, OPENROUTER_APP_URL, VISION_MODEL,
+        )
+        _vision_url = OPENROUTER_BASE_URL
+        _extra_headers = {"HTTP-Referer": OPENROUTER_APP_URL, "X-Title": OPENROUTER_APP_NAME}
+    except Exception:
+        _vision_url = "https://openrouter.ai/api/v1/chat/completions"
+        _extra_headers = {}
+        VISION_MODEL = "meta-llama/llama-4-scout"
 
-    # Set up HTTP client for OpenAI
+    model = model or VISION_MODEL
+    api_key = api_key or os.environ.get("OPENROUTER_API_KEY", "")
+
+    # Same treatment as the extraction calls: provider routing so a
+    # rate-limited pool can fall through, and on a 429 take the culprit
+    # provider out of the running. Llama 4 Scout is served by very few
+    # providers and the shared pool 429s under load; this loop used to make ONE
+    # attempt per image with neither, so a burst of 429s failed 8 of 19 images
+    # in a run — and a failed image is not "skipped", it is CONTENT LOST: a
+    # text box the vision model never read stays an image tag, which the
+    # cleaner strips, and nothing downstream can tell it was ever there.
+    try:
+        from config import openrouter_routing, VISION_FALLBACK_MODELS
+        _routing = openrouter_routing(model)
+        if VISION_FALLBACK_MODELS:
+            # Vision-specific model fallback: only after every provider of the
+            # primary is exhausted does OpenRouter move down this list.
+            _routing = {**_routing,
+                        "models": [model, *[m for m in VISION_FALLBACK_MODELS if m != model]]}
+    except Exception:
+        _routing = {}
+    try:
+        from auto_schema_extractor import _exclude_provider, _provider_from_error
+    except Exception:                                    # pragma: no cover
+        _exclude_provider = lambda payload, slug: payload   # noqa: E731
+        _provider_from_error = lambda resp: None            # noqa: E731
+
+    _max_attempts = max(1, int(os.getenv("VISION_MAX_RETRIES", "4")))
+    _base_delay = float(os.getenv("VISION_RETRY_BASE_DELAY", "2"))
+
+    logger.info(f"Vision Pass: Checking {len(matches)} images using {model}...")
+
     headers = {
         "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        **_extra_headers,
     }
 
     prompt = (
@@ -962,37 +1065,86 @@ def _extract_text_from_images(markdown: str, raw_ocr_response: Dict[str, Any], a
                     }
                 ],
                 "max_tokens": 1000,
-                "temperature": 0.0
+                "temperature": 0.0,
+                **_routing,
             }
 
-            try:
-                resp = http_client.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
-                resp.raise_for_status()
-                raw_out = resp.json()["choices"][0]["message"]["content"].strip()
-                
-                # Parse JSON
-                if raw_out.startswith("```json"):
-                    raw_out = raw_out[7:]
-                if raw_out.endswith("```"):
-                    raw_out = raw_out[:-3]
-                
-                output = json.loads(raw_out.strip())
-                is_text_box = output.get("is_text_box", False)
-                extracted_text = output.get("extracted_text", "")
-                
-                # Save metadata for S3 schema
-                image_metadata[filename] = output
-                
-                if is_text_box and extracted_text:
-                    # Replace in markdown
-                    original_tag = match.group(0)
-                    new_markdown = new_markdown.replace(original_tag, f"\n\n{extracted_text}\n\n")
-                    replacements += 1
-                    print(f"    ✨ Recovered text box from {filename} ({len(extracted_text)} chars)")
-                else:
-                    print(f"    🖼️  Processed illustration {filename}")
-            except Exception as e:
-                print(f"    ❌ Failed to evaluate {filename} with Vision: {e}")
+            output = None
+            last_error = ""
+            for attempt in range(_max_attempts):
+                if attempt:
+                    wait = _base_delay * (2 ** (attempt - 1))
+                    logger.info(f"{filename}: retry {attempt + 1}/{_max_attempts} after {wait:.0f}s")
+                    time.sleep(wait)
+                try:
+                    resp = http_client.post(_vision_url, headers=headers, json=payload)
+                    if resp.status_code == 429:
+                        culprit = _provider_from_error(resp)
+                        if culprit:
+                            payload = _exclude_provider(payload, culprit)
+                            logger.warning(
+                                f"[Route] {culprit} is rate-limited — excluding it "
+                                f"and retrying {filename} on another provider"
+                            )
+                        last_error = "429 Too Many Requests"
+                        continue
+                    if resp.status_code >= 500:
+                        last_error = f"{resp.status_code} from provider"
+                        continue
+                    resp.raise_for_status()
+                    raw_out = resp.json()["choices"][0]["message"]["content"].strip()
+
+                    # Parse JSON
+                    if raw_out.startswith("```json"):
+                        raw_out = raw_out[7:]
+                    if raw_out.endswith("```"):
+                        raw_out = raw_out[:-3]
+                    output = json.loads(raw_out.strip())
+                    break
+                except (httpx.TimeoutException, httpx.TransportError) as e:
+                    last_error = f"{type(e).__name__}"          # transient — retry
+                    continue
+                except Exception as e:
+                    last_error = f"{type(e).__name__}: {e}"     # malformed reply etc.
+                    break
+
+            if output is None:
+                # Recorded, not dropped: the report must show that this image
+                # was never read, because the text it may hold is now missing
+                # from the extraction and no later stage can notice.
+                image_metadata[filename] = {
+                    "is_text_box": None,
+                    "extracted_text": None,
+                    "description": None,
+                    "error": last_error or "no verdict",
+                }
+                logger.error(
+                    f"{filename}: no verdict after {_max_attempts} attempt(s) "
+                    f"({last_error}) — if this was a text box its content is LOST"
+                )
+                continue
+
+            is_text_box = output.get("is_text_box", False)
+            extracted_text = output.get("extracted_text", "")
+
+            # Save metadata for S3 schema
+            image_metadata[filename] = output
+
+            if is_text_box and extracted_text:
+                # Replace in markdown
+                original_tag = match.group(0)
+                new_markdown = new_markdown.replace(original_tag, f"\n\n{extracted_text}\n\n")
+                replacements += 1
+                logger.info(f"Recovered text box from {filename} ({len(extracted_text)} chars)")
+            else:
+                logger.info(f"Processed illustration {filename}")
+
+    failed = [k for k, v in image_metadata.items() if v.get("error")]
+    if failed:
+        logger.error(
+            f"Vision pass: {len(failed)} of {len(matches)} image(s) got no verdict "
+            f"— {', '.join(failed[:6])}{' …' if len(failed) > 6 else ''}"
+        )
 
     return new_markdown, replacements, image_metadata
 
@@ -1011,11 +1163,16 @@ def extract_with_mistral_ocr(
     actual_key = os.getenv("MISTRAL_API_KEY", "UNKNOWN")
     masked_key = f"{actual_key[:4]}...{actual_key[-4:]}" if len(actual_key) > 8 else (actual_key[:2] + "***" if len(actual_key) > 2 else "***")
     
-    print(f"  Extracting PDF with Mistral OCR ({pdf_path.name}, {file_size_mb:.2f} MB)...")
-    print(f"  🔑 Using API Key: {masked_key}")
+    logger.info(f"Extracting PDF with Mistral OCR ({pdf_path.name}, {file_size_mb:.2f} MB)...")
+    logger.info(f"Using API Key: {masked_key}")
     
-    max_retries = 3
+    # A Mistral-side 502 ("invalid response from upstream server") is usually a
+    # blip, but 3 tries spanning 15s is too short to ride one out — and when OCR
+    # returns nothing the whole document extracts to zero sections. Ladder is
+    # 5+10+20+40 = 75s across 5 attempts, capped so it can never hang.
+    max_retries = 5
     retry_delay = 5
+    max_retry_delay = 60
     
     for attempt in range(max_retries):
         try:
@@ -1031,21 +1188,33 @@ def extract_with_mistral_ocr(
                 pdf_b64 = b64_encode_pdf(pdf_path)
                 document = {"type": "document_url", "document_url": f"data:application/pdf;base64,{pdf_b64}"}
             
-            ocr_response = client.ocr.process(
-                model=model,
-                document=document,
-                include_image_base64=True
-            )
-            
-            raw = _response_to_dict(ocr_response)
-            markdown = _extract_markdown(ocr_response, raw, client=client, model=model, pdf_path=pdf_path)
-            
-            if langfuse:
-                update_generation_safely(langfuse,
+            # One generation per OCR attempt. The previous
+            # update_generation_safely() call here had no observation open, so
+            # it recorded nothing - the model and page count never reached
+            # Langfuse.
+            with generation(name="ocr-extract-pdf", model=model,
+                            input={"file": pdf_path.name,
+                                   "size_mb": round(file_size_mb, 2),
+                                   "upload_flow": use_upload_flow},
+                            metadata={"provider": "mistral",
+                                      "attempt": attempt}) as gen:
+                ocr_response = client.ocr.process(
                     model=model,
-                    output={"extracted_length": len(markdown)}
+                    document=document,
+                    include_image_base64=True
                 )
-            
+
+                raw = _response_to_dict(ocr_response)
+                markdown = _extract_markdown(ocr_response, raw, client=client, model=model, pdf_path=pdf_path)
+
+                usage = extract_usage_from_mistral_response(ocr_response)
+                update_observation(
+                    gen,
+                    output={"extracted_length": len(markdown),
+                            "pages": len(raw.get("pages") or [])},
+                    **({"usage_details": usage} if usage else {}),
+                )
+
             return {
                 "success": True,
                 "raw": raw,
@@ -1061,14 +1230,12 @@ def extract_with_mistral_ocr(
                 except: pass
 
             if attempt < max_retries - 1:
-                print(f"  ⚠️  Mistral API error (Attempt {attempt+1}/{max_retries}): {error_msg}")
-                print(f"      Retrying in {retry_delay}s...")
+                logger.warning(f"Mistral API error (Attempt {attempt+1}/{max_retries}): {error_msg}")
+                logger.warning(f"Retrying in {retry_delay}s...")
                 time.sleep(retry_delay)
-                retry_delay *= 2  # Exponential backoff
+                retry_delay = min(retry_delay * 2, max_retry_delay)
             else:
-                print(f"  ❌ Mistral API error after {max_retries} attempts: {error_msg}")
-                import traceback
-                traceback.print_exc()
+                logger.exception(f"Mistral API error after {max_retries} attempts: {error_msg}")
                 return {"success": False, "error": error_msg}
                 
     return {"success": False, "error": "Maximum retries exceeded"}
@@ -1093,18 +1260,18 @@ def extract_toc_structure(markdown: str) -> Dict[str, List[int]]:
     """
     lines = markdown.split('\n')
     
-    print(f"\n  📖 Analyzing Table of Contents...")
+    logger.info(f"Analyzing Table of Contents...")
     
     # Find TOC section
     toc_start = None
     for i, line in enumerate(lines):
         if 'table of contents' in line.lower():
             toc_start = i
-            print(f"  ✅ Found TOC at line {i}")
+            logger.info(f"Found TOC at line {i}")
             break
     
     if not toc_start:
-        print(f"  ⚠️  No TOC found")
+        logger.warning(f"No TOC found")
         return {}
     
     # Extract TOC region
@@ -1167,7 +1334,7 @@ def extract_toc_structure(markdown: str) -> Dict[str, List[int]]:
                 if has_units_after:
                     current_part = first_col
                     parts_structure[current_part] = []
-                    print(f"  📚 Discovered part: {current_part}")
+                    logger.info(f"Discovered part: {current_part}")
                     continue
         
         # Extract unit number if we're in a part
@@ -1180,9 +1347,9 @@ def extract_toc_structure(markdown: str) -> Dict[str, List[int]]:
     for part in parts_structure:
         parts_structure[part].sort()
     
-    print(f"\n  📊 TOC Structure:")
+    logger.info(f"TOC Structure:")
     for part, units in parts_structure.items():
-        print(f"     {part}: {len(units)} units {units}")
+        logger.info(f"{part}: {len(units)} units {units}")
     
     return parts_structure
 
@@ -1202,7 +1369,7 @@ def find_part_in_content(markdown: str, part_name: str, toc_structure: Dict[str,
     """
     lines = markdown.split('\n')
     
-    print(f"\n  🔍 Searching for {part_name} section in content...")
+    logger.info(f"Searching for {part_name} section in content...")
     
     # Strategy 1: Find part name in content
     part_start = None
@@ -1223,7 +1390,7 @@ def find_part_in_content(markdown: str, part_name: str, toc_structure: Dict[str,
             header_text = re.sub(r'^#+\s*', '', line_stripped).upper()
             if header_text == part_upper:
                 part_start = line_idx
-                print(f"  ✅ Found {part_name} (markdown header) at line {line_idx}: {line[:60]}")
+                logger.info(f"Found {part_name} (markdown header) at line {line_idx}: {line[:60]}")
                 break
         
         # Check for plain text: "HISTORY", "GEOGRAPHY"
@@ -1238,13 +1405,13 @@ def find_part_in_content(markdown: str, part_name: str, toc_structure: Dict[str,
             
             if has_units:
                 part_start = line_idx
-                print(f"  ✅ Found {part_name} (plain text) at line {line_idx}: {line[:60]}")
+                logger.info(f"Found {part_name} (plain text) at line {line_idx}: {line[:60]}")
                 break
     
     # Strategy 2: If not found by name, find by counting Unit 1 occurrences
     if part_start is None and part_name in toc_structure:
         first_unit = toc_structure[part_name][0] if toc_structure[part_name] else 1
-        print(f"  🔍 Looking for Unit {first_unit} to locate {part_name}...")
+        logger.info(f"Looking for Unit {first_unit} to locate {part_name}...")
         
         # Find all Unit headers
         unit_positions = []
@@ -1270,20 +1437,20 @@ def find_part_in_content(markdown: str, part_name: str, toc_structure: Dict[str,
         
         if len(unit_1_occurrences) > unit_1_count_before:
             part_start = unit_1_occurrences[unit_1_count_before]
-            print(f"  ✅ Found {part_name} at occurrence #{unit_1_count_before + 1} of Unit 1, line {part_start}")
+            logger.info(f"Found {part_name} at occurrence #{unit_1_count_before + 1} of Unit 1, line {part_start}")
         else:
             # Fallback: look for any unit from this part
             for expected_unit in toc_structure[part_name][:3]:  # Check first 3 units
                 for unit_num, line_idx in unit_positions:
                     if unit_num == expected_unit and line_idx > (part_start or 0):
                         part_start = line_idx
-                        print(f"  ✅ Found {part_name} by locating Unit {expected_unit} at line {line_idx}")
+                        logger.info(f"Found {part_name} by locating Unit {expected_unit} at line {line_idx}")
                         break
                 if part_start:
                     break
     
     if part_start is None:
-        print(f"  ❌ Could not locate {part_name} section")
+        logger.error(f"Could not locate {part_name} section")
         return (0, 0)
     
     return (part_start, -1)  # End will be determined by next part or EOF
@@ -1301,7 +1468,7 @@ def detect_parts_from_toc_universal(markdown: str) -> List[Tuple[str, int, int]]
     toc_structure = extract_toc_structure(markdown)
     
     if not toc_structure:
-        print(f"  ⚠️  Could not extract TOC structure, using fallback")
+        logger.warning(f"Could not extract TOC structure, using fallback")
         return []
     
     # Step 2: Find each part in the actual content
@@ -1327,9 +1494,9 @@ def detect_parts_from_toc_universal(markdown: str) -> List[Tuple[str, int, int]]
         
         final_boundaries.append((part_name, start_line, end_line, units))
     
-    print(f"\n  📏 Final part boundaries:")
+    logger.info(f"Final part boundaries:")
     for part_name, start, end, units in final_boundaries:
-        print(f"     {part_name}: lines {start:,} to {end:,} ({len(units)} units: {units})")
+        logger.info(f"{part_name}: lines {start:,} to {end:,} ({len(units)} units: {units})")
     
     return [(name, start, end) for name, start, end, _ in final_boundaries]
 
@@ -1342,7 +1509,7 @@ def extract_part_content(markdown: str, part_name: str, start_line: int, end_lin
     lines = markdown.split('\n')
     part_lines = lines[start_line:end_line]
     content = '\n'.join(part_lines)
-    print(f"  📄 Extracted {len(part_lines):,} lines for {part_name} ({len(content):,} chars)")
+    logger.info(f"Extracted {len(part_lines):,} lines for {part_name} ({len(content):,} chars)")
     return content
 
 
@@ -1356,10 +1523,9 @@ def _print_markdown_sample(markdown: str, label: str = "markdown sample") -> Non
             sample_start = i
             break
     sample_lines = [l for l in lines[sample_start:sample_start + 80] if l.strip()][:30]
-    print(f"\n  📋 {label} (lines {sample_start}–{sample_start+80}, non-empty):")
+    logger.info(f"{label} (lines {sample_start}–{sample_start+80}, non-empty):")
     for l in sample_lines:
-        print(f"     {repr(l)}")
-    print()
+        logger.info(f"{repr(l)}")
 
 
 def _build_chapter_title_map(markdown: str) -> Dict[int, str]:
@@ -1488,16 +1654,16 @@ def _extract_chapters_from_toc(markdown: str) -> List[int]:
         if s in ('CONTENT', 'CONTENTS', 'TABLE OF CONTENTS', '# CONTENT',
                  '# CONTENTS', '## CONTENT', '## CONTENTS'):
             toc_start = i
-            print(f"  📖 Found TOC at line {i}: {repr(line.strip())}")
+            logger.info(f"Found TOC at line {i}: {repr(line.strip())}")
             break
         # English textbooks: TOC is a Markdown table with "Unit | Contents | Page..." header
         if ('UNIT' in s and 'CONTENT' in s and line.strip().startswith('|')):
             toc_start = i
-            print(f"  📖 Found English TOC table at line {i}: {repr(line.strip()[:60])}")
+            logger.info(f"Found English TOC table at line {i}: {repr(line.strip()[:60])}")
             break
 
     if toc_start is None:
-        print(f"  ℹ️  No TOC header found — falling back to body scan")
+        logger.info(f"No TOC header found — falling back to body scan")
         return []
 
     # Scan up to 300 lines of TOC, but stop as soon as the TOC table ends
@@ -1557,9 +1723,9 @@ def _extract_chapters_from_toc(markdown: str) -> List[int]:
 
     result = sorted(numbers)
     if result:
-        print(f"  📚 TOC-derived chapter/unit list: {result}")
+        logger.info(f"TOC-derived chapter/unit list: {result}")
     else:
-        print(f"  ⚠️  TOC found but no numbers extracted")
+        logger.warning(f"TOC found but no numbers extracted")
     return result
 
 
@@ -1583,7 +1749,7 @@ def infer_units_or_chapters_from_markdown(markdown: str, subject: str) -> List[i
     )
     _stamp_unit = int(_indd_unit_m.group(1)) if _indd_unit_m else None
     if _stamp_unit:
-        print(f"  🔖 .indd stamp says this is Unit {_stamp_unit}")
+        logger.info(f".indd stamp says this is Unit {_stamp_unit}")
 
     # ── Step 1: TOC-first (works for ALL subjects) ────────────────────────────
     # FIX 3: Try robust multi-format parser first, fall back to original
@@ -1604,13 +1770,13 @@ def infer_units_or_chapters_from_markdown(markdown: str, subject: str) -> List[i
             toc_set = set(toc_numbers)
             # If stamp unit not in TOC list → TOC is wrong
             if _stamp_unit not in toc_set:
-                print(f"  ⚠️  TOC list {toc_numbers} does not include stamp unit "
+                logger.warning(f"TOC list {toc_numbers} does not include stamp unit "
                       f"{_stamp_unit} — overriding with stamp")
                 return [_stamp_unit]
             # If TOC has multiple units but real unit headers only show one,
             # the extras came from a body list, not a real TOC
             if len(toc_numbers) > 1 and len(real_unit_headers) <= 1:
-                print(f"  ⚠️  TOC returned {toc_numbers} but only {real_unit_headers or {_stamp_unit}} "
+                logger.warning(f"TOC returned {toc_numbers} but only {real_unit_headers or {_stamp_unit}} "
                       f"unit header(s) found in body — overriding with stamp [{_stamp_unit}]")
                 return [_stamp_unit]
         return toc_numbers
@@ -1619,11 +1785,11 @@ def infer_units_or_chapters_from_markdown(markdown: str, subject: str) -> List[i
     if subject == "mathematics":
         numbers = _find_chapter_numbers_from_body(markdown)
         if numbers:
-            print(f"  🔍 Detected chapters from body scan: {numbers}")
+            logger.info(f"Detected chapters from body scan: {numbers}")
             return numbers
 
         # Diagnostic when nothing is found
-        print(f"  ⚠️  Body scan found no chapters — dumping sample for diagnosis:")
+        logger.warning(f"Body scan found no chapters — dumping sample for diagnosis:")
         _print_markdown_sample(markdown, "body chapter header sample")
 
         # Last-resort: simple numbered list in TOC area
@@ -1631,10 +1797,10 @@ def infer_units_or_chapters_from_markdown(markdown: str, subject: str) -> List[i
         toc_matches = re.findall(toc_chapter_pattern, markdown, re.MULTILINE)
         numbers = sorted(set(int(m) for m in toc_matches if 1 <= int(m) <= 15))
         if 1 <= len(numbers) <= 15:
-            print(f"  🔍 Detected chapters from TOC pattern (last-resort): {numbers}")
+            logger.info(f"Detected chapters from TOC pattern (last-resort): {numbers}")
             return numbers
 
-        print(f"  ℹ️  No chapter markers found at all")
+        logger.info(f"No chapter markers found at all")
         return []
 
     # Science / Social Science body scan
@@ -1643,7 +1809,7 @@ def infer_units_or_chapters_from_markdown(markdown: str, subject: str) -> List[i
     matches = re.findall(pattern, markdown, re.MULTILINE)
     if matches:
         numbers = sorted(set(int(m[0]) for m in matches))
-        print(f"  🔍 Detected units from subsection headers: {numbers}")
+        logger.info(f"Detected units from subsection headers: {numbers}")
         return numbers
 
     # Try explicit Unit headers  "# Unit - 3"
@@ -1651,10 +1817,10 @@ def infer_units_or_chapters_from_markdown(markdown: str, subject: str) -> List[i
     unit_matches = re.findall(unit_pattern, markdown, re.MULTILINE | re.IGNORECASE)
     numbers = sorted(set(int(m) for m in unit_matches))
     if numbers:
-        print(f"  🔍 Detected units from headers: {numbers}")
+        logger.info(f"Detected units from headers: {numbers}")
         return numbers
 
-    print(f"  ℹ️  No unit/chapter markers found, treating as single unit")
+    logger.info(f"No unit/chapter markers found, treating as single unit")
     return [1]
 
 
@@ -1780,7 +1946,7 @@ def extract_unit_content(markdown: str, unit_num: int, subject: Optional[str] = 
                     )
                     if has_content:
                         in_unit = True
-                        print(f"  ✅ Unit {unit_num} start found at line {line_idx}: {repr(s[:60])}")
+                        logger.info(f"Unit {unit_num} start found at line {line_idx}: {repr(s[:60])}")
                         unit_lines.append(line)
                         continue
                     # else: false positive, keep scanning for the real header
@@ -1810,13 +1976,13 @@ def extract_unit_content(markdown: str, unit_num: int, subject: Optional[str] = 
 
     if len(content) < 500:
         label = "Chapter" if is_math else "Unit"
-        print(f"  ⚠️  Warning: {label} {unit_num} content seems short ({len(content)} chars)")
+        logger.warning(f"Warning: {label} {unit_num} content seems short ({len(content)} chars)")
         if len(content) == 0:
             # Dump surrounding context so we can see the actual format
-            print(f"  📋 Scanning for any line containing '{unit_num}' to diagnose format:")
+            logger.info(f"Scanning for any line containing '{unit_num}' to diagnose format:")
             for i, l in enumerate(lines):
                 if str(unit_num) in l and i > 100:
-                    print(f"     line {i}: {repr(l)}")
+                    logger.info(f"line {i}: {repr(l)}")
                     if i > 110 + 50:
                         break
 
@@ -1936,7 +2102,7 @@ def _inject_missing_section_numbers(text: str) -> str:
             if best_line is None or not best_title:
                 # Could not identify an unnumbered section start — leave as-is.
                 # The verification agent will catch it if the gap is real.
-                print(f"  ℹ️  Section gap {missing_snum}: no clear unnumbered section heading found — skipping injection")
+                logger.info(f"Section gap {missing_snum}: no clear unnumbered section heading found — skipping injection")
                 continue
 
             # Rewrite the heading line to include the missing section number.
@@ -1944,7 +2110,7 @@ def _inject_missing_section_numbers(text: str) -> str:
             new_line = f"## {missing_snum} {best_title}"
             old_line = lines[best_line].strip()
             injections[best_line] = new_line
-            print(f"  🔧 Injecting missing section number: '{old_line}' → '{new_line}'")
+            logger.info(f"Injecting missing section number: '{old_line}' → '{new_line}'")
 
             # Next missing minor: search from just after this injection point
             search_from = best_line + 1
@@ -2067,7 +2233,7 @@ def structure_unit_with_llm(
     content_size = len(unit_content)
     tokens_estimate = content_size // 4
     part_info = f" ({part_name})" if part_name else ""
-    print(f"  Sending {content_size:,} chars (~{tokens_estimate:,} tokens) to {model}{part_info}")
+    logger.info(f"Sending {content_size:,} chars (~{tokens_estimate:,} tokens) to {model}{part_info}")
 
     # ── System prompt: comes fully formed from subject_aware_extraction ────────
     system_prompt = get_system_prompt_for_subject(subject)
@@ -2109,10 +2275,10 @@ def structure_unit_with_llm(
         try:
             if attempt > 0:
                 wait_time = LLM_CONFIG["base_delay"] * (3 ** attempt)
-                print(f"  ⏳ Retry {attempt + 1}/{max_retries} after {wait_time}s...")
+                logger.info(f"Retry {attempt + 1}/{max_retries} after {wait_time}s...")
                 time.sleep(wait_time)
             
-            print(f"  🔄 Calling OpenAI API (attempt {attempt + 1}/{max_retries})...")
+            logger.info(f"Calling OpenAI API (attempt {attempt + 1}/{max_retries})...")
             start_time = time.time()
             
             response = requests.post(
@@ -2123,15 +2289,15 @@ def structure_unit_with_llm(
             )
             
             elapsed = time.time() - start_time
-            print(f"  ✅ API responded in {elapsed:.1f}s (status {response.status_code})")
+            logger.info(f"API responded in {elapsed:.1f}s (status {response.status_code})")
             
             if not response.ok:
                 # Log the actual API error body before raising so we can diagnose it
                 try:
                     err_body = response.json()
-                    print(f"  ❌ API error body: {err_body}")
+                    logger.error(f"API error body: {err_body}")
                 except Exception:
-                    print(f"  ❌ API error body (raw): {response.text[:500]}")
+                    logger.error(f"API error body (raw): {response.text[:500]}")
                 response.raise_for_status()
             response_data = response.json()
             
@@ -2143,12 +2309,12 @@ def structure_unit_with_llm(
             choice = response_data["choices"][0]
             content = choice["message"]["content"]
             finish_reason = choice.get("finish_reason", "stop")
-            print(f"  📊 Response size: {len(content):,} chars (finish_reason={finish_reason})")
+            logger.info(f"Response size: {len(content):,} chars (finish_reason={finish_reason})")
 
             # content_filter: gpt-5-mini blocked this content — retry once with gpt-4o fallback
             if finish_reason == "content_filter":
                 if model != "gpt-4o":
-                    print(f"  ⚠️  content_filter: gpt-5-mini blocked — retrying with gpt-4o fallback...")
+                    logger.warning(f"content_filter: gpt-5-mini blocked — retrying with gpt-4o fallback...")
                     fallback_payload = {**payload, "model": "gpt-4o"}
                     try:
                         fb_resp = requests.post(
@@ -2162,7 +2328,7 @@ def structure_unit_with_llm(
                             fb_choice = fb_data["choices"][0]
                             fb_content = fb_choice["message"]["content"]
                             fb_reason = fb_choice.get("finish_reason", "stop")
-                            print(f"  📊 Fallback response: {len(fb_content):,} chars (finish_reason={fb_reason})")
+                            logger.info(f"Fallback response: {len(fb_content):,} chars (finish_reason={fb_reason})")
                             if fb_reason != "content_filter" and fb_content:
                                 # BUG FIX: must parse JSON, not return raw string
                                 try:
@@ -2171,13 +2337,13 @@ def structure_unit_with_llm(
                                 except Exception:
                                     pass
                     except Exception as fb_err:
-                        print(f"  ⚠️  gpt-4o fallback failed: {fb_err}")
-                print(f"  ⚠️  content_filter: Both gpt-5-mini and gpt-4o blocked this section — skipping")
+                        logger.warning(f"gpt-4o fallback failed: {fb_err}")
+                logger.warning(f"content_filter: Both gpt-5-mini and gpt-4o blocked this section — skipping")
                 return None
 
             # FIX 4: Truncation recovery — if GPT hit the token limit, JSON is incomplete
             if finish_reason == "length":
-                print(f"  ⚠️  [Fix4] Output truncated — attempting JSON continuation recovery...")
+                logger.warning(f"[Fix4] Output truncated — attempting JSON continuation recovery...")
                 recovery_messages = payload["messages"] + [
                     {"role": "assistant", "content": content},
                     {"role": "user", "content": (
@@ -2197,11 +2363,11 @@ def structure_unit_with_llm(
                     if rec_resp.ok:
                         continuation = rec_resp.json()["choices"][0]["message"]["content"]
                         content = content + continuation
-                        print(f"  ✅ [Fix4] Recovery appended {len(continuation):,} chars")
+                        logger.info(f"[Fix4] Recovery appended {len(continuation):,} chars")
                     else:
-                        print(f"  ⚠️  [Fix4] Recovery request failed: {rec_resp.status_code}")
+                        logger.warning(f"[Fix4] Recovery request failed: {rec_resp.status_code}")
                 except Exception as rec_err:
-                    print(f"  ⚠️  [Fix4] Recovery exception: {rec_err}")
+                    logger.warning(f"[Fix4] Recovery exception: {rec_err}")
 
             try:
                 if content.startswith("```"):
@@ -2219,7 +2385,7 @@ def structure_unit_with_llm(
                         if content[end-1] in ('}', ']'):
                             try:
                                 unit_data = orjson.loads(content[:end].encode() if isinstance(content[:end], str) else content[:end])
-                                print(f"  ✅ [Fix4b] Salvaged JSON up to char {end}")
+                                logger.info(f"[Fix4b] Salvaged JSON up to char {end}")
                                 break
                             except Exception:
                                 continue
@@ -2228,23 +2394,23 @@ def structure_unit_with_llm(
 
                 if subject == "social_science" and part_name:
                     if "part" not in unit_data or unit_data["part"] != part_name:
-                        print(f"  ⚠️  Correcting part to {part_name}")
+                        logger.warning(f"Correcting part to {part_name}")
                         unit_data["part"] = part_name
                 
                 if not validate_structure(unit_data, subject):
-                    print(f"  ⚠️  Structure validation warning")
+                    logger.warning(f"Structure validation warning")
                 
-                print(f"  ✅ Unit {unit_number}{part_info} structured successfully")
+                logger.info(f"Unit {unit_number}{part_info} structured successfully")
                 return unit_data
                 
             except orjson.JSONDecodeError as e:
-                print(f"  ❌ JSON parse error: {e}")
+                logger.error(f"JSON parse error: {e}")
                 if attempt < max_retries - 1:
                     continue
                 return None
         
         except Exception as e:
-            print(f"  ❌ Error: {e}")
+            logger.error(f"Error: {e}")
             if attempt < max_retries - 1:
                 continue
             return None
@@ -2345,11 +2511,11 @@ def _extract_chapters_from_toc_robust(markdown: str) -> List[int]:
         if s in ('CONTENT', 'CONTENTS', 'TABLE OF CONTENTS',
                  '# CONTENT', '# CONTENTS', '## CONTENT', '## CONTENTS'):
             toc_start = i
-            print(f"  📖 [Robust TOC] Found TOC at line {i}: {repr(line.strip())}")
+            logger.info(f"[Robust TOC] Found TOC at line {i}: {repr(line.strip())}")
             break
         if 'UNIT' in s and 'CONTENT' in s and line.strip().startswith('|'):
             toc_start = i
-            print(f"  📖 [Robust TOC] Found English TOC table at line {i}")
+            logger.info(f"[Robust TOC] Found English TOC table at line {i}")
             break
         # Numbered-list TOC must appear in the first 60 lines (cover/TOC area only).
         # Guards against false positives from body-content numbered lists:
@@ -2365,7 +2531,7 @@ def _extract_chapters_from_toc_robust(markdown: str) -> List[int]:
             numbered = [l for l in subsequent if re.match(r"^\s*[2-9][.)]\s+[A-Z]", l)]
             if len(numbered) >= 5 and len(line.strip()) < 80:
                 toc_start = i
-                print(f"  📖 [Robust TOC] Found numbered-list TOC at line {i}")
+                logger.info(f"[Robust TOC] Found numbered-list TOC at line {i}")
                 break
 
     if toc_start is None:
@@ -2432,9 +2598,9 @@ def _extract_chapters_from_toc_robust(markdown: str) -> List[int]:
 
     result = sorted(numbers)
     if result:
-        print(f"  📚 [Robust TOC] Unit list: {result}")
+        logger.info(f"[Robust TOC] Unit list: {result}")
     else:
-        print(f"  ⚠️  [Robust TOC] TOC found but no numbers extracted")
+        logger.warning(f"[Robust TOC] TOC found but no numbers extracted")
     return result
 
 
@@ -2443,11 +2609,16 @@ def _merge_chapter_chunks(chunks_data: List[Dict[str, Any]], subject: str) -> Di
     Merge multiple partial extraction dicts (from different content chunks of the
     same chapter) into one complete chapter dict.
 
-    Strategy: take scalar fields (chapter_number, title, introduction) from the
-    first chunk that has them; concatenate all list fields across all chunks.
+    Strategy: take scalar fields (chapter_number, title, ...) from the first
+    chunk that has them; concatenate all list fields across all chunks.
+
+    NOTE: "introduction" is intentionally NOT a scalar field — it lives in
+    sections[] as an "introduction" section. demote_top_level_introduction()
+    (applied to the returned dict) folds any stray top-level intro text into a
+    section and strips the top-level key so the schema stays consistent.
     """
     if len(chunks_data) == 1:
-        return chunks_data[0]
+        return demote_top_level_introduction(chunks_data[0])
 
     # List fields that should be concatenated across chunks
     if subject == "mathematics":
@@ -2457,13 +2628,13 @@ def _merge_chapter_chunks(chunks_data: List[Dict[str, Any]], subject: str) -> Di
             "thinking_corners", "progress_checks", "notes", "ict_corner",
             "points_to_remember",
         ]
-        scalar_fields = ["chapter_number", "title", "introduction", "unit_exercise"]
+        scalar_fields = ["chapter_number", "title", "unit_exercise"]
     elif subject == "science":
         list_fields = [
             "learning_objectives", "sections", "activities", "do_you_know",
             "more_to_know", "notes", "try_this", "exercises", "points_to_remember",
         ]
-        scalar_fields = ["unit_number", "title", "introduction"]
+        scalar_fields = ["unit_number", "title"]
     elif subject == "english":
         # English uses sections[] format (universal schema) as defined in ENGLISH_SYSTEM_PROMPT.
         # All content types (prose, poem, grammar, vocabulary, writing_task, etc.)
@@ -2472,14 +2643,14 @@ def _merge_chapter_chunks(chunks_data: List[Dict[str, Any]], subject: str) -> Di
             "learning_objectives", "sections",
             "glossary", "notes", "points_to_remember",
         ]
-        scalar_fields = ["unit_number", "title", "introduction"]
+        scalar_fields = ["unit_number", "title"]
     else:  # SOCIAL_SCIENCE
         list_fields = [
             "learning_objectives", "sections", "do_you_know", "activities",
             "map_work", "exercises", "summary", "glossary", "timeline",
             "reference_books", "ict_corner",
         ]
-        scalar_fields = ["part", "unit_number", "title", "introduction"]
+        scalar_fields = ["part", "unit_number", "title"]
 
     merged: Dict[str, Any] = {}
 
@@ -2521,7 +2692,8 @@ def _merge_chapter_chunks(chunks_data: List[Dict[str, Any]], subject: str) -> Di
                     combined.append(item)
         merged[field] = combined
 
-    return merged
+    # Introduction must live as a section, never as a top-level scalar field.
+    return demote_top_level_introduction(merged)
 
 
 
@@ -2642,7 +2814,7 @@ def _split_cbse_english_natural_sections(unit_content: str, unit_number: int) ->
                 split_pos = part_marker_match.start()
                 discussion_part = content_of_sec[:split_pos].strip()
                 prose_continuation = content_of_sec[split_pos:].strip()
-                print(f"  🔧 [SplitFix] Found prose Part II inside {sec['type']} section — "
+                logger.info(f"[SplitFix] Found prose Part II inside {sec['type']} section — "
                       f"re-attaching {len(prose_continuation):,} chars to Prose")
 
                 # Keep the discussion part
@@ -2745,7 +2917,7 @@ def _split_english_natural_sections(unit_content: str, unit_number: int) -> List
         for noise in noise_patterns:
             noise_idx = sec_content.find(noise)
             if noise_idx > 2000:  # only truncate if there's real content before it
-                print(f"  ✂️  Truncating {t} section at end-of-book noise (offset {noise_idx})")
+                logger.info(f"Truncating {t} section at end-of-book noise (offset {noise_idx})")
                 sec_content = sec_content[:noise_idx]
                 break
         result_sections.append({"type": t, "content": sec_content})
@@ -2800,14 +2972,14 @@ def structure_unit_with_llm_chunked(
     if subject == "cbse_english":
         natural_sections = _split_cbse_english_natural_sections(unit_content, unit_number)
         if len(natural_sections) > 1:
-            print(f"  📚 CBSE Unit {unit_number}: {len(natural_sections)} natural sections: "
+            logger.info(f"CBSE Unit {unit_number}: {len(natural_sections)} natural sections: "
                   f"{[s['type'] for s in natural_sections]}")
             chunk_results_cbse: List[Dict[str, Any]] = []
             for ns in natural_sections:
                 ns_type = ns['type']
                 ns_content = ns['content']
                 ns_chunks = _split_into_chunks_semantic(ns_content, 30_000)
-                print(f"  📖 CBSE {ns_type} section ({len(ns_content):,} chars, "
+                logger.info(f"CBSE {ns_type} section ({len(ns_content):,} chars, "
                       f"{len(ns_chunks)} chunk(s))")
                 for ci, chunk in enumerate(ns_chunks, 1):
                     effective_chunk = chunk
@@ -2844,7 +3016,7 @@ def structure_unit_with_llm_chunked(
                     if result:
                         chunk_results_cbse.append(result)
                     else:
-                        print(f"  ⚠️  CBSE {ns_type} chunk {ci}/{len(ns_chunks)} failed")
+                        logger.warning(f"CBSE {ns_type} chunk {ci}/{len(ns_chunks)} failed")
             if not chunk_results_cbse:
                 return None
             merged = _merge_chapter_chunks(chunk_results_cbse, subject)
@@ -2853,7 +3025,7 @@ def structure_unit_with_llm_chunked(
             type_summary = ', '.join(
                 f"{t}:{section_types.count(t)}" for t in sorted(set(section_types))
             )
-            print(f"  ✅ CBSE Merged {len(chunk_results_cbse)} section-chunks → "
+            logger.info(f"CBSE Merged {len(chunk_results_cbse)} section-chunks → "
                   f"{section_count} sections [{type_summary}]")
             return merged
     # English textbooks have distinct sub-sections per unit:
@@ -2864,7 +3036,7 @@ def structure_unit_with_llm_chunked(
     if subject == "english":
         natural_sections = _split_english_natural_sections(unit_content, unit_number)
         if len(natural_sections) > 1:
-            print(f"  📚 Unit {unit_number}: {len(natural_sections)} natural sections: "
+            logger.info(f"Unit {unit_number}: {len(natural_sections)} natural sections: "
                   f"{[s['type'] for s in natural_sections]}")
             chunk_results: List[Dict[str, Any]] = []
             for ns in natural_sections:
@@ -2873,7 +3045,7 @@ def structure_unit_with_llm_chunked(
                 # Sub-chunk large prose/drama sections (>25k) using continuation note
                 # for grammar/exercises, but NOT for poem/supplementary sections
                 ns_chunks = _split_into_chunks_semantic(ns_content, 25_000)
-                print(f"  📖 Processing {ns_type} section ({len(ns_content):,} chars, "
+                logger.info(f"Processing {ns_type} section ({len(ns_content):,} chars, "
                       f"{len(ns_chunks)} chunk(s))")
                 for ci, chunk in enumerate(ns_chunks, 1):
                     effective_chunk = chunk
@@ -2899,7 +3071,7 @@ def structure_unit_with_llm_chunked(
                     if result:
                         chunk_results.append(result)
                     else:
-                        print(f"  ⚠️  {ns_type} chunk {ci}/{len(ns_chunks)} failed")
+                        logger.warning(f"{ns_type} chunk {ci}/{len(ns_chunks)} failed")
             if not chunk_results:
                 return None
             merged = _merge_chapter_chunks(chunk_results, subject)
@@ -2908,7 +3080,7 @@ def structure_unit_with_llm_chunked(
             type_summary = ', '.join(
                 f"{t}:{section_types.count(t)}" for t in sorted(set(section_types))
             )
-            print(f"  ✅ Merged {len(chunk_results)} section-chunks → {section_count} sections [{type_summary}]")
+            logger.info(f"Merged {len(chunk_results)} section-chunks → {section_count} sections [{type_summary}]")
             return merged
 
     # ── NON-ENGLISH: Fixed chunk size splitting ────────────────────────────────
@@ -2928,14 +3100,14 @@ def structure_unit_with_llm_chunked(
             max_retries=max_retries,
         )
 
-    print(f"  📦 {content_type.capitalize()} {unit_number} is large "
+    logger.info(f"{content_type.capitalize()} {unit_number} is large "
           f"({len(unit_content):,} chars) → splitting into {len(chunks)} chunks")
 
     chunk_results: List[Dict[str, Any]] = []
     extracted_section_numbers: List[str] = []
 
     for idx, chunk in enumerate(chunks, 1):
-        print(f"  🔀 Processing chunk {idx}/{len(chunks)} "
+        logger.info(f"Processing chunk {idx}/{len(chunks)} "
               f"({len(chunk):,} chars)...")
 
         # Add continuation note for chunks 2+ so the LLM does not re-number
@@ -2987,7 +3159,7 @@ def structure_unit_with_llm_chunked(
                 if snum and snum not in extracted_section_numbers:
                     extracted_section_numbers.append(snum)
         else:
-            print(f"  ⚠️  Chunk {idx}/{len(chunks)} failed — continuing with remaining chunks")
+            logger.warning(f"Chunk {idx}/{len(chunks)} failed — continuing with remaining chunks")
 
     if not chunk_results:
         return None
@@ -2999,9 +3171,9 @@ def structure_unit_with_llm_chunked(
         section_count = len(merged.get('sections', []))
         section_types = [s.get('type','?') for s in merged.get('sections', [])]
         type_summary = ', '.join(f"{t}:{section_types.count(t)}" for t in sorted(set(section_types)))
-        print(f"  ✅ Merged {len(chunks)} chunks → {section_count} sections [{type_summary}]")
+        logger.info(f"Merged {len(chunks)} chunks → {section_count} sections [{type_summary}]")
     else:
-        print(f"  ✅ Merged {len(chunks)} chunks → "
+        logger.info(f"Merged {len(chunks)} chunks → "
               f"{len(merged.get('examples', []))} examples, "
               f"{len(merged.get('sections', []))} sections, "
               f"{len(merged.get('exercises', []))} exercises")
@@ -3092,7 +3264,7 @@ def _verify_and_fill_gaps(
         else:
             expected_types = set()
     except Exception as e:
-        print(f"  ⚠️  [Fix5] Inventory call failed: {e}")
+        logger.warning(f"[Fix5] Inventory call failed: {e}")
         return extracted_data
 
     if not expected_types:
@@ -3138,10 +3310,10 @@ def _verify_and_fill_gaps(
         missing = missing - subject_irrelevant[subject_val]
 
     if not missing:
-        print(f"  ✅ [Fix5] Completeness check passed — all {len(expected_types)} types present")
+        logger.info(f"[Fix5] Completeness check passed — all {len(expected_types)} types present")
         return extracted_data
 
-    print(f"  ⚠️  [Fix5] Missing types detected: {missing} — running targeted re-extraction...")
+    logger.warning(f"[Fix5] Missing types detected: {missing} — running targeted re-extraction...")
 
     # Pass 2: targeted extraction for each missing type
     for missing_type in sorted(missing):
@@ -3173,11 +3345,11 @@ def _verify_and_fill_gaps(
                 new_sections = gap_data.get("sections", [])
                 if new_sections:
                     extracted_data.setdefault("sections", []).extend(new_sections)
-                    print(f"  ✅ [Fix5] Recovered {len(new_sections)} '{missing_type}' section(s)")
+                    logger.info(f"[Fix5] Recovered {len(new_sections)} '{missing_type}' section(s)")
                 else:
-                    print(f"  ℹ️  [Fix5] No '{missing_type}' found in targeted pass (may be false positive)")
+                    logger.info(f"[Fix5] No '{missing_type}' found in targeted pass (may be false positive)")
         except Exception as e:
-            print(f"  ⚠️  [Fix5] Targeted extraction for '{missing_type}' failed: {e}")
+            logger.warning(f"[Fix5] Targeted extraction for '{missing_type}' failed: {e}")
 
     return extracted_data
 
@@ -3268,14 +3440,14 @@ def structure_unit_universal(
         }
 
         if len(chunks) > 1:
-            print(f"  🔀 Universal chunk {chunk_idx}/{len(chunks)} ({len(chunk):,} chars)...")
+            logger.info(f"Universal chunk {chunk_idx}/{len(chunks)} ({len(chunk):,} chars)...")
 
         unit_data = None
         for attempt in range(max_retries):
             try:
                 if attempt > 0:
                     wait_time = LLM_CONFIG["base_delay"] * (3 ** attempt)
-                    print(f"  ⏳ Retry {attempt+1}/{max_retries} after {wait_time}s...")
+                    logger.info(f"Retry {attempt+1}/{max_retries} after {wait_time}s...")
                     time.sleep(wait_time)
 
                 resp = requests.post(
@@ -3292,7 +3464,7 @@ def structure_unit_universal(
                 # content_filter: gpt-5-mini blocked — retry once with gpt-4o fallback
                 if finish_reason == "content_filter":
                     if payload.get("model") != "gpt-4o":
-                        print(f"  ⚠️  content_filter: gpt-5-mini blocked — retrying with gpt-4o fallback...")
+                        logger.warning(f"content_filter: gpt-5-mini blocked — retrying with gpt-4o fallback...")
                         fb_payload = {**payload, "model": "gpt-4o"}
                         try:
                             fb_resp = requests.post(
@@ -3305,7 +3477,7 @@ def structure_unit_universal(
                                 fb_choice = fb_data["choices"][0]
                                 fb_content = fb_choice["message"]["content"]
                                 fb_reason = fb_choice.get("finish_reason", "stop")
-                                print(f"  📊 Fallback response: {len(fb_content):,} chars (finish_reason={fb_reason})")
+                                logger.info(f"Fallback response: {len(fb_content):,} chars (finish_reason={fb_reason})")
                                 if fb_reason != "content_filter" and fb_content:
                                     # BUG FIX: parse JSON before using — returning raw string caused downstream KeyError
                                     try:
@@ -3315,13 +3487,13 @@ def structure_unit_universal(
                                     except Exception:
                                         pass
                         except Exception as fb_err:
-                            print(f"  ⚠️  gpt-4o fallback failed: {fb_err}")
-                    print(f"  ⚠️  content_filter: Both gpt-5-mini and gpt-4o blocked this section — skipping")
+                            logger.warning(f"gpt-4o fallback failed: {fb_err}")
+                    logger.warning(f"content_filter: Both gpt-5-mini and gpt-4o blocked this section — skipping")
                     return None
 
                 # Fix 4: truncation recovery
                 if finish_reason == "length":
-                    print(f"  ⚠️  [Fix4/Universal] Truncated — recovering...")
+                    logger.warning(f"[Fix4/Universal] Truncated — recovering...")
                     rec_msgs = payload["messages"] + [
                         {"role": "assistant", "content": raw_content},
                         {"role": "user", "content": (
@@ -3346,7 +3518,7 @@ def structure_unit_universal(
                         if raw_content[end-1] in ('}', ']'):
                             try:
                                 unit_data = orjson.loads(raw_content[:end].encode() if isinstance(raw_content[:end], str) else raw_content[:end])
-                                print(f"  ✅ [Fix4b] Salvaged JSON to char {end}")
+                                logger.info(f"[Fix4b] Salvaged JSON to char {end}")
                                 break
                             except Exception:
                                 continue
@@ -3358,14 +3530,14 @@ def structure_unit_universal(
                     break
 
             except Exception as e:
-                print(f"  ❌ [Universal] Attempt {attempt+1} error: {e}")
+                logger.error(f"[Universal] Attempt {attempt+1} error: {e}")
                 if attempt == max_retries - 1:
-                    print(f"  ❌ [Universal] All retries failed for chunk {chunk_idx}")
+                    logger.error(f"[Universal] All retries failed for chunk {chunk_idx}")
 
         if unit_data:
             chunk_results.append(unit_data)
         else:
-            print(f"  ⚠️  [Universal] Chunk {chunk_idx} failed — continuing")
+            logger.warning(f"[Universal] Chunk {chunk_idx} failed — continuing")
 
     if not chunk_results:
         return None
@@ -3385,10 +3557,12 @@ def structure_unit_universal(
         )
 
     section_count = len(merged.get("sections", []))
-    print(f"  ✅ [Universal] {content_type} {unit_number}: {section_count} sections extracted")
+    logger.info(f"[Universal] {content_type} {unit_number}: {section_count} sections extracted")
     # Post-extraction normalization: fix type labels, drop image-only, merge prose
     subject_str = str(subject) if subject else ""
-    merged["sections"] = _normalize_section_types(merged.get("sections", []), subject_str)
+    merged["sections"] = _normalize_section_types(
+        merged.get("sections", []), subject_str, str(merged.get("title") or "")
+    )
 
     return merged
 
@@ -3409,9 +3583,9 @@ def structure_content_chunked(
     effective_model = model
     if subject == "mathematics" and model == "gpt-5-mini":
         effective_model = "gpt-4o"  # keep gpt-4o for math diagrams/theorems
-        print(f"  🔼 Auto-upgrading to {effective_model} for Mathematics (better illustration/theorem capture)")
+        logger.info(f"Auto-upgrading to {effective_model} for Mathematics (better illustration/theorem capture)")
 
-    print(f"  Structuring {str(subject)} content with {effective_model}...")
+    logger.info(f"Structuring {str(subject)} content with {effective_model}...")
     
     results = []
     failed_units = []
@@ -3425,7 +3599,7 @@ def structure_content_chunked(
             # No multi-part TOC found. This is a single-unit PDF (e.g. Unit_01_History.pdf).
             # Detect unit number from content, detect part name from keywords, then
             # treat the whole markdown as one unit — no part-splitting needed.
-            print(f"  ℹ️  No multi-part TOC — treating as single-unit social science PDF")
+            logger.info(f"No multi-part TOC — treating as single-unit social science PDF")
 
             # Step 1: find unit number
             unit_numbers = infer_units_or_chapters_from_markdown(markdown, subject)
@@ -3433,7 +3607,7 @@ def structure_content_chunked(
                 _hits = re.findall(r'Unit\s*[-–]?\s*(\d+)', markdown, re.IGNORECASE)
                 unit_numbers = sorted(set(int(n) for n in _hits if 1 <= int(n) <= 50))
             if not unit_numbers:
-                print(f"  ⚠️  No unit number detected — defaulting to 1")
+                logger.warning(f"No unit number detected — defaulting to 1")
                 unit_numbers = [1]
 
             # Step 2: detect part name from content keywords
@@ -3452,7 +3626,7 @@ def structure_content_chunked(
             for _pname, _kws in _part_keywords.items():
                 if sum(1 for kw in _kws if kw in _md_lower) >= 2:
                     detected_part = _pname
-                    print(f"  🔍 Detected part from content: {detected_part}")
+                    logger.info(f"Detected part from content: {detected_part}")
                     break
             if not detected_part:
                 # Fallback: look for part name in .indd filename stamps
@@ -3462,10 +3636,10 @@ def structure_content_chunked(
                 )
                 if _indd_m:
                     detected_part = _indd_m.group(1).capitalize()
-                    print(f"  🔍 Detected part from .indd stamp: {detected_part}")
+                    logger.info(f"Detected part from .indd stamp: {detected_part}")
 
             for unit_num in unit_numbers:
-                print(f"  📄 Processing Unit {unit_num}"
+                logger.info(f"Processing Unit {unit_num}"
                       + (f" ({detected_part})" if detected_part else "") + " ...")
 
                 # For a single-unit PDF the whole markdown IS the unit content
@@ -3492,24 +3666,24 @@ def structure_content_chunked(
 
         else:
             for part_name, start_line, end_line in part_boundaries:
-                print(f"\n  📚 Processing {part_name} section...")
+                logger.info(f"Processing {part_name} section...")
 
                 part_content = extract_part_content(markdown, part_name, start_line, end_line)
 
                 if len(part_content) < 500:
-                    print(f"  ⚠️  Insufficient content for {part_name}")
+                    logger.warning(f"Insufficient content for {part_name}")
                     continue
 
                 numbers = infer_units_or_chapters_from_markdown(part_content, subject)
-                print(f"  Found {len(numbers)} unit(s) in {part_name}")
+                logger.info(f"Found {len(numbers)} unit(s) in {part_name}")
 
                 for unit_num in numbers:
-                    print(f"  Processing {part_name} Unit {unit_num}...")
+                    logger.info(f"Processing {part_name} Unit {unit_num}...")
 
                     unit_content = extract_unit_content(part_content, unit_num, subject=subject)
 
                     if len(unit_content) < 200:
-                        print(f"  ⚠️  Insufficient content for Unit {unit_num}")
+                        logger.warning(f"Insufficient content for Unit {unit_num}")
                         continue
 
                     unit_data = structure_unit_with_llm_chunked(
@@ -3535,8 +3709,8 @@ def structure_content_chunked(
         # Solution: for CBSE English, send the full content.md directly to the LLM.
         # The LLM reads for *meaning* and structures the unit without any regex.
         if subject == "cbse_english" and LLM_FIRST_AVAILABLE:
-            print(f"  🤖 [LLM-First] Using LLM-first structuring for CBSE English")
-            print(f"  📄 [LLM-First] Sending {len(markdown):,} chars directly to LLM")
+            logger.info(f"[LLM-First] Using LLM-first structuring for CBSE English")
+            logger.info(f"[LLM-First] Sending {len(markdown):,} chars directly to LLM")
 
             # Strip NCERT watermarks before sending
             clean_markdown = markdown
@@ -3565,7 +3739,7 @@ def structure_content_chunked(
                     _strip_from = clean_markdown.rfind('\n\n', 0, _m.start())
                     if _strip_from > 0:
                         _stripped = clean_markdown[_strip_from:].lstrip('\n')
-                        print(f"  ✂️  [LLM-First] Stripped {_strip_from:,} chars of teacher-only content "
+                        logger.info(f"[LLM-First] Stripped {_strip_from:,} chars of teacher-only content "
                               f"(avoids content filter). Student content starts: "
                               f"{repr(_stripped[:60])}")
                         clean_markdown = _stripped
@@ -3588,25 +3762,26 @@ def structure_content_chunked(
                 # Normalize section type labels (fixes minor LLM label inconsistencies)
                 if SUBJECT_AWARE_AVAILABLE:
                     unit_data["sections"] = _normalize_section_types(
-                        unit_data.get("sections", []), "cbse_english"
+                        unit_data.get("sections", []), "cbse_english",
+                        str(unit_data.get("title") or "")
                     )
                 results.append(unit_data)
-                print(f"  ✅ [LLM-First] Unit {unit_data.get('unit_number')} extracted successfully")
+                logger.info(f"[LLM-First] Unit {unit_data.get('unit_number')} extracted successfully")
             else:
-                print(f"  ❌ [LLM-First] LLM-first extraction failed")
+                logger.error(f"[LLM-First] LLM-first extraction failed")
                 failed_units.append(hint_num or 1)
 
         else:
             # ── ALL OTHER SUBJECTS: Regex-based boundary detection ────────────
             numbers = infer_units_or_chapters_from_markdown(markdown, subject)
             if not numbers:
-                print(f"  ℹ️  No {content_type} markers found — treating as single-{content_type} PDF")
+                logger.info(f"No {content_type} markers found — treating as single-{content_type} PDF")
                 _pat = (r'\bChapter\s+(\d+)\b' if subject == "mathematics"
                         else r'\bUnit\s*[-–]?\s*(\d+)\b')
                 _hits = re.findall(_pat, markdown, re.IGNORECASE)
                 numbers = sorted(set(int(n) for n in _hits if 1 <= int(n) <= 50))
                 if not numbers:
-                    print(f"  ⚠️  Defaulting to {content_type} 1")
+                    logger.warning(f"Defaulting to {content_type} 1")
                     numbers = [1]
                 _unit_data = structure_unit_with_llm_chunked(
                     unit_content=markdown,
@@ -3621,14 +3796,14 @@ def structure_content_chunked(
                     results.append(_unit_data)
                 else:
                     failed_units.append(numbers[0])
-                print(f"  📊 Summary: {len(results)} successful, {len(failed_units)} failed")
+                logger.info(f"Summary: {len(results)} successful, {len(failed_units)} failed")
                 if not results:
                     return None
                 key = "chapters" if subject == "mathematics" else "units"
                 return {key: results}
 
             numbers = sorted(set(numbers))
-            print(f"  Found {len(numbers)} {content_type}(s) in book-wise order: {numbers}")
+            logger.info(f"Found {len(numbers)} {content_type}(s) in book-wise order: {numbers}")
 
             body_markdown = markdown
             if subject == "mathematics":
@@ -3640,16 +3815,16 @@ def structure_content_chunked(
                         break
                 if body_start > 0:
                     body_markdown = '\n'.join(lines_all[body_start:])
-                    print(f"  ✂️  Stripped {body_start} preliminary lines; body starts at line {body_start}")
+                    logger.info(f"Stripped {body_start} preliminary lines; body starts at line {body_start}")
 
             for num in numbers:
                 unit_content = extract_unit_content(body_markdown, num, subject=subject)
                 if not unit_content.strip():
                     if len(numbers) == 1:
-                        print(f"  ℹ️  Unit {num} 0 chars — using full markdown (single-unit PDF)")
+                        logger.info(f"Unit {num} 0 chars — using full markdown (single-unit PDF)")
                         unit_content = body_markdown
                     else:
-                        print(f"  ⚠️  Skipping {content_type} {num} — no content extracted")
+                        logger.warning(f"Skipping {content_type} {num} — no content extracted")
                         continue
 
                 if SUBJECT_AWARE_AVAILABLE and is_ncert_book(unit_content):
@@ -3673,7 +3848,7 @@ def structure_content_chunked(
     if not results:
         return None
     
-    print(f"\n  📊 Summary: {len(results)} successful, {len(failed_units)} failed")
+    logger.info(f"Summary: {len(results)} successful, {len(failed_units)} failed")
     
     return {"chapters" if subject == "mathematics" else "units": results}
 
@@ -3805,6 +3980,24 @@ def extract_images_from_markdown(markdown: str) -> List[str]:
     return re.findall(r'!\[.*?\]\((.*?)\)', markdown)
 
 
+def _is_unstorable_image(meta: Optional[Dict[str, Any]]) -> bool:
+    """
+    Images that must never be stored:
+
+      - text boxes  — already recovered as text by the vision pass
+      - QR codes    — scan-to-view decorations with no display value
+
+    Applied on the upload path rather than only when patching the JSON, so a QR
+    code is never decoded or pushed to S3 in the first place.
+    """
+    if not meta:
+        return False
+    if meta.get("is_text_box", False):
+        return True
+    desc = (meta.get("description") or "").lower()
+    return "qr code" in desc or "qr-code" in desc
+
+
 def organize_images_by_unit(
     raw_ocr_response: Dict[str, Any],
     markdown: str,
@@ -3816,7 +4009,7 @@ def organize_images_by_unit(
     Organize images by unit/chapter number using PAGE POSITION mapping.
     """
     if "pages" not in raw_ocr_response:
-        print("  ℹ️  No pages key in OCR response — nothing to extract")
+        logger.info("No pages key in OCR response — nothing to extract")
         return {}
 
     # Extract valid unit numbers from structured data
@@ -3835,7 +4028,7 @@ def organize_images_by_unit(
     # MUST belong to that unit, regardless of what's in the TOC.
     if len(valid_unit_numbers) == 1:
         forced_unit = valid_unit_numbers[0]
-        print(f"  🎯 Single-unit extraction detected (Unit {forced_unit}) — forcing all images to this unit")
+        logger.info(f"Single-unit extraction detected (Unit {forced_unit}) — forcing all images to this unit")
         images_by_unit: Dict[int, List[Tuple[str, bytes]]] = {forced_unit: []}
         skipped_text_boxes = 0
         for page in raw_ocr_response.get("pages", []):
@@ -3848,14 +4041,13 @@ def organize_images_by_unit(
 
                 img_name = (img.get("id") or img.get("image_name")
                             or img.get("name") or img.get("filename") or "image")
-                # Skip images the Vision pass classified as text boxes (scanner
-                # images) — they were already recovered as text and must never
-                # be stored. Mirrors the multi-unit path below.
+                # Skip text boxes (already recovered as text) and QR codes.
+                # Mirrors the multi-unit path below.
                 if image_metadata:
                     img_lookup = img_name if '.' in img_name else f"{img_name}.jpeg"
                     bare_name = img_name.split('.')[0] if '.' in img_name else img_name
                     meta = image_metadata.get(img_lookup) or image_metadata.get(bare_name)
-                    if meta and meta.get("is_text_box", False):
+                    if _is_unstorable_image(meta):
                         skipped_text_boxes += 1
                         continue
 
@@ -3867,13 +4059,13 @@ def organize_images_by_unit(
                     images_by_unit[forced_unit].append((img_name, base64.b64decode(img_data_b64)))
 
         if skipped_text_boxes:
-            print(f"  🚫 Skipped {skipped_text_boxes} text-box (scanner) image(s)")
-        print(f"  📸 Found {len(images_by_unit[forced_unit])} images across 1 unit(s)")
+            logger.info(f"Skipped {skipped_text_boxes} text-box (scanner) image(s)")
+        logger.info(f"Found {len(images_by_unit[forced_unit])} images across 1 unit(s)")
         return images_by_unit
 
     # ── MULTI-UNIT CASE: Use page-to-unit mapping ────────────────────────────
     page_to_unit = _build_page_to_unit_map(raw_ocr_response, markdown, subject, valid_unit_numbers)
-    print(f"  🗺️  Page→unit map: {len(page_to_unit)} pages → "
+    logger.info(f"Page→unit map: {len(page_to_unit)} pages → "
           f"{len(set(page_to_unit.values()))} distinct units/chapters")
 
     images_by_unit: Dict[int, List[Tuple[str, bytes]]] = {}
@@ -3914,14 +4106,11 @@ def organize_images_by_unit(
             )
 
             img_lookup = img_name if '.' in img_name else f"{img_name}.jpeg"
-            # Skip images that the Vision model classified as text boxes
-            if image_metadata and img_lookup in image_metadata:
-                if image_metadata[img_lookup].get("is_text_box", False):
-                    continue
-            # Fallback: also check without extension
-            elif image_metadata:
+            # Skip text boxes and QR codes — never stored, never uploaded.
+            if image_metadata:
                 bare_name = img_name.split('.')[0] if '.' in img_name else img_name
-                if bare_name in image_metadata and image_metadata[bare_name].get("is_text_box", False):
+                meta = image_metadata.get(img_lookup) or image_metadata.get(bare_name)
+                if _is_unstorable_image(meta):
                     continue
 
             if not img_data_b64:
@@ -3936,9 +4125,9 @@ def organize_images_by_unit(
                 images_by_unit.setdefault(unit_num, []).append((img_name, img_bytes))
                 total_found += 1
             except Exception as e:
-                print(f"  ⚠️  Failed to decode image {img_name} (page {page_idx}): {e}")
+                logger.warning(f"Failed to decode image {img_name} (page {page_idx}): {e}")
 
-    print(f"  📸 Found {total_found} images across {len(images_by_unit)} unit(s)")
+    logger.info(f"Found {total_found} images across {len(images_by_unit)} unit(s)")
     return images_by_unit
 
 
@@ -4158,7 +4347,7 @@ def save_images_universal(
     
     Returns: (number_of_images_saved, {unit_num: {filename: s3_url}})
     """
-    print(f"\n  📸 Extracting and organizing images...")
+    logger.info(f"Extracting and organizing images...")
     
     # Organize images by unit
     images_by_unit = organize_images_by_unit(
@@ -4170,7 +4359,7 @@ def save_images_universal(
     )
     
     if not images_by_unit:
-        print(f"  ℹ️  No images found in OCR response")
+        logger.info(f"No images found in OCR response")
         return 0, {}
     
     # Process images (watermark removal) and upload to S3 directly
@@ -4198,18 +4387,18 @@ def save_images_universal(
                 processed_images.append((img_filename, img_bytes))
                 total_processed += 1
             except Exception as e:
-                print(f"  ⚠️  Failed to process {img_filename} in {content_type} {unit_num}: {e}")
+                logger.warning(f"Failed to process {img_filename} in {content_type} {unit_num}: {e}")
         
         processed_images_by_unit[unit_num] = processed_images
-        print(f"  ✅ Processed {len(images)} images for {content_type} {unit_num}")
+        logger.info(f"Processed {len(images)} images for {content_type} {unit_num}")
     
-    print(f"  ✅ Total: {total_processed} images processed in {len(images_by_unit)} {content_type}(s)")
+    logger.info(f"Total: {total_processed} images processed in {len(images_by_unit)} {content_type}(s)")
     
     # ── Upload to S3 ──
     s3_url_map: Dict[int, Dict[str, str]] = {}
     if S3_STORAGE_AVAILABLE and processed_images_by_unit:
         subject_str = str(subject) if hasattr(subject, 'value') else str(subject) if subject else 'unknown'
-        print(f"  ☁️  Uploading {total_processed} images to S3...")
+        logger.info(f"Uploading {total_processed} images to S3...")
         s3_url_map = upload_images_to_s3(
             images_by_unit=processed_images_by_unit,
             board=board,
@@ -4218,7 +4407,7 @@ def save_images_universal(
             content_category="structured",
         )
     elif not S3_STORAGE_AVAILABLE:
-        print(f"  ℹ️  S3 storage not configured — images processed but NOT uploaded")
+        logger.info(f"S3 storage not configured — images processed but NOT uploaded")
     
     return total_processed, s3_url_map
 
@@ -4313,7 +4502,7 @@ def _fix_image_placeholders(markdown: str, raw_ocr: Dict[str, Any]) -> str:
         result_parts.append(content)
 
     if total_fixed > 0:
-        print(f"  🔗 Fixed {total_fixed} bare '![...](image)' placeholder(s) with actual image filenames")
+        logger.info(f"Fixed {total_fixed} bare '![...](image)' placeholder(s) with actual image filenames")
 
     return "".join(result_parts)
 
@@ -4349,7 +4538,9 @@ def process_pdf(
 
     # Clean up names for directory creation
     safe_board = "".join([c if c.isalnum() else "_" for c in board]) if board else "Unknown_Board"
-    safe_class = "".join([c if c.isalnum() else "_" for c in class_number]) if class_number else "Unknown_Class"
+    # Output dir must match the doc_id / metadata form: canonical "07", not "7".
+    _raw_class = normalize_class_number(class_number) or ""
+    safe_class = "".join([c if c.isalnum() else "_" for c in _raw_class]) if _raw_class else "Unknown_Class"
     safe_subject = "".join([c if c.isalnum() else "_" for c in (subject if isinstance(subject, str) else str(subject))]) if subject else "Unknown_Subject"
 
     # Term goes in the prefix so two term books of the same subject can't share
@@ -4404,19 +4595,20 @@ def process_pdf(
     # Save a global metadata artifact for this document
     metadata_json = {
         "board": board,
-        "class_number": class_number,
+        # Canonical form, so metadata.json agrees with the doc_id and the chunks.
+        "class_number": _raw_class or class_number,
         "subject": subject if isinstance(subject, str) else str(subject) if subject else None,
         "term": canonical_term,
         "document_name": pdf_path.name,
         "timestamp": time.time()
     }
     save_json(metadata_json, doc_out_dir / "metadata.json")
-    print(f"  ✅ Saved markdown ({len(markdown):,} chars) and metadata")
+    logger.info(f"Saved markdown ({len(markdown):,} chars) and metadata")
     
     # ── VISION FALLBACK: Re-OCR garbled/scrapbook pages using GPT-4o Vision ──
     bad_pages = _detect_low_quality_pages(markdown)
     if bad_pages and openai_api_key:
-        print(f"  ⚠️  Detected {len(bad_pages)} low-quality page(s) {bad_pages} — triggering Vision re-OCR...")
+        logger.warning(f"Detected {len(bad_pages)} low-quality page(s) {bad_pages} — triggering Vision re-OCR...")
         vision_results = _vision_reocr_pages(pdf_path, bad_pages, openai_api_key)
         
         if vision_results:
@@ -4426,7 +4618,7 @@ def process_pdf(
             markdown = re.sub(r'\n{3,}', '\n\n', markdown)
             # Re-save the fixed markdown
             save_text(markdown, doc_out_dir / "content.md")
-            print(f"  ✅ Patched markdown with Vision OCR ({len(markdown):,} chars total)")
+            logger.info(f"Patched markdown with Vision OCR ({len(markdown):,} chars total)")
 
     # ── Diagnostic: show what chapter/unit headers actually look like in this book ──
     if subject == "mathematics" or (not subject):
@@ -4439,7 +4631,7 @@ def process_pdf(
             # Auto-detect by default using keyword scoring — better than defaulting to SCIENCE
             if SUBJECT_AWARE_AVAILABLE:
                 subject = detect_subject_from_content(markdown)
-                print(f"  🔍 Auto-detected subject: {str(subject)}")
+                logger.info(f"Auto-detected subject: {str(subject)}")
             else:
                 subject = "science"
     
@@ -4454,13 +4646,13 @@ def process_pdf(
     # Select LLM model based on subject
     schema_model = "gpt-4o" if subject_label.lower().strip() == "mathematics" else "gpt-5-mini"
     
-    print(f"\n  🤖 Structuring with {schema_model} ({subject_label})...")    
+    logger.info(f"Structuring with {schema_model} ({subject_label})...")    
     # ── PRIMARY PATH: Auto-schema extraction (universal, no hardcoded schemas) ──
     structured_data = None
     extraction_method = "legacy"
     
     if AUTO_SCHEMA_AVAILABLE and openai_api_key:
-        print(f"  🔍 Using auto-schema extraction (universal)...")
+        logger.info(f"Using auto-schema extraction (universal)...")
         try:
             # Detect unit number from content
             hint_unit = auto_detect_unit_number(markdown)
@@ -4476,22 +4668,20 @@ def process_pdf(
                 # Wrap in units[] format for compatibility with downstream pipeline
                 structured_data = {"units": [auto_result]}
                 extraction_method = "auto_schema"
-                print(f"  ✅ Auto-schema extraction successful")
+                logger.info(f"Auto-schema extraction successful")
             else:
-                print(f"  ⚠️  Auto-schema returned no sections — falling back to legacy")
+                logger.warning(f"Auto-schema returned no sections — falling back to legacy")
         except Exception as auto_err:
-            print(f"  ⚠️  Auto-schema extraction failed: {auto_err} — falling back to legacy")
-            import traceback
-            traceback.print_exc()
+            logger.exception(f"Auto-schema extraction failed: {auto_err} — falling back to legacy")
     
     # ── FALLBACK: Legacy subject-specific extraction ──
     if structured_data is None:
         if hasattr(subject, "value"):
-            print(f"  📋 Using legacy subject-specific extraction...")
+            logger.info(f"Using legacy subject-specific extraction...")
             structured_data = structure_content_chunked(markdown, openai_api_key, subject)
             extraction_method = "legacy"
         else:
-            print(f"  ❌ Auto-schema extraction failed and no legacy schema available for custom subject '{subject}'")
+            logger.error(f"Auto-schema extraction failed and no legacy schema available for custom subject '{subject}'")
 
     if not structured_data:
         return {
@@ -4589,14 +4779,14 @@ def process_pdf(
                 if key not in reordered:
                     reordered[key] = unit[key]
             structured_data[units_key_part][i] = reordered
-        print(f"  📋 Part: {final_part}" + (" (user-specified)" if part else " (auto-detected)"))
+        logger.info(f"Part: {final_part}" + (" (user-specified)" if part else " (auto-detected)"))
 
     save_json(structured_data, structured_path)
     
     # ── AUTO-VALIDATION: Run content validator to catch missing content ──
     validation_report = None
     if CONTENT_VALIDATOR_AVAILABLE and openai_api_key:
-        print(f"\n  🔍 Running content validator...")
+        logger.info(f"Running content validator...")
         try:
             # Get the unit data for validation
             units_key = "chapters" if subject == "mathematics" else "units"
@@ -4608,7 +4798,7 @@ def process_pdf(
                 
                 # Auto-fill gaps if any significant ones found
                 if report.gaps and len(report.gaps) > 0:
-                    print(f"  🔧 Found {len(report.gaps)} gap(s) — auto-filling...")
+                    logger.info(f"Found {len(report.gaps)} gap(s) — auto-filling...")
                     updated_data = fill_gaps_with_llm(
                         gaps=report.gaps,
                         content_md=markdown,
@@ -4624,7 +4814,7 @@ def process_pdf(
                     
                     # Re-save with gaps filled
                     save_json(structured_data, structured_path)
-                    print(f"  ✅ Gaps filled and structured.json updated")
+                    logger.info(f"Gaps filled and structured.json updated")
                     
                     # Re-validate after filling
                     report2 = validate_extraction(markdown, updated_data)
@@ -4633,9 +4823,7 @@ def process_pdf(
                 # Save validation report
                 save_json(validation_report, doc_out_dir / "validation_report.json")
         except Exception as val_err:
-            print(f"  ⚠️  Validation failed: {val_err}")
-            import traceback
-            traceback.print_exc()
+            logger.exception(f"Validation failed: {val_err}")
     
     # Extract and save images (universal for all subjects) + upload to S3
     raw = ocr_result.get("raw")
@@ -4653,19 +4841,17 @@ def process_pdf(
                 image_metadata=image_metadata,
             )
         except Exception as e:
-            print(f"  ⚠️  Image extraction failed: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.exception(f"Image extraction failed: {e}")
             image_count = 0
     else:
         image_count = 0
     
     # ── Patch structured.json with S3 image URLs & Media Schema ──
     if s3_url_map and structured_data:
-        print(f"  🔗 Patching structured.json with S3 image URLs and Media Schema...")
+        logger.info(f"Patching structured.json with S3 image URLs and Media Schema...")
         _patch_structured_json_with_s3_urls(structured_data, s3_url_map, image_metadata)
         save_json(structured_data, structured_path)
-        print(f"  ✅ structured.json updated with Media Schema")
+        logger.info(f"structured.json updated with Media Schema")
     
     units_key = "chapters" if subject == "mathematics" else "units"
     units = structured_data.get(units_key, [])
@@ -4698,13 +4884,13 @@ def process_pdf(
             part = unit.get("part") or "Unknown"
             parts_summary[part] = parts_summary.get(part, 0) + 1
         summary["parts_summary"] = parts_summary
-        print(f"\n  📊 Parts Summary:")
+        logger.info(f"Parts Summary:")
         for part, count in parts_summary.items():
-            print(f"     {part}: {count} unit(s)")
+            logger.info(f"{part}: {count} unit(s)")
     
     save_json(summary, doc_out_dir / "summary.json")
     
-    print(f"\n  ✅ Complete! {len(units)} units extracted, {image_count} images saved")
+    logger.info(f"Complete! {len(units)} units extracted, {image_count} images saved")
 
     # ── Enrichment & Qdrant (Moved to pipeline.py after Verification) ─────────
     summary["has_enriched"] = False
@@ -4745,8 +4931,8 @@ def main():
         auto_detect_subject=args.auto_detect
     )
     
-    print("\n" + "="*60)
-    print(orjson.dumps(result, option=orjson.OPT_INDENT_2).decode())
+    logger.info("" + "="*60)
+    logger.info(orjson.dumps(result, option=orjson.OPT_INDENT_2).decode())
     
     return 0 if result.get("success") else 1
 

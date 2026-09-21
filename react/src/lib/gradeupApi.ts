@@ -863,13 +863,14 @@ export async function startSeminarPptSession(payload: {
   subject?: string | null;
   term?: string | null;
   deck_ref?: string | null;
-  tool?: "gslides";
+  tool?: "gslides" | "gradeup";
+  request_id?: string;
 }) {
   return apiFetch<any>("/api/v1/seminar/ppt/session/start", {
     method: "POST",
     body: JSON.stringify({
       ...payload,
-      tool: payload.tool || "gslides",
+      tool: payload.tool || "gradeup",
     }),
   });
 }

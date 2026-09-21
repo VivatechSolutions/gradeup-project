@@ -1,6 +1,7 @@
 import React from "react";
 import { motion } from "framer-motion";
 import { Link } from "wouter";
+import gradeupLogo from "../../assets/new-logo-g.png";
 
 export default function Footer() {
   const currentYear = new Date().getFullYear();
@@ -16,11 +17,12 @@ export default function Footer() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
           >
-            <Link href="/" className="flex items-center gap-2 mb-4">
-              <span className="text-2xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
-                GradeUp
-              </span>
-              <span className="text-sm font-bold text-indigo-500">AI</span>
+            <Link href="/" className="flex items-center mb-4" aria-label="GradeUp AI home">
+              <img
+                src={gradeupLogo}
+                alt="GradeUp AI"
+                className="h-11 w-auto object-contain"
+              />
             </Link>
             <p className="text-sm text-text-muted leading-relaxed">
               Transform education with intelligent, data-driven learning experiences.

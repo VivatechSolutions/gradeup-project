@@ -16,10 +16,14 @@ THEME_CATALOG in ppt_theme.py (pick_theme_by_subject), then DEFAULT_THEME_SPEC a
 
 from typing import Any, Dict, Optional
 
+from class_utils import class_display
 from ppt.ppt_theme import (
     DEFAULT_THEME_SPEC, THEME_CATALOG, pick_theme_by_subject,
     contrast_ratio,
 )
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 _HEX_KEYS = ("background_hex", "title_color_hex", "body_color_hex", "accent_hex")
 _VALID_BULLET_PRESETS = {
@@ -77,8 +81,8 @@ def _sanitize(spec: Dict[str, Any], fallback: Dict[str, Any]) -> Dict[str, Any]:
         if contrast_ratio(bg, body) >= _MIN_CONTRAST_RATIO:
             out.update(candidate_colors)
         else:
-            print(
-                f"  [ppt_design] LLM theme rejected (contrast {contrast_ratio(bg, body):.2f} "
+            logger.warning(
+                f"[ppt_design] LLM theme rejected (contrast {contrast_ratio(bg, body):.2f} "
                 f"< {_MIN_CONTRAST_RATIO}) — keeping fallback colors."
             )
 
@@ -127,7 +131,7 @@ def llm_choose_theme(board: str, class_number: str, subject: Optional[str],
         "Respond in strict JSON."
     )
     user = f"""Board: {board}
-Class: {class_number}
+Class: {class_display(class_number) or class_number}
 Subject: {subject or '(unspecified)'}
 Topic / chapter: {unit_title}
 

@@ -100,6 +100,7 @@ function setupGroupChatSocket(server, allowedOrigins) {
     });
   });
 
+  require('./presentationService').attachPresentationSocket(io);
   return io;
 }
 

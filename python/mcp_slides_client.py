@@ -27,6 +27,9 @@ import json
 import os
 from contextlib import contextmanager
 from typing import Any, Dict, List, Optional
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 # OAuth scopes. drive.file = manage only files this app creates (non-sensitive, no app
 # verification needed for personal use). Keep in sync with authorize_google.py.
@@ -55,7 +58,6 @@ _ACCESS_TOKEN: "contextvars.ContextVar[Optional[str]]" = contextvars.ContextVar(
     "mcp_slides_access_token", default=None)
 # Cache of (slides, drive) service pairs keyed by access token, to avoid rebuilding per call.
 _token_services: Dict[str, tuple] = {}
-
 
 @contextmanager
 def access_token(token: Optional[str]):
@@ -105,7 +107,7 @@ def _load_oauth_creds():
                 f.write(creds.to_json())
         return creds
     except Exception as e:
-        print(f"  [mcp_slides_client] OAuth token load failed: {e}")
+        logger.error(f"[mcp_slides_client] OAuth token load failed: {e}")
         return None
 
 
@@ -126,7 +128,7 @@ def _load_service_account_creds():
             return service_account.Credentials.from_service_account_file(
                 path, scopes=_SA_SCOPES)
     except Exception as e:
-        print(f"  [mcp_slides_client] service-account load failed: {e}")
+        logger.error(f"[mcp_slides_client] service-account load failed: {e}")
     return None
 
 
@@ -269,7 +271,7 @@ def create_presentation(title: str) -> str:
             fields="id",
         ).execute()
     except Exception as e:
-        print(f"  [mcp_slides_client] link-sharing failed (deck still created): {e}")
+        logger.error(f"[mcp_slides_client] link-sharing failed (deck still created): {e}")
     return presentation_id
 
 
@@ -334,7 +336,29 @@ def get_slide_content(deck_ref: str, slide_index: int) -> Dict[str, Any]:
                 break
 
     shapes = []
+    images: List[Dict[str, Any]] = []
+    has_layout = False
+    has_table = False
     for el in slide.get("pageElements", []):
+        oid = el.get("objectId", "")
+        # Shapes this module drew for a designed layout (cards / icon grid / steps / ...).
+        # Their presence means the slide is NOT empty even though its BODY placeholder is
+        # gone — the renderers delete it. See _layout_context().
+        if oid.startswith(CARD_SHAPE_PREFIX):
+            has_layout = True
+        # Tables, charts and embeds hold content we cannot read as text. Flagging them stops
+        # the agent from calling such a slide "empty" and silently redesigning over it.
+        if any(k in el for k in ("table", "sheetsChart", "video", "wordArt")):
+            has_table = True
+            continue
+        if "image" in el:
+            box = _element_box_pt(el)
+            images.append({
+                "object_id": oid,
+                "url": (el.get("image") or {}).get("contentUrl", ""),
+                "box_pt": list(box) if box else None,
+            })
+            continue
         shape = el.get("shape")
         if not shape or "text" not in shape:
             continue
@@ -342,12 +366,13 @@ def get_slide_content(deck_ref: str, slide_index: int) -> Dict[str, Any]:
         if not lines:
             continue
         shapes.append({
-            "object_id": el.get("objectId"),
+            "object_id": oid,
             "placeholder": shape.get("placeholder", {}).get("type"),
             "lines": lines,
             "text": "\n".join(lines),
         })
 
+    page_w, page_h = _page_size_pt(pres)
     return {
         "slide_index": slide_index,
         "exists": True,
@@ -360,6 +385,13 @@ def get_slide_content(deck_ref: str, slide_index: int) -> Dict[str, Any]:
         "bullets": _paragraphs(body_el),
         "shapes": shapes,
         "notes": _extract_notes(slide),
+        # Geometry / element inventory — lets the agent tell an already-designed slide from
+        # a genuinely empty one, and lets the image path size itself to THIS slide.
+        "images": images,
+        "has_image": bool(images),
+        "has_layout": has_layout,
+        "has_table": has_table,
+        "page_size_pt": [page_w, page_h],
         "source": "google_slides",
     }
 
@@ -633,7 +665,7 @@ def create_and_scaffold(title: str, unit: Optional[int] = None,
         try:
             apply_theme_to_deck(f"gslides:{pid}", theme_spec)
         except Exception as e:
-            print(f"  [mcp_slides_client] create_and_scaffold: theme apply failed: {e}")
+            logger.error(f"[mcp_slides_client] create_and_scaffold: theme apply failed: {e}")
     return pid
 
 
@@ -666,8 +698,31 @@ def _page_size_pt(pres: Dict[str, Any]) -> tuple:
     return _dim(ps.get("width", {}), 720.0), _dim(ps.get("height", {}), 405.0)
 
 
+def _element_box_pt(el: Dict[str, Any]) -> Optional[tuple]:
+    """A pageElement's rendered box as (x, y, w, h) in PT — None if geometry is missing.
+
+    Slides reports `size` as the element's natural size and puts the on-screen scaling in
+    `transform`, so the rendered width is size.width * transform.scaleX.
+    """
+    size, t = el.get("size") or {}, el.get("transform") or {}
+    w_d, h_d = size.get("width") or {}, size.get("height") or {}
+    if w_d.get("magnitude") is None or h_d.get("magnitude") is None:
+        return None
+
+    def _pt(magnitude, unit) -> float:
+        return _emu_to_pt(magnitude) if (unit or "EMU") == "EMU" else float(magnitude)
+
+    t_unit = t.get("unit", "EMU")
+    x = _pt(t.get("translateX", 0.0) or 0.0, t_unit)
+    y = _pt(t.get("translateY", 0.0) or 0.0, t_unit)
+    w = _pt(w_d["magnitude"], w_d.get("unit")) * float(t.get("scaleX", 1.0) or 1.0)
+    h = _pt(h_d["magnitude"], h_d.get("unit")) * float(t.get("scaleY", 1.0) or 1.0)
+    return (x, y, w, h)
+
+
 def render_card_layout(deck_ref: str, slide_index: int, cards: List[Dict[str, Any]],
-                       theme_spec: Optional[Dict[str, Any]] = None) -> bool:
+                       theme_spec: Optional[Dict[str, Any]] = None,
+                       reserve_right_pt: float = 0.0) -> bool:
     """
     Render a slide as 2-3 designed CARDS (rounded rectangles), each with an emoji icon,
     a themed heading, and grouped bullet points with bold lead-ins — reproducing the
@@ -708,6 +763,8 @@ def render_card_layout(deck_ref: str, slide_index: int, cards: List[Dict[str, An
     slide = pages[slide_index]
     slide_obj = slide.get("objectId")
     page_w, page_h = _page_size_pt(pres)
+    # Cards lay out beside any picture on the slide, never over it (see _content_width_pt).
+    page_w = _content_width_pt(slide, page_w, reserve_right_pt)
 
     requests: List[Dict[str, Any]] = []
 
@@ -982,9 +1039,35 @@ def _bullets_req(obj_id, start=None, end=None):
                                        "bulletPreset": "BULLET_DISC_CIRCLE_SQUARE"}}
 
 
-def _layout_context(deck_ref: str, slide_index: int):
+def _image_reserved_right_pt(slide: Dict[str, Any], page_w: float) -> float:
+    """Width of the right-hand strip a picture occupies on this slide (0.0 when none).
+
+    Layout renderers subtract this from the page width, so text lays out BESIDE a picture
+    instead of on top of it — both when we deliberately reserve a column for an image we
+    are about to add, and later when the student re-edits a slide that already has one.
+    """
+    lefts = [box[0] for box in
+             (_element_box_pt(el) for el in slide.get("pageElements", []) if "image" in el)
+             if box and box[0] > page_w * 0.45 and box[0] + box[2] > page_w * 0.55]
+    if not lefts:
+        return 0.0
+    return max(page_w - (min(lefts) - 14.0), 0.0)
+
+
+def _content_width_pt(slide: Dict[str, Any], page_w: float, reserve_right_pt: float) -> float:
+    """Page width the layout renderers may use, once any picture column is taken out."""
+    reserve = reserve_right_pt if reserve_right_pt > 0 else _image_reserved_right_pt(slide, page_w)
+    return max(page_w - max(reserve, 0.0), 240.0)
+
+
+def _layout_context(deck_ref: str, slide_index: int, reserve_right_pt: float = 0.0):
     """Shared prelude for every layout renderer: fetch slide, page size, and the cleanup
-    requests (delete previous layout shapes + the flat BODY placeholder)."""
+    requests (delete previous layout shapes + the flat BODY placeholder).
+
+    The page width returned is the width the renderer may DRAW in: pass reserve_right_pt to
+    keep a strip on the right free for a picture, or leave it at 0 and any picture already
+    on the slide reserves its own strip automatically.
+    """
     slides, _ = _services()
     pid = presentation_id_of(deck_ref)
     pres = slides.presentations().get(presentationId=pid).execute()
@@ -994,6 +1077,7 @@ def _layout_context(deck_ref: str, slide_index: int):
     slide = pages[slide_index]
     slide_obj = slide.get("objectId")
     page_w, page_h = _page_size_pt(pres)
+    page_w = _content_width_pt(slide, page_w, reserve_right_pt)
     reqs: List[Dict[str, Any]] = []
     for el in slide.get("pageElements", []):
         oid = el.get("objectId", "")
@@ -1061,14 +1145,14 @@ def _append_card_column(reqs, slide_obj, x, top, card_w, card_h, card, colors, u
             reqs.append(_txt(ct, s, e, bold=True, color=colors["accent"], font=colors["font"]))
 
 
-def _render_steps(deck_ref, slide_index, steps, theme_spec=None):
+def _render_steps(deck_ref, slide_index, steps, theme_spec=None, reserve_right_pt=0.0):
     """Numbered vertical steps — for processes / sequences."""
     import uuid
     steps = [s for s in (steps or []) if isinstance(s, dict) and (s.get("title") or s.get("text"))][:5]
     if len(steps) < 2:
         return False
     c = _theme_colors(theme_spec)
-    slides, pid, slide_obj, page_w, page_h, reqs = _layout_context(deck_ref, slide_index)
+    slides, pid, slide_obj, page_w, page_h, reqs = _layout_context(deck_ref, slide_index, reserve_right_pt)
     x0 = 48.0
     area_top, area_bottom = page_h * 0.24, page_h - 28.0
     rowh = (area_bottom - area_top) / len(steps)
@@ -1099,7 +1183,7 @@ def _render_steps(deck_ref, slide_index, steps, theme_spec=None):
     return True
 
 
-def _render_timeline(deck_ref, slide_index, events, theme_spec=None):
+def _render_timeline(deck_ref, slide_index, events, theme_spec=None, reserve_right_pt=0.0):
     """Vertical timeline (accent rail + dots) — for chronologies / histories."""
     import uuid
     events = [e for e in (events or []) if isinstance(e, dict)
@@ -1107,7 +1191,7 @@ def _render_timeline(deck_ref, slide_index, events, theme_spec=None):
     if len(events) < 2:
         return False
     c = _theme_colors(theme_spec)
-    slides, pid, slide_obj, page_w, page_h, reqs = _layout_context(deck_ref, slide_index)
+    slides, pid, slide_obj, page_w, page_h, reqs = _layout_context(deck_ref, slide_index, reserve_right_pt)
     rail_x = 74.0
     area_top, area_bottom = page_h * 0.24, page_h - 28.0
     area_h = area_bottom - area_top
@@ -1141,7 +1225,7 @@ def _render_timeline(deck_ref, slide_index, events, theme_spec=None):
     return True
 
 
-def _render_comparison(deck_ref, slide_index, layout_spec, theme_spec=None):
+def _render_comparison(deck_ref, slide_index, layout_spec, theme_spec=None, reserve_right_pt=0.0):
     """Two columns with a centre divider — for contrasts (A vs B)."""
     import uuid
     cols = [col for col in (layout_spec.get("left"), layout_spec.get("right"))
@@ -1150,7 +1234,7 @@ def _render_comparison(deck_ref, slide_index, layout_spec, theme_spec=None):
         cards = layout_spec.get("cards")
         return render_card_layout(deck_ref, slide_index, cards, theme_spec) if cards else False
     c = _theme_colors(theme_spec)
-    slides, pid, slide_obj, page_w, page_h, reqs = _layout_context(deck_ref, slide_index)
+    slides, pid, slide_obj, page_w, page_h, reqs = _layout_context(deck_ref, slide_index, reserve_right_pt)
     margin_x, gap = 30.0, 46.0
     top, bottom = page_h * 0.22, page_h - 32.0
     card_h = bottom - top
@@ -1166,7 +1250,7 @@ def _render_comparison(deck_ref, slide_index, layout_spec, theme_spec=None):
     return True
 
 
-def _render_accent_list(deck_ref, slide_index, items, theme_spec=None):
+def _render_accent_list(deck_ref, slide_index, items, theme_spec=None, reserve_right_pt=0.0):
     """Single-column accent list (left accent bar + bold leads) — for many short points."""
     import uuid
     norm = []
@@ -1183,7 +1267,7 @@ def _render_accent_list(deck_ref, slide_index, items, theme_spec=None):
     if len(norm) < 2:
         return False
     c = _theme_colors(theme_spec)
-    slides, pid, slide_obj, page_w, page_h, reqs = _layout_context(deck_ref, slide_index)
+    slides, pid, slide_obj, page_w, page_h, reqs = _layout_context(deck_ref, slide_index, reserve_right_pt)
     x0 = 54.0
     area_top, area_bottom = page_h * 0.22, page_h - 26.0
     area_h = area_bottom - area_top
@@ -1217,7 +1301,7 @@ def _render_accent_list(deck_ref, slide_index, items, theme_spec=None):
     return True
 
 
-def render_icon_grid(deck_ref, slide_index, items, theme_spec=None):
+def render_icon_grid(deck_ref, slide_index, items, theme_spec=None, reserve_right_pt=0.0):
     """
     House-style ICON-CARD GRID (the reference "Mastering Slide Formation" look):
     a clean white slide, a top-left title with a small indigo tick, and a grid of light
@@ -1252,7 +1336,7 @@ def render_icon_grid(deck_ref, slide_index, items, theme_spec=None):
     if not norm:
         return False
 
-    slides, pid, slide_obj, page_w, page_h, reqs = _layout_context(deck_ref, slide_index)
+    slides, pid, slide_obj, page_w, page_h, reqs = _layout_context(deck_ref, slide_index, reserve_right_pt)
     run = uuid.uuid4().hex[:8]
     mx = 40.0
 
@@ -1273,7 +1357,7 @@ def render_icon_grid(deck_ref, slide_index, items, theme_spec=None):
             reqs.append(_mk_shape(tick, slide_obj, "RECTANGLE", mx, 33, 5, 26))
             reqs.append(_fill(tick, indigo, indigo))
     except Exception as e:
-        print(f"  [mcp_slides_client] icon_grid title styling skipped: {e}")
+        logger.warning(f"[mcp_slides_client] icon_grid title styling skipped: {e}")
 
     # ── Grid geometry ──
     n = len(norm)
@@ -1290,6 +1374,25 @@ def render_icon_grid(deck_ref, slide_index, items, theme_spec=None):
     pad = 13.0
     label_pt = 13.0 if rows == 1 else 11.5
     body_pt = 10.5 if rows == 1 else 9.5
+
+    # Size the cards to their CONTENT instead of stretching them over the whole area: a
+    # 3-item grid with one line of text each used to leave most of every card empty (the
+    # "gap" students ask us to fill). Cards shrink to what they hold, then the whole grid
+    # is centred in the area so the slide stays balanced.
+    chars_per_line = max(int((card_w - 2 * pad) / max(body_pt * 0.52, 1.0)), 12)
+    content_h = 0.0
+    for label, text, icon in norm:
+        h = 2 * pad
+        if icon:
+            h += iconsz + 8.0
+        if label:
+            h += label_pt * 1.35 + 4.0
+        if text:
+            h += math.ceil(len(text) / chars_per_line) * body_pt * 1.4
+        content_h = max(content_h, h)
+    card_h = max(min(card_h, content_h), min(card_h, 120.0))
+    grid_h = rows * card_h + (rows - 1) * gap
+    top += max((area_h - grid_h) / 2.0, 0.0)
 
     for i, (label, text, icon) in enumerate(norm):
         r, c = divmod(i, cols)
@@ -1347,7 +1450,8 @@ def render_icon_grid(deck_ref, slide_index, items, theme_spec=None):
 
 
 def render_layout(deck_ref: str, slide_index: int, layout_spec: Dict[str, Any],
-                  theme_spec: Optional[Dict[str, Any]] = None) -> bool:
+                  theme_spec: Optional[Dict[str, Any]] = None,
+                  reserve_right_pt: float = 0.0) -> bool:
     """
     Dispatch to the right layout renderer based on layout_spec["layout"].
 
@@ -1359,28 +1463,33 @@ def render_layout(deck_ref: str, slide_index: int, layout_spec: Dict[str, Any],
       - "accent_list" : single accent-bar list        (many short points)
 
     Falls back to cards when the chosen layout is empty/unknown but cards are present.
+
+    reserve_right_pt keeps that many points of the slide's right edge clear for a picture;
+    at 0 a picture already on the slide reserves its own strip.
     """
     if not isinstance(layout_spec, dict):
         return False
     layout = (layout_spec.get("layout") or "").strip().lower()
+    r = reserve_right_pt
     try:
         if layout == "icon_grid":
-            return render_icon_grid(deck_ref, slide_index, layout_spec.get("items"), theme_spec)
+            return render_icon_grid(deck_ref, slide_index, layout_spec.get("items"), theme_spec, r)
         if layout == "steps":
-            return _render_steps(deck_ref, slide_index, layout_spec.get("steps"), theme_spec)
+            return _render_steps(deck_ref, slide_index, layout_spec.get("steps"), theme_spec, r)
         if layout == "timeline":
-            return _render_timeline(deck_ref, slide_index, layout_spec.get("events"), theme_spec)
+            return _render_timeline(deck_ref, slide_index, layout_spec.get("events"), theme_spec, r)
         if layout == "comparison":
-            return _render_comparison(deck_ref, slide_index, layout_spec, theme_spec)
+            return _render_comparison(deck_ref, slide_index, layout_spec, theme_spec, r)
         if layout == "accent_list":
-            return _render_accent_list(deck_ref, slide_index, layout_spec.get("items"), theme_spec)
+            return _render_accent_list(deck_ref, slide_index, layout_spec.get("items"), theme_spec, r)
         if layout == "cards":
-            return render_card_layout(deck_ref, slide_index, layout_spec.get("cards") or [], theme_spec)
+            return render_card_layout(deck_ref, slide_index, layout_spec.get("cards") or [],
+                                      theme_spec, r)
     except Exception as e:
-        print(f"  [mcp_slides_client] render_layout '{layout}' failed: {e}")
+        logger.error(f"[mcp_slides_client] render_layout '{layout}' failed: {e}")
     # Fallback: if a cards payload exists, use it.
     if layout_spec.get("cards"):
-        return render_card_layout(deck_ref, slide_index, layout_spec["cards"], theme_spec)
+        return render_card_layout(deck_ref, slide_index, layout_spec["cards"], theme_spec, r)
     return False
 
 
@@ -1422,6 +1531,190 @@ def set_speaker_notes(deck_ref: str, slide_index: int, notes_text: str) -> bool:
     return True
 
 
+# ── images ────────────────────────────────────────────────────────────────────
+
+# An image smaller than this isn't worth placing — below it we report "no room" instead
+# of squeezing a postage stamp into a corner.
+_IMAGE_MIN_W_PT = 110.0
+_IMAGE_MIN_H_PT = 85.0
+
+# Share of the slide width handed to a picture when we deliberately make room for one.
+# The text then lays out in the remaining ~64% (see render_layout's reserve_right_pt).
+IMAGE_COLUMN_RATIO = 0.36
+
+
+def _is_empty_text_box(el: Dict[str, Any]) -> bool:
+    """True for a text box or placeholder with nothing typed in it.
+
+    A template reserves the body placeholder at full size whether or not the slide uses
+    it, so counting an empty one as occupied makes an otherwise blank slide look full.
+    Only text-bearing shapes qualify — a decorative rectangle or arrow is drawn even
+    with no text, so it still blocks.
+    """
+    shape = el.get("shape")
+    if not shape:
+        return False
+    if shape.get("shapeType") != "TEXT_BOX" and not shape.get("placeholder"):
+        return False
+    elements = (shape.get("text") or {}).get("textElements") or []
+    return not any(te.get("textRun", {}).get("content", "").strip() for te in elements)
+
+
+def _free_rect_pt(slide: Dict[str, Any], page_w: float, page_h: float) -> Optional[tuple]:
+    """The largest empty rectangle on a slide, as (x, y, w, h) in PT.
+
+    Every drawn element below the title (which normally spans the full width) is treated
+    as blocked, grown by `gap` so a picture never butts up against text. The largest free
+    rectangle always has its sides on the usable area's edges or on a blocked box's edge,
+    so testing every pair of those lines finds the gaps *between* elements — a free column
+    between two boxes, not just the strips around everything. None when the slide is full.
+    """
+    margin, gap = 24.0, 14.0
+    title_el = _title_element(slide)
+    title_id = title_el.get("objectId") if title_el else None
+    title_box = _element_box_pt(title_el) if title_el else None
+
+    area_l, area_r = margin, page_w - margin
+    area_t, area_b = margin, page_h - margin
+    if title_box:
+        area_t = max(area_t, title_box[1] + title_box[3] + gap)
+    if area_r - area_l < _IMAGE_MIN_W_PT or area_b - area_t < _IMAGE_MIN_H_PT:
+        return None
+
+    blocked = []
+    for el in slide.get("pageElements", []):
+        if title_id and el.get("objectId") == title_id:
+            continue
+        if _is_empty_text_box(el):
+            continue
+        box = _element_box_pt(el)
+        if not box or box[2] <= 1.0 or box[3] <= 1.0:
+            continue
+        x, y, w, h = box
+        bx1, by1 = max(area_l, x - gap), max(area_t, y - gap)
+        bx2, by2 = min(area_r, x + w + gap), min(area_b, y + h + gap)
+        if bx2 > bx1 and by2 > by1:
+            blocked.append((bx1, by1, bx2, by2))
+
+    if not blocked:
+        return (area_l, area_t, area_r - area_l, area_b - area_t)
+
+    # Candidate sides, capped on a busy slide: a smaller grid can only cost us a slightly
+    # smaller rectangle, never a wrong one — the overlap test below still sees every box.
+    grid = sorted(blocked, key=lambda b: (b[2] - b[0]) * (b[3] - b[1]), reverse=True)[:10]
+    xs = sorted({area_l, area_r} | {v for b in grid for v in (b[0], b[2])
+                                    if area_l < v < area_r})
+    ys = sorted({area_t, area_b} | {v for b in grid for v in (b[1], b[3])
+                                    if area_t < v < area_b})
+
+    spans_x = [(x1, x2) for i, x1 in enumerate(xs) for x2 in xs[i + 1:]
+               if x2 - x1 >= _IMAGE_MIN_W_PT]
+    spans_y = [(y1, y2) for j, y1 in enumerate(ys) for y2 in ys[j + 1:]
+               if y2 - y1 >= _IMAGE_MIN_H_PT]
+    rects = sorted(((x2 - x1) * (y2 - y1), x1, y1, x2, y2)
+                   for x1, x2 in spans_x for y1, y2 in spans_y)
+
+    for _, x1, y1, x2, y2 in reversed(rects):     # biggest first — first clear one wins
+        if not any(bx1 < x2 and x1 < bx2 and by1 < y2 and y1 < by2
+                   for bx1, by1, bx2, by2 in blocked):
+            return (x1, y1, x2 - x1, y2 - y1)
+    return None
+
+
+def place_image(deck_ref: str, slide_index: int, image_url: str,
+                replace_existing: bool = True) -> Dict[str, Any]:
+    """
+    Put a student-chosen image on a slide, sized for THAT slide.
+
+    Two behaviours, decided by what's already on the slide:
+      - the slide already has an image → REPLACE it in place. The picture box keeps its
+        exact position and size; the new image is scaled to fit inside it (CENTER_INSIDE),
+        so swapping pictures never disturbs the layout.
+      - no image yet → drop it into the slide's largest free area (see _free_rect_pt) as a
+        bounding box. Slides scales the image to fit that box while preserving its aspect
+        ratio, and we then re-centre it inside the box.
+
+    Returns {"status": "replaced" | "placed" | "no_room", "object_id": str|None,
+             "box_pt": [x, y, w, h] | None}. Raises on API/URL failures so the caller can
+    report why (a hotlink-protected URL is the common one).
+    """
+    url = (image_url or "").strip()
+    if not url.lower().startswith(("http://", "https://")):
+        raise ValueError("Image URL must be a public http(s) link")
+
+    slides, _ = _services()
+    pid = presentation_id_of(deck_ref)
+    pres = slides.presentations().get(presentationId=pid).execute()
+    pages = pres.get("slides", [])
+    if slide_index < 0 or slide_index >= len(pages):
+        raise RuntimeError(f"Slide {slide_index} out of range for image placement")
+    slide = pages[slide_index]
+    slide_obj = slide.get("objectId")
+    page_w, page_h = _page_size_pt(pres)
+
+    # ── existing image → swap it in place, same box, same size ────────────────
+    existing = [el for el in slide.get("pageElements", []) if "image" in el]
+    if existing and replace_existing:
+        # Biggest image on the slide is the content one (small ones are usually decoration).
+        target = max(existing, key=lambda el: ((_element_box_pt(el) or (0, 0, 0, 0))[2]
+                                               * (_element_box_pt(el) or (0, 0, 0, 0))[3]))
+        oid = target.get("objectId")
+        box = _element_box_pt(target)
+        slides.presentations().batchUpdate(presentationId=pid, body={"requests": [{
+            "replaceImage": {
+                "imageObjectId": oid,
+                "url": url,
+                "imageReplaceMethod": "CENTER_INSIDE",
+            }
+        }]}).execute()
+        return {"status": "replaced", "object_id": oid,
+                "box_pt": list(box) if box else None}
+
+    # ── no image yet → fit one into the slide's free space ────────────────────
+    rect = _free_rect_pt(slide, page_w, page_h)
+    if not rect:
+        return {"status": "no_room", "object_id": None, "box_pt": None}
+    x, y, w, h = rect
+
+    reply = slides.presentations().batchUpdate(presentationId=pid, body={"requests": [{
+        "createImage": {
+            "url": url,
+            "elementProperties": {
+                "pageObjectId": slide_obj,
+                "size": {"width": {"magnitude": w, "unit": "PT"},
+                         "height": {"magnitude": h, "unit": "PT"}},
+                "transform": {"scaleX": 1, "scaleY": 1,
+                              "translateX": x, "translateY": y, "unit": "PT"},
+            },
+        }
+    }]}).execute()
+    new_id = (reply.get("replies") or [{}])[0].get("createImage", {}).get("objectId")
+
+    # Slides fits the image inside the box we gave, preserving aspect ratio — so the
+    # result is usually narrower or shorter than the box. Re-centre it in that box.
+    final_box = [x, y, w, h]
+    try:
+        pres2 = slides.presentations().get(presentationId=pid).execute()
+        el = next((e for e in pres2["slides"][slide_index].get("pageElements", [])
+                   if e.get("objectId") == new_id), None)
+        actual = _element_box_pt(el) if el else None
+        if actual:
+            nx, ny = x + (w - actual[2]) / 2.0, y + (h - actual[3]) / 2.0
+            if abs(nx - actual[0]) > 1.0 or abs(ny - actual[1]) > 1.0:
+                slides.presentations().batchUpdate(presentationId=pid, body={"requests": [{
+                    "updatePageElementTransform": {
+                        "objectId": new_id, "applyMode": "ABSOLUTE",
+                        "transform": {"scaleX": 1, "scaleY": 1,
+                                      "translateX": nx, "translateY": ny, "unit": "PT"},
+                    }
+                }]}).execute()
+            final_box = [nx, ny, actual[2], actual[3]]
+    except Exception as e:
+        logger.warning(f"[mcp_slides_client] image re-centre skipped: {e}")
+
+    return {"status": "placed", "object_id": new_id, "box_pt": final_box}
+
+
 def apply_ops_batch(deck_ref: str, slide_index: int,
                     ops: List[Dict[str, Any]],
                     theme_spec: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
@@ -1449,7 +1742,8 @@ def apply_ops_batch(deck_ref: str, slide_index: int,
             elif op == "set_layout":
                 # Op-level theme_spec (set by ppt_nodes) takes priority over the batch-level one.
                 op_theme = op_dict.get("theme_spec") or theme_spec
-                if render_layout(deck_ref, slide_index, op_dict["value"], op_theme):
+                if render_layout(deck_ref, slide_index, op_dict["value"], op_theme,
+                                 float(op_dict.get("reserve_right_pt") or 0.0)):
                     applied.append(op_dict)
             elif op == "set_cards":
                 # Op-level theme_spec (set by ppt_nodes) takes priority over the batch-level one.
@@ -1469,10 +1763,14 @@ def apply_ops_batch(deck_ref: str, slide_index: int,
             elif op == "fix_spelling":
                 if apply_spelling_fixes(deck_ref, slide_index, op_dict["value"]):
                     applied.append(op_dict)
+            elif op == "set_image":
+                res = place_image(deck_ref, slide_index, op_dict["value"])
+                if res.get("status") in ("placed", "replaced"):
+                    applied.append({**op_dict, "result": res})
             else:
-                print(f"  [mcp_slides_client] apply_ops_batch: unknown op '{op}', skipping")
+                logger.warning(f"[mcp_slides_client] apply_ops_batch: unknown op '{op}', skipping")
         except Exception as e:
-            print(f"  [mcp_slides_client] apply_ops_batch: op '{op}' failed: {e}")
+            logger.error(f"[mcp_slides_client] apply_ops_batch: op '{op}' failed: {e}")
     return applied
 
 
@@ -1550,7 +1848,7 @@ def apply_theme_to_deck(deck_ref: str, theme_spec: Dict[str, Any]) -> int:
     unavailable or the deck is a stub.
     """
     if not is_available() or deck_ref.startswith("gslides:STUB-"):
-        print(f"  [mcp_slides_client] apply_theme_to_deck: stub deck — skipping live call")
+        logger.warning(f"[mcp_slides_client] apply_theme_to_deck: stub deck — skipping live call")
         return 0
 
     from ppt.ppt_theme import DEFAULT_THEME_SPEC
@@ -1626,7 +1924,8 @@ def apply_op(deck_ref: str, slide_index: int, proposed_change: Dict[str, Any],
         return apply_font_title_size(
             deck_ref, slide_index, proposed_change["value"], proposed_change.get("text"))
     if op == "set_layout":
-        return render_layout(deck_ref, slide_index, proposed_change["value"], effective_theme)
+        return render_layout(deck_ref, slide_index, proposed_change["value"], effective_theme,
+                             float(proposed_change.get("reserve_right_pt") or 0.0))
     if op == "set_cards":
         return render_card_layout(deck_ref, slide_index, proposed_change["value"], effective_theme)
     if op in ("set_bullets", "add_bullets"):
@@ -1638,5 +1937,8 @@ def apply_op(deck_ref: str, slide_index: int, proposed_change: Dict[str, Any],
         return apply_highlight_terms(deck_ref, slide_index, proposed_change["value"])
     if op == "fix_spelling":
         return apply_spelling_fixes(deck_ref, slide_index, proposed_change["value"])
+    if op == "set_image":
+        return place_image(deck_ref, slide_index,
+                           proposed_change["value"]).get("status") in ("placed", "replaced")
     raise RuntimeError(f"No Google Slides applier for op '{op}' yet")
 

@@ -87,6 +87,9 @@ const CSS = `
 /* ── LANDING ── */
 .qp-landing { padding:40px; max-width:1200px; margin:0 auto; display:flex; flex-direction:column; gap:32px; }
 .qp-section-title { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.1em; color:#94a3b8; margin-bottom:16px; }
+.qp-muted-text { color:#64748b; }
+.qp-summary-label { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#94a3b8; margin-bottom:1px; }
+.qp-summary-value { font-size:12px; font-weight:700; color:#0f172a; }
 
 /* Quiz bank cards */
 .qp-bank-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:18px; }
@@ -313,20 +316,226 @@ const CSS = `
 .qp-mark-full-btn:hover { background:rgba(245,158,11,.12); }
 
 /* ── RESULT ── */
-.qp-result { padding:40px; max-width:600px; margin:0 auto; display:flex; flex-direction:column; gap:24px; }
-.qp-result-hero { border-radius:24px; padding:40px; text-align:center; position:relative; overflow:hidden; }
-.qp-result-score { font-size:72px; font-weight:800; color:#fff; line-height:1; margin-bottom:8px; }
-.qp-result-label { font-size:16px; color:rgba(255,255,255,.8); font-weight:500; }
+.qp-result { padding:32px 40px 48px; max-width:1120px; margin:0 auto; display:grid; grid-template-columns:minmax(300px,380px) minmax(0,1fr); gap:20px; align-items:start; }
+.qp-result-hero { position:sticky; top:84px; border-radius:28px; padding:28px; overflow:hidden; color:#fff; min-height:520px; display:flex; flex-direction:column; justify-content:space-between; box-shadow:0 24px 70px rgba(99,102,241,.28); isolation:isolate; }
+.qp-result-hero::before { content:''; position:absolute; inset:0; background:linear-gradient(160deg,rgba(255,255,255,.18),rgba(255,255,255,0) 45%), radial-gradient(circle at 84% 14%,rgba(255,255,255,.22),transparent 24%), radial-gradient(circle at 14% 92%,rgba(255,255,255,.18),transparent 26%); z-index:-1; }
+.qp-result-hero::after { content:''; position:absolute; inset:12px; border:1px solid rgba(255,255,255,.18); border-radius:22px; pointer-events:none; }
+.qp-result-kicker { display:inline-flex; width:max-content; align-items:center; gap:8px; padding:7px 12px; border-radius:999px; background:rgba(255,255,255,.16); border:1px solid rgba(255,255,255,.22); font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.08em; }
+.qp-result-title { font-size:clamp(28px,4vw,42px); font-weight:800; line-height:1.05; margin:22px 0 10px; }
+.qp-result-sub { color:rgba(255,255,255,.78); font-size:14px; line-height:1.55; max-width:310px; }
+.qp-result-ring { --pct:0; width:220px; height:220px; margin:30px auto; border-radius:50%; display:grid; place-items:center; position:relative; background:conic-gradient(#fff calc(var(--pct) * 1%), rgba(255,255,255,.18) 0), rgba(255,255,255,.12); box-shadow:inset 0 0 0 1px rgba(255,255,255,.18), 0 18px 44px rgba(15,23,42,.22); animation:scoreRingIn 1s cubic-bezier(.2,.8,.2,1) both; }
+.qp-result-ring::before { content:''; position:absolute; inset:14px; border-radius:50%; background:rgba(15,23,42,.2); backdrop-filter:blur(18px); }
+.qp-result-score { position:relative; font-size:58px; font-weight:800; color:#fff; line-height:1; letter-spacing:0; }
+.qp-result-score span { font-size:22px; color:rgba(255,255,255,.7); }
+.qp-result-label { position:relative; margin-top:8px; font-size:13px; color:rgba(255,255,255,.76); font-weight:700; }
+.qp-result-hero-foot { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
+.qp-result-mini { padding:12px; border-radius:16px; background:rgba(255,255,255,.14); border:1px solid rgba(255,255,255,.18); }
+.qp-result-mini-v { font-size:20px; font-weight:800; line-height:1; }
+.qp-result-mini-l { margin-top:4px; font-size:10px; font-weight:700; color:rgba(255,255,255,.68); text-transform:uppercase; letter-spacing:.06em; }
+.qp-result-main { display:flex; flex-direction:column; gap:16px; min-width:0; }
 .qp-result-breakdown { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
-.qp-result-item { background:#fff; border-radius:16px; padding:16px; text-align:center; border:1px solid rgba(0,0,0,.06); box-shadow:0 2px 10px rgba(0,0,0,.05); }
-.qp-result-iv { font-size:26px; font-weight:800; color:#0f172a; line-height:1; }
-.qp-result-il { font-size:11px; color:#94a3b8; margin-top:4px; font-weight:500; }
+.qp-result-item { background:#fff; border-radius:20px; padding:18px; border:1px solid rgba(15,23,42,.06); box-shadow:0 10px 28px rgba(15,23,42,.06); position:relative; overflow:hidden; animation:resultItemIn .5s cubic-bezier(.2,.8,.2,1) both; }
+.qp-result-item::before { content:''; position:absolute; inset:0 0 auto; height:4px; background:var(--accent,#6366f1); }
+.qp-result-icon { width:36px; height:36px; border-radius:12px; display:flex; align-items:center; justify-content:center; background:color-mix(in srgb, var(--accent,#6366f1) 12%, white); color:var(--accent,#6366f1); margin-bottom:14px; }
+.qp-result-iv { font-size:30px; font-weight:800; color:#0f172a; line-height:1; }
+.qp-result-il { font-size:11px; color:#94a3b8; margin-top:5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; }
+.qp-result-panel { background:#fff; border-radius:22px; padding:20px; border:1px solid rgba(15,23,42,.06); box-shadow:0 10px 28px rgba(15,23,42,.06); animation:cardIn .45s cubic-bezier(.34,1.56,.64,1) both; }
+.qp-result-panel-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; }
+.qp-result-panel-title { display:flex; align-items:center; gap:9px; font-size:14px; font-weight:800; color:#0f172a; }
+.qp-result-count-pill { padding:5px 10px; border-radius:999px; background:#f8fafc; color:#64748b; border:1px solid #eef2f7; font-size:11px; font-weight:800; }
+.qp-review-list { display:flex; flex-direction:column; gap:12px; }
+.qp-review-card { display:block; padding:15px; border-radius:18px; border:1.5px solid var(--review-border); background:var(--review-bg); animation:reviewIn .42s cubic-bezier(.2,.8,.2,1) both; }
+.qp-review-status { width:34px; height:34px; border-radius:12px; display:flex; align-items:center; justify-content:center; background:var(--review-color); color:#fff; box-shadow:0 8px 18px color-mix(in srgb, var(--review-color) 34%, transparent); }
+.qp-review-question { font-size:13px; font-weight:800; color:#1f2937; line-height:1.45; }
+.qp-review-details { display:grid; gap:8px; margin-top:12px; }
+.qp-answer-chip { display:flex; align-items:flex-start; gap:7px; width:100%; padding:9px 10px; border-radius:12px; background:rgba(255,255,255,.66); border:1px solid rgba(255,255,255,.85); color:#475569; font-size:12px; font-weight:700; line-height:1.45; }
+.qp-answer-chip strong { color:#0f172a; }
+.qp-explanation { padding:11px 12px; border-radius:14px; background:rgba(99,102,241,.08); color:#475569; font-size:12px; line-height:1.55; border:1px solid rgba(99,102,241,.12); }
+.qp-topic-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; }
+.qp-topic-card { padding:14px; border-radius:16px; background:#f8fafc; border:1px solid #eef2f7; }
+.qp-topic-name { font-size:12px; font-weight:800; color:#334155; margin-bottom:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.qp-topic-track { height:8px; border-radius:999px; background:#e2e8f0; overflow:hidden; }
+.qp-topic-fill { height:100%; width:var(--topic-score); border-radius:inherit; background:var(--topic-color); animation:barGrow .8s cubic-bezier(.2,.8,.2,1) both; }
+.qp-topic-score { margin-top:8px; font-size:18px; font-weight:800; color:var(--topic-color); }
 .qp-result-actions { display:flex; gap:12px; flex-wrap:wrap; }
-.qp-result-actions button { flex:1; }
+.qp-result-actions button { flex:1; justify-content:center; }
+@keyframes scoreRingIn { from{opacity:0;transform:scale(.82) rotate(-18deg)} to{opacity:1;transform:scale(1) rotate(0)} }
+@keyframes resultItemIn { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:none} }
+@keyframes reviewIn { from{opacity:0;transform:translateX(16px)} to{opacity:1;transform:none} }
+@keyframes barGrow { from{width:0} to{width:var(--topic-score)} }
 
 /* ── LOADER ── */
 .qp-loader { position:fixed; inset:0; background:#fff; z-index:999; display:flex; align-items:center; justify-content:center; font-family:'Plus Jakarta Sans',system-ui,sans-serif; }
 .dark .qp-loader { background:#0f172a; }
+
+/* Dark mode */
+.dark .qp {
+  background:#0f172a;
+  color:#e2e8f0;
+}
+.dark .qp-card,
+.dark .qp-q-card,
+.dark .qp-pal-card,
+.dark .qp-stats-card,
+.dark .qp-result-item,
+.dark .qp-result-panel {
+  background:#1e293b;
+  border-color:rgba(255,255,255,.1);
+  box-shadow:0 2px 14px rgba(0,0,0,.35);
+}
+.dark .qp-card:hover {
+  border-color:rgba(129,140,248,.45);
+  box-shadow:0 16px 40px rgba(0,0,0,.45);
+}
+.dark .qp-section-title,
+.dark .qp-muted-text,
+.dark .qp-summary-label,
+.dark .qp-bank-card-sub,
+.dark .qp-bank-meta,
+.dark .qp-unit-sub,
+.dark .qp-q-marks,
+.dark .qp-result-il,
+.dark .qp-statl {
+  color:#94a3b8;
+}
+.dark .qp-bank-card-title,
+.dark .qp-summary-value,
+.dark .qp-cta-title,
+.dark .qp-step-title,
+.dark .qp-unit-name,
+.dark .qp-diff-name,
+.dark .qp-pick-btn,
+.dark .qp-q-text,
+.dark .qp-pal-head,
+.dark .qp-statv,
+.dark .qp-result-iv {
+  color:#f8fafc;
+}
+.dark .qp-result-panel-title,
+.dark .qp-review-question,
+.dark .qp-answer-chip strong,
+.dark .qp-topic-name {
+  color:#f8fafc;
+}
+.dark .qp-result-count-pill,
+.dark .qp-topic-card {
+  background:#111827;
+  border-color:rgba(255,255,255,.1);
+  color:#cbd5e1;
+}
+.dark .qp-answer-chip {
+  background:rgba(15,23,42,.56);
+  border-color:rgba(255,255,255,.08);
+  color:#cbd5e1;
+}
+.dark .qp-explanation {
+  background:rgba(99,102,241,.15);
+  border-color:rgba(129,140,248,.22);
+  color:#cbd5e1;
+}
+.dark .qp-topic-track {
+  background:#334155;
+}
+.dark .qp-cta-sub,
+.dark .qp-step-sub,
+.dark .qp-diff-desc,
+.dark .qp-pal-pr,
+.dark .qp-leg {
+  color:#cbd5e1;
+}
+.dark .qp-btn-outline,
+.dark .qp-unit-card,
+.dark .qp-diff-card,
+.dark .qp-pick-btn,
+.dark .qp-nav-btn {
+  background:#111827;
+  border-color:rgba(255,255,255,.12);
+  color:#cbd5e1;
+}
+.dark .qp-btn-outline:hover,
+.dark .qp-unit-card:hover,
+.dark .qp-pick-btn:hover,
+.dark .qp-nav-btn:hover:not(:disabled) {
+  background:rgba(99,102,241,.14);
+  border-color:rgba(129,140,248,.55);
+  color:#a5b4fc;
+}
+.dark .qp-wizard {
+  background:#0f172a;
+}
+.dark .qp-wizard-nav,
+.dark .qp-wizard-footer,
+.dark .qp-q-head,
+.dark .qp-q-foot,
+.dark .qp-pal-head,
+.dark .qp-pal-leg {
+  background:#111827;
+  border-color:rgba(255,255,255,.08);
+}
+.dark .qp-step-dot,
+.dark .qp-pal-pb,
+.dark .qp-pb-un,
+.dark .qp-opt-letter {
+  background:#334155;
+  color:#cbd5e1;
+}
+.dark .qp-pb-un:hover {
+  background:#475569;
+}
+.dark .qp-unit-card.sel,
+.dark .qp-pick-btn.sel {
+  background:linear-gradient(135deg,rgba(99,102,241,.2),rgba(139,92,246,.14));
+  border-color:#818cf8;
+  color:#c4b5fd;
+}
+.dark .qp-unit-card.sel .qp-unit-name {
+  color:#c4b5fd;
+}
+.dark .qp-diff-card.sel-easy {
+  background:rgba(16,185,129,.14);
+}
+.dark .qp-diff-card.sel-medium {
+  background:rgba(245,158,11,.14);
+}
+.dark .qp-diff-card.sel-hard {
+  background:rgba(239,68,68,.14);
+}
+.dark .qp-quiz-body {
+  background:#0f172a;
+}
+.dark .qp-opt {
+  background:#111827;
+  border-color:rgba(255,255,255,.1);
+}
+.dark .qp-opt:hover {
+  background:rgba(99,102,241,.13);
+  border-color:rgba(129,140,248,.5);
+}
+.dark .qp-opt.sel {
+  background:rgba(99,102,241,.18);
+  border-color:#818cf8;
+}
+.dark .qp-opt-text {
+  color:#e2e8f0;
+}
+.dark .qp-opt.sel .qp-opt-text {
+  color:#c4b5fd;
+}
+.dark .qp-opt.correct .qp-opt-text {
+  color:#6ee7b7;
+}
+.dark .qp-opt.wrong .qp-opt-text {
+  color:#fca5a5;
+}
+.dark .qp-stat {
+  background:#111827;
+  border-color:rgba(255,255,255,.08);
+}
+.dark .qp-mark-btn,
+.dark .qp-mark-full-btn {
+  background:rgba(245,158,11,.14);
+  color:#fbbf24;
+}
 
 /* Responsive */
 @media (max-width:1024px) { .qp-quiz-body { grid-template-columns:1fr; } .qp-right { display:none; } }
@@ -340,8 +549,11 @@ const CSS = `
   .qp-q-body { padding:16px 14px; }
   .qp-q-text { font-size:15px; }
   .qp-quiz-head { padding:12px 16px; }
-  .qp-result { padding:20px 16px; }
-  .qp-result-score { font-size:56px; }
+  .qp-result { padding:20px 16px 32px; grid-template-columns:1fr; }
+  .qp-result-hero { position:relative; top:auto; min-height:auto; padding:22px; }
+  .qp-result-ring { width:180px; height:180px; margin:22px auto; }
+  .qp-result-score { font-size:48px; }
+  .qp-result-breakdown { grid-template-columns:1fr; }
 }
 @media (max-width:480px) {
   .qp-unit-grid { grid-template-columns:1fr 1fr; }
@@ -686,11 +898,10 @@ const Wizard = ({
                     <div className="qp-unit-grid" style={{ padding: 4 }}>
                       {!hasUnits && (
                         <div
-                          className="qp-card"
+                          className="qp-card qp-muted-text"
                           style={{
                             padding: 20,
                             textAlign: "center",
-                            color: "#64748b",
                           }}
                         >
                           No data available
@@ -855,25 +1066,10 @@ const Wizard = ({
                         key={s.label}
                         style={{ flex: 1, minWidth: 50, textAlign: "center" }}
                       >
-                        <div
-                          style={{
-                            fontSize: 9,
-                            fontWeight: 700,
-                            textTransform: "uppercase",
-                            letterSpacing: ".05em",
-                            color: "#94a3b8",
-                            marginBottom: 1,
-                          }}
-                        >
+                        <div className="qp-summary-label">
                           {s.label}
                         </div>
-                        <div
-                          style={{
-                            fontSize: 12,
-                            fontWeight: 700,
-                            color: "#0f172a",
-                          }}
-                        >
+                        <div className="qp-summary-value">
                           {s.val}
                         </div>
                       </div>
@@ -915,6 +1111,7 @@ const Wizard = ({
 // ── Main QuizPage ──────────────────────────────────────────────────────
 const QuizPage = ({ params }: { params?: { id?: string } }) => {
   const { theme, setTheme } = useTheme();
+  const isDark = theme === "dark";
   const [, setLocation] = useLocation();
   const { userHeader } = useAuth();
   const { toast } = useToast();
@@ -1136,6 +1333,8 @@ const QuizPage = ({ params }: { params?: { id?: string } }) => {
   const answered = statuses.filter((s) => s === "answered").length;
   const marked = statuses.filter((s) => s === "marked").length;
   const timeWarn = timeLeft < 120;
+  const currentRole = (userHeader?.role || "student") as "student" | "teacher";
+  const qpClassName = `qp ${theme}`;
 
   if (isLoading) return <Loader />;
 
@@ -1177,8 +1376,9 @@ const QuizPage = ({ params }: { params?: { id?: string } }) => {
             ? "linear-gradient(135deg,#f59e0b,#d97706)"
             : "linear-gradient(135deg,#ef4444,#dc2626)";
     return (
-      <div className="qp">
+      <div className={qpClassName}>
         <style>{CSS}</style>
+        <Navigation currentRole={currentRole} onRoleChange={() => {}} />
         {submitting ? (
           <div
             style={{
@@ -1197,87 +1397,109 @@ const QuizPage = ({ params }: { params?: { id?: string } }) => {
           <div className="qp-result">
             <motion.div
               className="qp-result-hero"
-              style={{ background: gradeBg }}
-              initial={{ opacity: 0, scale: 0.92 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.5, type: "spring" }}
+              style={
+                {
+                  background: gradeBg,
+                  "--pct": Math.max(0, Math.min(100, apiPercentage)),
+                } as React.CSSProperties
+              }
+              initial={{ opacity: 0, y: 18, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: 0.55, type: "spring", bounce: 0.22 }}
             >
-              <div className="qp-result-score">
-                {" "}
-                {apiPercentage.toFixed(2)}%
+              <div>
+                <div className="qp-result-kicker">
+                  <Trophy size={14} />
+                  Quiz Results
+                </div>
+                <div className="qp-result-title">{grade}</div>
+                <div className="qp-result-sub">
+                  Your quiz is complete. Review each answer below and use the topic breakdown to plan your next practice round.
+                </div>
               </div>
-              <div className="qp-result-label">
-                Score: {apiScore}/{apiTotal}
+
+              <div className="qp-result-ring">
+                <div style={{ textAlign: "center", position: "relative" }}>
+                  <div className="qp-result-score">
+                    {apiPercentage.toFixed(2)}
+                    <span>%</span>
+                  </div>
+                  <div className="qp-result-label">
+                    Score: {apiScore}/{apiTotal}
+                  </div>
+                </div>
               </div>
-              {/* floating orbs */}
-              <div
-                style={{
-                  position: "absolute",
-                  top: -40,
-                  right: -40,
-                  width: 160,
-                  height: 160,
-                  borderRadius: "50%",
-                  background: "rgba(255,255,255,.1)",
-                }}
-              />
-              <div
-                style={{
-                  position: "absolute",
-                  bottom: -60,
-                  left: "20%",
-                  width: 120,
-                  height: 120,
-                  borderRadius: "50%",
-                  background: "rgba(255,255,255,.07)",
-                }}
-              />
+
+              <div className="qp-result-hero-foot">
+                <div className="qp-result-mini">
+                  <div className="qp-result-mini-v">{apiScore}</div>
+                  <div className="qp-result-mini-l">Correct</div>
+                </div>
+                <div className="qp-result-mini">
+                  <div className="qp-result-mini-v">{apiTotal - apiScore}</div>
+                  <div className="qp-result-mini-l">Needs Review</div>
+                </div>
+              </div>
             </motion.div>
+            <div className="qp-result-main">
             <div className="qp-result-breakdown">
               {[
-                { v: apiScore, l: "Correct", cls: "g" },
-                { v: apiTotal - apiScore, l: "Wrong", cls: "" },
-                { v: marked, l: "Reviewed", cls: "a" },
-              ].map((s) => (
-                <div key={s.l} className={`qp-result-item`}>
-                  <div
-                    className={`qp-result-iv`}
-                    style={{
-                      color:
-                        s.cls === "g"
-                          ? "#059669"
-                          : s.cls === "a"
-                            ? "#d97706"
-                            : "#ef4444",
-                    }}
+                { v: apiScore, l: "Correct", accent: "#10b981", icon: CheckCircle2 },
+                { v: apiTotal - apiScore, l: "Wrong", accent: "#ef4444", icon: AlertCircle },
+                { v: marked, l: "Reviewed", accent: "#f59e0b", icon: Bookmark },
+              ].map((s, index) => {
+                const Icon = s.icon;
+                return (
+                  <motion.div
+                    key={s.l}
+                    className="qp-result-item"
+                    style={{ "--accent": s.accent } as React.CSSProperties}
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.12 + index * 0.06, duration: 0.35 }}
                   >
-                    {s.v}
-                  </div>
-                  <div className="qp-result-il">{s.l}</div>
-                </div>
-              ))}
+                    <div className="qp-result-icon">
+                      <Icon size={18} />
+                    </div>
+                    <div className="qp-result-iv" style={{ color: s.accent }}>
+                      {s.v}
+                    </div>
+                    <div className="qp-result-il">{s.l}</div>
+                  </motion.div>
+                );
+              })}
             </div>
-                    {/* Section-wise performance */}
-            <div className="qp-card" style={{ padding: 20 }}>
-              <div className="qp-section-title" style={{ marginBottom: 12 }}>
-                Answer Review
+            <div className="qp-result-panel">
+              <div className="qp-result-panel-head">
+                <div className="qp-result-panel-title">
+                  <Target size={17} color="#6366f1" />
+                  Answer Review
+                </div>
+                <div className="qp-result-count-pill">
+                  {quizSubmitResponse?.corrections?.length || 0} questions
+                </div>
               </div>
-                          {quizSubmitResponse?.corrections?.length > 0 ? (
-              quizSubmitResponse.corrections.map(
+              {quizSubmitResponse?.corrections?.length > 0 ? (
+                <div className="qp-review-list">
+              {quizSubmitResponse.corrections.map(
                 (correction: any, i: number) => (
-                  <div
+                  <motion.div
                     key={correction.question_id}
-                    style={{
-                      padding: "16px",
-                      marginBottom: 12,
-                      borderRadius: 12,
-                      background: correction.is_correct
-                        ? "rgba(16,185,129,.06)"
-                        : "rgba(239,68,68,.06)",
-                      border: `1.5px solid ${
-                        correction.is_correct ? "#10b981" : "#ef4444"
-                      }`,
-                    }}
+                    className="qp-review-card"
+                    style={
+                      {
+                        "--review-color": correction.is_correct ? "#10b981" : "#ef4444",
+                        "--review-border": correction.is_correct
+                          ? "rgba(16,185,129,.28)"
+                          : "rgba(239,68,68,.28)",
+                        "--review-bg": correction.is_correct
+                          ? "rgba(16,185,129,.07)"
+                          : "rgba(239,68,68,.07)",
+                      } as React.CSSProperties
+                    }
+                    initial={{ opacity: 0, x: 16 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.18 + i * 0.04, duration: 0.3 }}
                   >
                     {/* Checkmark/X icon */}
                     <div
@@ -1311,7 +1533,7 @@ const QuizPage = ({ params }: { params?: { id?: string } }) => {
                           style={{
                             fontSize: 13,
                             fontWeight: 600,
-                            color: "#374151",
+                            color: isDark ? "#e2e8f0" : "#374151",
                           }}
                         >
                           Q{i + 1}. {correction.question}
@@ -1358,10 +1580,12 @@ const QuizPage = ({ params }: { params?: { id?: string } }) => {
                         <div
                           style={{
                             fontSize: 12,
-                            color: "#64748b",
+                            color: isDark ? "#cbd5e1" : "#64748b",
                             padding: 10,
                             borderRadius: 8,
-                            background: "rgba(255,255,255,.5)",
+                            background: isDark
+                              ? "rgba(15,23,42,.55)"
+                              : "rgba(255,255,255,.5)",
                             fontStyle: "italic",
                             borderLeft: "3px solid #6366f1",
                           }}
@@ -1371,37 +1595,29 @@ const QuizPage = ({ params }: { params?: { id?: string } }) => {
                         </div>
                       )}
                     </div>
-                  </div>
+                  </motion.div>
                 ),
-              )
+              )}
+                </div>
             ) : (
               <div
-                style={{ textAlign: "center", padding: 20, color: "#94a3b8" }}
+                className="qp-muted-text"
+                style={{ textAlign: "center", padding: 20 }}
               >
                 Loading results...
               </div>
             )}
             </div>
 
-                               {quizSubmitResponse?.section_scores && (
-                      <div
-                        className="qp-card"
-                        style={{ padding: 20, marginBottom: 20 }}
-                      >
-                        <div
-                          className="qp-section-title"
-                          style={{ marginBottom: 16 }}
-                        >
-                          Performance by Topic
+              {quizSubmitResponse?.section_scores && (
+                      <div className="qp-result-panel">
+                        <div className="qp-result-panel-head">
+                          <div className="qp-result-panel-title">
+                            <Award size={17} color="#8b5cf6" />
+                            Performance by Topic
+                          </div>
                         </div>
-                        <div
-                          style={{
-                            display: "grid",
-                            gridTemplateColumns:
-                              "repeat(auto-fit, minmax(140px, 1fr))",
-                            gap: 12,
-                          }}
-                        >
+                        <div className="qp-topic-grid">
                           {Object.entries(
                             quizSubmitResponse.section_scores,
                           ).map(([section, score]: [string, any]) => (
@@ -1484,6 +1700,7 @@ const QuizPage = ({ params }: { params?: { id?: string } }) => {
                 Try Again
               </button>
             </div>
+            </div>
           </div>
         )}
       </div>
@@ -1493,8 +1710,9 @@ const QuizPage = ({ params }: { params?: { id?: string } }) => {
   // ── Landing ──
   if (!quizStarted) {
     return (
-      <div className="qp">
+      <div className={qpClassName}>
         <style>{CSS}</style>
+        <Navigation currentRole={currentRole} onRoleChange={() => {}} />
 
         <AnimatePresence>
           {setupOpen && (
@@ -1680,7 +1898,10 @@ const QuizPage = ({ params }: { params?: { id?: string } }) => {
   );
 
   return (
-    <div className="qp" style={{ background: "#f8fafc", minHeight: "100vh" }}>
+    <div
+      className={qpClassName}
+      style={{ background: isDark ? "#0f172a" : "#f8fafc", minHeight: "100vh" }}
+    >
       <style>{CSS}</style>
       {/* Quiz header — dashboard hero gradient */}
       <div className="qp-quiz-head">
@@ -1761,15 +1982,15 @@ const QuizPage = ({ params }: { params?: { id?: string } }) => {
                       marginTop: 18,
                       padding: 18,
                       borderRadius: 16,
-                      border: "1.5px dashed #cbd5e1",
-                      background: "#f8fafc",
+                      border: `1.5px dashed ${isDark ? "rgba(255,255,255,.18)" : "#cbd5e1"}`,
+                      background: isDark ? "#111827" : "#f8fafc",
                     }}
                   >
                     <div
                       style={{
                         fontSize: 12,
                         fontWeight: 700,
-                        color: "#64748b",
+                        color: isDark ? "#cbd5e1" : "#64748b",
                         marginBottom: 10,
                       }}
                     >
@@ -1791,12 +2012,12 @@ const QuizPage = ({ params }: { params?: { id?: string } }) => {
                         width: "100%",
                         padding: "12px 14px",
                         borderRadius: 12,
-                        border: "1.5px solid #cbd5e1",
+                        border: `1.5px solid ${isDark ? "rgba(255,255,255,.16)" : "#cbd5e1"}`,
                         fontSize: 14,
                         fontWeight: 600,
-                        color: "#0f172a",
+                        color: isDark ? "#f8fafc" : "#0f172a",
                         outline: "none",
-                        background: "#fff",
+                        background: isDark ? "#0f172a" : "#fff",
                       }}
                     />
                   </div>

@@ -17,7 +17,7 @@ langchain-openai>=0.0.8
 langchain-qdrant>=0.0.1
 langchain-experimental>=0.0.50
 # Langfuse observability
-langfuse>=3.0.0
+langfuse>=4.14.0,<5
 
 # Optional: for QR code filtering
 pyzbar>=0.1.9
@@ -53,3 +53,5 @@ scalekit-sdk-python>=2.0       # fetch each student's Google access token by ide
 # Hybrid web search (SearXNG + Crawl4AI) needs no extra Python deps —
 # 'requests' (above) is all ppt/ppt_websearch.py uses; the rest runs in Docker.
 langchain-experimental>=0.0.50
+kokoro-onnx>=0.4.9
+soundfile>=0.12.1

@@ -28,8 +28,18 @@ from __future__ import annotations
 
 import re
 import time
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from langfuse_utils import (
+    observation as _lf_observation,
+    trace_context as _lf_trace_context,
+    update_observation as _lf_update_observation,
+    flush_safely as _lf_flush,
+)
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 try:
     import orjson
@@ -147,9 +157,21 @@ class VerificationState(TypedDict):
     # ── Pass control ───────────────────────────────────────────────────────
     pass_number:   int
     overall_score: float
+    # Score carried from the previous pass, and whether this pass beat it. A
+    # pass that does not move the score is re-running the same gap fills for the
+    # same result: one run spent 11.5 min across three passes re-extracting
+    # section 2.7 twice while the score sat at 99.3 the whole time.
+    prev_score:    Optional[float]
+    stalled:       bool
 
     # ── Schema validation ──────────────────────────────────────────────────
     schema_report: Optional[Dict[str, Any]]
+
+    # ── Declared identity ──────────────────────────────────────────────────
+    # What the upload said this document IS (subject / part / term). The audit
+    # checks the JSON's unit fields against it, so metadata the extraction model
+    # invented is caught instead of being carried into Qdrant.
+    declared: Dict[str, Any]
 
     # ── Output ─────────────────────────────────────────────────────────────
     s3_upload_complete:  bool
@@ -168,9 +190,9 @@ def ocr_quality_guard_node(state: VerificationState) -> Dict[str, Any]:
     Writes page_quality_report.json.
     Updates state["content_md"] with cleaned version.
     """
-    print(f"\n{'='*60}")
-    print(f"  🛡️  OCR QUALITY GUARD — Pass {state['pass_number'] + 1}")
-    print(f"{'='*60}")
+    logger.info(f"{'='*60}")
+    logger.info(f"OCR QUALITY GUARD — Pass {state['pass_number'] + 1}")
+    logger.info(f"{'='*60}")
 
     content_md = state["content_md"]
     quality_report = generate_page_quality_report(content_md)
@@ -208,11 +230,11 @@ def fan_out_to_units(state: VerificationState) -> List[Send]:
     )
 
     if not units:
-        print("  ⚠️  [Orchestrator] No units found in structured data — skipping fan-out")
+        logger.warning("[Orchestrator] No units found in structured data — skipping fan-out")
         return []
 
-    print(
-        f"\n  🚀 [Orchestrator] Launching {len(units)} parallel verify_unit nodes "
+    logger.info(
+        f"[Orchestrator] Launching {len(units)} parallel verify_unit nodes "
         f"(pass {state['pass_number'] + 1})"
     )
 
@@ -248,7 +270,7 @@ def verify_unit_node(state: VerificationState) -> Dict[str, Any]:
 
     unit_number = unit.get("unit_number") or unit.get("chapter_number") or 0
 
-    print(f"\n  🔍 [VerifyUnit] Unit {unit_number}: {unit.get('title', '')[:50]}")
+    logger.info(f"[VerifyUnit] Unit {unit_number}: {unit.get('title', '')[:50]}")
 
     # ── Extract this unit's markdown slice ───────────────────────────────────
     if VERIFY_PIPELINE_AVAILABLE:
@@ -276,19 +298,19 @@ def verify_unit_node(state: VerificationState) -> Dict[str, Any]:
             bp_coverage_initial = bp_verdict_obj.coverage_pct
             blueprint_issues = bp_verdict_obj.issues  # severity-prefixed
             if bp_verdict_obj.verdict == "FAIL":
-                print(
-                    f"  🗓️  [Blueprint] Unit {unit_number}: "
+                logger.info(
+                    f"[Blueprint] Unit {unit_number}: "
                     f"FAIL ({bp_coverage_initial:.0f}% coverage) — "
                     f"{len(bp_verdict_obj.missing)} missing, "
                     f"{len(bp_verdict_obj.duplicates)} duplicate(s)"
                 )
             else:
-                print(
-                    f"  ✅ [Blueprint] Unit {unit_number}: "
+                logger.info(
+                    f"[Blueprint] Unit {unit_number}: "
                     f"PASS ({bp_coverage_initial:.0f}% coverage)"
                 )
         except Exception as bp_exc:
-            print(f"  ⚠️  [Blueprint] Unit {unit_number}: error building blueprint — {bp_exc}")
+            logger.warning(f"[Blueprint] Unit {unit_number}: error building blueprint — {bp_exc}")
 
     # ── Step 1: Check completeness ───────────────────────────────────────────
     if VERIFY_PIPELINE_AVAILABLE:
@@ -338,8 +360,8 @@ def verify_unit_node(state: VerificationState) -> Dict[str, Any]:
         )
 
         if fixes_applied:
-            print(
-                f"  🔧 [VerifyUnit] Unit {unit_number}: "
+            logger.info(
+                f"[VerifyUnit] Unit {unit_number}: "
                 f"{len(fixes_applied)} fix(es) applied → {fixes_applied}"
             )
             # Re-run completeness check on the fixed unit
@@ -355,13 +377,13 @@ def verify_unit_node(state: VerificationState) -> Dict[str, Any]:
                     bp_verdict_label  = bp_verdict_post.verdict
                     bp_coverage_final = bp_verdict_post.coverage_pct
                     if bp_verdict_post.verdict == "PASS":
-                        print(
-                            f"  ✅ [Blueprint] Unit {unit_number} after fixes: "
+                        logger.info(
+                            f"[Blueprint] Unit {unit_number} after fixes: "
                             f"PASS ({bp_coverage_final:.0f}% coverage)"
                         )
                     else:
-                        print(
-                            f"  ⚠️  [Blueprint] Unit {unit_number} after fixes: "
+                        logger.warning(
+                            f"[Blueprint] Unit {unit_number} after fixes: "
                             f"STILL FAIL ({bp_coverage_final:.0f}% coverage) — "
                             f"{len(bp_verdict_post.missing)} section(s) still missing"
                         )
@@ -370,7 +392,7 @@ def verify_unit_node(state: VerificationState) -> Dict[str, Any]:
                             if bi not in tagged_issues:
                                 tagged_issues.append(bi)
                 except Exception as bp_exc:
-                    print(f"  ⚠️  [Blueprint] post-fix judge error: {bp_exc}")
+                    logger.warning(f"[Blueprint] post-fix judge error: {bp_exc}")
                     bp_verdict_label  = bp_verdict_initial
                     bp_coverage_final = bp_coverage_initial
             else:
@@ -386,8 +408,8 @@ def verify_unit_node(state: VerificationState) -> Dict[str, Any]:
 
     # ── Step 4: Compute per-unit confidence score ────────────────────────────
     confidence = _unit_confidence_score(updated_unit, tagged_issues, warnings)
-    print(
-        f"  {'✅' if is_complete else '⚠️ '} [VerifyUnit] Unit {unit_number} "
+    logger.warning(
+        f"[VerifyUnit] Unit {unit_number} "
         f"— confidence: {confidence:.0f}% | "
         f"{'COMPLETE' if is_complete else f'{len(tagged_issues)} issue(s)'} | "
         f"Blueprint: {bp_verdict_label} ({bp_coverage_final:.0f}%)"
@@ -434,9 +456,9 @@ def schema_validator_node(state: VerificationState) -> Dict[str, Any]:
     Computes overall_score (0–100) and individual unit scores.
     Writes schema_integrity_report.json.
     """
-    print(f"\n{'='*60}")
-    print(f"  📐 SCHEMA INTEGRITY VALIDATOR — Pass {state['pass_number'] + 1}")
-    print(f"{'='*60}")
+    logger.info(f"{'='*60}")
+    logger.info(f"SCHEMA INTEGRITY VALIDATOR — Pass {state['pass_number'] + 1}")
+    logger.info(f"{'='*60}")
 
     # Extract expected TOC units for unit coverage scoring
     toc_expected: Optional[List[int]] = None
@@ -464,22 +486,56 @@ def schema_validator_node(state: VerificationState) -> Dict[str, Any]:
 # NODE 3: Convergence Check
 
 
+def _quality_gate_passed(state: VerificationState) -> bool:
+    """Score threshold AND the schema report's own verdict.
+
+    overall_score is a weighted composite, so a unit can clear 95 while still
+    carrying an unfixed CRITICAL (e.g. a section with empty content). Deferring
+    to schema_report["is_passing"] keeps the repair loop running for those
+    instead of declaring victory on the first pass.
+    """
+    if state.get("overall_score", 0.0) < _PASS_THRESHOLD:
+        return False
+    report = state.get("schema_report") or {}
+    return bool(report.get("is_passing", True))
+
+
 def convergence_check_node(state: VerificationState) -> Dict[str, Any]:
     """
     Node 3 — Increment pass counter. Routing decision is in convergence_router.
     """
     new_pass = state["pass_number"] + 1
     score    = state["overall_score"]
+    prev     = state.get("prev_score")
+    # "No better than last time" means the fixes this pass applied changed
+    # nothing measurable, so another identical pass will change nothing either.
+    stalled  = prev is not None and score <= prev + 0.01
 
-    print(f"\n  🔄 [Convergence] Pass {new_pass} complete. Score: {score:.1f}/100")
-    if score >= _PASS_THRESHOLD:
-        print(f"  ✅ [Convergence] Threshold {_PASS_THRESHOLD} reached — DONE")
+    logger.info(f"[Convergence] Pass {new_pass} complete. Score: {score:.1f}/100")
+    if _quality_gate_passed(state):
+        logger.info(f"[Convergence] Threshold {_PASS_THRESHOLD} reached — DONE")
+    elif stalled:
+        logger.warning(
+            f"[Convergence] Pass {new_pass} did not improve the score "
+            f"({prev:.1f} → {score:.1f}) — stopping instead of re-running the same "
+            f"fixes. The audit repair loop still runs and is what decides storage."
+        )
+    elif score >= _PASS_THRESHOLD:
+        # Say WHICH veto: this line used to blame "CRITICAL failures" while the
+        # report showed failures=0 and the real veto was word coverage.
+        report = state.get("schema_report") or {}
+        crit = [f for f in report.get("field_failures", []) if f.get("severity") == "CRITICAL"]
+        why = (f"{len(crit)} CRITICAL field failure(s)" if crit
+               else f"word coverage {report.get('word_coverage_pct')}% is under the backstop")
+        logger.warning(
+            f"[Convergence] Score {score:.1f} clears {_PASS_THRESHOLD} but the "
+            f"schema report vetoes it ({why}) — not converged")
     elif new_pass >= _MAX_PASSES:
-        print(f"  ⚠️  [Convergence] Max passes ({_MAX_PASSES}) reached — exiting with score {score:.1f}")
+        logger.warning(f"[Convergence] Max passes ({_MAX_PASSES}) reached — exiting with score {score:.1f}")
     else:
-        print(f"  🔁 [Convergence] Score below {_PASS_THRESHOLD} — running pass {new_pass + 1}")
+        logger.info(f"[Convergence] Score below {_PASS_THRESHOLD} — running pass {new_pass + 1}")
 
-    return {"pass_number": new_pass}
+    return {"pass_number": new_pass, "prev_score": score, "stalled": stalled}
 
 
 def convergence_router(state: VerificationState) -> str:
@@ -489,8 +545,14 @@ def convergence_router(state: VerificationState) -> str:
         "max_passes" → tried 3 times → save_and_report anyway
         "retry"      → try again → back to ocr_quality_guard
     """
-    if state["overall_score"] >= _PASS_THRESHOLD:
+    if _quality_gate_passed(state):
         return "pass"
+    # A pass that did not improve the score has nothing new to try; looping
+    # again just repeats the same gap fills. Hand over to save_and_report, where
+    # the audit repair loop — which fixes only the sections the audit named, and
+    # is the thing that actually decides storage — takes it from here.
+    if state.get("stalled"):
+        return "max_passes"
     if state["pass_number"] >= _MAX_PASSES:
         return "max_passes"
     return "retry"
@@ -508,29 +570,135 @@ def save_and_report_node(state: VerificationState) -> Dict[str, Any]:
         3. Emit agentic_verification_report.json
         4. Set state["is_complete"]
     """
-    print(f"\n{'='*60}")
-    print(f"  💾 SAVE & REPORT")
-    print(f"{'='*60}")
+    logger.info(f"{'='*60}")
+    logger.info(f"SAVE & REPORT")
+    logger.info(f"{'='*60}")
 
     doc_dir     = Path(OUTPUTS_DIR) / state["doc_id"]
     s_path      = Path(state["structured_json_path"])
-    is_complete = state["overall_score"] >= _PASS_THRESHOLD
 
-    # ── 1. Save corrected structured.json ────────────────────────────────────
-    s_path.write_bytes(_dumps(state["structured_data"]))
-    print(f"  💾 Saved corrected structured.json → {s_path.name}")
+    # ── Audit-and-repair, then GATE ──────────────────────────────────────────
+    # This node used to compute a verdict and save regardless: a run could log
+    # FINAL STATUS: PARTIAL with 49 sections missing and still write
+    # structured.json AND upload it to S3. The audit now decides, and it repairs
+    # only the sections it fails on rather than re-running the textbook.
+    audit_result = None
+    audit_history = []
+    try:
+        from extraction_repair import audit_repair_loop
 
-    # ── 2. S3 upload ──────────────────────────────────────────────────────────
-    s3_ok = False
-    if S3_AVAILABLE:
+        state["structured_data"], audit_result, audit_history = audit_repair_loop(
+            state["structured_data"],
+            state.get("content_md", "") or "",
+            api_key=state.get("api_key", "") or "",
+            max_passes=int(os.getenv("AUDIT_MAX_PASSES", "3")),
+            declared=state.get("declared") or {},
+        )
+    except Exception as exc:
+        logger.error(f"[Audit] audit/repair failed: {type(exc).__name__}: {exc}")
+
+    # The schema report in state was computed BEFORE the repair loop ran, on
+    # data the loop has since changed. Judging the repaired document by the
+    # stale report rejected a chapter whose eight null titles the repair had
+    # just normalized: the audit re-checked and passed, the schema verdict was
+    # never re-asked. Re-run it here (deterministic, no model call) so the gate
+    # and the report on disk both describe the document that is actually stored.
+    if audit_result is not None:
         try:
-            _upload_doc_to_s3(state["doc_id"], doc_dir, state["structured_data"])
-            s3_ok = True
-            print(f"  ☁️  S3 upload complete for doc_id={state['doc_id']}")
+            toc_expected: Optional[List[int]] = None
+            if VERIFY_PIPELINE_AVAILABLE:
+                toc_units = extract_toc_units_from_markdown(state.get("content_md", "") or "")
+                toc_expected = [u["number"] for u in toc_units] if toc_units else None
+            refreshed = run_schema_validator(
+                structured_data=state["structured_data"],
+                content_md=state.get("content_md", "") or "",
+                toc_expected_units=toc_expected,
+            )
+            save_schema_report(refreshed, doc_dir)
+            state["schema_report"] = refreshed.to_dict()
+            state["overall_score"] = refreshed.overall_score
         except Exception as exc:
-            print(f"  ⚠️  S3 upload failed: {exc}")
+            logger.warning(
+                f"[Gate] schema re-validation after repair failed "
+                f"({type(exc).__name__}: {exc}) — judging by the pre-repair report"
+            )
+
+        # Both gates, not either. The audit is thorough about structure and
+        # blind to some field-level faults the schema validator catches, so a
+        # unit could carry a CRITICAL "required field is empty" and still ship
+        # because the heading census was clean — `is_passing: false` and
+        # `passed: true` in the same run, with the document indexed anyway.
+        is_complete = bool(audit_result.passed) and _quality_gate_passed(state)
+        if audit_result.passed and not is_complete:
+            report = state.get("schema_report") or {}
+            crit = [f for f in report.get("field_failures", [])
+                    if f.get("severity") == "CRITICAL"]
+            why = (f"{len(crit)} CRITICAL: " + "; ".join(
+                       f"{f.get('section_type')}/{f.get('field')}" for f in crit[:5])
+                   if crit else f"score {state.get('overall_score', 0.0):.1f} < {_PASS_THRESHOLD}"
+                   if state.get("overall_score", 0.0) < _PASS_THRESHOLD
+                   else f"word coverage {report.get('word_coverage_pct')}%")
+            logger.error(
+                f"[Audit] structure passed but the schema report did not "
+                f"({why}) — not storing"
+            )
     else:
-        print("  ℹ️  S3 not configured — skipping S3 upload")
+        # Audit unavailable — fall back to the old composite verdict rather than
+        # letting a crash here wave a document through.
+        is_complete = _quality_gate_passed(state)
+
+    # ── 0. Normalize section hierarchy ───────────────────────────────────────
+    # The gap-filler above re-attaches a numbered section's children as a flat
+    # sub_items list ({"number": "1.4.1", ...}). Re-promote them into proper
+    # nested sub_sections HERE — before the disk write and S3 upload below — so
+    # both the local file and the S3 copy carry the corrected shape.
+    try:
+        from auto_schema_extractor import normalize_section_hierarchy
+        state["structured_data"] = normalize_section_hierarchy(
+            state["structured_data"], state.get("content_md", "")
+        )
+    except Exception as exc:
+        logger.warning(f"Section-hierarchy normalization skipped: {exc}")
+
+    # ── 0b. Write the audit report either way — a rejection must be explainable
+    if audit_result is not None:
+        try:
+            (doc_dir / "audit_report.json").write_bytes(
+                _dumps({**audit_result.to_dict(), "passes": audit_history})
+            )
+        except Exception as exc:
+            logger.warning(f"Could not write audit_report.json: {exc}")
+
+    # ── 1. Save structured.json — ONLY when the audit passes ─────────────────
+    s3_ok = False
+    if is_complete:
+        s_path.write_bytes(_dumps(state["structured_data"]))
+        logger.info(f"Saved corrected structured.json → {s_path.name}")
+
+        # ── 2. S3 upload ──────────────────────────────────────────────────────
+        if S3_AVAILABLE:
+            try:
+                _upload_doc_to_s3(state["doc_id"], doc_dir, state["structured_data"])
+                s3_ok = True
+                logger.info(f"S3 upload complete for doc_id={state['doc_id']}")
+            except Exception as exc:
+                logger.warning(f"S3 upload failed: {exc}")
+        else:
+            logger.info("S3 not configured — skipping S3 upload")
+    else:
+        # Quarantine. The previous good structured.json is left untouched, so a
+        # failed re-run can never replace a document that passed before.
+        reject_path = doc_dir / "structured.rejected.json"
+        try:
+            reject_path.write_bytes(_dumps(state["structured_data"]))
+        except Exception as exc:
+            logger.warning(f"Could not write {reject_path.name}: {exc}")
+        detail = audit_result.summary() if audit_result is not None else "quality gate failed"
+        logger.error(
+            f"[Gate] {state['doc_id']}: {detail} — NOT saved to structured.json "
+            f"and NOT uploaded. Rejected copy → {reject_path.name}, "
+            f"reasons → audit_report.json"
+        )
 
     # ── 3. Compile and save final report ─────────────────────────────────────
     unit_reports = state.get("unit_reports", [])
@@ -540,6 +708,8 @@ def save_and_report_node(state: VerificationState) -> Dict[str, Any]:
         "passes_run":      state["pass_number"],
         "overall_score":   round(state["overall_score"], 2),
         "is_complete":     is_complete,
+        "audit":           audit_result.to_dict() if audit_result is not None else None,
+        "stored":          bool(is_complete),
         "fixes_made":      state.get("fixes_made", 0),
         "s3_uploaded":     s3_ok,
         "schema_report":   state.get("schema_report"),
@@ -565,14 +735,14 @@ def save_and_report_node(state: VerificationState) -> Dict[str, Any]:
 
     report_path = doc_dir / "agentic_verification_report.json"
     report_path.write_bytes(_dumps(final_report))
-    print(f"   Report saved → {report_path.name}")
+    logger.info(f"Report saved → {report_path.name}")
 
-    status = " COMPLETE" if is_complete else f"⚠️  PARTIAL (score={state['overall_score']:.1f})"
-    print(f"\n   FINAL STATUS: {status}")
-    print(f"     Score        : {state['overall_score']:.1f}/100")
-    print(f"     Passes run   : {state['pass_number']}")
-    print(f"     Fixes made   : {state.get('fixes_made', 0)}")
-    print(f"     Units done   : {len(unit_reports)}")
+    status = "COMPLETE" if is_complete else f"PARTIAL (score={state['overall_score']:.1f})"
+    logger.info(f"FINAL STATUS: {status}")
+    logger.info(f"Score        : {state['overall_score']:.1f}/100")
+    logger.info(f"Passes run   : {state['pass_number']}")
+    logger.info(f"Fixes made   : {state.get('fixes_made', 0)}")
+    logger.info(f"Units done   : {len(unit_reports)}")
 
     return {
         "s3_upload_complete": s3_ok,
@@ -610,7 +780,7 @@ def _upload_doc_to_s3(doc_id: str, doc_dir: Path, structured_data: Dict[str, Any
             f"{prefix}/structured.json",
             ExtraArgs={"ContentType": "application/json"},
         )
-        print(f"    ☁️  Uploaded structured.json → s3://{bucket}/{prefix}/structured.json")
+        logger.info(f"Uploaded structured.json → s3://{bucket}/{prefix}/structured.json")
 
     # Upload page images (if any, produced by ocr_pipeline)
     page_img_dir = doc_dir / "page_images"
@@ -624,7 +794,7 @@ def _upload_doc_to_s3(doc_id: str, doc_dir: Path, structured_data: Dict[str, Any
             )
         img_count = len(list(page_img_dir.glob("*.jpg")))
         if img_count:
-            print(f"    ☁️  Uploaded {img_count} page image(s) → s3://{bucket}/{prefix}/page_images/")
+            logger.info(f"Uploaded {img_count} page image(s) → s3://{bucket}/{prefix}/page_images/")
 
     # Upload the verification report
     rpt_path = doc_dir / "agentic_verification_report.json"
@@ -782,6 +952,7 @@ def run_verification_graph(
     content_md_path: Path,
     subject: str,
     api_key: Optional[str] = None,
+    declared: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Main entry point for the agentic verification workflow.
@@ -837,23 +1008,42 @@ def run_verification_graph(
         "pass_number":          0,
         "overall_score":        0.0,
         "schema_report":        None,
+        "declared":             {"subject": subject, **(declared or {})},
         "s3_upload_complete":   False,
         "final_report_path":    "",
         "is_complete":          False,
     }
 
-    print(f"\n{'='*60}")
-    print(f"  🤖 AGENTIC VERIFICATION WORKFLOW")
-    print(f"     doc_id  : {doc_id}")
-    print(f"     subject : {subject}")
-    print(f"     units   : "
+    logger.info(f"{'='*60}")
+    logger.info(f"AGENTIC VERIFICATION WORKFLOW")
+    logger.info(f"doc_id  : {doc_id}")
+    logger.info(f"subject : {subject}")
+    logger.info(f"units   : "
           f"{len(structured_data.get('units') or structured_data.get('chapters', []))}")
-    print(f"     threshold: {_PASS_THRESHOLD}% | max_passes: {_MAX_PASSES}")
-    print(f"{'='*60}\n")
+    logger.info(f"threshold: {_PASS_THRESHOLD}% | max_passes: {_MAX_PASSES}")
+    logger.info(f"{'='*60}")
 
-    # Build and run graph
+    # Build and run graph. The root observation and the propagated attributes
+    # go on here rather than inside the nodes, so the whole workflow - every
+    # re-extraction and repair call its nodes make - lands in one trace instead
+    # of one trace per model call.
     app = build_verification_graph()
-    final_state = app.invoke(initial_state)
+    with _lf_observation("verify-extraction-workflow", as_type="chain",
+                         input={"doc_id": doc_id, "subject": subject}) as _root:
+        with _lf_trace_context(trace_name="verify-extraction-workflow",
+                               tags=["verification", subject or "unknown"],
+                               metadata={"doc_id": doc_id,
+                                         "subject": subject or "unknown",
+                                         "pass_threshold": _PASS_THRESHOLD,
+                                         "max_passes": _MAX_PASSES}):
+            final_state = app.invoke(initial_state)
+        _lf_update_observation(_root, output={
+            "is_complete":   final_state.get("is_complete", False),
+            "overall_score": final_state.get("overall_score", 0.0),
+            "passes_run":    final_state.get("pass_number", 0),
+            "fixes_made":    final_state.get("fixes_made", 0),
+        })
+    _lf_flush()
 
     # Return the final report
     report_path = final_state.get("final_report_path", "")
@@ -889,7 +1079,7 @@ def main():
     c_path  = doc_dir / "content.md"
 
     if not s_path.exists() or not c_path.exists():
-        print(f"Error: Missing files for '{args.document_id}' in {OUTPUTS_DIR}")
+        logger.error(f"Error: Missing files for '{args.document_id}' in {OUTPUTS_DIR}")
         sys.exit(1)
 
     report = run_verification_graph(
@@ -900,7 +1090,7 @@ def main():
         api_key="" if args.dry_run else None,
     )
 
-    print(f"\n  ✅ Done. is_complete={report.get('is_complete')} "
+    logger.info(f"Done. is_complete={report.get('is_complete')} "
           f"score={report.get('overall_score')}")
     sys.exit(0 if report.get("is_complete") else 1)
 

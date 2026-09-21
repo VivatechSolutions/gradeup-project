@@ -20,13 +20,15 @@ Upgrade (RAG quality logging):
 """
 
 from typing import Any, Dict, List, Optional, Tuple
+from logger import get_logger
 
+logger = get_logger(__name__)
 
 def _search(query: str, coords: Dict[str, Any], limit: int) -> List[Dict[str, Any]]:
     try:
         from qdrant_integration import search_qdrant
     except Exception as e:
-        print(f"  [ppt_rag] qdrant import failed: {e}")
+        logger.error(f"[ppt_rag] qdrant import failed: {e}")
         return []
     try:
         return search_qdrant(
@@ -40,7 +42,7 @@ def _search(query: str, coords: Dict[str, Any], limit: int) -> List[Dict[str, An
             term_filter=coords.get("term"),
         )
     except Exception as e:
-        print(f"  [ppt_rag] search_qdrant failed: {e}")
+        logger.error(f"[ppt_rag] search_qdrant failed: {e}")
         return []
 
 

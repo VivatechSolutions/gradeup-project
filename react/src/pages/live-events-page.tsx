@@ -58,6 +58,22 @@ const styles = `
 .event-action.seminar{background:#059669}
 .event-action.disabled{background:#e2e8f0;color:#64748b;cursor:not-allowed}
 .event-empty{padding:42px 18px;text-align:center;border:1px dashed #cbd5e1;border-radius:8px;background:#fff;color:#64748b}
+[data-theme="dark"] .live-events-page,.dark .live-events-page{background:#0b1120;color:#f8fafc}
+[data-theme="dark"] .live-events-sub,.dark .live-events-sub{color:#cbd5e1}
+[data-theme="dark"] .live-events-tabs,.dark .live-events-tabs{background:#111827;border-color:rgba(148,163,184,.22);box-shadow:0 12px 30px rgba(0,0,0,.28)}
+[data-theme="dark"] .live-events-tab,.dark .live-events-tab{color:#cbd5e1}
+[data-theme="dark"] .live-events-tab.active,.dark .live-events-tab.active{background:#e2e8f0;color:#0f172a}
+[data-theme="dark"] .event-card,.dark .event-card{background:#111827;border-color:rgba(148,163,184,.22);box-shadow:0 14px 34px rgba(0,0,0,.34)}
+[data-theme="dark"] .event-card-top,.dark .event-card-top{border-bottom-color:rgba(148,163,184,.16)}
+[data-theme="dark"] .event-topic,.dark .event-topic{color:#f8fafc}
+[data-theme="dark"] .event-meta,.dark .event-meta{color:#cbd5e1}
+[data-theme="dark"] .event-status,.dark .event-status{color:#e2e8f0}
+[data-theme="dark"] .event-status.live,.dark .event-status.live{color:#fca5a5}
+[data-theme="dark"] .event-type,.dark .event-type{background:rgba(96,165,250,.16);color:#93c5fd}
+[data-theme="dark"] .event-type.seminar,.dark .event-type.seminar{background:rgba(16,185,129,.16);color:#6ee7b7}
+[data-theme="dark"] .event-fact,.dark .event-fact{background:rgba(15,23,42,.78);color:#e2e8f0;border:1px solid rgba(148,163,184,.16)}
+[data-theme="dark"] .event-action.disabled,.dark .event-action.disabled{background:#334155;color:#cbd5e1}
+[data-theme="dark"] .event-empty,.dark .event-empty{background:#111827;border-color:#475569;color:#cbd5e1}
 @media(max-width:720px){.live-events-shell{padding:84px 14px 24px}.live-events-head{align-items:stretch;flex-direction:column}.live-events-tabs{width:100%}.live-events-tab{flex:1}.live-events-title{font-size:24px}}
 `;
 

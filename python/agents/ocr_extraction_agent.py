@@ -10,6 +10,10 @@ import re
 from pathlib import Path
 from typing import Any, Dict
 
+from logger import get_logger
+
+logger = get_logger(__name__)
+
 
 # ── Lazy helpers ──────────────────────────────────────────────────────────────
 
@@ -83,9 +87,7 @@ def ocr_extraction_node(state: Dict[str, Any]) -> Dict[str, Any]:
     pdf_path    = Path(state["pdf_path"])
     mistral_key = state["mistral_key"]
 
-    print(f"\n{'='*60}")
-    print(f"🔍 Stage 0a: Mistral OCR  →  {pdf_path.name}")
-    print(f"{'='*60}")
+    logger.info(f"Stage 0a: Mistral OCR  →  {pdf_path.name}")
 
     # Step 1: Mistral OCR
     client     = _get_mistral_client(mistral_key)
@@ -93,8 +95,10 @@ def ocr_extraction_node(state: Dict[str, Any]) -> Dict[str, Any]:
     ocr_result = extract_with_mistral_ocr(client, pdf_path, use_upload_flow=True)
 
     if not ocr_result.get("success"):
+        err_msg = f"Mistral OCR failed: {ocr_result.get('error', 'unknown')}"
+        logger.error(f"{err_msg}")
         return {
-            "pipeline_errors":    [f"Mistral OCR failed: {ocr_result.get('error', 'unknown')}"],
+            "pipeline_errors":    [err_msg],
             "raw_markdown":       "",
             "content_md":         "",
             "raw_ocr_response":   {},
@@ -104,8 +108,10 @@ def ocr_extraction_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
     raw_markdown = ocr_result.get("markdown", "")
     raw_ocr      = ocr_result.get("raw", {})
-    print(f"  ✅ OCR complete — {len(raw_markdown):,} chars, "
-          f"{len(raw_ocr.get('pages', []))} pages")
+    logger.info(
+        f"OCR complete — {len(raw_markdown):,} chars, "
+        f"{len(raw_ocr.get('pages', []))} pages"
+    )
 
     # Step 2-5: Normalize → fix placeholders → strip watermarks → section numbers
     md = re.sub(r"\n{3,}", "\n\n", raw_markdown)
@@ -117,13 +123,13 @@ def ocr_extraction_node(state: Dict[str, Any]) -> Dict[str, Any]:
     page_list = _build_page_list(raw_ocr)
 
     # Step 7: OCR quality guard
-    print(f"  🛡️  Running OCR quality guard...")
+    logger.info("Running OCR quality guard...")
     cleaned_md, quality_report = _run_quality_guard(md)
     pages_cleaned = quality_report.get("pages_cleaned", 0)
     if pages_cleaned:
-        print(f"  🧹 Cleaned {pages_cleaned} corrupted page(s)")
+        logger.info(f"Cleaned {pages_cleaned} corrupted page(s)")
 
-    print(f"  ✅ Stage 0a complete — {len(cleaned_md):,} chars ready")
+    logger.info(f"Stage 0a complete — {len(cleaned_md):,} chars ready")
 
     return {
         "raw_ocr_response":    raw_ocr,

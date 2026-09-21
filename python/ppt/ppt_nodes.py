@@ -14,8 +14,10 @@ Architecture (agent-driven mode):
 
 Severity is determined by the agent, not by what the student typed:
   - good        : slide already looks fine → verbal feedback only.
-  - minor       : 1-2 small fixes (font nudge, ≤2 bullet tweaks) → auto-apply.
-  - significant : content rewrite, empty slide, many bullets changed → HITL approval.
+  - minor       : formatting only (a font-size nudge) → auto-apply.
+  - significant : anything that writes words onto the slide — a rewrite, a spelling fix,
+                  or filling a blank slide → HITL approval. The deck's content is the
+                  student's, so the agent never writes it without a yes.
                   ADAPTIVE: downgraded to minor when rejection_count >= 2 (student
                   keeps rejecting → auto-apply to reduce friction).
 
@@ -38,6 +40,9 @@ from ppt.ppt_theme import (
     TITLE_FONT_SIZE_PT, BODY_FONT_SIZE_PT,
     MAX_BULLETS_PER_SLIDE, MIN_TITLE_FONT_SIZE_PT, MAX_WORDS_PER_BULLET,
 )
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 # Threshold: if rejection_count >= this, downgrade significant → minor (adaptive).
 _ADAPTIVE_REJECTION_THRESHOLD = 2
@@ -63,9 +68,9 @@ def analyze_slide_node(state: PPTAgentState) -> dict:
       current slide snapshot, uses RAG + LLM to plan the right content and theme
       ops, then classifies severity:
         · good        → verbal praise only.
-        · minor       → auto-apply (font tweak, small bullet fix).
-        · significant → HITL approval (content rewrite, empty slide, many changes).
-                        Downgraded to minor when rejection_count >= threshold (#7).
+        · minor       → auto-apply (formatting only, e.g. a font-size nudge).
+        · significant → HITL approval — every content write, including filling a blank
+                        slide. Downgraded to minor when rejection_count >= threshold (#7).
     """
     slide_op = state.get("slide_op", "")       # "review" | "suggest" | ""
     snapshot = state.get("slide_snapshot") or {}
@@ -90,7 +95,7 @@ def analyze_slide_node(state: PPTAgentState) -> dict:
                 from ppt.ppt_rag import retrieve_context
                 rag_chunks, rag_stats = retrieve_context(query, coords, limit=5)
             except Exception as e:
-                print(f"  [analyze_slide] RAG retrieval failed: {e}")
+                logger.error(f"[analyze_slide] RAG retrieval failed: {e}")
         _forward_rag_stats(session_id, rag_stats)
         # Hybrid RAG: augment with free web search when the router chose web/hybrid.
         rag_chunks, source_used = _augment_with_web(
@@ -111,7 +116,7 @@ def analyze_slide_node(state: PPTAgentState) -> dict:
                 "speaker_notes": None,
             }
         except Exception as e:
-            print(f"  [analyze_slide] content review failed: {e}")
+            logger.error(f"[analyze_slide] content review failed: {e}")
             return {"mode": "content", "severity": "good",
                     "analysis": "(Content review unavailable.)", "suggestions": [],
                     "rag_chunks": [], "planned_ops": [],
@@ -122,6 +127,19 @@ def analyze_slide_node(state: PPTAgentState) -> dict:
     bullets: List[str] = snapshot.get("bullets") or []
     title_fs = snapshot.get("title_font_size")
     unit_title = state.get("unit_title") or ""
+    instruction = (state.get("student_instruction") or "").strip()
+
+    # A slide already rendered as a designed layout has NO body placeholder — the renderers
+    # delete it — so `bullets` comes back empty even though the slide is full. Read the
+    # laid-out text boxes as well, otherwise a finished slide looks blank to us and every
+    # re-run "rebuilds" it into the same layout with the same reason.
+    from ppt.ppt_review import _readable_slide_text
+    rendered_lines = [ln.strip() for ln in _readable_slide_text(snapshot).split("\n") if ln.strip()]
+    content_lines: List[str] = bullets or rendered_lines
+    # A table or chart counts as content too, even though we can't read its text — a slide
+    # holding one must not be treated as blank and rebuilt without the student's say-so.
+    has_content = bool(content_lines) or bool(snapshot.get("has_layout")) \
+        or bool(snapshot.get("has_table"))
 
     planned_ops: List[dict] = []
     issues: List[str] = []
@@ -150,7 +168,7 @@ def analyze_slide_node(state: PPTAgentState) -> dict:
 
     # Detect near-duplicate CONTENT across slides (different titles, same points) so the
     # student is told instead of us silently rebuilding two identical slides.
-    dup_slide = _most_overlapping_slide("\n".join(bullets) or snapshot.get("body", ""),
+    dup_slide = _most_overlapping_slide("\n".join(content_lines) or snapshot.get("body", ""),
                                         state.get("other_slides") or [])
     if dup_slide:
         cross_slide_issues.append(
@@ -175,9 +193,9 @@ def analyze_slide_node(state: PPTAgentState) -> dict:
     # redesign even if the slide already looks fine — a flat bullet list can always be
     # upgraded to a designed layout, and "looks great, no change" is the wrong answer to
     # an explicit edit request. The student still approves/rejects the proposal.
-    explicit_edit = bool((state.get("student_instruction") or "").strip())
-    is_prose = any(len(line.split()) > MAX_WORDS_PER_BULLET for line in bullets)
-    needs_restructure = ((not bullets) or (len(bullets) > MAX_BULLETS_PER_SLIDE)
+    explicit_edit = bool(instruction)
+    is_prose = any(len(line.split()) > MAX_WORDS_PER_BULLET for line in content_lines)
+    needs_restructure = ((not has_content) or (len(content_lines) > MAX_BULLETS_PER_SLIDE)
                          or is_prose or explicit_edit)
     theme_spec: dict = state.get("theme_spec") or {}
     rag_chunks: List[dict] = []
@@ -189,7 +207,7 @@ def analyze_slide_node(state: PPTAgentState) -> dict:
                 from ppt.ppt_rag import retrieve_context
                 rag_chunks, rag_stats = retrieve_context(query, coords, limit=5)
             except Exception as e:
-                print(f"  [analyze_slide] RAG retrieval failed: {e}")
+                logger.error(f"[analyze_slide] RAG retrieval failed: {e}")
         _forward_rag_stats(session_id, rag_stats)
         # Hybrid RAG on the edit path too: pull the open web when the router chose web/hybrid.
         rag_chunks, _ = _augment_with_web(query, rag_chunks, state.get("web_source") or "rag")
@@ -205,52 +223,59 @@ def analyze_slide_node(state: PPTAgentState) -> dict:
                 t for i, t in enumerate(all_slide_titles) if i != slide_index]
             # Give each slide a DIFFERENT design: avoid layouts already used on other slides.
             avoid_layouts = state.get("avoid_layouts") or []
+            # The student's own words steer the redesign — without them the planner sees the
+            # same inputs as last turn and returns the same slide back.
             layout = llm_build_slide_layout(snapshot, rag_chunks, unit_title,
-                                            other_slides, avoid_layouts)
+                                            other_slides, avoid_layouts,
+                                            student_instruction=instruction,
+                                            current_layout=state.get("current_layout") or "")
             if layout.get("layout"):
                 kind = layout["layout"]
-                if not bullets:
+                if not has_content:
                     reason = f"Slide had no content — built a curriculum-aligned {kind} layout."
+                elif explicit_edit:
+                    reason = f"You asked: \"{instruction}\" — rebuilt this slide as a {kind} layout."
                 elif is_prose:
                     reason = f"Slide was prose — reorganized it into a {kind} layout."
-                elif explicit_edit:
-                    reason = f"You asked to edit — upgraded the {len(bullets)} bullets into a designed {kind} layout."
                 else:
-                    reason = f"Slide had {len(bullets)} bullets — restructured into a {kind} layout."
+                    reason = (f"Slide had {len(content_lines)} points — restructured into a "
+                              f"{kind} layout.")
                 planned_ops.append({"op": "set_layout", "value": layout, "reason": reason,
                                     "theme_spec": theme_spec})
                 issues.append(f"organized into a {kind} layout")
                 layout_built = True
         except Exception as e:
-            print(f"  [analyze_slide] slide layout planning failed: {e}")
+            logger.error(f"[analyze_slide] slide layout planning failed: {e}")
 
         if not layout_built:
             try:
                 from ppt.ppt_review import llm_restructure_slide
-                review = llm_restructure_slide(snapshot, rag_chunks, unit_title)
+                review = llm_restructure_slide(snapshot, rag_chunks, unit_title, instruction)
                 suggested = review.get("suggested_bullets") or []
                 highlight_terms = review.get("highlight_terms") or []
                 if suggested:
-                    if not bullets:
+                    if not has_content:
                         reason = "Slide had no content — agent generated curriculum-aligned bullets."
+                    elif explicit_edit:
+                        reason = f"You asked: \"{instruction}\" — rewrote this slide's points."
                     elif is_prose:
                         reason = "Slide was prose — rewrote it as concise point-wise bullets."
                     else:
-                        reason = f"Slide had {len(bullets)} bullets (>{MAX_BULLETS_PER_SLIDE}) — trimmed to key points."
+                        reason = f"Slide had {len(content_lines)} bullets (>{MAX_BULLETS_PER_SLIDE}) — trimmed to key points."
                     planned_ops.append({"op": "set_bullets", "value": suggested[:MAX_BULLETS_PER_SLIDE],
                                         "reason": reason, "theme_spec": theme_spec})
                     issues.append(
-                        "added bullets" if not bullets
+                        "added bullets" if not has_content
                         else ("restructured prose into " f"{len(suggested[:MAX_BULLETS_PER_SLIDE])} points"
                               if is_prose else
-                              f"trimmed bullets {len(bullets)} → {len(suggested[:MAX_BULLETS_PER_SLIDE])}")
+                              f"rewrote {len(content_lines)} → {len(suggested[:MAX_BULLETS_PER_SLIDE])} points")
                     )
                     if highlight_terms:
                         planned_ops.append({"op": "highlight_terms", "value": highlight_terms,
                                             "reason": "Bolded the key terms."})
                         issues.append("bolded key terms")
             except Exception as e:
-                print(f"  [analyze_slide] LLM content planning failed: {e}")
+                logger.error(f"[analyze_slide] LLM content planning failed: {e}")
 
     # 2b. Spelling — only when we KEEP the existing text; skip if we're rewriting the body
     #     (set_bullets / set_cards) or if text is unchanged (cache).
@@ -259,7 +284,7 @@ def analyze_slide_node(state: PPTAgentState) -> dict:
             from ppt.ppt_review import llm_check_spelling
             from ppt.ppt_session import get_spell_cache, update_spell_cache, compute_text_hash
 
-            slide_text = "\n".join([title] + bullets)
+            slide_text = "\n".join([title] + content_lines)
             current_hash = compute_text_hash(slide_text)
             cached_hash: Optional[str] = None
             if session_id:
@@ -281,7 +306,7 @@ def analyze_slide_node(state: PPTAgentState) -> dict:
                 })
                 issues.append(f"{len(corrections)} spelling fix(es)")
         except Exception as e:
-            print(f"  [analyze_slide] spelling check failed: {e}")
+            logger.error(f"[analyze_slide] spelling check failed: {e}")
 
     # 3. Missing title — structural note (not an op, just verbal).
     if not title:
@@ -296,10 +321,11 @@ def analyze_slide_node(state: PPTAgentState) -> dict:
         severity: Literal["good", "minor", "significant"] = "good"
         analysis = "This slide's content and formatting match the theme — looks great."
     elif any(op.get("op") in text_change_ops for op in planned_ops):
-        empty_slide = not bullets
-        has_spelling = any(op.get("op") == "fix_spelling" for op in planned_ops)
-        severity = ("minor" if (empty_slide and not has_spelling and len(planned_ops) <= 2)
-                    else "significant")
+        # Anything that writes WORDS onto the deck is the student's content — filling a
+        # blank slide included — so it always goes through approval. Only formatting-only
+        # changes (a font-size nudge) auto-apply. The adaptive rule below still relaxes
+        # this for a student who keeps declining.
+        severity = "significant"
         analysis = "; ".join(issues) + "."
     elif planned_ops:
         severity = "minor"
@@ -342,7 +368,7 @@ def analyze_slide_node(state: PPTAgentState) -> dict:
                 planned_ops.append({"op": "set_speaker_notes", "value": speaker_notes,
                                     "reason": "Generated speaking script for the presenter."})
         except Exception as e:
-            print(f"  [analyze_slide] speaker notes generation failed: {e}")
+            logger.error(f"[analyze_slide] speaker notes generation failed: {e}")
 
     # ── Upgrade #6: Image suggestion (verbal, ≥4 bullets, no existing image) ──
     image_suggestion: Optional[str] = None
@@ -352,7 +378,7 @@ def analyze_slide_node(state: PPTAgentState) -> dict:
                  if op.get("op") == "set_layout"), None)
         or next((_cards_to_bullets(op["value"]) for op in planned_ops
                  if op.get("op") == "set_cards"), None)
-        or bullets
+        or content_lines
     )
     has_existing_image = bool(snapshot.get("has_image"))
     if len(effective_bullets) >= _IMAGE_SUGGESTION_MIN_BULLETS and not has_existing_image:
@@ -361,7 +387,7 @@ def analyze_slide_node(state: PPTAgentState) -> dict:
             effective_snap = {**snapshot, "bullets": effective_bullets}
             image_suggestion = llm_suggest_image(effective_snap, unit_title)
         except Exception as e:
-            print(f"  [analyze_slide] image suggestion failed: {e}")
+            logger.error(f"[analyze_slide] image suggestion failed: {e}")
 
     return {
         "mode": "design",
@@ -429,7 +455,7 @@ def _forward_rag_stats(session_id: Optional[str], stats: dict) -> None:
         from ppt.ppt_session import record_rag_stat
         record_rag_stat(session_id, stats.get("hits", 0), stats.get("avg_score", 0.0))
     except Exception as e:
-        print(f"  [analyze_slide] rag stat forwarding failed: {e}")
+        logger.error(f"[analyze_slide] rag stat forwarding failed: {e}")
 
 
 _OVERLAP_STOPWORDS = {
@@ -483,7 +509,7 @@ def _augment_with_web(query: str, rag_chunks: List[dict], web_source: str) -> Tu
             return rag_chunks, "rag"
         web_chunks, _ = web_context(query)
     except Exception as e:
-        print(f"  [analyze_slide] web augmentation failed: {e}")
+        logger.error(f"[analyze_slide] web augmentation failed: {e}")
         return rag_chunks, "rag"
     if not web_chunks:
         return rag_chunks, ("rag" if rag_chunks else "rag")

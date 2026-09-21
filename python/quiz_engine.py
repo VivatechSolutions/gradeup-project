@@ -18,6 +18,11 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from datetime import datetime, timezone
 
 import requests
+from langfuse_utils import traced_post
+from langfuse_utils import with_student_context
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 QUIZ_DATA_DIR = Path("quiz_data")
 
@@ -331,7 +336,7 @@ Return ONLY the JSON array."""
         }
 
         try:
-            resp = requests.post(
+            resp = traced_post("generate-quiz-questions",
                 "https://api.openai.com/v1/chat/completions",
                 headers=headers,
                 json=payload,
@@ -354,7 +359,7 @@ Return ONLY the JSON array."""
                 fresh = [q for q in questions if q["question_id"] not in exclude_ids]
                 return fresh[:num_questions]
         except Exception as e:
-            print(f"  ⚠️  [QuizEngine] LLM generation failed: {e}")
+            logger.warning(f"[QuizEngine] LLM generation failed: {e}")
 
         # Fallback to enriched.json
         return self._fallback_from_enriched(
@@ -384,7 +389,7 @@ Return ONLY the JSON array."""
             if results:
                 return "\n---\n".join(r.get("text", "")[:600] for r in results)
         except Exception as e:
-            print(f"  ⚠️  [QuizEngine] RAG context retrieval failed: {e}")
+            logger.warning(f"[QuizEngine] RAG context retrieval failed: {e}")
         return ""
 
     def _fallback_from_enriched(
@@ -454,6 +459,7 @@ Return ONLY the JSON array."""
 
     # ── Public API ────────────────────────────────────────────────────────────
 
+    @with_student_context()
     def generate_quiz(
         self,
         candidate_id: str,
@@ -573,6 +579,7 @@ Return ONLY the JSON array."""
             "max_points": QUIZ_POINTS.get(difficulty, 50),
         }
 
+    @with_student_context()
     def submit_quiz(
         self,
         quiz_id: str,
@@ -689,7 +696,7 @@ Return ONLY the JSON array."""
                 data["interaction_history"] = data["interaction_history"][-200:]
             tracker._save(candidate_id, data)
         except Exception as e:
-            print(f"  ⚠️  [QuizEngine] Failed to update performance: {e}")
+            logger.warning(f"[QuizEngine] Failed to update performance: {e}")
 
         return {
             "success": True,

@@ -119,6 +119,8 @@ function normalizePptSessionStartPayload(payload = {}) {
 }
 
 async function proxyPptRequest(req, res, { pythonPath, label, logResponse = false }) {
+  const owned = req.body?.session_id && await require('../model/PresentationDeck').exists({ pythonSessionId: req.body.session_id });
+  if (owned || req.body?.tool === 'gradeup') return res.status(403).json({ status: false, message: 'Use the authenticated presentation editor endpoint for this deck.' });
   if (!addonRequestAllowed(req)) {
     return res.status(401).json({ status: false, message: "Invalid add-on API key" });
   }
@@ -164,7 +166,7 @@ async function proxyPptRequest(req, res, { pythonPath, label, logResponse = fals
 function normalizeDeckRef(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
-  return raw.startsWith("gslides:") ? raw : `gslides:${raw}`;
+  return /^(gslides|gradeup):/.test(raw) ? raw : `gslides:${raw}`;
 }
 
 function pptSessionPublicPayload(session) {
@@ -300,10 +302,15 @@ async function resolveLiveSessionAndPythonSessionId(sessionId) {
 const controller = {
   async pptSessionStart(req, res) {
     const requestPayload = normalizePptSessionStartPayload(req.body || {});
+    requestPayload.student_id = String(req.studentUser._id);
     const startedAt = Date.now();
     console.log("[seminar:ppt:session-start] request", summarizePptPayload(requestPayload));
 
     try {
+      if (requestPayload.tool === 'gradeup' && requestPayload.deck_ref) {
+        const { access } = require('../services/presentationService');
+        await access(String(requestPayload.deck_ref).replace(/^gradeup:/, ''), requestPayload.student_id, null, 'owner');
+      }
       const data = await callPython({
         method: "post",
         path: "/ppt/session/start",
@@ -319,6 +326,9 @@ const controller = {
         has_authorization_url: Boolean(data?.authorization_url),
       });
 
+      if (requestPayload.tool === 'gradeup') {
+        await require('../services/presentationService').persistPythonDeck(data, requestPayload, requestPayload.student_id);
+      }
       if (data?.session_id && data?.deck_ref) {
         await savePptSessionMapping(requestPayload, data);
       }
@@ -350,6 +360,7 @@ const controller = {
     if (!deckRef) {
       return res.status(400).json({ status: false, message: "deck_ref is required" });
     }
+    if (deckRef.startsWith('gradeup:')) return res.status(403).json({ status: false, message: 'Open this deck through the GradeUp editor.' });
 
     try {
       const session = await LiveSessionModel.findOne({
