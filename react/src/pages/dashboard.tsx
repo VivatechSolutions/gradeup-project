@@ -16,29 +16,29 @@ const css = `
 /* ── Theme variables ── */
 :root,
 [data-theme="light"] {
-  --bg-app:      #f8fafc;
-  --bg-surface:  #ffffff;
-  --bg-muted:    #f1f5f9;
-  --text-main:   #0f172a;
-  --text-muted:  #64748b;
-  --text-subtle: #94a3b8;
-  --border:      rgba(0,0,0,.07);
-  --accent:      #6366f1;
-  --scrollbar:   #c7d2fe;
-  --scrollbar-h: #a5b4fc;
+  --bg-app:      var(--theme-bg-app);
+  --bg-surface:  var(--theme-bg-elevated);
+  --bg-muted:    #eceee8;
+  --text-main:   var(--theme-text-main);
+  --text-muted:  var(--theme-text-sub);
+  --text-subtle: var(--theme-text-muted);
+  --border:      var(--theme-border);
+  --accent:      var(--theme-primary);
+  --scrollbar:   rgba(52,84,209,.28);
+  --scrollbar-h: rgba(52,84,209,.46);
 }
 
 .dark {
-  --bg-app:      #0f172a;
-  --bg-surface:  #1e293b;
-  --bg-muted:    #1e293b;
-  --text-main:   #f1f5f9;
-  --text-muted:  #94a3b8;
-  --text-subtle: #64748b;
-  --border:      rgba(255,255,255,.08);
-  --accent:      #818cf8;
-  --scrollbar:   #334155;
-  --scrollbar-h: #475569;
+  --bg-app:      var(--theme-bg-app);
+  --bg-surface:  var(--theme-bg-elevated);
+  --bg-muted:    #11182a;
+  --text-main:   var(--theme-text-main);
+  --text-muted:  var(--theme-text-sub);
+  --text-subtle: var(--theme-text-muted);
+  --border:      var(--theme-border);
+  --accent:      var(--theme-primary);
+  --scrollbar:   rgba(142,162,255,.24);
+  --scrollbar-h: rgba(215,181,109,.42);
 }
 
 /* ── Base reset ── */
@@ -87,7 +87,7 @@ body, #root {
 .dash-main {
   flex: 1;
   overflow-y: auto;
-  background: var(--bg-app);   /* ← uses variable, not hardcoded */
+  background: var(--bg-app);
   scroll-behavior: smooth;
   transition: background .3s;
 }
@@ -117,9 +117,9 @@ body, #root {
   display: none;
   position: fixed; bottom: 24px; right: 24px; z-index: 160;
   width: 52px; height: 52px; border-radius: 50%;
-  background: linear-gradient(135deg,#6366f1,#8b5cf6);
+  background: linear-gradient(135deg,var(--theme-primary),var(--theme-gold));
   border: none; cursor: pointer;
-  box-shadow: 0 8px 28px rgba(99,102,241,.55);
+  box-shadow: 0 8px 28px rgba(52,84,209,.28);
   align-items: center; justify-content: center;
   transition: all .2s;
   animation: fabPop .4s cubic-bezier(.34,1.56,.64,1) .5s both;
@@ -128,7 +128,7 @@ body, #root {
 .dash-fab:hover { transform: scale(1.1) rotate(8deg); }
 .dash-fab svg { width: 22px; height: 22px; color: #fff; }
 
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
   .dash-overlay { display: block; }
   .dash-fab     { display: flex; }
 }

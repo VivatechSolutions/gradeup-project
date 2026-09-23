@@ -1,13 +1,24 @@
 import React from "react";
 import { motion, useScroll, useTransform } from "framer-motion";
 import { Link } from "wouter";
-import gradeupLogo from "../../assets/new-logo-g.png";
+import { useTheme } from "../../hooks/use-theme";
+import logoDark from "../../assets/logo-dark.png";
+import logoWhite from "../../assets/logo-white.png";
 
 export default function Header() {
   const { scrollY } = useScroll();
   const bg = useTransform(scrollY, [0, 120], ["rgba(248, 250, 252, 0)", "rgba(248, 250, 252, 0.98)"]);
   const blurPx = useTransform(scrollY, [0, 120], ["0px", "10px"]);
   const borderOpacity = useTransform(scrollY, [0, 120], [0, 1]);
+
+  let isDark = false;
+  try {
+    const themeContext = useTheme();
+    isDark = themeContext.isDark;
+  } catch {
+    // fallback if used outside ThemeProvider
+  }
+  const logo = isDark ? logoWhite : logoDark;
 
   return (
     <motion.header
@@ -23,7 +34,7 @@ export default function Header() {
         {/* Logo */}
         <Link href="/" className="group flex items-center" aria-label="GradeUp AI home">
           <motion.img
-            src={gradeupLogo}
+            src={logo}
             alt="GradeUp AI"
             whileHover={{ scale: 1.05 }}
             className="h-10 w-auto object-contain"

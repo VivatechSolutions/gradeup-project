@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
-import gradeupLogo from "../assets/new-logo-g.png";
+import logoDark from "../assets/logo-dark.png";
+import logoWhite from "../assets/logo-white.png";
 
 /* ─── FONTS & TOKENS ─────────────────────────────────────── */
 const SYSTEM_FONT_STACK = 'system-ui,-apple-system,"Segoe UI",sans-serif';
@@ -2078,6 +2079,7 @@ export default function GradeUp(){
   const scrollY=useScrollY();
   const mouse=useMouse();
   const isDark=theme==="dark";
+  const logo=isDark?logoWhite:logoDark;
   const {w:winW}=useWindowSize();
   const isMobile=winW<640;
   const isTablet=winW>=640&&winW<1024;
@@ -2184,7 +2186,7 @@ export default function GradeUp(){
         boxShadow:isDark?"0 1px 0 rgba(255,255,255,.04)":"0 1px 0 rgba(99,102,241,.12), 0 4px 24px rgba(99,102,241,.06)"}}>
         <div style={{display:"flex",alignItems:"center"}}>
           <img
-            src={gradeupLogo}
+            src={logo}
             alt="GradeUp AI"
             style={{height:isMobile?42:70,width:isMobile?128:200,objectFit:"contain",display:"block"}}
           />
@@ -2846,7 +2848,7 @@ export default function GradeUp(){
           <div style={{display:"grid",gridTemplateColumns:footerGridColumns,gap:isMobile?28:44,marginBottom:56}}>
             <div>
               <img
-                src={gradeupLogo}
+                src={logo}
                 alt="GradeUp AI"
                 style={{height:70,width:200,objectFit:"contain",display:"block",marginBottom:14}}
               />

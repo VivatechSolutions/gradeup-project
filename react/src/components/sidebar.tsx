@@ -40,7 +40,17 @@ const css = `
 
 .sb-root {
   width: var(--sb-w);
-  background: #0f172a;
+  --sb-page: #172644;
+  --sb-page-2: #24385e;
+  --sb-surface: rgba(255,255,255,.10);
+  --sb-surface-strong: rgba(255,255,255,.15);
+  --sb-ink: #f6f7ff;
+  --sb-muted: #c0cbe0;
+  --sb-faint: #91a0bd;
+  --sb-line: rgba(255,255,255,.14);
+  --sb-hover: rgba(255,255,255,.10);
+  --sb-active-shadow: 0 12px 26px rgba(4,12,34,.32);
+  background: radial-gradient(circle at 18% 9%, rgba(35,137,255,.22), transparent 28%), radial-gradient(circle at 90% 76%, rgba(255,178,29,.16), transparent 24%), linear-gradient(180deg,var(--sb-page),var(--sb-page-2));
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -49,7 +59,38 @@ const css = `
   position: relative;
   font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
   flex-shrink: 0;
+  border-right: 1px solid var(--sb-line);
+  box-shadow: 10px 0 30px rgba(4,12,34,.22);
+  isolation: isolate;
 }
+[data-theme="dark"] .sb-root,
+.dark .sb-root {
+  --sb-page: #080d1f;
+  --sb-page-2: #10172d;
+  --sb-surface: rgba(23,31,58,.72);
+  --sb-surface-strong: rgba(23,31,58,.92);
+  --sb-ink: #f6f7ff;
+  --sb-muted: #b5bfd8;
+  --sb-faint: #7f8aa7;
+  --sb-line: rgba(255,255,255,.12);
+  --sb-hover: rgba(255,255,255,.08);
+  --sb-active-shadow: 0 14px 30px rgba(0,0,0,.32);
+  box-shadow: 10px 0 36px rgba(0,0,0,.24);
+}
+.sb-root::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  width: 180px;
+  height: 180px;
+  right: -92px;
+  top: 180px;
+  border-radius: 50%;
+  background: radial-gradient(circle,rgba(255,77,141,.18),transparent 68%);
+  pointer-events: none;
+  animation: sbFloat 10s ease-in-out infinite alternate;
+}
+@keyframes sbFloat { from { transform: translate3d(0,0,0) scale(1); } to { transform: translate3d(-12px,24px,0) scale(1.12); } }
 /* Desktop-only collapse */
 .sb-root.collapsed { width: var(--sb-cw); }
 
@@ -59,7 +100,7 @@ const css = `
   align-items: center;
   justify-content: space-between;
   padding: 14px 12px 12px;
-  border-bottom: 1px solid rgba(255,255,255,.06);
+  border-bottom: 1px solid var(--sb-line);
   flex-shrink: 0;
   min-height: 64px;
   gap: 8px;
@@ -69,36 +110,39 @@ const css = `
   justify-content: center;
   padding: 14px 0 12px;
 }
+.sb-student-deco{margin:10px 12px 8px;min-height:86px;border-radius:18px;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 50%,rgba(111,76,255,.22),transparent 62%)}
+.sb-student-deco img{width:92px;height:92px;object-fit:contain;filter:drop-shadow(0 12px 16px rgba(0,0,0,.24))}
+.sb-root.collapsed .sb-student-deco{display:none}
 
 .sb-ava {
   width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0;
-  background: linear-gradient(135deg,#6366f1,#ec4899);
+  background: linear-gradient(135deg,#2389ff,#7e45e8 55%,#ff4d8d);
   display: flex; align-items: center; justify-content: center;
   font-weight: 800; font-size: 13px; color: #fff;
-  box-shadow: 0 4px 12px rgba(99,102,241,.45);
+  box-shadow: 0 8px 18px rgba(99,91,255,.30);
   position: relative;
 }
 .sb-ava::after {
   content:''; position:absolute; bottom:-2px; right:-2px;
   width:9px; height:9px; border-radius:50%;
-  background:#22c55e; border:2px solid #0f172a;
+  background:#27b86a; border:2px solid var(--sb-page);
 }
 .sb-profile-text { flex:1; overflow:hidden; min-width:0; }
 .sb-root.collapsed .sb-profile-text { display:none; }
-.sb-pname { font-size:13px; font-weight:700; color:#f1f5f9; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.sb-prole { font-size:11px; color:#64748b; text-transform:capitalize; margin-top:1px; }
+.sb-pname { font-size:13px; font-weight:800; color:var(--sb-ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.sb-prole { font-size:11px; color:var(--sb-muted); text-transform:capitalize; margin-top:1px; }
 
 /* ── TOGGLE BUTTON ── */
 .sb-toggle {
   width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
-  background: #1e293b;
-  border: 1.5px solid rgba(99,102,241,.5);
+  background: var(--sb-surface-strong);
+  border: 1.5px solid rgba(99,91,255,.34);
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; color: #818cf8;
   transition: all .2s;
-  box-shadow: 0 2px 8px rgba(0,0,0,.25);
+  box-shadow: 0 7px 16px rgba(38,57,116,.12);
 }
-.sb-toggle:hover { background: #6366f1; color: #fff; border-color: #6366f1; transform: scale(1.08); }
+.sb-toggle:hover { background: linear-gradient(135deg,#2389ff,#7e45e8); color: #fff; border-color: transparent; transform: scale(1.08) rotate(-3deg); }
 .sb-toggle svg { width: 13px; height: 13px; transition: transform .3s; }
 /* Arrow flips when collapsed */
 
@@ -110,26 +154,26 @@ const css = `
   flex-direction: column;
   padding: 8px 8px 6px;
   overflow-y: auto;
-  overflow-x: visible;       /* ← allow tooltip to overflow horizontally */
+  overflow-x: visible;
   gap: 1px;
   min-height: 0;
   scrollbar-width: thin;
-  scrollbar-color: rgba(99,102,241,.3) transparent;
+  scrollbar-color: rgba(99,91,255,.3) transparent;
 }
 .sb-nav::-webkit-scrollbar { width: 4px; }
-.sb-nav::-webkit-scrollbar-thumb { background: rgba(99,102,241,.3); border-radius: 4px; }
+.sb-nav::-webkit-scrollbar-thumb { background: rgba(99,91,255,.3); border-radius: 4px; }
 
 /* Section label */
 .sb-sec {
   font-size: 9.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
-  color: #475569; padding: 5px 8px 3px;
+  color: var(--sb-faint); padding: 5px 8px 3px;
   white-space: nowrap; overflow: hidden; flex-shrink: 0;
   transition: opacity .2s, height .25s, padding .25s;
   height: 22px;
 }
 .sb-root.collapsed .sb-sec { opacity:0; height:0; padding:0; }
 
-.sb-div { height:1px; background:rgba(255,255,255,.06); margin:3px 8px; flex-shrink:0; }
+.sb-div { height:1px; background:var(--sb-line); margin:3px 8px; flex-shrink:0; }
 
 /* ── Item wrapper — MUST allow pointer-events so hover reaches tooltip ── */
 .sb-iw {
@@ -148,8 +192,23 @@ const css = `
   text-decoration: none; min-height: 36px;
   position: relative; overflow: visible;   /* overflow:visible keeps tooltip accessible */
 }
-.sb-item:hover  { background: rgba(255,255,255,.06); }
-.sb-item.active { background: rgba(99,102,241,.15); border-color: rgba(99,102,241,.38); }
+.sb-item:hover  { background: var(--sb-hover); transform: translateX(3px); }
+.sb-iw .sb-item { animation: sbItemIn .38s ease both; }
+.sb-iw:nth-child(2) .sb-item { animation-delay: 35ms; }
+.sb-iw:nth-child(3) .sb-item { animation-delay: 70ms; }
+.sb-iw:nth-child(4) .sb-item { animation-delay: 105ms; }
+.sb-iw:nth-child(5) .sb-item { animation-delay: 140ms; }
+.sb-iw:nth-child(6) .sb-item { animation-delay: 175ms; }
+.sb-iw:nth-child(7) .sb-item { animation-delay: 210ms; }
+.sb-item.active { background: rgba(99,91,255,.12); border-color: rgba(99,91,255,.24); box-shadow: var(--sb-active-shadow); }
+.sb-root.student .sb-item{min-height:44px;border-radius:12px;padding:8px 10px}
+.sb-root.student .sb-item.active{background:linear-gradient(135deg,#2389ff,#6349ff 52%,#ff4d8d);border-color:transparent;box-shadow:var(--sb-active-shadow);animation: sbActiveIn .35s ease both}
+.sb-root.student .sb-item:hover{background:var(--sb-hover)}
+.sb-root.student .sb-item.active:hover{background:linear-gradient(135deg,#2389ff,#6349ff 52%,#ff4d8d)}
+@keyframes sbActiveIn { from { opacity:.72; transform:translateX(-4px) scale(.98); } to { opacity:1; transform:none; } }
+.sb-iw:nth-child(3n) .sb-ico { animation: sbIconBob 4.8s ease-in-out infinite; }
+@keyframes sbIconBob { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-2px); } }
+@keyframes sbItemIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
 
 /* Icon pill */
 .sb-ico {
@@ -189,13 +248,13 @@ const css = `
 
 /* Label */
 .sb-label {
-  font-size: 12.5px; font-weight: 500; color: #fffff9;
+  font-size: 12.5px; font-weight: 600; color: var(--sb-muted);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   transition: color .18s, opacity .2s, max-width .3s;
   // #94a3b8 is a bit too light, #64748b is a bit too dark — right in the middle is perfect
   max-width: 160px;
 }
-.sb-item.active .sb-label, .sb-item:hover .sb-label { color: #f1f5f9; }
+.sb-item.active .sb-label, .sb-item:hover .sb-label { color: var(--sb-ink); }
 .sb-root.collapsed .sb-label { opacity:0; max-width:0; }
 
 /* Active dot */
@@ -218,14 +277,14 @@ const css = `
 ──────────────────────────────────────────────────────── */
 .sb-tip {
   position: fixed;           /* escape any overflow:hidden on parent */
-  background: #1e293b;
-  border: 1px solid rgba(99,102,241,.45);
-  color: #f1f5f9;
+  background: var(--sb-surface-strong);
+  border: 1px solid rgba(99,91,255,.35);
+  color: var(--sb-ink);
   font-size: 11.5px; font-weight: 600;
   padding: 5px 12px;
   border-radius: 8px;
   white-space: nowrap;
-  box-shadow: 0 8px 24px rgba(0,0,0,.5);
+  box-shadow: 0 12px 26px rgba(38,57,116,.18);
   pointer-events: none;
   opacity: 0;
   transition: opacity .15s, transform .15s;
@@ -258,16 +317,16 @@ const css = `
 
 .sb-sub-item {
   display: block;
-  font-size: 11.5px; font-weight: 500; color: #94a3b8;
+  font-size: 11.5px; font-weight: 600; color: var(--sb-muted);
   padding: 5px 8px 5px 23px;
   border-radius: 6px;
   position: relative;
   white-space: nowrap;
   text-decoration: none;
 }
-.sb-sub-item:hover { color: #f1f5f9; background: rgba(255,255,255,.04); }
-.sb-sub-item.active { color: #f1f5f9; }
-.sb-sub-item::before { content:'•'; position:absolute; left:8px; top:5px; color:#64748b; font-size:10px; }
+.sb-sub-item:hover { color: var(--sb-ink); background: var(--sb-hover); }
+.sb-sub-item.active { color: var(--sb-ink); }
+.sb-sub-item::before { content:'•'; position:absolute; left:8px; top:5px; color:var(--sb-faint); font-size:10px; }
 .sb-sub-item.active::before { color:#818cf8; }
 
 .sb-item .sb-chev {
@@ -275,16 +334,32 @@ const css = `
   width: 14px; height: 14px;
   transition: transform .25s;
   flex-shrink: 0;
-  color: #94a3b8;
+  color: var(--sb-muted);
 }
 .sb-item.sub-open .sb-chev { transform: rotate(90deg); }
 
 /* ── BOTTOM ── */
 .sb-bottom {
   padding: 6px 8px 10px;
-  border-top: 1px solid rgba(255,255,255,.06);
+  border-top: 1px solid var(--sb-line);
   flex-shrink: 0;
   display: flex; flex-direction: column; gap: 1px;
+}
+.sb-premium,.sb-geni-card,.sb-leaders-card{margin:7px 10px;border-radius:16px;padding:14px;color:#fff;overflow:hidden;position:relative}
+.sb-root.collapsed .sb-premium,.sb-root.collapsed .sb-geni-card,.sb-root.collapsed .sb-leaders-card{display:none}
+.sb-premium{background:linear-gradient(135deg,#ef2f8a,#ff7b3d)}
+.sb-geni-card{background:linear-gradient(135deg,#202a8f,#7e35dc)}
+.sb-leaders-card{background:rgba(31,56,117,.64);border:1px solid rgba(255,255,255,.08)}
+.sb-card-title{font-size:14px;font-weight:800;margin-bottom:6px}
+.sb-card-text{font-size:11.5px;font-weight:700;line-height:1.45;color:rgba(255,255,255,.9)}
+.sb-card-btn{margin-top:12px;border:0;border-radius:999px;padding:10px 13px;background:#ffd634;color:#07122e;font-size:11px;font-weight:800;cursor:pointer}
+.sb-geni-card .sb-card-btn,.sb-leaders-card .sb-card-btn{background:linear-gradient(135deg,#7b35ff,#b04cff);color:#fff}
+.sb-leader-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:9px;font-size:11px;font-weight:800;color:rgba(255,255,255,.9)}
+.sb-geni-img{position:absolute;right:-4px;bottom:-8px;width:70px;height:70px;object-fit:contain;opacity:.92;filter:drop-shadow(0 10px 14px rgba(0,0,0,.25))}
+.sb-geni-card .sb-card-text{max-width:142px}.sb-geni-card .sb-card-btn{position:relative;z-index:1}
+@media (prefers-reduced-motion: reduce) {
+  .sb-root::before,.sb-iw:nth-child(3n) .sb-ico,.sb-root.student .sb-item.active,.sb-dot { animation: none; }
+  .sb-item,.sb-toggle,.sb-tip { transition: none; }
 }
 
 /* ── MOBILE — sidebar slides in/out, NEVER collapses to icon ── */
@@ -369,18 +444,18 @@ const STUDENT_MENU: MenuItem[] = [
   { label:"Progress",      href:"/progress",        icon:"chart",    color:"cb" },
   { section: "Tools" },
   { label:"AI Tutor",      href:"/ai-tutor",        icon:"bot",      color:"ce" },
-  { label:"Book Library",  href:"/bookExpanded",    icon:"book",     color:"cc" },
+  { label:"Book Library",  href:"/bookRewamp",    icon:"book",     color:"cc" },
   { label:"Homework",      href:"/homework",         icon:"file",     color:"ca" },
   { label:"Homework Helper",  href:"/homework-helper",  icon:"lightbulb",  color:"cv" },
   { label:"Community",     href:"/community",        icon:"msg",      color:"cp" },
- { label:"Group Chat", href:"/communityNew", icon:"users", color:"cp" },
+  { label:"Group Chat", href:"/communityNew", icon:"users", color:"cp" },
   { label:"Live Events", href:"/live-events", icon:"calendar", color:"ct" },
   // { label:"Achievements",  href:"/achievements",     icon:"trophy",   color:"co" },
   // { label:"Seminar",       href:"/seminar-tool",     icon:"users",    color:"ct" },
   // { label:"Debate",        href:"/debate-tool",      icon:"debate",   color:"cs" },
   { label:"Debate",        href:"/debatePage",      icon:"debateNew",   color:"ca" },
   // { label: "Meeting", href: "/meetingPage", icon: "video", color: "cs" },
-{ label: "Seminar", href: "/seminarPage", icon: "presentation", color: "ct" },
+  { label: "Seminar", href: "/seminarPage", icon: "presentation", color: "ct" },
   { label:"Exams", href:"/exam-preparation", icon:"examNew", color:"ci", children:[
     { label:"Prep",      href:"/exam-preparation" },
     { label:"Main Exam", href:"/main-exam" },
@@ -500,11 +575,6 @@ export default function Sidebar({
   // Desktop-collapsed state for CSS class (never applies on mobile)
   const isCollapsed = !isMobile && collapsed;
 
-  // Bottom items share the same tooltip logic
-  const bottomItems = [
-    { label:"Settings", href:"/settings",  icon:"settings" as const, color:"ci" },
-  ];
-
   return (
     <>
       <style>{css}</style>
@@ -516,6 +586,7 @@ export default function Sidebar({
 
       <aside className={[
         "sb-root",
+        currentRole,
         isCollapsed  ? "collapsed" : "",
         mobileOpen   ? "mob-open"  : "",
       ].filter(Boolean).join(" ")}>
@@ -546,6 +617,10 @@ export default function Sidebar({
             }
           </button>
         </div>
+
+        {/* {currentRole === "student" && !isCollapsed && (
+          <div className="sb-student-deco" aria-hidden><img src={robotWaving} alt="" /></div>
+        )} */}
 
         {/* ── NAV ── */}
         <nav className="sb-nav">
@@ -588,15 +663,16 @@ export default function Sidebar({
             }
 
             // Regular item
+            const navItem = item as NavItem;
             return (
-              <TooltipItem key={`${item.href}${i}`} item={item} collapsed={isCollapsed} active={isActive(item.href)}>
+              <TooltipItem key={`${navItem.href}${i}`} item={navItem} collapsed={isCollapsed} active={isActive(navItem.href)}>
                 <Link
-                  href={item.href}
-                  className={`sb-item${isActive(item.href) ? " active" : ""}`}
+                  href={navItem.href}
+                  className={`sb-item${isActive(navItem.href) ? " active" : ""}`}
                 >
-                  <div className={`sb-ico ${item.color}`}><SvgI p={ICON_PATHS[item.icon]} /></div>
-                  <span className="sb-label">{item.label}</span>
-                  {isActive(item.href) && <span className="sb-dot" />}
+                  <div className={`sb-ico ${navItem.color}`}><SvgI p={ICON_PATHS[navItem.icon]} /></div>
+                  <span className="sb-label">{navItem.label}</span>
+                  {isActive(navItem.href) && <span className="sb-dot" />}
                 </Link>
               </TooltipItem>
             );
@@ -604,6 +680,32 @@ export default function Sidebar({
         </nav>
 
         {/* ── BOTTOM: Settings + Logout ── */}
+        {/* {currentRole === "student" && !isCollapsed && (
+          <>
+            <div className="sb-premium">
+              <div className="sb-card-title">Go Premium</div>
+              <div className="sb-card-text">Unlock all features and boost your learning journey.</div>
+              <button className="sb-card-btn">Upgrade Now &gt;</button>
+            </div>
+            <div className="sb-geni-card">
+              <div className="sb-card-title">Hi, I'm Geni!</div>
+              <div className="sb-card-text">Your AI study buddy. How can I help you today?</div>
+              <img className="sb-geni-img" src={robotBook} alt="" />
+              <Link href="/ai-tutor"><button className="sb-card-btn">Chat with Geni</button></Link>
+            </div>
+            <div className="sb-leaders-card">
+              <div className="sb-card-title">Top Learners</div>
+              {["Teny 12,340 XP", "Anika 10,250 XP", "Rohan 8,420 XP"].map((row, index) => (
+                <div className="sb-leader-row" key={row}>
+                  <span>{index + 1}. {row.split(" ")[0]}</span>
+                  <span>{row.replace(/^[^ ]+ /, "")}</span>
+                </div>
+              ))}
+              <Link href="/achievements"><button className="sb-card-btn">View Leaderboard</button></Link>
+            </div>
+          </>
+        )} */}
+
         <div className="sb-bottom">
           {/* Settings */}
           <TooltipItem

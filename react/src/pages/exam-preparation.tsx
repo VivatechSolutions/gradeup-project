@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   BookOpen,
   FileQuestion,
-  ChevronDown,
   Check,
   ArrowRight,
   Sparkles,
@@ -17,367 +16,1658 @@ import {
   ArrowLeft,
   Home,
   Printer,
-  ChevronRight,
 } from "lucide-react";
-import { useAuth } from '../hooks/use-auth';
-import Navigation from '../components/navigation';
+import { useAuth } from "../hooks/use-auth";
+import Navigation from "../components/navigation";
+
+// Assets matching student dashboard
+import studyRobo from "../assets/dashboard/study-robo.png";
 import roboImg from "../assets/robo.png";
+import mathsSubject from "../assets/dashboard/subject-maths.png";
+import scienceSubject from "../assets/dashboard/subject-science.png";
+import socialSubject from "../assets/dashboard/subject-social.png";
 
 const CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
+*,*::before,*::after{box-sizing:border-box}
 
-.ep-root{font-family:'Plus Jakarta Sans',system-ui,sans-serif;
-  background:var(--bg-app,#f8fafc);min-height:100vh;color:var(--text-main,#0f172a);}
-.dark .ep-root { --bg-app: #0d1117; --text-main: #c9d1d9; }
-.dark .ep-steps-bar, .dark .ep-subj-card, .dark .ep-hub-header, .dark .ep-hub-card, .dark .ep-faq-sidebar, .dark .ep-faq-search-bar, .dark .ep-faq-qonly-card, .dark .ep-paper-header, .dark .ep-part-section, .dark .ep-empty, .dark .ep-back-btn, .dark .bg-white { background-color: #161b22; }
-.dark .ep-steps-bar, .dark .ep-subj-card, .dark .ep-hub-header, .dark .ep-hub-card, .dark .ep-faq-sidebar, .dark .ep-faq-search-bar, .dark .ep-faq-qonly-card, .dark .ep-paper-header, .dark .ep-part-section, .dark .ep-back-btn { border-color: rgba(255,255,255,.1); }
-.dark .ep-step-circle.pending { background-color: #21262d; color: #8b949e; border-color: rgba(255,255,255,.1); }
-.dark .ep-step-lbl.pending { color: #8b949e; }
-.dark .ep-step-line.empty { background-color: #21262d; }
-.dark .ep-s1-heading, .dark .ep-subj-name, .dark .ep-hub-subj-name, .dark .ep-hub-title, .dark .ep-page-title, .dark .ep-faq-q-text, .dark .ep-paper-exam-title, .dark .ep-paper-meta-val, .dark .ep-part-title, .dark .ep-paper-qn-text { color: #c9d1d9; }
-.dark .ep-s1-sub, .dark .ep-hub-subj-meta, .dark .ep-hub-desc, .dark .ep-faq-fi, .dark .ep-paper-instructions, .dark .ep-part-subtitle, .dark .ep-back-btn { color: #8b949e; }
-.dark .ep-subj-count, .dark .ep-hub-meta-item, .dark .ep-faq-sb-head, .dark .ep-paper-school, .dark .ep-paper-meta-lbl, .dark .ep-paper-qn-marks { color: #8b949e; }
-.dark .ep-faq-search-bar { border-color: rgba(255,255,255,.1); }
-.dark .ep-faq-si { color: #c9d1d9; }
-.dark .ep-faq-si::placeholder { color: #484f58; }
-.dark .ep-faq-qonly-card { border-color: #30363d; }
-.dark .ep-faq-qonly-card:hover { border-color: #8b5cf6; }
-.dark .ep-paper-meta-row { background-color: #0d1117; border-color: #30363d; }
-.dark .ep-paper-divider { background: linear-gradient(90deg,transparent,#30363d,transparent); }
-.dark .ep-part-header { border-bottom-color: #30363d; }
-.dark .ep-paper-questions .ep-paper-qn { border-bottom-color: #30363d; }
-.dark .ep-paper-answer-space { border-bottom-color: #30363d; }
-.dark .ep-nav { border-top-color: rgba(255,255,255,.1); }
-.dark .ep-empty { color: #8b949e; }
-.dark .bg-gray-50 { background-color: #161b22; }
-.dark .border-gray-200 { border-color: #30363d; }
-.dark .text-gray-400 { color: #8b949e; }
-.dark .text-gray-500 { color: #8b949e; }
-.dark .text-indigo-500 { color: #a5b4fc; }
-.dark .bg-indigo-50 { background-color: rgba(99, 102, 241, 0.1); }
-.dark .hover\:bg-indigo-100:hover { background-color: rgba(99, 102, 241, 0.2); }
-.dark .text-indigo-600 { color: #818cf8; }
-.dark .bg-indigo-100 { background-color: rgba(99, 102, 241, 0.15); }
-.dark .text-indigo-700 { color: #a5b4fc; }
-.dark .hover\:bg-indigo-200:hover { background-color: rgba(99, 102, 241, 0.25); }
-.dark .text-indigo-400 { color: #a5b4fc; }
-
-/* ── Hero ── */
-.ep-hero{margin:20px 28px 0;border-radius:20px;padding:18px 28px;
-  background:linear-gradient(135deg,#6366f1 0%,#8b5cf6 50%,#ec4899 100%);
-  position:relative;overflow:hidden;color:#fff;
-  box-shadow:0 6px 24px rgba(99,102,241,.26);
-  animation:heroIn .5s cubic-bezier(.34,1.56,.64,1) both;}
-@keyframes heroIn{from{opacity:0;transform:translateY(-12px) scale(.98)}to{opacity:1;transform:none}}
-.ep-hero::before{content:'';position:absolute;top:-60px;right:-60px;width:200px;height:200px;
-  border-radius:50%;background:rgba(255,255,255,.1);pointer-events:none;}
-.ep-hero::after{content:'';position:absolute;bottom:-50px;left:30%;width:150px;height:150px;
-  border-radius:50%;background:rgba(255,255,255,.06);pointer-events:none;}
-.ep-hero-inner{position:relative;z-index:1;display:flex;align-items:center;
-  justify-content:space-between;gap:14px;flex-wrap:wrap;}
-.ep-hero-left{display:flex;align-items:center;gap:14px;}
-.ep-hero-icon{width:44px;height:44px;border-radius:14px;background:rgba(255,255,255,.2);
-  border:1.5px solid rgba(255,255,255,.3);display:flex;align-items:center;
-  justify-content:center;flex-shrink:0;font-size:22px;}
-.ep-hero-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;
-  margin-bottom:5px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.28);
-  font-size:10.5px;font-weight:700;color:#fff;}
-.ep-hero-title{font-size:clamp(16px,2.2vw,22px);font-weight:800;color:#fff;
-  margin-bottom:2px;letter-spacing:-.2px;line-height:1.2;}
-.ep-hero-sub{font-size:12px;color:rgba(255,255,255,.68);line-height:1.4;}
-.ep-hero-stats{display:flex;gap:8px;flex-shrink:0;}
-.ep-hstat{text-align:center;padding:8px 14px;border-radius:12px;min-width:58px;
-  background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.2);backdrop-filter:blur(8px);}
-.ep-hstat-n{font-size:18px;font-weight:800;color:#fff;line-height:1;}
-.ep-hstat-l{font-size:9.5px;color:rgba(255,255,255,.62);margin-top:1px;}
-
-/* ── Body ── */
-.ep-body{padding:20px 28px 60px;}
-
-/* Steps */
-.ep-steps-bar{display:flex;align-items:center;margin-bottom:24px;background:#fff;
-  border-radius:16px;padding:16px 24px;border:1px solid rgba(0,0,0,.06);
-  box-shadow:0 2px 8px rgba(0,0,0,.04);}
-.ep-step-item{display:flex;align-items:center;flex:1;}
-.ep-step-node{display:flex;flex-direction:column;align-items:center;gap:5px;}
-.ep-step-circle{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;
-  justify-content:center;font-size:13px;font-weight:800;flex-shrink:0;transition:all .3s;}
-.ep-step-circle.done{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;
-  box-shadow:0 3px 10px rgba(99,102,241,.35);cursor:pointer;}
-.ep-step-circle.active{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;
-  box-shadow:0 3px 10px rgba(99,102,241,.35);outline:3px solid rgba(99,102,241,.2);outline-offset:2px;}
-.ep-step-circle.pending{background:#f1f5f9;color:#94a3b8;border:1.5px solid rgba(0,0,0,.08);}
-.ep-step-lbl{font-size:11px;font-weight:700;white-space:nowrap;}
-.ep-step-lbl.done,.ep-step-lbl.active{color:#6366f1;}
-.ep-step-lbl.pending{color:#94a3b8;}
-.ep-step-line{flex:1;height:2px;margin:0 10px;margin-bottom:18px;transition:background .4s;}
-.ep-step-line.filled{background:linear-gradient(90deg,#6366f1,#8b5cf6);}
-.ep-step-line.empty{background:#f1f5f9;}
-
-/* Subject Step */
-.ep-s1-heading{font-size:20px;font-weight:800;color:#0f172a;margin-bottom:6px;}
-.ep-s1-sub{font-size:13px;color:#64748b;margin-bottom:20px;}
-.ep-s1-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:24px;}
-.ep-subj-card{border-radius:18px;padding:22px 14px;text-align:center;cursor:pointer;
-  border:2px solid rgba(0,0,0,.06);transition:all .22s cubic-bezier(.34,1.56,.64,1);
-  background:#fff;position:relative;overflow:hidden;}
-.ep-subj-card:hover{transform:translateY(-5px);box-shadow:0 12px 30px rgba(0,0,0,.1);}
-.ep-subj-card.sel{box-shadow:0 8px 28px rgba(99,102,241,.18);}
-.ep-subj-emoji{font-size:34px;display:block;margin-bottom:10px;}
-.ep-subj-name{font-size:13px;font-weight:700;color:#0f172a;margin-bottom:4px;}
-.ep-subj-count{font-size:11px;color:#94a3b8;}
-.ep-subj-check{position:absolute;top:10px;right:10px;width:22px;height:22px;border-radius:50%;
-  background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;
-  justify-content:center;box-shadow:0 2px 6px rgba(99,102,241,.4);}
-
-/* Step 2 */
-.ep-s2-grid{display:grid;grid-template-columns:1fr 320px;gap:16px;}
-
-/* Hub */
-.ep-hub-header{background:#fff;border-radius:20px;border:1px solid rgba(0,0,0,.06);
-  box-shadow:0 2px 12px rgba(0,0,0,.05);padding:18px 24px;margin-bottom:16px;
-  display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
-.ep-hub-subj-icon{width:48px;height:48px;border-radius:14px;display:flex;align-items:center;
-  justify-content:center;font-size:25px;flex-shrink:0;}
-.ep-hub-subj-name{font-size:19px;font-weight:800;color:#0f172a;letter-spacing:-.2px;}
-.ep-hub-subj-meta{font-size:12px;color:#64748b;margin-top:2px;}
-.ep-unit-pills{display:flex;gap:5px;flex-wrap:wrap;}
-.ep-unit-pill{padding:4px 11px;border-radius:20px;font-size:11px;font-weight:700;
-  background:rgba(99,102,241,.1);color:#6366f1;border:1px solid rgba(99,102,241,.15);}
-.ep-hub-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
-.ep-hub-card{background:#fff;border-radius:20px;border:1px solid rgba(0,0,0,.06);
-  box-shadow:0 2px 12px rgba(0,0,0,.05);overflow:hidden;
-  transition:all .25s cubic-bezier(.4,0,.2,1);cursor:pointer;}
-.ep-hub-card:hover:not(.disabled){transform:translateY(-5px);box-shadow:0 14px 36px rgba(0,0,0,.1);}
-.ep-hub-card.disabled{opacity:.55;cursor:not-allowed;}
-.ep-hub-banner{height:5px;}
-.ep-hub-body{padding:20px 22px;}
-.ep-hub-icon-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:13px;}
-.ep-hub-icon{width:46px;height:46px;border-radius:14px;display:flex;align-items:center;
-  justify-content:center;font-size:23px;}
-.ep-hub-badge{font-size:10px;font-weight:800;padding:3px 10px;border-radius:20px;
-  text-transform:uppercase;letter-spacing:.06em;}
-.ep-hub-badge.blue{background:rgba(99,102,241,.12);color:#6366f1;}
-.ep-hub-badge.green{background:rgba(16,185,129,.12);color:#059669;}
-.ep-hub-badge.purple{background:rgba(139,92,246,.12);color:#7c3aed;}
-.ep-hub-title{font-size:17px;font-weight:800;color:#0f172a;margin-bottom:7px;}
-.ep-hub-desc{font-size:12.5px;color:#64748b;line-height:1.65;margin-bottom:13px;}
-.ep-hub-meta{display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap;}
-.ep-hub-meta-item{display:flex;align-items:center;gap:4px;font-size:11.5px;font-weight:600;color:#94a3b8;}
-.ep-hub-meta-item b{color:#0f172a;font-weight:700;}
-.ep-hub-btn{display:inline-flex;align-items:center;gap:7px;padding:10px 18px;border-radius:11px;
-  border:none;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;
-  transition:all .2s;color:#fff;}
-.ep-hub-btn.blue{background:linear-gradient(135deg,#6366f1,#8b5cf6);box-shadow:0 3px 10px rgba(99,102,241,.3);}
-.ep-hub-btn.green{background:linear-gradient(135deg,#10b981,#059669);box-shadow:0 3px 10px rgba(16,185,129,.3);}
-.ep-hub-btn:hover{transform:translateY(-1px);filter:brightness(1.08);}
-.ep-hub-btn:disabled{opacity:.6;cursor:not-allowed;transform:none;}
-.ep-buddy-features{display:flex;flex-direction:column;gap:7px;margin-bottom:14px;}
-.ep-buddy-feat{display:flex;align-items:center;gap:8px;font-size:12px;color:#94a3b8;}
-.ep-buddy-dot{width:6px;height:6px;border-radius:50%;background:#8b5cf6;flex-shrink:0;}
-.ep-buddy-locked-btn{width:100%;padding:10px;border-radius:11px;
-  border:1.5px dashed rgba(139,92,246,.3);background:rgba(139,92,246,.06);
-  font-family:inherit;font-size:13px;font-weight:700;color:#8b5cf6;
-  cursor:not-allowed;display:flex;align-items:center;justify-content:center;gap:7px;}
-
-/* Page top bar */
-.ep-page-topbar{display:flex;align-items:center;justify-content:space-between;
-  margin-bottom:20px;gap:12px;flex-wrap:wrap;}
-.ep-back-btn{display:flex;align-items:center;gap:7px;padding:9px 16px;border-radius:12px;
-  border:1.5px solid rgba(0,0,0,.08);background:#fff;font-family:inherit;font-size:13px;
-  font-weight:700;color:#64748b;cursor:pointer;transition:all .18s;}
-.ep-back-btn:hover{border-color:#6366f1;color:#6366f1;background:rgba(99,102,241,.04);}
-.ep-page-title-row{display:flex;align-items:center;gap:10px;}
-.ep-page-icon{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;
-  justify-content:center;font-size:19px;}
-.ep-page-title{font-size:17px;font-weight:800;color:#0f172a;}
-
-/* ── FAQ Questions Only ── */
-.ep-faq-layout{display:grid;grid-template-columns:220px 1fr;gap:16px;align-items:start;}
-.ep-faq-sidebar{background:#fff;border-radius:18px;border:1px solid rgba(0,0,0,.06);
-  box-shadow:0 2px 10px rgba(0,0,0,.04);overflow:hidden;position:sticky;top:20px;}
-.ep-faq-sb-head{padding:13px 16px;border-bottom:1px solid #f1f5f9;
-  font-size:11px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.07em;}
-.ep-faq-fi{display:flex;align-items:center;justify-content:space-between;
-  padding:10px 16px;cursor:pointer;transition:background .15s;
-  font-size:13px;font-weight:600;color:#64748b;}
-.ep-faq-fi:hover{background:rgba(99,102,241,.05);color:#6366f1;}
-.ep-faq-fi.on{background:rgba(99,102,241,.08);color:#6366f1;}
-.ep-faq-fi-count{font-size:11px;font-weight:700;padding:2px 7px;border-radius:20px;
-  background:rgba(99,102,241,.1);color:#6366f1;}
-.ep-faq-search-bar{background:#fff;border-radius:13px;border:1px solid rgba(0,0,0,.06);
-  padding:11px 15px;margin-bottom:10px;display:flex;align-items:center;gap:9px;
-  box-shadow:0 1px 6px rgba(0,0,0,.04);}
-.ep-faq-si{flex:1;border:none;background:transparent;font-family:inherit;
-  font-size:13.5px;color:#0f172a;outline:none;}
-.ep-faq-si::placeholder{color:#cbd5e1;}
-
-/* FAQ question-only card */
-.ep-faq-qonly-card{background:#fff;border-radius:15px;border:1.5px solid #f1f5f9;
-  margin-bottom:8px;overflow:hidden;transition:all .18s;padding:14px 16px;
-  display:flex;align-items:flex-start;gap:11px;}
-.ep-faq-qonly-card:hover{border-color:#c7d2fe;box-shadow:0 4px 14px rgba(99,102,241,.08);}
-.ep-faq-q-num{min-width:28px;height:28px;border-radius:8px;background:rgba(99,102,241,.1);
-  color:#6366f1;font-size:11px;font-weight:800;display:flex;align-items:center;
-  justify-content:center;flex-shrink:0;margin-top:1px;}
-.ep-faq-q-body{flex:1;}
-.ep-faq-q-text{font-size:13.5px;font-weight:700;color:#0f172a;line-height:1.5;margin-bottom:5px;}
-.ep-faq-unit-tag{display:inline-flex;font-size:10px;font-weight:700;padding:2px 8px;border-radius:6px;
-  background:rgba(99,102,241,.08);color:#6366f1;}
-
-/* ── Question Paper Format ── */
-.ep-paper-wrapper{max-width:900px;margin:0 auto;}
-.ep-paper-header{background:#fff;border-radius:20px;border:1px solid rgba(0,0,0,.06);
-  box-shadow:0 2px 12px rgba(0,0,0,.05);padding:24px 28px;margin-bottom:16px;
-  text-align:center;position:relative;}
-.ep-paper-school{font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;
-  letter-spacing:.1em;margin-bottom:6px;}
-.ep-paper-exam-title{font-size:22px;font-weight:800;color:#0f172a;margin-bottom:4px;}
-.ep-paper-subject{font-size:15px;font-weight:700;color:#6366f1;margin-bottom:14px;}
-.ep-paper-meta-row{display:flex;justify-content:space-between;align-items:center;
-  flex-wrap:wrap;gap:10px;padding:14px 20px;background:#f8fafc;border-radius:12px;
-  border:1px solid #e2e8f0;}
-.ep-paper-meta-item{display:flex;flex-direction:column;align-items:center;gap:2px;}
-.ep-paper-meta-val{font-size:15px;font-weight:800;color:#0f172a;}
-.ep-paper-meta-lbl{font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;}
-.ep-paper-divider{height:1px;background:linear-gradient(90deg,transparent,#e2e8f0,transparent);margin:16px 0;}
-.ep-paper-instructions{font-size:11.5px;color:#64748b;line-height:1.7;text-align:left;
-  padding:12px 16px;background:rgba(99,102,241,.04);border-radius:10px;
-  border-left:3px solid #6366f1;}
-.ep-paper-instructions strong{color:#0f172a;font-weight:700;}
-.ep-paper-print-btn{position:absolute;top:16px;right:16px;display:flex;align-items:center;gap:6px;
-  padding:7px 14px;border-radius:10px;border:1.5px solid rgba(99,102,241,.2);
-  background:rgba(99,102,241,.06);font-family:inherit;font-size:12px;font-weight:700;
-  color:#6366f1;cursor:pointer;transition:all .18s;}
-.ep-paper-print-btn:hover{background:rgba(99,102,241,.12);}
-
-/* Part sections */
-.ep-part-section{background:#fff;border-radius:20px;border:1px solid rgba(0,0,0,.06);
-  box-shadow:0 2px 12px rgba(0,0,0,.05);margin-bottom:16px;overflow:hidden;}
-.ep-part-header{padding:14px 22px;display:flex;align-items:center;justify-content:space-between;
-  gap:10px;border-bottom:1px solid #f1f5f9;}
-.ep-part-left{display:flex;align-items:center;gap:12px;}
-.ep-part-badge{width:36px;height:36px;border-radius:11px;display:flex;align-items:center;
-  justify-content:center;font-size:15px;font-weight:900;color:#fff;flex-shrink:0;}
-.ep-part-title{font-size:15px;font-weight:800;color:#0f172a;}
-.ep-part-subtitle{font-size:11.5px;color:#64748b;margin-top:1px;}
-.ep-part-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
-.ep-part-tag{padding:4px 12px;border-radius:20px;font-size:11px;font-weight:800;
-  text-transform:uppercase;letter-spacing:.06em;}
-.ep-part-count{padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;
-  background:rgba(0,0,0,.05);color:#64748b;}
-
-/* Questions list in paper */
-.ep-paper-questions{padding:8px 0;}
-.ep-paper-qn{display:flex;align-items:flex-start;gap:12px;padding:14px 22px;
-  border-bottom:1px dashed #f1f5f9;transition:background .15s;}
-.ep-paper-qn:last-child{border-bottom:none;}
-.ep-paper-qn:hover{background:rgba(99,102,241,.02);}
-.ep-paper-qn-num{min-width:28px;height:28px;border-radius:8px;display:flex;align-items:center;
-  justify-content:center;font-size:11px;font-weight:800;flex-shrink:0;margin-top:2px;}
-.ep-paper-qn-text{font-size:13.5px;font-weight:600;color:#0f172a;line-height:1.65;flex:1;}
-.ep-paper-qn-unit{font-size:10px;font-weight:700;padding:2px 8px;border-radius:6px;
-  white-space:nowrap;flex-shrink:0;margin-top:4px;}
-.ep-paper-qn-marks{font-size:10.5px;font-weight:800;color:#94a3b8;white-space:nowrap;flex-shrink:0;margin-top:4px;}
-.ep-paper-answer-space{margin:6px 0 0 40px;height:28px;border-bottom:1px solid #e2e8f0;opacity:.5;}
-
-/* Part color themes */
-.ep-part1 .ep-part-badge{background:linear-gradient(135deg,#6366f1,#8b5cf6);}
-.ep-part1 .ep-part-tag{background:rgba(99,102,241,.1);color:#6366f1;}
-.ep-part1 .ep-paper-qn-num{background:rgba(99,102,241,.1);color:#6366f1;}
-.ep-part1 .ep-paper-qn-unit{background:rgba(99,102,241,.08);color:#6366f1;}
-.ep-part2 .ep-part-badge{background:linear-gradient(135deg,#10b981,#059669);}
-.ep-part2 .ep-part-tag{background:rgba(16,185,129,.1);color:#059669;}
-.ep-part2 .ep-paper-qn-num{background:rgba(16,185,129,.1);color:#059669;}
-.ep-part2 .ep-paper-qn-unit{background:rgba(16,185,129,.08);color:#059669;}
-.ep-part3 .ep-part-badge{background:linear-gradient(135deg,#f59e0b,#d97706);}
-.ep-part3 .ep-part-tag{background:rgba(245,158,11,.1);color:#d97706;}
-.ep-part3 .ep-paper-qn-num{background:rgba(245,158,11,.1);color:#d97706;}
-.ep-part3 .ep-paper-qn-unit{background:rgba(245,158,11,.08);color:#d97706;}
-.ep-part4 .ep-part-badge{background:linear-gradient(135deg,#ef4444,#dc2626);}
-.ep-part4 .ep-part-tag{background:rgba(239,68,68,.1);color:#dc2626;}
-.ep-part4 .ep-paper-qn-num{background:rgba(239,68,68,.08);color:#dc2626;}
-.ep-part4 .ep-paper-qn-unit{background:rgba(239,68,68,.07);color:#dc2626;}
-
-/* Nav */
-.ep-nav{display:flex;align-items:center;justify-content:space-between;
-  margin-top:22px;padding-top:18px;border-top:1px solid rgba(0,0,0,.06);}
-.ep-btn-prev,.ep-btn-next{display:inline-flex;align-items:center;gap:7px;padding:11px 22px;
-  border-radius:13px;border:none;font-family:inherit;font-size:13.5px;font-weight:700;cursor:pointer;transition:all .2s;}
-.ep-btn-prev{background:#fff;color:#64748b;border:1.5px solid rgba(0,0,0,.08);}
-.ep-btn-prev:hover{border-color:#6366f1;color:#6366f1;}
-.ep-btn-next{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;
-  box-shadow:0 4px 14px rgba(99,102,241,.32);}
-.ep-btn-next:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(99,102,241,.4);}
-.ep-btn-next:disabled{opacity:.5;cursor:not-allowed;transform:none;}
-
-/* No questions placeholder */
-.ep-empty{text-align:center;padding:50px 20px;color:#94a3b8;font-size:13px;
-  background:#fff;border-radius:18px;border:1px solid rgba(0,0,0,.06);}
-.ep-empty-icon{font-size:36px;margin-bottom:10px;}
-
-/* ── Responsive ── */
-@media(max-width:1100px){
-  .ep-hub-grid{grid-template-columns:1fr 1fr;}
-  .ep-s1-grid{grid-template-columns:repeat(3,1fr);}
-}
-@media(max-width:900px){
-  .ep-hero{margin:12px 16px 0;padding:14px 18px;}
-  .ep-body{padding:12px 16px 56px;}
-  .ep-hero-stats{display:none;}
-  .ep-faq-layout{grid-template-columns:1fr;}
-  .ep-faq-sidebar{position:static;margin-bottom:12px;}
-  .ep-s2-grid{grid-template-columns:1fr;}
-  .ep-paper-meta-row{gap:6px;}
-}
-@media(max-width:768px){
-  .ep-hero{margin:10px 12px 0;padding:12px 16px;border-radius:16px;}
-  .ep-hero-title{font-size:16px;}
-  .ep-body{padding:10px 12px 56px;}
-  .ep-s1-grid{grid-template-columns:repeat(2,1fr);}
-  .ep-hub-grid{grid-template-columns:1fr;}
-  .ep-step-lbl{display:none;}
-  .ep-steps-bar{overflow-x:auto;scrollbar-width:none;padding:14px 16px;}
-  .ep-paper-exam-title{font-size:18px;}
-  .ep-paper-print-btn{position:static;margin-bottom:12px;}
-  .ep-paper-header{text-align:center;}
-  .ep-paper-qn{flex-wrap:wrap;gap:8px;}
-  .ep-paper-qn-marks,.ep-paper-qn-unit{margin-top:0;}
-}
-@media(max-width:600px){
-  .ep-hero{margin:10px 10px 0;padding:12px 14px;border-radius:14px;}
-  .ep-body{padding:10px 10px 56px;}
-  .ep-s1-grid{grid-template-columns:repeat(2,1fr);}
-  .ep-nav{flex-direction:column;gap:8px;}
-  .ep-btn-prev,.ep-btn-next{width:100%;justify-content:center;}
-  .ep-paper-meta-row{flex-direction:column;align-items:flex-start;gap:10px;}
-  .ep-part-header{flex-direction:column;align-items:flex-start;gap:8px;}
-  .ep-paper-qn{padding:12px 14px;}
-}
-@media(max-width:480px){
-  .ep-hero{margin:8px 8px 0;}
-  .ep-body{padding:8px 8px 56px;}
-  .ep-subj-emoji{font-size:28px;}
-  .ep-subj-name{font-size:12px;}
-  .ep-hub-grid{grid-template-columns:1fr;}
+.ep-root {
+  min-height: 100vh;
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  color: var(--ep-ink);
+  background:
+    radial-gradient(circle at 14% 9%, rgba(126,87,255,.12), transparent 26%),
+    radial-gradient(circle at 88% 14%, rgba(255,171,64,.16), transparent 25%),
+    linear-gradient(180deg, var(--ep-page), var(--ep-page-2));
+  --ep-page: #fbfcff;
+  --ep-page-2: #f5f7ff;
+  --ep-card: #ffffff;
+  --ep-card-soft: #f7faff;
+  --ep-ink: #071235;
+  --ep-muted: #68708a;
+  --ep-faint: #8c94aa;
+  --ep-line: rgba(15,23,42,.08);
+  --ep-shadow: 0 12px 30px rgba(35,44,87,.10);
+  --ep-shadow-soft: 0 7px 18px rgba(35,44,87,.06);
+  position: relative;
+  overflow-x: hidden;
 }
 
-@media print{
-  .ep-hero,.ep-steps-bar,.ep-page-topbar,.ep-paper-print-btn,.ep-nav,.ep-back-btn{display:none!important;}
-  .ep-body{padding:0!important;}
-  .ep-paper-section{box-shadow:none!important;border:1px solid #ddd!important;}
-  .ep-paper-answer-space{border-bottom:1px solid #999!important;opacity:1!important;}
+[data-theme="dark"] .ep-root,
+.dark .ep-root {
+  --ep-page: #080d1f;
+  --ep-page-2: #10172d;
+  --ep-card: rgba(23,31,58,.92);
+  --ep-card-soft: rgba(31,42,76,.72);
+  --ep-ink: #f6f7ff;
+  --ep-muted: #b5bfd8;
+  --ep-faint: #7f8aa7;
+  --ep-line: rgba(255,255,255,.12);
+  --ep-shadow: 0 20px 54px rgba(0,0,0,.36);
+  --ep-shadow-soft: 0 12px 30px rgba(0,0,0,.24);
+}
+
+.ep-root::before, .ep-root::after {
+  content: "";
+  position: absolute;
+  border-radius: 999px;
+  pointer-events: none;
+  filter: blur(.2px);
+  opacity: .55;
+  animation: epFloatBg 12s ease-in-out infinite alternate;
+}
+.ep-root::before {
+  width: 260px;
+  height: 260px;
+  left: -80px;
+  top: 100px;
+  background: radial-gradient(circle, rgba(46,182,255,.18), transparent 68%);
+}
+.ep-root::after {
+  width: 300px;
+  height: 300px;
+  right: -100px;
+  top: 380px;
+  background: radial-gradient(circle, rgba(255,95,153,.14), transparent 70%);
+  animation-delay: -5s;
+}
+
+@keyframes epFloatBg {
+  from { transform: translate3d(0,0,0) scale(1); }
+  to { transform: translate3d(22px,28px,0) scale(1.08); }
+}
+@keyframes epCardIn {
+  from { opacity: 0; transform: translateY(12px) scale(.985); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes epShine {
+  0% { transform: translateX(-120%) rotate(18deg); }
+  45%, 100% { transform: translateX(220%) rotate(18deg); }
+}
+@keyframes epBreathe {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-7px); }
+}
+@keyframes epPulseSoft {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(99,91,255,.22); }
+  50% { box-shadow: 0 0 0 8px rgba(99,91,255,0); }
+}
+@keyframes epDrift {
+  0%, 100% { transform: translate3d(0,0,0) rotate(0); }
+  50% { transform: translate3d(18px,-14px,0) rotate(7deg); }
+}
+@keyframes epGlowMove {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+@keyframes epWiggle {
+  0%, 100% { transform: rotate(0) scale(1); }
+  35% { transform: rotate(-2deg) scale(1.025); }
+  70% { transform: rotate(2deg) scale(1.025); }
+}
+@keyframes epPop3d {
+  0%, 100% { transform: translateY(0) rotate(-2deg) scale(1); }
+  50% { transform: translateY(-6px) rotate(3deg) scale(1.04); }
+}
+@keyframes epBgWave {
+  0%, 100% { transform: translate3d(-2%,0,0) rotate(0); }
+  50% { transform: translate3d(2%,-2%,0) rotate(2deg); }
+}
+@keyframes epProgressSweep {
+  0% { transform: translateX(-120%) skewX(-20deg); }
+  100% { transform: translateX(220%) skewX(-20deg); }
+}
+
+.ep-bg-spark {
+  position: absolute;
+  pointer-events: none;
+  z-index: 0;
+  border-radius: 999px;
+  opacity: .48;
+  animation: epDrift 9s ease-in-out infinite;
+}
+.ep-bg-spark.s1 {
+  left: 52%;
+  top: 78px;
+  width: 9px;
+  height: 9px;
+  background: #ffb21d;
+  box-shadow: 34px 28px 0 #27b86a, 76px -14px 0 #2389ff;
+}
+.ep-bg-spark.s2 {
+  right: 8%;
+  top: 260px;
+  width: 7px;
+  height: 7px;
+  background: #ff4d8d;
+  box-shadow: -48px 46px 0 #7e45e8, -86px -18px 0 #00a7c8;
+  animation-delay: -3s;
+}
+.ep-bg-spark.s3 {
+  left: 7%;
+  bottom: 160px;
+  width: 8px;
+  height: 8px;
+  background: #27b86a;
+  box-shadow: 42px -34px 0 #ff791f, 92px 18px 0 #2389ff;
+  animation-delay: -5s;
+}
+.ep-bg-ribbon {
+  position: absolute;
+  pointer-events: none;
+  z-index: 0;
+  left: 4%;
+  right: 4%;
+  top: 150px;
+  height: 170px;
+  border-radius: 50%;
+  background: linear-gradient(90deg, rgba(35,137,255,.08), rgba(255,178,29,.10), rgba(39,184,106,.08));
+  filter: blur(18px);
+  opacity: .75;
+  animation: epBgWave 13s ease-in-out infinite;
+}
+
+.ep-shell {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 16px 20px 60px;
+  position: relative;
+  z-index: 1;
+}
+
+/* Greeting Header */
+.ep-greeting {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 0 2px 18px;
+  flex-wrap: wrap;
+}
+.ep-title {
+  font-size: clamp(22px, 2.6vw, 30px);
+  line-height: 1.05;
+  font-weight: 800;
+  color: var(--ep-ink);
+  letter-spacing: -0.01em;
+}
+.ep-subtitle {
+  margin-top: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ep-muted);
+}
+.ep-mini-stats {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.ep-mini-pill {
+  min-width: 96px;
+  border: 1px solid var(--ep-line);
+  background: rgba(255,255,255,.78);
+  backdrop-filter: blur(14px);
+  border-radius: 16px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  box-shadow: var(--ep-shadow-soft);
+  animation: epCardIn .42s both;
+  transition: transform .18s, box-shadow .18s, border-color .18s;
+}
+.ep-mini-pill:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--ep-shadow);
+  border-color: rgba(35,137,255,.3);
+}
+[data-theme="dark"] .ep-mini-pill,
+.dark .ep-mini-pill {
+  background: rgba(23,31,58,.82);
+  border-color: rgba(255,255,255,.12);
+}
+.ep-pill-ico {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+  background: #fff4d6;
+  flex-shrink: 0;
+}
+[data-theme="dark"] .ep-pill-ico,
+.dark .ep-pill-ico {
+  background: rgba(255,255,255,.1);
+}
+.ep-pill-num {
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--ep-ink);
+}
+.ep-pill-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--ep-muted);
+  margin-top: 2px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+/* ── Hero Banner with Robot ── */
+.ep-hero {
+  position: relative;
+  overflow: hidden;
+  min-height: 220px;
+  border-radius: 22px;
+  padding: 24px 28px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 20px;
+  align-items: center;
+  background: linear-gradient(118deg, #dff5ff 0%, #eef2ff 48%, #fff1d6 100%);
+  border: 1px solid rgba(35,137,255,.2);
+  box-shadow: var(--ep-shadow);
+  animation: epCardIn .45s both;
+  margin-bottom: 22px;
+}
+[data-theme="dark"] .ep-hero,
+.dark .ep-hero {
+  background: linear-gradient(118deg, #102b43 0%, #20264f 52%, #49321c 100%);
+  border-color: rgba(116,190,255,.24);
+}
+.ep-hero::before {
+  content: "";
+  position: absolute;
+  inset: -70px auto auto -70px;
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.45);
+  animation: epBreathe 5s ease-in-out infinite;
+  pointer-events: none;
+}
+.ep-hero::after {
+  content: "";
+  position: absolute;
+  top: -50px;
+  bottom: -50px;
+  width: 70px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.36), transparent);
+  animation: epShine 7s ease-in-out infinite;
+  pointer-events: none;
+}
+.ep-hero-content {
+  position: relative;
+  z-index: 2;
+  max-width: 540px;
+}
+.ep-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  font-weight: 800;
+  color: #0284c7;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: rgba(2,132,199,.1);
+  border: 1px solid rgba(2,132,199,.18);
+  margin-bottom: 10px;
+}
+[data-theme="dark"] .ep-chip,
+.dark .ep-chip {
+  color: #38bdf8;
+  background: rgba(56,189,248,.14);
+  border-color: rgba(56,189,248,.25);
+}
+.ep-hero-title {
+  font-size: clamp(22px, 2.7vw, 32px);
+  line-height: 1.15;
+  font-weight: 800;
+  color: var(--ep-ink);
+  letter-spacing: -0.02em;
+  margin-bottom: 8px;
+}
+.ep-hero-desc {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ep-muted);
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+.ep-hero-progress-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  max-width: 320px;
+}
+.ep-hero-track {
+  height: 8px;
+  flex: 1;
+  border-radius: 999px;
+  background: rgba(35,137,255,.14);
+  overflow: hidden;
+  position: relative;
+}
+.ep-hero-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2563eb, #0ea5e9);
+  position: relative;
+}
+.ep-hero-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 30%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.6), transparent);
+  animation: epProgressSweep 2.4s ease-in-out infinite;
+}
+.ep-hero-progress-text {
+  font-size: 11.5px;
+  font-weight: 800;
+  color: var(--ep-ink);
+  white-space: nowrap;
+}
+.ep-primary-btn {
+  border: 0;
+  border-radius: 14px;
+  padding: 11px 20px;
+  min-height: 42px;
+  background: linear-gradient(135deg, #2563eb, #0ea5e9);
+  color: #fff;
+  font: 800 13px/1 'Plus Jakarta Sans', system-ui, sans-serif;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 10px 20px rgba(14,165,233,.28);
+  transition: transform .18s, box-shadow .18s;
+}
+.ep-primary-btn:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 14px 26px rgba(14,165,233,.38);
+}
+
+/* Robot Stage Panel */
+.ep-hero-panel {
+  position: relative;
+  z-index: 2;
+  min-height: 200px;
+  border-radius: 20px;
+  padding: 16px;
+  background: rgba(255,255,255,.58);
+  border: 1px solid rgba(255,255,255,.72);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.7), 0 18px 34px rgba(38,57,116,.12);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+}
+[data-theme="dark"] .ep-hero-panel,
+.dark .ep-hero-panel {
+  background: rgba(15,23,42,.45);
+  border-color: rgba(255,255,255,.14);
+}
+.ep-hero-panel::before {
+  content: "";
+  position: absolute;
+  right: -30px;
+  top: -30px;
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  background: rgba(35,137,255,.16);
+  animation: epBreathe 5s ease-in-out infinite;
+}
+.ep-hero-panel::after {
+  content: "";
+  position: absolute;
+  left: -30px;
+  bottom: -40px;
+  width: 130px;
+  height: 130px;
+  border-radius: 50%;
+  background: rgba(255,178,29,.18);
+  animation: epDrift 8s ease-in-out infinite;
+}
+.ep-hero-orbit {
+  position: relative;
+  z-index: 1;
+  width: 110px;
+  height: 110px;
+  display: grid;
+  place-items: center;
+  margin: 4px auto 8px;
+}
+.ep-hero-robo-img {
+  width: 104px;
+  height: 104px;
+  object-fit: contain;
+  filter: drop-shadow(0 14px 18px rgba(0,0,0,.22));
+  animation: epBreathe 4.2s ease-in-out infinite;
+}
+.ep-hero-stats {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  width: 100%;
+}
+.ep-hero-stat {
+  border-radius: 12px;
+  padding: 8px 10px;
+  text-align: center;
+  background: rgba(255,255,255,.72);
+  border: 1px solid rgba(15,23,42,.07);
+}
+[data-theme="dark"] .ep-hero-stat,
+.dark .ep-hero-stat {
+  background: rgba(255,255,255,.08);
+  border-color: rgba(255,255,255,.10);
+}
+.ep-hero-stat b {
+  display: block;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ep-ink);
+  line-height: 1;
+}
+.ep-hero-stat span {
+  display: block;
+  margin-top: 3px;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--ep-muted);
+  text-transform: uppercase;
+}
+
+/* ── Generic Glass Card ── */
+.ep-card {
+  background: rgba(255,255,255,.86);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--ep-line);
+  border-radius: 20px;
+  box-shadow: var(--ep-shadow-soft);
+  padding: 20px;
+  animation: epCardIn .45s both;
+  transition: transform .18s, box-shadow .18s, border-color .18s;
+  margin-bottom: 20px;
+}
+[data-theme="dark"] .ep-card,
+.dark .ep-card {
+  background: rgba(23,31,58,.88);
+  border-color: rgba(255,255,255,.12);
+}
+.ep-card:hover {
+  border-color: rgba(35,137,255,.24);
+}
+
+/* ── Step Progress Indicator ── */
+.ep-steps-bar {
+  display: flex;
+  align-items: center;
+  padding: 16px 22px;
+  border-radius: 18px;
+  background: rgba(255,255,255,.86);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--ep-line);
+  box-shadow: var(--ep-shadow-soft);
+  margin-bottom: 22px;
+}
+[data-theme="dark"] .ep-steps-bar,
+.dark .ep-steps-bar {
+  background: rgba(23,31,58,.88);
+  border-color: rgba(255,255,255,.12);
+}
+.ep-step-item {
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+.ep-step-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  cursor: default;
+}
+.ep-step-circle {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 800;
+  flex-shrink: 0;
+  transition: all .25s ease;
+}
+.ep-step-circle.done {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(16,185,129,.35);
+  cursor: pointer;
+}
+.ep-step-circle.active {
+  background: linear-gradient(135deg, #2563eb, #0ea5e9);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(37,99,235,.35);
+  outline: 3px solid rgba(14,165,233,.3);
+  outline-offset: 2px;
+}
+.ep-step-circle.pending {
+  background: var(--ep-card-soft);
+  color: var(--ep-muted);
+  border: 1.5px solid var(--ep-line);
+}
+.ep-step-lbl {
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--ep-muted);
+}
+.ep-step-lbl.active,
+.ep-step-lbl.done {
+  color: var(--ep-ink);
+  font-weight: 800;
+}
+.ep-step-line {
+  flex: 1;
+  height: 3px;
+  margin: 0 12px 20px;
+  border-radius: 99px;
+  transition: background .4s;
+}
+.ep-step-line.filled {
+  background: linear-gradient(90deg, #2563eb, #0ea5e9);
+}
+.ep-step-line.empty {
+  background: var(--ep-line);
+}
+
+/* ── Section Titles ── */
+.ep-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.ep-section-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--ep-ink);
+  letter-spacing: -0.01em;
+}
+.ep-section-sub {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ep-muted);
+  margin-top: 3px;
+}
+
+/* ── Step 1: Subjects Grid ── */
+.ep-subject-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+  margin-bottom: 22px;
+}
+.ep-subject {
+  min-height: 196px;
+  border-radius: 18px;
+  padding: 14px 12px;
+  background: var(--subject-bg);
+  box-shadow: 0 10px 22px rgba(38,57,116,.12);
+  transition: transform .22s cubic-bezier(.34,1.56,.64,1), box-shadow .22s, border-color .22s;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  border: 2px solid transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+}
+.ep-subject::before {
+  content: "";
+  position: absolute;
+  inset: -40px -26px auto auto;
+  width: 116px;
+  height: 116px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.33);
+}
+.ep-subject:hover {
+  transform: translateY(-5px) scale(1.02);
+  box-shadow: 0 18px 32px rgba(38,57,116,.18);
+}
+.ep-subject.selected {
+  border-color: #fff;
+  box-shadow: 0 12px 30px rgba(37,99,235,.28), 0 0 0 2px #2563eb;
+}
+.ep-subject-check {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #fff;
+  color: #2563eb;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 3px 8px rgba(0,0,0,.2);
+  z-index: 2;
+}
+.ep-subject-name {
+  font-size: 16px;
+  font-weight: 800;
+  color: #071235;
+  margin: 0;
+  position: relative;
+  z-index: 1;
+}
+.ep-subject-visual {
+  position: relative;
+  z-index: 1;
+  min-height: 96px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(145deg, rgba(255,255,255,.78), rgba(255,255,255,.28));
+  box-shadow: inset 0 -8px 0 rgba(0,0,0,.05);
+  overflow: hidden;
+}
+.ep-subject-visual::before {
+  content: "";
+  position: absolute;
+  inset: auto -20px -36px auto;
+  width: 92px;
+  height: 92px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.28);
+}
+.ep-subject-art-img {
+  width: 92px;
+  height: 84px;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 12px rgba(0,0,0,.15));
+  animation: epPop3d 4.2s ease-in-out infinite;
+  animation-delay: var(--delay, 0s);
+  position: relative;
+  z-index: 1;
+}
+.ep-subject-emoji-art {
+  font-size: 46px;
+  animation: epPop3d 4.2s ease-in-out infinite;
+  animation-delay: var(--delay, 0s);
+  position: relative;
+  z-index: 1;
+}
+.ep-subject-footer {
+  position: relative;
+  z-index: 1;
+  margin-top: auto;
+  padding: 6px 2px 2px;
+}
+.ep-subject-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11.5px;
+  font-weight: 800;
+  color: rgba(7,18,53,.85);
+  margin-bottom: 5px;
+}
+.ep-subject-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(7,18,53,.14);
+  overflow: hidden;
+}
+.ep-subject-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: rgba(7,18,53,.82);
+}
+
+/* ── Step 2: Units Selection ── */
+.ep-s2-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.ep-units-box {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.ep-unit-card {
+  padding: 14px 12px;
+  border-radius: 14px;
+  border: 1.5px solid var(--ep-line);
+  background: var(--ep-card-soft);
+  cursor: pointer;
+  transition: all .2s ease;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+}
+.ep-unit-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(37,99,235,.35);
+  box-shadow: var(--ep-shadow-soft);
+}
+.ep-unit-card.active {
+  background: linear-gradient(135deg, #2563eb, #0ea5e9);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(37,99,235,.26);
+}
+.ep-unit-check-box {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  background: rgba(15,23,42,.08);
+  color: transparent;
+  transition: all .2s;
+}
+[data-theme="dark"] .ep-unit-check-box,
+.dark .ep-unit-check-box {
+  background: rgba(255,255,255,.12);
+}
+.ep-unit-card.active .ep-unit-check-box {
+  background: rgba(255,255,255,.28);
+  color: #fff;
+}
+.ep-unit-name {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.ep-unit-card.active .ep-unit-name {
+  color: #fff;
+}
+
+/* Selection Summary Sidebar */
+.ep-summary-hero {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--ep-card-soft);
+  border: 1px solid var(--ep-line);
+  margin-bottom: 14px;
+}
+.ep-summary-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  flex-shrink: 0;
+}
+.ep-summary-subject {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--ep-ink);
+}
+.ep-summary-meta {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ep-muted);
+}
+.ep-unit-pills-wrap {
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 10px;
+  border-radius: 12px;
+  background: var(--ep-card-soft);
+  border: 1px solid var(--ep-line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.ep-sel-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  background: rgba(37,99,235,.10);
+  color: #2563eb;
+  border: 1px solid rgba(37,99,235,.20);
+  cursor: pointer;
+  transition: all .18s;
+}
+[data-theme="dark"] .ep-sel-pill,
+.dark .ep-sel-pill {
+  background: rgba(56,189,248,.15);
+  color: #38bdf8;
+  border-color: rgba(56,189,248,.3);
+}
+.ep-sel-pill:hover {
+  background: rgba(239,68,68,.14);
+  color: #ef4444;
+  border-color: rgba(239,68,68,.3);
+}
+.ep-tip-box {
+  padding: 12px;
+  border-radius: 12px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  font-weight: 600;
+  background: rgba(37,99,235,.06);
+  border: 1px solid rgba(37,99,235,.15);
+  color: #2563eb;
+}
+[data-theme="dark"] .ep-tip-box,
+.dark .ep-tip-box {
+  background: rgba(56,189,248,.1);
+  color: #38bdf8;
+  border-color: rgba(56,189,248,.2);
+}
+
+/* ── Step 3: Exam Prep Hub ── */
+.ep-hub-banner-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 22px;
+  border-radius: 18px;
+  background: rgba(255,255,255,.86);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--ep-line);
+  box-shadow: var(--ep-shadow-soft);
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+[data-theme="dark"] .ep-hub-banner-card,
+.dark .ep-hub-banner-card {
+  background: rgba(23,31,58,.88);
+  border-color: rgba(255,255,255,.12);
+}
+.ep-hub-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 22px;
+}
+.ep-hub-card {
+  border-radius: 20px;
+  border: 1px solid var(--ep-line);
+  background: var(--ep-card);
+  box-shadow: var(--ep-shadow-soft);
+  overflow: hidden;
+  transition: all .25s cubic-bezier(.34,1.56,.64,1);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+}
+.ep-hub-card:hover:not(.disabled) {
+  transform: translateY(-5px);
+  box-shadow: var(--ep-shadow);
+  border-color: rgba(37,99,235,.3);
+}
+.ep-hub-card.disabled {
+  opacity: .75;
+  cursor: not-allowed;
+}
+.ep-hub-stripe {
+  height: 6px;
+}
+.ep-hub-body {
+  padding: 22px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.ep-hub-icon-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.ep-hub-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  font-size: 24px;
+}
+.ep-hub-badge {
+  font-size: 10.5px;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.ep-hub-badge.blue {
+  background: rgba(37,99,235,.12);
+  color: #2563eb;
+}
+.ep-hub-badge.green {
+  background: rgba(16,185,129,.12);
+  color: #059669;
+}
+.ep-hub-badge.purple {
+  background: rgba(139,92,246,.12);
+  color: #7c3aed;
+}
+[data-theme="dark"] .ep-hub-badge.blue,
+.dark .ep-hub-badge.blue {
+  color: #60a5fa;
+  background: rgba(96,165,250,.2);
+}
+[data-theme="dark"] .ep-hub-badge.green,
+.dark .ep-hub-badge.green {
+  color: #34d399;
+  background: rgba(52,211,153,.2);
+}
+[data-theme="dark"] .ep-hub-badge.purple,
+.dark .ep-hub-badge.purple {
+  color: #c084fc;
+  background: rgba(192,132,252,.2);
+}
+.ep-hub-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--ep-ink);
+  margin-bottom: 8px;
+}
+.ep-hub-desc {
+  font-size: 12.5px;
+  color: var(--ep-muted);
+  line-height: 1.6;
+  margin-bottom: 14px;
+}
+.ep-hub-meta {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ep-muted);
+}
+.ep-hub-meta b {
+  color: var(--ep-ink);
+  font-weight: 700;
+}
+.ep-hub-action-btn {
+  margin-top: auto;
+  border: 0;
+  border-radius: 12px;
+  padding: 11px 18px;
+  font: 800 13px/1 'Plus Jakarta Sans', system-ui, sans-serif;
+  color: #fff;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  transition: transform .18s, filter .18s;
+}
+.ep-hub-action-btn.blue {
+  background: linear-gradient(135deg, #2563eb, #0ea5e9);
+  box-shadow: 0 4px 14px rgba(37,99,235,.3);
+}
+.ep-hub-action-btn.green {
+  background: linear-gradient(135deg, #10b981, #059669);
+  box-shadow: 0 4px 14px rgba(16,185,129,.3);
+}
+.ep-hub-action-btn:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.06);
+}
+.ep-hub-buddy-locked {
+  margin-top: auto;
+  border: 1.5px dashed rgba(139,92,246,.3);
+  background: rgba(139,92,246,.07);
+  border-radius: 12px;
+  padding: 10px;
+  font: 800 12.5px 'Plus Jakarta Sans', system-ui, sans-serif;
+  color: #8b5cf6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+.ep-buddy-features {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 16px;
+}
+.ep-buddy-feat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ep-muted);
+}
+.ep-buddy-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #8b5cf6;
+  flex-shrink: 0;
+}
+
+/* ── Step 4: FAQs & Question Paper Views ── */
+.ep-page-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.ep-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 16px;
+  border-radius: 12px;
+  border: 1.5px solid var(--ep-line);
+  background: var(--ep-card);
+  color: var(--ep-muted);
+  font: 800 12.5px 'Plus Jakarta Sans', system-ui, sans-serif;
+  cursor: pointer;
+  transition: all .18s;
+  box-shadow: var(--ep-shadow-soft);
+}
+.ep-back-btn:hover {
+  border-color: #2563eb;
+  color: #2563eb;
+  transform: translateY(-1px);
+}
+[data-theme="dark"] .ep-back-btn,
+.dark .ep-back-btn {
+  color: #b5bfd8;
+  border-color: rgba(255,255,255,.14);
+}
+[data-theme="dark"] .ep-back-btn:hover,
+.dark .ep-back-btn:hover {
+  border-color: #38bdf8;
+  color: #38bdf8;
+}
+
+/* FAQ Layout */
+.ep-faq-layout {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.ep-faq-sidebar {
+  background: var(--ep-card);
+  border-radius: 18px;
+  border: 1px solid var(--ep-line);
+  box-shadow: var(--ep-shadow-soft);
+  overflow: hidden;
+  position: sticky;
+  top: 80px;
+}
+.ep-faq-sb-head {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--ep-line);
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--ep-muted);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.ep-faq-fi {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 18px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ep-muted);
+  transition: all .15s;
+}
+.ep-faq-fi:hover {
+  background: rgba(37,99,235,.05);
+  color: #2563eb;
+}
+.ep-faq-fi.on {
+  background: rgba(37,99,235,.10);
+  color: #2563eb;
+  font-weight: 800;
+}
+[data-theme="dark"] .ep-faq-fi:hover,
+.dark .ep-faq-fi:hover {
+  color: #38bdf8;
+  background: rgba(56,189,248,.1);
+}
+[data-theme="dark"] .ep-faq-fi.on,
+.dark .ep-faq-fi.on {
+  color: #38bdf8;
+  background: rgba(56,189,248,.15);
+}
+.ep-faq-fi-count {
+  font-size: 11px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(37,99,235,.1);
+  color: #2563eb;
+}
+[data-theme="dark"] .ep-faq-fi-count,
+.dark .ep-faq-fi-count {
+  color: #38bdf8;
+  background: rgba(56,189,248,.16);
+}
+
+.ep-faq-search-bar {
+  background: var(--ep-card);
+  border-radius: 14px;
+  border: 1px solid var(--ep-line);
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: var(--ep-shadow-soft);
+}
+.ep-faq-si {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font: 600 13.5px 'Plus Jakarta Sans', system-ui, sans-serif;
+  color: var(--ep-ink);
+  outline: none;
+}
+.ep-faq-si::placeholder {
+  color: var(--ep-faint);
+}
+.ep-faq-qonly-card {
+  background: var(--ep-card);
+  border-radius: 16px;
+  border: 1px solid var(--ep-line);
+  margin-bottom: 10px;
+  padding: 16px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  box-shadow: var(--ep-shadow-soft);
+  transition: all .2s;
+}
+.ep-faq-qonly-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(37,99,235,.3);
+  box-shadow: var(--ep-shadow);
+}
+.ep-faq-q-num {
+  min-width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(37,99,235,.12), rgba(14,165,233,.12));
+  border: 1px solid rgba(37,99,235,.2);
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+[data-theme="dark"] .ep-faq-q-num,
+.dark .ep-faq-q-num {
+  color: #38bdf8;
+  border-color: rgba(56,189,248,.25);
+  background: rgba(56,189,248,.14);
+}
+.ep-faq-q-body {
+  flex: 1;
+}
+.ep-faq-q-text {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ep-ink);
+  line-height: 1.5;
+  margin-bottom: 6px;
+}
+.ep-faq-unit-tag {
+  display: inline-flex;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 8px;
+  background: rgba(37,99,235,.08);
+  color: #2563eb;
+}
+[data-theme="dark"] .ep-faq-unit-tag,
+.dark .ep-faq-unit-tag {
+  color: #38bdf8;
+  background: rgba(56,189,248,.12);
+}
+
+/* Question Paper Header & Sections */
+.ep-paper-header {
+  background: var(--ep-card);
+  border-radius: 20px;
+  border: 1px solid var(--ep-line);
+  box-shadow: var(--ep-shadow-soft);
+  padding: 22px 26px;
+  margin-bottom: 16px;
+  text-align: center;
+  position: relative;
+}
+.ep-paper-school {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--ep-muted);
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  margin-bottom: 6px;
+}
+.ep-paper-exam-title {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--ep-ink);
+  margin-bottom: 4px;
+}
+.ep-paper-subject {
+  font-size: 14px;
+  font-weight: 700;
+  color: #2563eb;
+  margin-bottom: 16px;
+}
+[data-theme="dark"] .ep-paper-subject,
+.dark .ep-paper-subject {
+  color: #38bdf8;
+}
+.ep-paper-meta-row {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 18px;
+  background: var(--ep-card-soft);
+  border-radius: 14px;
+  border: 1px solid var(--ep-line);
+}
+.ep-paper-meta-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.ep-paper-meta-val {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--ep-ink);
+}
+.ep-paper-meta-lbl {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--ep-muted);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.ep-paper-print-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 12px;
+  border: 1.5px solid rgba(37,99,235,.25);
+  background: rgba(37,99,235,.08);
+  font: 800 12.5px 'Plus Jakarta Sans', system-ui, sans-serif;
+  color: #2563eb;
+  cursor: pointer;
+  transition: all .18s;
+}
+.ep-paper-print-btn:hover {
+  background: rgba(37,99,235,.15);
+  transform: translateY(-1px);
+}
+[data-theme="dark"] .ep-paper-print-btn,
+.dark .ep-paper-print-btn {
+  color: #38bdf8;
+  border-color: rgba(56,189,248,.3);
+  background: rgba(56,189,248,.12);
+}
+
+/* Part Section Header */
+.ep-part-header {
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-radius: 18px;
+  background: var(--ep-card);
+  border: 1px solid var(--ep-line);
+  box-shadow: var(--ep-shadow-soft);
+  margin-bottom: 14px;
+}
+.ep-part-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.ep-part-badge {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+  font-weight: 900;
+  color: #fff;
+  flex-shrink: 0;
+}
+.ep-part-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--ep-ink);
+}
+.ep-part-subtitle {
+  font-size: 12px;
+  color: var(--ep-muted);
+  margin-top: 2px;
+}
+.ep-part-tag {
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+/* Part theme colors */
+.ep-part1 .ep-part-badge { background: linear-gradient(135deg, #2563eb, #0ea5e9); }
+.ep-part1 .ep-part-tag { background: rgba(37,99,235,.1); color: #2563eb; }
+.ep-part2 .ep-part-badge { background: linear-gradient(135deg, #10b981, #059669); }
+.ep-part2 .ep-part-tag { background: rgba(16,185,129,.1); color: #059669; }
+.ep-part3 .ep-part-badge { background: linear-gradient(135deg, #f59e0b, #d97706); }
+.ep-part3 .ep-part-tag { background: rgba(245,158,11,.1); color: #d97706; }
+.ep-part4 .ep-part-badge { background: linear-gradient(135deg, #ef4444, #dc2626); }
+.ep-part4 .ep-part-tag { background: rgba(239,68,68,.1); color: #dc2626; }
+
+/* Question item bubble */
+.ep-paper-question-bubble {
+  background: var(--ep-card);
+  border: 1px solid var(--ep-line);
+  color: var(--ep-ink);
+  border-radius: 4px 18px 18px 18px;
+  box-shadow: var(--ep-shadow-soft);
+  padding: 16px 20px;
+  flex: 1;
+  transition: all .18s ease;
+}
+.ep-paper-question-bubble:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--ep-shadow);
+  border-color: rgba(37,99,235,.28);
+}
+.ep-paper-answer-space {
+  margin: 10px 0 0 46px;
+  height: 24px;
+  border-bottom: 1px dashed var(--ep-line);
+  opacity: .7;
+}
+
+/* Bottom Navigation */
+.ep-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--ep-line);
+}
+.ep-btn-prev {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 11px 20px;
+  border-radius: 14px;
+  border: 1.5px solid var(--ep-line);
+  background: var(--ep-card);
+  font: 800 13px 'Plus Jakarta Sans', system-ui, sans-serif;
+  color: var(--ep-muted);
+  cursor: pointer;
+  transition: all .2s;
+}
+.ep-btn-prev:hover {
+  border-color: #2563eb;
+  color: #2563eb;
+}
+[data-theme="dark"] .ep-btn-prev,
+.dark .ep-btn-prev {
+  border-color: rgba(255,255,255,.14);
+  color: #b5bfd8;
+}
+.ep-btn-next {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border-radius: 14px;
+  border: 0;
+  background: linear-gradient(135deg, #2563eb, #0ea5e9);
+  color: #fff;
+  font: 800 13.5px 'Plus Jakarta Sans', system-ui, sans-serif;
+  cursor: pointer;
+  box-shadow: 0 10px 20px rgba(14,165,233,.28);
+  transition: all .2s;
+}
+.ep-btn-next:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 26px rgba(14,165,233,.38);
+}
+.ep-btn-next:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.ep-empty {
+  text-align: center;
+  padding: 44px 20px;
+  color: var(--ep-muted);
+  font-size: 13.5px;
+  font-weight: 600;
+  background: var(--ep-card);
+  border-radius: 18px;
+  border: 1px solid var(--ep-line);
+}
+.ep-empty-icon {
+  font-size: 38px;
+  margin-bottom: 8px;
+}
+
+/* ── Responsive Media Queries ── */
+@media(max-width: 1080px) {
+  .ep-subject-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .ep-hub-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .ep-units-box {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media(max-width: 860px) {
+  .ep-hero {
+    grid-template-columns: 1fr;
+    padding: 20px;
+  }
+  .ep-hero-panel {
+    display: none;
+  }
+  .ep-s2-grid {
+    grid-template-columns: 1fr;
+  }
+  .ep-faq-layout {
+    grid-template-columns: 1fr;
+  }
+  .ep-faq-sidebar {
+    position: static;
+    margin-bottom: 14px;
+  }
+  .ep-paper-meta-row {
+    gap: 8px;
+  }
+}
+
+@media(max-width: 640px) {
+  .ep-shell {
+    padding: 12px 12px 50px;
+  }
+  .ep-greeting {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .ep-mini-stats {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .ep-mini-pill {
+    flex: 1;
+    min-width: 0;
+    padding: 8px 8px;
+  }
+  .ep-hero {
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  .ep-hero-title {
+    font-size: 20px;
+  }
+  .ep-subject-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+  .ep-subject {
+    min-height: 180px;
+    padding: 12px 10px;
+  }
+  .ep-subject-visual {
+    min-height: 80px;
+  }
+  .ep-subject-art-img {
+    width: 78px;
+    height: 70px;
+  }
+  .ep-hub-grid {
+    grid-template-columns: 1fr;
+  }
+  .ep-units-box {
+    grid-template-columns: 1fr;
+  }
+  .ep-step-lbl {
+    display: none;
+  }
+  .ep-steps-bar {
+    padding: 12px 16px;
+  }
+  .ep-step-line {
+    margin-bottom: 0;
+  }
+  .ep-nav {
+    flex-direction: column;
+  }
+  .ep-btn-prev, .ep-btn-next {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media(max-width: 420px) {
+  .ep-subject-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media print {
+  .ep-hero, .ep-steps-bar, .ep-page-topbar, .ep-paper-print-btn, .ep-nav, .ep-back-btn, nav {
+    display: none !important;
+  }
+  .ep-root {
+    background: #fff !important;
+    color: #000 !important;
+    padding: 0 !important;
+  }
+  .ep-shell {
+    max-width: 100% !important;
+    padding: 0 !important;
+  }
+  .ep-paper-header, .ep-part-header, .ep-paper-question-bubble {
+    box-shadow: none !important;
+    border: 1px solid #ccc !important;
+    background: #fff !important;
+    color: #000 !important;
+  }
+  .ep-paper-answer-space {
+    border-bottom: 1px solid #999 !important;
+    opacity: 1 !important;
+  }
 }
 `;
 
-// ── Data ──────────────────────────────────────────────────────────────────────
+// ── Subjects Data with Dashboard 3D Artwork ──
 const SUBJECTS = [
   {
     name: "Mathematics",
     emoji: "🧮",
-    color: "#6366f1",
-    bg: "rgba(99,102,241,.1)",
+    image: mathsSubject,
+    color: "#ff6b4a",
+    bg: "linear-gradient(135deg, #ffcf5a, #ff7b54)",
     units: [
       "Algebra",
       "Calculus",
@@ -390,8 +1680,9 @@ const SUBJECTS = [
   {
     name: "Physics",
     emoji: "⚡",
-    color: "#ec4899",
-    bg: "rgba(236,72,153,.1)",
+    image: scienceSubject,
+    color: "#2563eb",
+    bg: "linear-gradient(135deg, #6ee7f2, #2389ff)",
     units: [
       "Mechanics",
       "Thermodynamics",
@@ -404,8 +1695,9 @@ const SUBJECTS = [
   {
     name: "Chemistry",
     emoji: "🧪",
+    image: scienceSubject,
     color: "#10b981",
-    bg: "rgba(16,185,129,.1)",
+    bg: "linear-gradient(135deg, #83e76d, #27b86a)",
     units: [
       "Organic",
       "Inorganic",
@@ -418,8 +1710,9 @@ const SUBJECTS = [
   {
     name: "Biology",
     emoji: "🌿",
+    image: scienceSubject,
     color: "#f59e0b",
-    bg: "rgba(245,158,11,.1)",
+    bg: "linear-gradient(135deg, #ffd77d, #ff9c52)",
     units: [
       "Cell Biology",
       "Genetics",
@@ -432,8 +1725,9 @@ const SUBJECTS = [
   {
     name: "History",
     emoji: "🌍",
+    image: socialSubject,
     color: "#8b5cf6",
-    bg: "rgba(139,92,246,.1)",
+    bg: "linear-gradient(135deg, #b48cff, #7e45e8)",
     units: [
       "Ancient",
       "Medieval",
@@ -490,7 +1784,6 @@ const FAQS_DATA: Record<string, { q: string; unit: string }[]> = {
   ],
 };
 
-// Question paper data: 4 parts with different mark weights
 const PAPER_DATA: Record<
   string,
   {
@@ -504,10 +1797,7 @@ const PAPER_DATA: Record<
     part1: [
       { q: "What is the value of sin(90°)?", unit: "Trigonometry" },
       { q: "Simplify: (x²)(x³)", unit: "Algebra" },
-      {
-        q: "What is the area of a square with side 4 units?",
-        unit: "Geometry",
-      },
+      { q: "What is the area of a square with side 4 units?", unit: "Geometry" },
       { q: "Define 'mean' in statistics.", unit: "Statistics" },
       { q: "What is the derivative of a constant?", unit: "Calculus" },
       { q: "Is 17 a prime number? (Yes/No)", unit: "Number Theory" },
@@ -515,10 +1805,7 @@ const PAPER_DATA: Record<
     part2: [
       { q: "Solve: 3x + 7 = 22. Find x.", unit: "Algebra" },
       { q: "Find the derivative of f(x) = 5x³ − 2x + 1.", unit: "Calculus" },
-      {
-        q: "Two angles of a triangle are 60° and 80°. Find the third angle.",
-        unit: "Geometry",
-      },
+      { q: "Two angles of a triangle are 60° and 80°. Find the third angle.", unit: "Geometry" },
       { q: "If the mean of 5, 7, x is 8, find x.", unit: "Statistics" },
       { q: "Convert 135° to radians.", unit: "Trigonometry" },
     ],
@@ -557,33 +1844,15 @@ const PAPER_DATA: Record<
       { q: "State one example of a conductor.", unit: "Electromagnetism" },
       { q: "What is the speed of light in vacuum (approx)?", unit: "Optics" },
       { q: "Define frequency of a wave.", unit: "Waves" },
-      {
-        q: "Name the scientist who proposed the photoelectric effect.",
-        unit: "Modern Physics",
-      },
+      { q: "Name the scientist who proposed the photoelectric effect.", unit: "Modern Physics" },
       { q: "What is absolute zero temperature?", unit: "Thermodynamics" },
     ],
     part2: [
-      {
-        q: "A body of mass 10 kg is moving with a velocity of 5 m/s. Find its kinetic energy.",
-        unit: "Mechanics",
-      },
-      {
-        q: "State and explain Ohm's Law with a diagram.",
-        unit: "Electromagnetism",
-      },
-      {
-        q: "Define critical angle. What happens at angles greater than critical angle?",
-        unit: "Optics",
-      },
-      {
-        q: "Differentiate between transverse and longitudinal waves with examples.",
-        unit: "Waves",
-      },
-      {
-        q: "State the first law of thermodynamics and write its mathematical form.",
-        unit: "Thermodynamics",
-      },
+      { q: "A body of mass 10 kg is moving with a velocity of 5 m/s. Find its kinetic energy.", unit: "Mechanics" },
+      { q: "State and explain Ohm's Law with a diagram.", unit: "Electromagnetism" },
+      { q: "Define critical angle. What happens at angles greater than critical angle?", unit: "Optics" },
+      { q: "Differentiate between transverse and longitudinal waves with examples.", unit: "Waves" },
+      { q: "State the first law of thermodynamics and write its mathematical form.", unit: "Thermodynamics" },
     ],
     part3: [
       {
@@ -617,32 +1886,17 @@ const PAPER_DATA: Record<
   Chemistry: {
     part1: [
       { q: "What is the molecular formula of water?", unit: "Inorganic" },
-      {
-        q: "State the number of particles in 1 mole of a substance.",
-        unit: "Physical",
-      },
+      { q: "State the number of particles in 1 mole of a substance.", unit: "Physical" },
       { q: "Is NaCl an ionic or covalent compound?", unit: "Inorganic" },
       { q: "Name the functional group present in alcohols.", unit: "Organic" },
       { q: "Define pH.", unit: "Analytical" },
       { q: "What is a monomer?", unit: "Polymer" },
     ],
     part2: [
-      {
-        q: "Calculate the number of moles in 36 g of water (M = 18 g/mol).",
-        unit: "Physical",
-      },
-      {
-        q: "State Le Chatelier's principle and give one example of its application.",
-        unit: "Physical",
-      },
-      {
-        q: "Differentiate between electrophile and nucleophile.",
-        unit: "Organic",
-      },
-      {
-        q: "What is paper chromatography? Mention one application.",
-        unit: "Analytical",
-      },
+      { q: "Calculate the number of moles in 36 g of water (M = 18 g/mol).", unit: "Physical" },
+      { q: "State Le Chatelier's principle and give one example of its application.", unit: "Physical" },
+      { q: "Differentiate between electrophile and nucleophile.", unit: "Organic" },
+      { q: "What is paper chromatography? Mention one application.", unit: "Analytical" },
       { q: "Define addition polymerization with an example.", unit: "Polymer" },
     ],
     part3: [
@@ -677,10 +1931,7 @@ const PAPER_DATA: Record<
   Biology: {
     part1: [
       { q: "What is the powerhouse of the cell?", unit: "Cell Biology" },
-      {
-        q: "Name the molecule that carries genetic information.",
-        unit: "Genetics",
-      },
+      { q: "Name the molecule that carries genetic information.", unit: "Genetics" },
       { q: "Define ecology.", unit: "Ecology" },
       { q: "What is the function of the heart?", unit: "Human Physiology" },
       { q: "Name one example of a gymnosperm plant.", unit: "Botany" },
@@ -688,22 +1939,10 @@ const PAPER_DATA: Record<
     ],
     part2: [
       { q: "Differentiate between mitosis and meiosis.", unit: "Genetics" },
-      {
-        q: "What is osmosis? How does it differ from diffusion?",
-        unit: "Cell Biology",
-      },
-      {
-        q: "Explain the concept of a food web with a simple example.",
-        unit: "Ecology",
-      },
-      {
-        q: "What is the role of haemoglobin in the blood?",
-        unit: "Human Physiology",
-      },
-      {
-        q: "Define transpiration. State its importance in plants.",
-        unit: "Botany",
-      },
+      { q: "What is osmosis? How does it differ from diffusion?", unit: "Cell Biology" },
+      { q: "Explain the concept of a food web with a simple example.", unit: "Ecology" },
+      { q: "What is the role of haemoglobin in the blood?", unit: "Human Physiology" },
+      { q: "Define transpiration. State its importance in plants.", unit: "Botany" },
     ],
     part3: [
       {
@@ -741,29 +1980,14 @@ const PAPER_DATA: Record<
       { q: "Name the treaty that ended World War I.", unit: "World Wars" },
       { q: "Which empire did Alexander the Great build?", unit: "Ancient" },
       { q: "What does 'Renaissance' mean?", unit: "Medieval" },
-      {
-        q: "In which year did the Berlin Wall fall?",
-        unit: "Post-Independence",
-      },
+      { q: "In which year did the Berlin Wall fall?", unit: "Post-Independence" },
     ],
     part2: [
       { q: "What were the main causes of World War II?", unit: "World Wars" },
-      {
-        q: "Briefly explain the significance of the Magna Carta.",
-        unit: "Medieval",
-      },
-      {
-        q: "Who led the Non-Cooperation Movement in India? Describe its significance.",
-        unit: "Independence",
-      },
-      {
-        q: "What was the French Revolution? Mention its immediate causes.",
-        unit: "Modern",
-      },
-      {
-        q: "Explain the concept of the Cold War between the USA and USSR.",
-        unit: "Post-Independence",
-      },
+      { q: "Briefly explain the significance of the Magna Carta.", unit: "Medieval" },
+      { q: "Who led the Non-Cooperation Movement in India? Describe its significance.", unit: "Independence" },
+      { q: "What was the French Revolution? Mention its immediate causes.", unit: "Modern" },
+      { q: "Explain the concept of the Cold War between the USA and USSR.", unit: "Post-Independence" },
     ],
     part3: [
       {
@@ -797,10 +2021,10 @@ const PAPER_DATA: Record<
 };
 
 const STEPS = [
-  { id: 1, label: "Subject" },
-  { id: 2, label: "Units" },
-  { id: 3, label: "Prepare" },
-  { id: 4, label: "Study" },
+  { id: 1, label: "Subject", icon: "📚" },
+  { id: 2, label: "Units", icon: "📑" },
+  { id: 3, label: "Prep Hub", icon: "🎯" },
+  { id: 4, label: "Study", icon: "📝" },
 ];
 
 const PARTS = [
@@ -839,17 +2063,18 @@ const PARTS = [
 ];
 
 export default function ExamPreparationPage() {
+  const { user } = useAuth();
   const [step, setStep] = useState(1);
   const [mode, setMode] = useState<"" | "faq" | "qbank">("");
   const [subjIdx, setSubjIdx] = useState(0);
   const [units, setUnits] = useState<string[]>(["Algebra", "Calculus"]);
-
   const [faqSearch, setFaqSearch] = useState("");
   const [faqFilter, setFaqFilter] = useState("All");
   const [currentRole, setCurrentRole] = useState("student");
   const [activePart, setActivePart] = useState("part1");
 
   const subj = SUBJECTS[subjIdx];
+  const firstName = user?.firstName || "Student";
 
   useEffect(() => {
     setUnits([SUBJECTS[subjIdx].units[0], SUBJECTS[subjIdx].units[1]]);
@@ -868,18 +2093,16 @@ export default function ExamPreparationPage() {
   const displayFaqs = !faqSearch
     ? unitFaqs
     : unitFaqs.filter((f) =>
-        f.q.toLowerCase().includes(faqSearch.toLowerCase()),
+        f.q.toLowerCase().includes(faqSearch.toLowerCase())
       );
 
   const paperData = PAPER_DATA[subj.name];
 
-  // Filter paper questions by selected units
   const getFilteredPart = (partKey: string) => {
     const qs = (paperData as any)[partKey] as { q: string; unit: string }[];
     return units.length === 0
       ? qs
       : qs.filter((q) => units.includes(q.unit) || true);
-    // showing all qs but filtering those where unit matches or no filter
   };
 
   const totalMarks = PARTS.reduce((acc, p) => {
@@ -889,7 +2112,7 @@ export default function ExamPreparationPage() {
 
   const totalQs = PARTS.reduce(
     (acc, p) => acc + getFilteredPart(p.key).length,
-    0,
+    0
   );
 
   const goBack = () => {
@@ -903,40 +2126,127 @@ export default function ExamPreparationPage() {
     <>
       <style>{CSS}</style>
       <div className="ep-root">
-        {/* Hero */}
- <Navigation currentRole={currentRole} onRoleChange={setCurrentRole} />
-             
-        
-        <div className="ep-hero">
-          <div className="ep-hero-inner">
-            <div className="ep-hero-left">
-              <div className="ep-hero-icon">📚</div>
-              <div>
-                <div className="ep-hero-pill">🎓 Exam Preparation</div>
-                <div className="ep-hero-title">Exam Preparation Centre</div>
-                <div className="ep-hero-sub">
-                  Step-by-step study — FAQs, question papers &amp; AI Buddy
+        {/* Navigation Bar */}
+        <Navigation currentRole={currentRole as any} onRoleChange={setCurrentRole as any} />
+
+        {/* Floating background ambience */}
+        <span className="ep-bg-ribbon" aria-hidden />
+        <span className="ep-bg-spark s1" aria-hidden />
+        <span className="ep-bg-spark s2" aria-hidden />
+        <span className="ep-bg-spark s3" aria-hidden />
+
+        <div className="ep-shell">
+          {/* Greeting & Quick Badges */}
+          <div className="ep-greeting">
+            <div>
+              <div className="ep-title">Hey {firstName}! 🎯 Ready for Exams?</div>
+              <div className="ep-subtitle">
+                Master your subjects step-by-step with curated FAQs and comprehensive model question papers.
+              </div>
+            </div>
+            <div className="ep-mini-stats">
+              <div className="ep-mini-pill">
+                <div className="ep-pill-ico">📚</div>
+                <div>
+                  <div className="ep-pill-num">5</div>
+                  <div className="ep-pill-label">Subjects</div>
+                </div>
+              </div>
+              <div className="ep-mini-pill">
+                <div className="ep-pill-ico">❓</div>
+                <div>
+                  <div className="ep-pill-num">35+</div>
+                  <div className="ep-pill-label">FAQs</div>
+                </div>
+              </div>
+              <div className="ep-mini-pill">
+                <div className="ep-pill-ico">📝</div>
+                <div>
+                  <div className="ep-pill-num">4 Parts</div>
+                  <div className="ep-pill-label">Paper</div>
+                </div>
+              </div>
+              <div className="ep-mini-pill">
+                <div className="ep-pill-ico">🤖</div>
+                <div>
+                  <div className="ep-pill-num">AI Ready</div>
+                  <div className="ep-pill-label">Buddy</div>
                 </div>
               </div>
             </div>
-            <div className="ep-hero-stats">
-              {[
-                { n: "5", l: "Subjects" },
-                { n: "35+", l: "FAQs" },
-                { n: "4 Parts", l: "Question Paper" },
-                { n: "AI", l: "Buddy Soon" },
-              ].map((s, i) => (
-                <div className="ep-hstat" key={i}>
-                  <div className="ep-hstat-n">{s.n}</div>
-                  <div className="ep-hstat-l">{s.l}</div>
-                </div>
-              ))}
-            </div>
           </div>
-        </div>
 
-        <div className="ep-body">
-          {/* Step indicator */}
+          {/* ── Hero Banner with Robot ── */}
+          <motion.section
+            className="ep-hero"
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.38 }}
+          >
+            <div className="ep-hero-content">
+              <div className="ep-chip">
+                <Sparkles size={14} /> AI-Powered Exam Readiness
+              </div>
+              <h1 className="ep-hero-title">Ace Your Exams with Confidence!</h1>
+              <p className="ep-hero-desc">
+                Follow our proven 4-stage study path: pick your subject, pinpoint key units, explore high-yield FAQs, and practice realistic model exam papers.
+              </p>
+              <div className="ep-hero-progress-line">
+                <div className="ep-hero-track">
+                  <div
+                    className="ep-hero-fill"
+                    style={{ width: `${Math.round((units.length / subj.units.length) * 100)}%` }}
+                  />
+                </div>
+                <div className="ep-hero-progress-text">
+                  {units.length}/{subj.units.length} Units Chosen
+                </div>
+              </div>
+              <button
+                className="ep-primary-btn"
+                onClick={() => {
+                  if (step === 1) setStep(2);
+                  else if (step === 2) setStep(3);
+                  else if (step === 3) {
+                    setMode("qbank");
+                    setStep(4);
+                  }
+                }}
+              >
+                {step === 1 && "Select Units >"}
+                {step === 2 && "Open Prep Hub >"}
+                {step === 3 && "Practice Question Paper >"}
+                {step === 4 && "Continue Study >"}
+              </button>
+            </div>
+
+            {/* Robot Mascot Stage */}
+            <div className="ep-hero-panel" aria-hidden>
+              <div className="ep-hero-orbit">
+                <img
+                  src={studyRobo || roboImg}
+                  alt="Exam Robot Mascot"
+                  className="ep-hero-robo-img"
+                  onError={(e) => {
+                    // Fallback to secondary robot image if needed
+                    e.currentTarget.src = roboImg;
+                  }}
+                />
+              </div>
+              <div className="ep-hero-stats">
+                <div className="ep-hero-stat">
+                  <b>{subj.name.slice(0, 5)}</b>
+                  <span>Target</span>
+                </div>
+                <div className="ep-hero-stat">
+                  <b>{units.length} Units</b>
+                  <span>Focused</span>
+                </div>
+              </div>
+            </div>
+          </motion.section>
+
+          {/* ── Steps Navigation Bar ── */}
           {!mode && (
             <div className="ep-steps-bar">
               {STEPS.map((s, i) => {
@@ -948,16 +2258,18 @@ export default function ExamPreparationPage() {
                       <div
                         className={`ep-step-circle ${state}`}
                         onClick={() => {
-                          if (state === "done") setStep(s.id);
+                          if (step > s.id) setStep(s.id);
                         }}
                       >
-                        {state === "done" ? <Check size={14} /> : s.id}
+                        {state === "done" ? <Check size={16} /> : s.id}
                       </div>
                       <div className={`ep-step-lbl ${state}`}>{s.label}</div>
                     </div>
                     {i < STEPS.length - 1 && (
                       <div
-                        className={`ep-step-line${state === "done" ? " filled" : " empty"}`}
+                        className={`ep-step-line ${
+                          step > s.id ? "filled" : "empty"
+                        }`}
                       />
                     )}
                   </div>
@@ -966,62 +2278,79 @@ export default function ExamPreparationPage() {
             </div>
           )}
 
+          {/* ── STEP 1: CHOOSE SUBJECT ── */}
           <AnimatePresence mode="wait">
-            {/* ── STEP 1: CHOOSE SUBJECT ── */}
             {!mode && step === 1 && (
               <motion.div
-                key="s1"
+                key="step1"
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.2 }}
+                transition={{ duration: 0.25 }}
               >
-                <div className="ep-s1-heading">Choose a Subject</div>
-                <div className="ep-s1-sub">
-                  Select the subject you want to prepare for your exam.
+                <div className="ep-section-head">
+                  <div>
+                    <h2 className="ep-section-title">1. Choose a Subject</h2>
+                    <div className="ep-section-sub">
+                      Select the subject you want to prepare for your upcoming test.
+                    </div>
+                  </div>
                 </div>
-                <div className="ep-s1-grid">
-                  {SUBJECTS.map((s, i) => (
-                    <motion.div
-                      key={s.name}
-                      className={`ep-subj-card${i === subjIdx ? " sel" : ""}`}
-                      style={{
-                        borderColor:
-                          i === subjIdx ? s.color : "rgba(0,0,0,.06)",
-                      }}
-                      initial={{ opacity: 0, y: 14 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.06 }}
-                      onClick={() => setSubjIdx(i)}
-                    >
-                      <div
+
+                <div className="ep-subject-grid">
+                  {SUBJECTS.map((s, i) => {
+                    const isSelected = i === subjIdx;
+                    return (
+                      <motion.div
+                        key={s.name}
+                        className={`ep-subject${isSelected ? " selected" : ""}`}
                         style={{
-                          position: "absolute",
-                          top: 0,
-                          left: 0,
-                          right: 0,
-                          height: 3,
-                          background: s.color,
-                          borderRadius: "18px 18px 0 0",
-                        }}
-                      />
-                      {i === subjIdx && (
-                        <div className="ep-subj-check">
-                          <Check size={11} color="#fff" />
+                          "--subject-bg": s.bg,
+                          "--delay": `${i * -0.2}s`,
+                        } as any}
+                        onClick={() => setSubjIdx(i)}
+                        whileHover={{ y: -5, scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        initial={{ opacity: 0, y: 14 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: i * 0.05 }}
+                      >
+                        {isSelected && (
+                          <div className="ep-subject-check">
+                            <Check size={14} />
+                          </div>
+                        )}
+                        <div className="ep-subject-name">{s.name}</div>
+                        <div className="ep-subject-visual">
+                          {s.image ? (
+                            <img
+                              src={s.image}
+                              alt={s.name}
+                              className="ep-subject-art-img"
+                              aria-hidden
+                            />
+                          ) : (
+                            <span className="ep-subject-emoji-art">{s.emoji}</span>
+                          )}
                         </div>
-                      )}
-                      <span className="ep-subj-emoji">{s.emoji}</span>
-                      <div className="ep-subj-name">{s.name}</div>
-                      <div className="ep-subj-count">
-                        {s.units.length} units
-                      </div>
-                    </motion.div>
-                  ))}
+                        <div className="ep-subject-footer">
+                          <div className="ep-subject-meta">
+                            <span>{s.units.length} Units</span>
+                            <span>Ready</span>
+                          </div>
+                          <div className="ep-subject-bar">
+                            <span style={{ width: "100%" }} />
+                          </div>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
                 </div>
+
                 <div className="ep-nav">
                   <div />
                   <button className="ep-btn-next" onClick={() => setStep(2)}>
-                    Next: Select Units <ArrowRight size={15} />
+                    Next: Select Units <ArrowRight size={16} />
                   </button>
                 </div>
               </motion.div>
@@ -1030,187 +2359,249 @@ export default function ExamPreparationPage() {
             {/* ── STEP 2: SELECT UNITS ── */}
             {!mode && step === 2 && (
               <motion.div
-                key="s2"
+                key="step2"
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.2 }}
+                transition={{ duration: 0.25 }}
               >
-                <div className="ep-s1-heading">
-                  {subj.emoji} {subj.name} — Select Units
+                <div className="ep-section-head">
+                  <div>
+                    <h2 className="ep-section-title">
+                      {subj.emoji} {subj.name} — Select Exam Units
+                    </h2>
+                    <div className="ep-section-sub">
+                      Pick the topics you wish to study. You can select single or multiple units.
+                    </div>
+                  </div>
                 </div>
-                <div className="ep-s1-sub" style={{ marginBottom: 16 }}>
-                  Pick the units you want to study. You can select one or
-                  multiple.
-                </div>
+
                 <div className="ep-s2-grid">
-                  <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-md">
-                    <div className="flex justify-between items-center mb-3">
-                      <h2 className="text-sm md:text-base font-bold text-gray-900 dark:text-gray-100">
-                        📌 Units
-                      </h2>
+                  {/* Units selector card */}
+                  <div className="ep-card" style={{ marginBottom: 0 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        marginBottom: 16,
+                      }}
+                    >
+                      <span style={{ fontSize: 15, fontWeight: 800, color: "var(--ep-ink)" }}>
+                        📌 Available Units ({subj.units.length})
+                      </span>
                       <button
-                        onClick={() =>
-                          setUnits(allSel ? [] : subj.units.slice())
-                        }
-                        className="text-xs font-semibold text-indigo-500 bg-indigo-50 px-3 py-1 rounded-lg hover:bg-indigo-100 dark:bg-indigo-900/50 dark:text-indigo-400 dark:hover:bg-indigo-900"
+                        onClick={() => setUnits(allSel ? [] : subj.units.slice())}
+                        style={{
+                          border: "none",
+                          background: "rgba(37,99,235,.1)",
+                          color: "#2563eb",
+                          borderRadius: 999,
+                          padding: "5px 14px",
+                          fontSize: 12,
+                          fontWeight: 800,
+                          cursor: "pointer",
+                        }}
                       >
-                        {allSel ? "Deselect all" : "Select all"}
+                        {allSel ? "Deselect All" : "Select All"}
                       </button>
                     </div>
-                    <div className="max-h-[260px] overflow-y-auto pr-1">
-                      <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-                        {subj.units.map((u) => {
-                          const active = units.includes(u);
-                          return (
-                            <div
-                              key={u}
-                              onClick={() => toggleUnit(u)}
-                              className={`relative p-3 rounded-xl border cursor-pointer transition-all duration-200 flex items-start gap-2 min-h-[60px] ${
-                                active
-                                  ? "bg-indigo-500 text-white border-indigo-500"
-                                  : "bg-gray-50 border-gray-200 hover:bg-indigo-50 dark:bg-gray-700 dark:border-gray-600 dark:hover:bg-gray-600"
-                              }`}
-                            >
-                              <div
-                                className={`mt-[2px] w-4 h-4 flex items-center justify-center rounded ${active ? "bg-white/30" : "bg-black/5 dark:bg-white/10"}`}
-                              >
-                                {active && <Check size={12} />}
-                              </div>
-                              <span className={`text-xs md:text-sm font-medium break-words whitespace-normal leading-snug ${active ? '' : 'text-gray-800 dark:text-gray-200'}`}>
-                                {u}
-                              </span>
+
+                    <div className="ep-units-box">
+                      {subj.units.map((u) => {
+                        const active = units.includes(u);
+                        return (
+                          <div
+                            key={u}
+                            onClick={() => toggleUnit(u)}
+                            className={`ep-unit-card${active ? " active" : ""}`}
+                          >
+                            <div className="ep-unit-check-box">
+                              {active && <Check size={14} />}
                             </div>
-                          );
-                        })}
-                      </div>
+                            <span className="ep-unit-name">{u}</span>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
 
-                  <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-md flex flex-col">
-                    <div className="flex items-center justify-between mb-3">
-                      <h2 className="text-sm md:text-base font-bold text-gray-900 dark:text-gray-100">
+                  {/* Selection summary sidebar */}
+                  <div className="ep-card" style={{ marginBottom: 0 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        marginBottom: 14,
+                      }}
+                    >
+                      <span style={{ fontSize: 15, fontWeight: 800, color: "var(--ep-ink)" }}>
                         📋 Your Selection
-                      </h2>
-                      <span className="text-xs bg-indigo-100 text-indigo-600 px-2 py-1 rounded-lg font-semibold dark:bg-indigo-900/50 dark:text-indigo-400">
-                        {units.length}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: 11.5,
+                          fontWeight: 800,
+                          padding: "3px 10px",
+                          borderRadius: 999,
+                          background: "rgba(37,99,235,.12)",
+                          color: "#2563eb",
+                        }}
+                      >
+                        {units.length} / {subj.units.length}
                       </span>
                     </div>
-                    <div className="flex items-center gap-3 mb-3">
-                      <div
-                        className="w-10 h-10 rounded-lg flex items-center justify-center text-lg"
-                        style={{ background: subj.bg }}
-                      >
+
+                    <div className="ep-summary-hero">
+                      <div className="ep-summary-icon" style={{ background: "rgba(37,99,235,.1)" }}>
                         {subj.emoji}
                       </div>
                       <div>
-                        <div className="font-semibold text-sm md:text-base text-gray-900 dark:text-gray-100">
-                          {subj.name}
-                        </div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400">
-                          {units.length} of {subj.units.length} units selected
+                        <div className="ep-summary-subject">{subj.name}</div>
+                        <div className="ep-summary-meta">
+                          {units.length === 0
+                            ? "No units chosen"
+                            : `${units.length} unit${units.length !== 1 ? "s" : ""} selected`}
                         </div>
                       </div>
                     </div>
-                    <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">
-                      Selected Units
-                    </div>
-                    <div className="h-[160px] overflow-y-auto border dark:border-gray-600 rounded-xl p-2 bg-gray-50 dark:bg-gray-700">
+
+                    <div className="ep-unit-pills-wrap">
                       {units.length === 0 ? (
-                        <div className="text-xs text-gray-400 dark:text-gray-500 text-center mt-6">
-                          No units selected yet
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: "var(--ep-muted)",
+                            textAlign: "center",
+                            width: "100%",
+                            padding: "20px 0",
+                          }}
+                        >
+                          Click any unit to add it to your preparation list
                         </div>
                       ) : (
-                        <div className="flex flex-wrap gap-2">
-                          {units.map((u) => (
-                            <div
-                              key={u}
-                              onClick={() => toggleUnit(u)}
-                              className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-400 text-xs md:text-sm font-medium break-words whitespace-normal max-w-full cursor-pointer hover:bg-indigo-200 dark:hover:bg-indigo-900 transition"
-                            >
-                              <span className="break-words whitespace-normal">
-                                {u}
-                              </span>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  toggleUnit(u);
-                                }}
-                                className="ml-1 text-indigo-400 hover:text-red-500 dark:text-indigo-500 dark:hover:text-red-400"
-                              >
-                                ✕
-                              </button>
-                            </div>
-                          ))}
-                        </div>
+                        units.map((u) => (
+                          <span
+                            key={u}
+                            className="ep-sel-pill"
+                            onClick={() => toggleUnit(u)}
+                            title="Click to remove"
+                          >
+                            {u} <X size={12} />
+                          </span>
+                        ))
                       )}
                     </div>
+
                     {units.length > 0 && (
-                      <div className="mt-3 text-xs text-gray-500 dark:text-gray-400 p-3 rounded-xl bg-indigo-50 dark:bg-indigo-900/50">
-                        💡 Your question paper will include questions from{" "}
-                        <span className="text-indigo-500 dark:text-indigo-400 font-semibold">
-                          {units.join(", ")}
-                        </span>
+                      <div className="ep-tip-box">
+                        💡 Your FAQs and model exam paper will focus on:{" "}
+                        <b>{units.join(", ")}</b>.
                       </div>
                     )}
                   </div>
                 </div>
+
                 <div className="ep-nav">
                   <button className="ep-btn-prev" onClick={() => setStep(1)}>
-                    <ArrowLeft size={15} /> Back
+                    <ArrowLeft size={16} /> Back to Subjects
                   </button>
                   <button
                     className="ep-btn-next"
-                    disabled={!units.length}
+                    disabled={units.length === 0}
                     onClick={() => setStep(3)}
                   >
-                    Start Preparation <Sparkles size={15} />
+                    Start Preparation <Sparkles size={16} />
                   </button>
                 </div>
               </motion.div>
             )}
 
-            {/* ── STEP 3: HUB ── */}
+            {/* ── STEP 3: PREP HUB ── */}
             {!mode && step === 3 && (
               <motion.div
-                key="s3"
+                key="step3"
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.2 }}
+                transition={{ duration: 0.25 }}
               >
-                <div className="ep-hub-header">
-                  <div
-                    style={{ display: "flex", alignItems: "center", gap: 13 }}
-                  >
+                <div className="ep-hub-banner-card">
+                  <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
                     <div
-                      className="ep-hub-subj-icon"
-                      style={{ background: subj.bg }}
+                      style={{
+                        width: 48,
+                        height: 48,
+                        borderRadius: 14,
+                        display: "grid",
+                        placeItems: "center",
+                        fontSize: 26,
+                        background: "rgba(37,99,235,.1)",
+                      }}
                     >
                       {subj.emoji}
                     </div>
                     <div>
-                      <div className="ep-hub-subj-name">{subj.name}</div>
-                      <div className="ep-hub-subj-meta">
-                        {units.length} unit{units.length !== 1 ? "s" : ""}{" "}
-                        selected
+                      <div style={{ fontSize: 18, fontWeight: 800, color: "var(--ep-ink)" }}>
+                        {subj.name} Preparation Hub
+                      </div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--ep-muted)" }}>
+                        {units.length} unit{units.length !== 1 ? "s" : ""} selected for exam drill
                       </div>
                     </div>
                   </div>
-                  <div className="ep-unit-pills">
+
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     {units.slice(0, 4).map((u) => (
-                      <span key={u} className="ep-unit-pill">
+                      <span
+                        key={u}
+                        style={{
+                          padding: "5px 12px",
+                          borderRadius: 999,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          background: "rgba(37,99,235,.1)",
+                          color: "#2563eb",
+                        }}
+                      >
                         {u}
                       </span>
                     ))}
                     {units.length > 4 && (
-                      <span className="ep-unit-pill">+{units.length - 4}</span>
+                      <span
+                        style={{
+                          padding: "5px 10px",
+                          borderRadius: 999,
+                          fontSize: 11,
+                          fontWeight: 800,
+                          background: "var(--ep-card-soft)",
+                          color: "var(--ep-muted)",
+                        }}
+                      >
+                        +{units.length - 4} more
+                      </span>
                     )}
+                    <button
+                      onClick={() => setStep(2)}
+                      style={{
+                        border: "1.5px solid var(--ep-line)",
+                        background: "var(--ep-card)",
+                        borderRadius: 10,
+                        padding: "6px 12px",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: "var(--ep-muted)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Change Units
+                    </button>
                   </div>
                 </div>
 
                 <div className="ep-hub-grid">
-                  {/* FAQ card */}
+                  {/* Card 1: FAQs & Exercises */}
                   <div
                     className="ep-hub-card"
                     onClick={() => {
@@ -1219,45 +2610,37 @@ export default function ExamPreparationPage() {
                     }}
                   >
                     <div
-                      className="ep-hub-banner"
-                      style={{
-                        background: "linear-gradient(90deg,#6366f1,#8b5cf6)",
-                      }}
+                      className="ep-hub-stripe"
+                      style={{ background: "linear-gradient(90deg, #2563eb, #0ea5e9)" }}
                     />
                     <div className="ep-hub-body">
                       <div className="ep-hub-icon-row">
-                        <div
-                          className="ep-hub-icon"
-                          style={{ background: "rgba(99,102,241,.1)" }}
-                        >
+                        <div className="ep-hub-icon" style={{ background: "rgba(37,99,235,.1)" }}>
                           ❓
                         </div>
                         <span className="ep-hub-badge blue">
                           {(FAQS_DATA[subj.name] || []).length} Questions
                         </span>
                       </div>
-                      <div className="ep-hub-title">FAQs & Exercises</div>
+                      <div className="ep-hub-title">FAQs & Key Questions</div>
                       <div className="ep-hub-desc">
-                        Important questions for revision — browse by unit,
-                        search by keyword. Perfect for quick exam-day reference.
+                        Curated collection of high-frequency exam questions. Perfect for quick revision and testing recall before the exam.
                       </div>
                       <div className="ep-hub-meta">
-                        <span className="ep-hub-meta-item">
-                          <Clock size={12} />
-                          <b>~5 min</b> review
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                          <Clock size={13} /> <b>~5 min</b> review
                         </span>
-                        <span className="ep-hub-meta-item">
-                          <Star size={12} />
-                          <b>{(FAQS_DATA[subj.name] || []).length}</b> questions
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                          <Star size={13} /> <b>All Units</b> covered
                         </span>
                       </div>
-                      <button className="ep-hub-btn blue">
-                        <BookOpen size={14} /> View Questions
+                      <button className="ep-hub-action-btn blue">
+                        <BookOpen size={15} /> View Questions &gt;
                       </button>
                     </div>
                   </div>
 
-                  {/* Question Paper card */}
+                  {/* Card 2: Question Paper */}
                   <div
                     className="ep-hub-card"
                     onClick={() => {
@@ -1266,71 +2649,61 @@ export default function ExamPreparationPage() {
                     }}
                   >
                     <div
-                      className="ep-hub-banner"
-                      style={{
-                        background: "linear-gradient(90deg,#10b981,#059669)",
-                      }}
+                      className="ep-hub-stripe"
+                      style={{ background: "linear-gradient(90deg, #10b981, #059669)" }}
                     />
                     <div className="ep-hub-body">
                       <div className="ep-hub-icon-row">
-                        <div
-                          className="ep-hub-icon"
-                          style={{ background: "rgba(16,185,129,.1)" }}
-                        >
+                        <div className="ep-hub-icon" style={{ background: "rgba(16,185,129,.1)" }}>
                           📝
                         </div>
-                        <span className="ep-hub-badge green">4 Parts</span>
+                        <span className="ep-hub-badge green">4 Exam Parts</span>
                       </div>
-                      <div className="ep-hub-title">Question Paper</div>
+                      <div className="ep-hub-title">Model Question Paper</div>
                       <div className="ep-hub-desc">
-                        Full exam-format paper with 4 parts — 1 mark, 2 mark, 5
-                        mark and 10 mark questions. No answers shown.
+                        Full authentic examination format with Part A (1M), Part B (2M), Part C (5M) and Part D (10M) analytical questions.
                       </div>
                       <div className="ep-hub-meta">
-                        <span className="ep-hub-meta-item">
-                          <Target size={12} />
-                          <b>4 difficulty levels</b>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                          <Target size={13} /> <b>{totalMarks} Total</b> Marks
                         </span>
-                        <span className="ep-hub-meta-item">
-                          <TrendingUp size={12} />
-                          <b>Exam format</b>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                          <TrendingUp size={13} /> <b>Board</b> format
                         </span>
                       </div>
-                      <button className="ep-hub-btn green">
-                        <FileQuestion size={14} /> View Paper
+                      <button className="ep-hub-action-btn green">
+                        <FileQuestion size={15} /> Open Paper &gt;
                       </button>
                     </div>
                   </div>
 
-                  {/* AI Buddy card */}
+                  {/* Card 3: Exam Buddy AI */}
                   <div className="ep-hub-card disabled">
                     <div
-                      className="ep-hub-banner"
-                      style={{
-                        background: "linear-gradient(90deg,#8b5cf6,#a78bfa)",
-                      }}
+                      className="ep-hub-stripe"
+                      style={{ background: "linear-gradient(90deg, #8b5cf6, #d946ef)" }}
                     />
                     <div className="ep-hub-body">
                       <div className="ep-hub-icon-row">
-                        <div
-                          className="ep-hub-icon"
-                          style={{ background: "rgba(139,92,246,.1)" }}
-                        >
-                          <img src={roboImg} alt="AI" style={{ width: "24px", height: "24px", objectFit: "contain" }} />
+                        <div className="ep-hub-icon" style={{ background: "rgba(139,92,246,.1)" }}>
+                          <img
+                            src={roboImg}
+                            alt="AI Buddy"
+                            style={{ width: 28, height: 28, objectFit: "contain" }}
+                          />
                         </div>
-                        <span className="ep-hub-badge purple">Coming Soon</span>
+                        <span className="ep-hub-badge purple">Coming Soon 🤖</span>
                       </div>
                       <div className="ep-hub-title">Exam Buddy AI</div>
                       <div className="ep-hub-desc">
-                        Your personal AI tutor — ask questions, get step-by-step
-                        explanations and adaptive practice.
+                        Your intelligent study partner — get step-by-step guidance, personalized hints, and live test simulations.
                       </div>
                       <div className="ep-buddy-features">
                         {[
-                          "Ask any concept question",
-                          "Instant explanations",
-                          "Adaptive practice",
-                          "Exam strategy tips",
+                          "Instant answer verification",
+                          "Step-by-step problem solver",
+                          "Weak topic recommendation",
+                          "Timed speed testing",
                         ].map((f) => (
                           <div key={f} className="ep-buddy-feat">
                             <div className="ep-buddy-dot" />
@@ -1338,86 +2711,88 @@ export default function ExamPreparationPage() {
                           </div>
                         ))}
                       </div>
-                      <button className="ep-buddy-locked-btn" disabled>
-                        <Lock size={13} /> Coming Soon
-                      </button>
+                      <div className="ep-hub-buddy-locked">
+                        <Lock size={14} /> Available Soon
+                      </div>
                     </div>
                   </div>
                 </div>
 
                 <div className="ep-nav">
                   <button className="ep-btn-prev" onClick={() => setStep(2)}>
-                    <ArrowLeft size={15} /> Change Units
+                    <ArrowLeft size={16} /> Change Units
                   </button>
                   <button
                     className="ep-btn-prev"
                     onClick={() => setStep(1)}
                     style={{ gap: 6 }}
                   >
-                    <Home size={14} /> Start Over
+                    <Home size={15} /> Start Over
                   </button>
                 </div>
               </motion.div>
             )}
 
-            {/* ── FAQ: QUESTIONS ONLY ── */}
+            {/* ── STEP 4: FAQ QUESTIONS VIEW ── */}
             {mode === "faq" && (
               <motion.div
-                key="faq"
+                key="faq-mode"
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.2 }}
+                transition={{ duration: 0.25 }}
               >
                 <div className="ep-page-topbar">
                   <button className="ep-back-btn" onClick={goBack}>
-                    <ArrowLeft size={14} /> Back to Prep Hub
+                    <ArrowLeft size={15} /> Back to Prep Hub
                   </button>
-                  <div className="ep-page-title-row">
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <div
-                      className="ep-page-icon"
-                      style={{ background: "rgba(99,102,241,.1)" }}
+                      style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 10,
+                        display: "grid",
+                        placeItems: "center",
+                        fontSize: 18,
+                        background: "rgba(37,99,235,.1)",
+                      }}
                     >
                       ❓
                     </div>
-                    <div className="ep-page-title">
-                      {subj.emoji} {subj.name} — Important Questions
+                    <div style={{ fontSize: 17, fontWeight: 800, color: "var(--ep-ink)" }}>
+                      {subj.emoji} {subj.name} — Important FAQs
                     </div>
                   </div>
                 </div>
 
                 <div className="ep-faq-layout">
+                  {/* Left filter sidebar */}
                   <div className="ep-faq-sidebar">
                     <div className="ep-faq-sb-head">Filter by Unit</div>
-                    {["All", ...new Set(allFaqs.map((f) => f.unit))].map(
-                      (u) => (
-                        <div
-                          key={u}
-                          className={`ep-faq-fi${faqFilter === u ? " on" : ""}`}
-                          onClick={() => {
-                            setFaqFilter(u);
-                          }}
-                        >
-                          <span>{u}</span>
-                          <span className="ep-faq-fi-count">
-                            {u === "All"
-                              ? allFaqs.length
-                              : allFaqs.filter((f) => f.unit === u).length}
-                          </span>
-                        </div>
-                      ),
-                    )}
+                    {["All", ...new Set(allFaqs.map((f) => f.unit))].map((u) => (
+                      <div
+                        key={u}
+                        className={`ep-faq-fi${faqFilter === u ? " on" : ""}`}
+                        onClick={() => setFaqFilter(u)}
+                      >
+                        <span>{u}</span>
+                        <span className="ep-faq-fi-count">
+                          {u === "All"
+                            ? allFaqs.length
+                            : allFaqs.filter((f) => f.unit === u).length}
+                        </span>
+                      </div>
+                    ))}
                   </div>
 
+                  {/* Questions Main List */}
                   <div>
                     <div className="ep-faq-search-bar">
-                      <Search
-                        size={15}
-                        style={{ color: "#94a3b8", flexShrink: 0 }}
-                      />
+                      <Search size={16} style={{ color: "var(--ep-muted)", flexShrink: 0 }} />
                       <input
                         className="ep-faq-si"
-                        placeholder="Search questions…"
+                        placeholder="Search key question or concept..."
                         value={faqSearch}
                         onChange={(e) => setFaqSearch(e.target.value)}
                       />
@@ -1428,40 +2803,39 @@ export default function ExamPreparationPage() {
                             background: "none",
                             border: "none",
                             cursor: "pointer",
-                            color: "#94a3b8",
-                            display: "flex",
+                            color: "var(--ep-muted)",
+                            display: "grid",
+                            placeItems: "center",
                           }}
                         >
-                          <X size={14} />
+                          <X size={15} />
                         </button>
                       )}
                     </div>
 
-                    {/* Info note */}
                     <div
                       style={{
                         padding: "10px 14px",
-                        background: "rgba(99,102,241,.05)",
+                        background: "rgba(37,99,235,.06)",
                         borderRadius: 12,
-                        border: "1px solid rgba(99,102,241,.12)",
-                        marginBottom: 12,
+                        border: "1px solid rgba(37,99,235,.14)",
+                        marginBottom: 14,
                         fontSize: 12,
-                        color: "#6366f1",
-                        fontWeight: 600,
+                        fontWeight: 700,
+                        color: "#2563eb",
                         display: "flex",
                         alignItems: "center",
-                        gap: 7,
+                        gap: 8,
                       }}
                     >
-                      📋 {displayFaqs.length} question
-                      {displayFaqs.length !== 1 ? "s" : ""} listed — answers not
-                      shown. Use these for self-testing.
+                      📋 Showing {displayFaqs.length} question
+                      {displayFaqs.length !== 1 ? "s" : ""}. Answers are hidden for self-testing.
                     </div>
 
                     {displayFaqs.length === 0 ? (
                       <div className="ep-empty">
                         <div className="ep-empty-icon">🔍</div>
-                        No questions found. Try a different search or filter.
+                        No questions matched your query. Try clearing the search or choosing another unit.
                       </div>
                     ) : (
                       displayFaqs.map((f, i) => (
@@ -1470,7 +2844,7 @@ export default function ExamPreparationPage() {
                           className="ep-faq-qonly-card"
                           initial={{ opacity: 0, y: 8 }}
                           animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: i * 0.04 }}
+                          transition={{ delay: i * 0.03 }}
                         >
                           <div className="ep-faq-q-num">Q{i + 1}</div>
                           <div className="ep-faq-q-body">
@@ -1485,36 +2859,43 @@ export default function ExamPreparationPage() {
               </motion.div>
             )}
 
-            {/* ── QUESTION PAPER FORMAT ── */}
+            {/* ── STEP 4: QUESTION PAPER VIEW ── */}
             {mode === "qbank" && (
               <motion.div
-                key="qbank"
+                key="paper-mode"
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.2 }}
+                transition={{ duration: 0.25 }}
               >
                 <div className="ep-page-topbar">
                   <button className="ep-back-btn" onClick={goBack}>
-                    <ArrowLeft size={14} /> Back to Prep Hub
+                    <ArrowLeft size={15} /> Back to Prep Hub
                   </button>
-                  <div className="ep-page-title-row">
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <div
-                      className="ep-page-icon"
-                      style={{ background: "rgba(16,185,129,.1)" }}
+                      style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 10,
+                        display: "grid",
+                        placeItems: "center",
+                        fontSize: 18,
+                        background: "rgba(16,185,129,.1)",
+                      }}
                     >
                       📝
                     </div>
-                    <div className="ep-page-title">
-                      {subj.emoji} {subj.name} — Question Paper
+                    <div style={{ fontSize: 17, fontWeight: 800, color: "var(--ep-ink)" }}>
+                      {subj.emoji} {subj.name} — Model Question Paper
                     </div>
                   </div>
                 </div>
 
                 <div className="ep-faq-layout">
-                  {/* Sidebar for Parts */}
+                  {/* Left Sidebar with Parts & Print */}
                   <div className="ep-faq-sidebar">
-                    <div className="ep-faq-sb-head">Select Part</div>
+                    <div className="ep-faq-sb-head">Exam Parts</div>
                     {PARTS.map((part) => {
                       const qsCount = getFilteredPart(part.key).length;
                       if (qsCount === 0) return null;
@@ -1525,25 +2906,25 @@ export default function ExamPreparationPage() {
                           onClick={() => setActivePart(part.key)}
                         >
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <span style={{ fontSize: 16 }}>{part.icon}</span>
-                            <span>{part.label}</span>
+                            <span style={{ fontSize: 15 }}>{part.icon}</span>
+                            <span>{part.label} ({part.marks}M)</span>
                           </div>
                           <span className="ep-faq-fi-count">{qsCount}</span>
                         </div>
                       );
                     })}
-                    <div style={{ padding: "12px 16px", marginTop: "10px", borderTop: "1px solid #f1f5f9" }}>
+                    <div style={{ padding: "14px 18px", borderTop: "1px solid var(--ep-line)" }}>
                       <button
                         className="ep-paper-print-btn"
-                        style={{ position: "static", width: "100%", justifyContent: "center" }}
+                        style={{ width: "100%", justifyContent: "center" }}
                         onClick={() => window.print()}
                       >
-                        <Printer size={13} /> Print Paper
+                        <Printer size={14} /> Print Paper
                       </button>
                     </div>
                   </div>
 
-                  {/* Main Content Area */}
+                  {/* Main Question Paper Content */}
                   <div>
                     {PARTS.map((part) => {
                       if (part.key !== activePart) return null;
@@ -1551,125 +2932,131 @@ export default function ExamPreparationPage() {
                       if (qs.length === 0) return null;
 
                       return (
-                        <div key={part.key} className="ep-paper-wrapper" style={{ margin: 0, maxWidth: "100%" }}>
-                          <div className="ep-paper-header" style={{ marginBottom: 16 }}>
-                            <div className="ep-paper-school">Model Question Paper</div>
+                        <div key={part.key}>
+                          <div className="ep-paper-header">
+                            <div className="ep-paper-school">Standardized Model Examination</div>
                             <div className="ep-paper-exam-title">{subj.name}</div>
-                            <div className="ep-paper-subject">{units.join(" · ")}</div>
+                            <div className="ep-paper-subject">
+                              Units: {units.join(" · ")}
+                            </div>
                             <div className="ep-paper-meta-row">
                               <div className="ep-paper-meta-item">
                                 <div className="ep-paper-meta-val">{qs.length}</div>
-                                <div className="ep-paper-meta-lbl">Questions</div>
+                                <div className="ep-paper-meta-lbl">Part Questions</div>
                               </div>
                               <div className="ep-paper-meta-item">
-                                <div className="ep-paper-meta-val">{part.marks * qs.length}</div>
-                                <div className="ep-paper-meta-lbl">Total Marks</div>
+                                <div className="ep-paper-meta-val">
+                                  {part.marks * qs.length} Marks
+                                </div>
+                                <div className="ep-paper-meta-lbl">Section Weight</div>
                               </div>
                               <div className="ep-paper-meta-item">
                                 <div className="ep-paper-meta-val">{part.label}</div>
-                                <div className="ep-paper-meta-lbl">Active Part</div>
+                                <div className="ep-paper-meta-lbl">Active Section</div>
                               </div>
                             </div>
                           </div>
 
-                          <motion.div
-                            className={`ep-part-section ${part.cls}`}
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.1 }}
-                            style={{ background: "transparent", border: "none", boxShadow: "none" }}
-                          >
-                            <div className="ep-part-header" style={{ background: "#fff", borderRadius: 20, border: "1px solid rgba(0,0,0,.06)", boxShadow: "0 2px 12px rgba(0,0,0,.05)", marginBottom: 16 }}>
-                              <div className="ep-part-left">
-                                <div className="ep-part-badge">{part.icon}</div>
-                                <div>
-                                  <div className="ep-part-title">
-                                    {part.label} — {part.desc}
-                                  </div>
-                                  <div className="ep-part-subtitle">
-                                    Each question carries {part.marks} mark{part.marks > 1 ? "s" : ""}
-                                  </div>
+                          <div className={`ep-part-header ${part.cls}`}>
+                            <div className="ep-part-left">
+                              <div className="ep-part-badge">{part.icon}</div>
+                              <div>
+                                <div className="ep-part-title">
+                                  {part.label} — {part.desc}
+                                </div>
+                                <div className="ep-part-subtitle">
+                                  Each question carries {part.marks} mark{part.marks > 1 ? "s" : ""}
                                 </div>
                               </div>
-                              <div className="ep-part-right">
-                                <span className="ep-part-tag">
-                                  {part.marks} × {qs.length} = {part.marks * qs.length} marks
-                                </span>
-                              </div>
                             </div>
+                            <span className="ep-part-tag">
+                              {part.marks} × {qs.length} = {part.marks * qs.length} Marks
+                            </span>
+                          </div>
 
-                            <div className="ep-paper-questions" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                              {qs.map((q, qi) => (
-                                <motion.div
-                                  key={qi}
-                                  initial={{ opacity: 0, y: 8 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  transition={{ delay: qi * 0.04 }}
+                          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                            {qs.map((q, qi) => (
+                              <motion.div
+                                key={qi}
+                                initial={{ opacity: 0, y: 8 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: qi * 0.03 }}
+                                style={{ display: "flex", gap: 12, alignItems: "flex-start" }}
+                              >
+                                <div
                                   style={{
-                                    display: "flex",
-                                    gap: "12px",
-                                    alignItems: "flex-start",
+                                    width: 36,
+                                    height: 36,
+                                    borderRadius: 12,
+                                    flexShrink: 0,
+                                    display: "grid",
+                                    placeItems: "center",
+                                    background: "linear-gradient(135deg, rgba(37,99,235,.12), rgba(14,165,233,.12))",
+                                    border: "1.5px solid rgba(37,99,235,.25)",
+                                    color: "#2563eb",
+                                    fontSize: 13,
+                                    fontWeight: 800,
+                                    marginTop: 2,
                                   }}
                                 >
-                                  {/* Avatar / Number bubble */}
-                                  <div style={{
-                                    width: 36, height: 36, borderRadius: 12, flexShrink: 0,
-                                    display: "flex", alignItems: "center", justifyContent: "center",
-                                    background: "linear-gradient(135deg, rgba(99,102,241,.12), rgba(139,92,246,.12))",
-                                    border: "1.5px solid rgba(99,102,241,.2)",
-                                    color: "#6366f1", fontSize: 13, fontWeight: 800
-                                  }}>
-                                    {qi + 1}
+                                  {qi + 1}
+                                </div>
+
+                                <div className="ep-paper-question-bubble">
+                                  <div style={{ fontSize: 14.5, fontWeight: 700, lineHeight: 1.6, marginBottom: 10 }}>
+                                    {q.q}
                                   </div>
-                                  
-                                  {/* Question Bubble */}
-                                  <div style={{
-                                    background: "#fff",
-                                    border: "1.5px solid #f1f5f9",
-                                    color: "#0f172a",
-                                    borderRadius: "4px 18px 18px 18px",
-                                    boxShadow: "0 2px 8px rgba(0,0,0,.05)",
-                                    padding: "14px 18px",
-                                    flex: 1,
-                                    position: "relative"
-                                  }}>
-                                    <div style={{ fontSize: "14.5px", fontWeight: 600, lineHeight: 1.6, marginBottom: 8 }}>
-                                      {q.q}
+                                  <div
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "space-between",
+                                      paddingTop: 10,
+                                      borderTop: "1px solid var(--ep-line)",
+                                      gap: 8,
+                                    }}
+                                  >
+                                    <div style={{ display: "flex", gap: 6 }}>
+                                      <span
+                                        style={{
+                                          fontSize: 10.5,
+                                          fontWeight: 700,
+                                          padding: "3px 9px",
+                                          borderRadius: 8,
+                                          background: "rgba(16,185,129,.1)",
+                                          color: "#059669",
+                                        }}
+                                      >
+                                        {q.unit}
+                                      </span>
+                                      <span
+                                        style={{
+                                          fontSize: 10.5,
+                                          fontWeight: 800,
+                                          padding: "3px 9px",
+                                          borderRadius: 8,
+                                          background: "rgba(245,158,11,.1)",
+                                          color: "#d97706",
+                                        }}
+                                      >
+                                        {part.marks} Mark{part.marks > 1 ? "s" : ""}
+                                      </span>
                                     </div>
-                                    <div style={{
-                                      display: "flex", alignItems: "center", justifyContent: "space-between",
-                                      paddingTop: 8, borderTop: "1px solid rgba(0,0,0,.05)", gap: 8
-                                    }}>
-                                      <div style={{ display: "flex", gap: 6 }}>
-                                        <span style={{
-                                          fontSize: 10, fontWeight: 700, padding: "3px 10px", borderRadius: 8,
-                                          background: "rgba(16,185,129,.1)", color: "#059669"
-                                        }}>
-                                          {q.unit}
-                                        </span>
-                                        <span style={{
-                                          fontSize: 10, fontWeight: 800, padding: "3px 10px", borderRadius: 8,
-                                          background: "rgba(245,158,11,.1)", color: "#d97706"
-                                        }}>
-                                          {part.marks} Marks
-                                        </span>
-                                      </div>
-                                      <button style={{
-                                        width: 26, height: 26, borderRadius: 8, border: "none",
-                                        background: "rgba(0,0,0,.06)", cursor: "pointer",
-                                        display: "flex", alignItems: "center", justifyContent: "center",
-                                        color: "#64748b", transition: "all .15s"
+                                    <span
+                                      style={{
+                                        fontSize: 11,
+                                        fontWeight: 700,
+                                        color: "var(--ep-muted)",
                                       }}
-                                      onMouseOver={(e) => { e.currentTarget.style.background = "rgba(99,102,241,.1)"; e.currentTarget.style.color = "#6366f1"; }}
-                                      onMouseOut={(e) => { e.currentTarget.style.background = "rgba(0,0,0,.06)"; e.currentTarget.style.color = "#64748b"; }}>
-                                        <span style={{ fontSize: 14 }}>✎</span>
-                                      </button>
-                                    </div>
+                                    >
+                                      Write solution below ✎
+                                    </span>
                                   </div>
-                                </motion.div>
-                              ))}
-                            </div>
-                          </motion.div>
+                                  <div className="ep-paper-answer-space" />
+                                </div>
+                              </motion.div>
+                            ))}
+                          </div>
                         </div>
                       );
                     })}
@@ -1683,3 +3070,4 @@ export default function ExamPreparationPage() {
     </>
   );
 }
+

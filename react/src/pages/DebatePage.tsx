@@ -10,6 +10,7 @@ import { useLocation } from "wouter";
 import jsPDF from "jspdf";
 import Navigation from "../components/navigation";
 import FormattedAIContent from "../components/ai/FormattedAIContent";
+import robotWaving from "../assets/dashboard/15_robot_waving.png";
 import { useAuth } from "../hooks/use-auth";
 import { useSessionState } from "../hooks/useSessionState";
 import {
@@ -238,7 +239,7 @@ select.finput option{background:#fff;color:#0f172a}
 
 .dp-setup{height:100dvh;display:grid;grid-template-columns:32% 1fr;overflow:hidden}
 .dp-setup-left{background:#060c1a;overflow:hidden;position:relative;display:flex;flex-direction:column}
-.dp-setup-left-inner{overflow-y:auto;flex:1;padding:clamp(20px,3vw,44px);display:flex;flex-direction:column;justify-content:center;position:relative;z-index:2}
+.dp-setup-left-inner{overflow-y:auto;flex:1;padding:clamp(18px,2.6vw,34px) clamp(16px,2vw,28px);display:flex;flex-direction:column;justify-content:flex-start;position:relative;z-index:2}
 .dp-orbs{position:absolute;inset:0;pointer-events:none}
 .dp-orb{position:absolute;border-radius:50%}
 .dp-orb1{width:320px;height:320px;background:radial-gradient(circle,rgba(99,102,241,.18) 0%,transparent 70%);top:-80px;left:-60px;animation:orbFloat 9s ease-in-out infinite}
@@ -295,6 +296,48 @@ select.finput option{background:#fff;color:#0f172a}
 .dtype-ico{font-size:19px;flex-shrink:0}
 .dtype-title{font-size:12px;font-weight:800;color:var(--t1);margin-bottom:2px}
 .dtype-desc{font-size:10px;color:var(--t2);line-height:1.45}
+
+/* Dashboard-inspired debate setup cards */
+@keyframes debateCardIn{from{opacity:0;transform:translateY(12px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes debateIconFloat{0%,100%{transform:translateY(0) rotate(-2deg)}50%{transform:translateY(-7px) rotate(3deg)}}
+@keyframes debateGlowMove{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+.module-card,.submode-card,.dp-feat-left{position:relative;overflow:hidden;background-size:180% 180%;animation:debateCardIn .45s cubic-bezier(.34,1.4,.64,1) both}
+.module-card::after,.submode-card::after,.dp-feat-left::after{content:"";position:absolute;right:-24px;bottom:-36px;width:106px;height:106px;border-radius:50%;background:rgba(255,255,255,.14);transition:transform .3s;pointer-events:none}
+.module-card:hover::after,.submode-card:hover::after,.dp-feat-left:hover::after{transform:scale(1.2)}
+.module-card:nth-child(2),.submode-card:nth-child(2),.dp-feat-left:nth-child(2){animation-delay:.08s}
+.module-card:nth-child(3),.dp-feat-left:nth-child(3){animation-delay:.16s}
+.dp-feat-left:nth-child(4){animation-delay:.24s}
+.module-card:nth-child(1){background:linear-gradient(135deg,#5146e5,#2389ff);border-color:rgba(255,255,255,.2)}
+.module-card:nth-child(2){background:linear-gradient(135deg,#f04f92,#f59e42);border-color:rgba(255,255,255,.2)}
+.submode-card:nth-child(1){background:linear-gradient(135deg,#0fa968,#18b8a0);border-color:rgba(255,255,255,.2)}
+.submode-card:nth-child(2){background:linear-gradient(135deg,#7650e8,#c643cf);border-color:rgba(255,255,255,.2)}
+.module-card .mod-title,.module-card .mod-desc,.submode-card .submode-title,.submode-card .submode-desc{color:#fff}
+.module-card .mod-desc,.submode-card .submode-desc{color:rgba(255,255,255,.9)}
+.module-card .mod-ic{background:linear-gradient(145deg,rgba(255,255,255,.82),rgba(255,255,255,.26));color:#10184c;box-shadow:inset 0 -8px 0 rgba(0,0,0,.08),0 12px 18px rgba(0,0,0,.18);animation:debateIconFloat 4.4s ease-in-out infinite}
+.submode-card .submode-ico{display:grid;place-items:center;min-width:42px;height:42px;border-radius:14px;background:linear-gradient(145deg,rgba(255,255,255,.82),rgba(255,255,255,.26));color:#10184c;box-shadow:inset 0 -8px 0 rgba(0,0,0,.08),0 12px 18px rgba(0,0,0,.18);animation:debateIconFloat 4.4s ease-in-out infinite;font-size:24px}
+.module-card:hover,.submode-card:hover{transform:translateY(-4px) scale(1.018);box-shadow:0 15px 26px rgba(38,57,116,.2);animation:debateGlowMove 2.6s ease infinite}
+.module-card.sel,.submode-card.sel{border-color:rgba(255,255,255,.8);box-shadow:0 0 0 3px rgba(255,255,255,.25),0 17px 30px rgba(38,57,116,.24)}
+.module-card.sel .mod-title,.module-card.sel .mod-desc,.submode-card.sel .submode-title,.submode-card.sel .submode-desc{color:#fff}
+.dp-feat-left{border-color:rgba(255,255,255,.18);box-shadow:0 9px 18px rgba(0,0,0,.18);transition:transform .18s,box-shadow .18s}
+.dp-feat-left:nth-child(1){background:linear-gradient(135deg,#5146e5,#2389ff)}
+.dp-feat-left:nth-child(2){background:linear-gradient(135deg,#f04f92,#f59e42)}
+.dp-feat-left:nth-child(3){background:linear-gradient(135deg,#0fa968,#18b8a0)}
+.dp-feat-left:nth-child(4){background:linear-gradient(135deg,#7650e8,#c643cf)}
+.dp-feat-left:hover{transform:translateY(-4px) scale(1.018);box-shadow:0 15px 26px rgba(0,0,0,.28);animation:debateGlowMove 2.6s ease infinite}
+.dp-feat-ico{background:linear-gradient(145deg,rgba(255,255,255,.82),rgba(255,255,255,.26));color:#10184c;box-shadow:inset 0 -8px 0 rgba(0,0,0,.08),0 12px 18px rgba(0,0,0,.18);animation:debateIconFloat 4.4s ease-in-out infinite}
+.dp-feat-txt span{color:rgba(255,255,255,.9)}
+.dp-setup-robo{display:block;width:min(210px,62%);max-height:150px;object-fit:contain;margin:18px auto 0;filter:drop-shadow(0 18px 16px rgba(0,0,0,.3));animation:debateRoboFloat 4.8s ease-in-out infinite;pointer-events:none}
+@keyframes debateRoboFloat{0%,100%{transform:translateY(0) rotate(-2deg)}50%{transform:translateY(-8px) rotate(2deg)}}
+.dp-setup-intro{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.dp-setup-intro .dp-h1{flex:1;min-width:0}
+.dp-setup-intro .dp-setup-robo{width:min(170px,42%);max-height:138px;margin:0}
+.module-card:active,.submode-card:active,.dp-feat-left:active,.setup-back:active,.btn-p:active,.btn-s:active,.btn-d:active{transform:scale(.97);transition-duration:.08s}
+.dark .module-card:nth-child(1),.dark .dp-feat-left:nth-child(1){background:linear-gradient(135deg,#3730a3,#075985)}
+.dark .module-card:nth-child(2),.dark .dp-feat-left:nth-child(2){background:linear-gradient(135deg,#9f285d,#9a4a12)}
+.dark .submode-card:nth-child(1),.dark .dp-feat-left:nth-child(3){background:linear-gradient(135deg,#086b43,#086b67)}
+.dark .submode-card:nth-child(2),.dark .dp-feat-left:nth-child(4){background:linear-gradient(135deg,#4c299f,#84228b)}
+.dark .module-card.sel,.dark .submode-card.sel{box-shadow:0 0 0 3px rgba(255,255,255,.32),0 16px 30px rgba(0,0,0,.48)}
+@media(prefers-reduced-motion:reduce){.module-card,.submode-card,.dp-feat-left,.module-card .mod-ic,.submode-card .submode-ico,.dp-feat-ico{animation:none}}
 
 .dp-room{height:100dvh;display:flex;flex-direction:column;overflow:hidden;background:#060c1a}
 .room-bar{height:50px;background:rgba(6,12,26,.97);backdrop-filter:blur(18px);border-bottom:1px solid rgba(255,255,255,.07);display:flex;align-items:center;padding:0 12px;gap:7px;flex-shrink:0;z-index:100;overflow:hidden}
@@ -507,8 +550,9 @@ select.finput option{background:#fff;color:#0f172a}
 @media(max-width:1100px){.dp-setup{grid-template-columns:35% 1fr}}
 @media(max-width:900px){
   .dp-setup{grid-template-columns:1fr;overflow-y:auto;height:auto;min-height:100dvh}
-  .dp-setup-left{min-height:200px;max-height:260px}
+  .dp-setup-left{min-height:auto;max-height:none}
   .dp-setup-left-inner{justify-content:flex-start}
+  .dp-setup-intro .dp-setup-robo{width:140px;max-height:112px}
   .dp-feats-left{display:none}
   .ctx-card{display:none}
 }
@@ -2080,7 +2124,7 @@ function ScheduleDebateModal({ config, onSchedule, onClose }: any) {
                 color: "var(--t1)",
               }}
             >
-              ⚔️ "{config.topic}"
+              💬 "{config.topic}"
             </div>
           )}
           <div className="fi-row fi">
@@ -3035,18 +3079,21 @@ function IntegratedDebateSetup({
         <div className="dp-grid" />
         <div className="dp-setup-left-inner">
           <div className="dp-logo">
-            <div className="dp-logo-ico">⚔️</div>
+            <div className="dp-logo-ico">🎤</div>
             <span className="dp-logo-name">DebateArena</span>
           </div>
           <div className="dp-tag">
             <div className="dp-tag-dot" />
             Debate Setup
           </div>
-          <h2 className="dp-h1">
-            Launch your
-            <br />
-            <span className="gt">Debate Room.</span>
-          </h2>
+          <div className="dp-setup-intro">
+            <h2 className="dp-h1">
+              Launch your
+              <br />
+              <span className="gt">Debate Room.</span>
+            </h2>
+            <img className="dp-setup-robo" src={robotWaving} alt="" aria-hidden="true" />
+          </div>
           <p className="dp-p">
             {subMode === "ai"
               ? "1-on-1 with a live AI opponent powered by the debate APIs."
@@ -3094,7 +3141,7 @@ function IntegratedDebateSetup({
                 ← Back
               </button>
             )}
-            <h2 className="setup-title">⚔️ Debate Setup</h2>
+            <h2 className="setup-title">📣 Debate Setup</h2>
             <p className="setup-sub">
               Choose your debate type first, then complete the matching setup flow.
             </p>
@@ -3488,7 +3535,7 @@ function IntegratedDebateSetup({
           <div className="modal dark" style={{ maxWidth: 440 }}>
             <div className="mh">
               <span className="mh-title" style={{ color: "#fff" }}>
-                ⚔️ Ready to Enter?
+                🥳 Ready to Enter?
               </span>
               <button
                 className="mh-close"
@@ -3531,7 +3578,7 @@ function IntegratedDebateSetup({
                     flexShrink: 0,
                   }}
                 >
-                  ⚔️
+                  🎙️
                 </div>
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 800, color: "#fff" }}>
@@ -3592,7 +3639,7 @@ function IntegratedDebateSetup({
                     Launching {joinProgress > 0 ? `${joinProgress}%` : "..."}
                   </>
                 ) : canProceed ? (
-                  "⚔️ Launch Debate"
+                  "🚀 Launch Debate"
                 ) : perm === "requesting" ? (
                   "Waiting for Mic..."
                 ) : (
@@ -5574,7 +5621,7 @@ useEffect(() => {
     <div className="dp-room">
       <div className="room-bar">
         <button className="room-logo" type="button">
-          <span className="room-logo-ico">⚔️</span>
+          <span className="room-logo-ico">🎤</span>
           <span>DebateArena</span>
         </button>
         <button
@@ -7056,7 +7103,7 @@ function LiveAIDebateRoom({
     <div className="dp-room">
       <div className="room-bar">
         <div className="room-logo">
-          <div className="room-logo-ico">⚔️</div>DebateArena
+          <div className="room-logo-ico">🎤</div>DebateArena
         </div>
         <button
           className="btn-s"
@@ -7859,7 +7906,7 @@ function DebateWaitingRoom({
     <div className="dp-room">
       <div className="room-bar">
         <div className="room-logo">
-          <div className="room-logo-ico">⚔️</div>DebateArena
+          <div className="room-logo-ico">🎤</div>DebateArena
         </div>
         <button
           className="btn-s"
@@ -8381,18 +8428,21 @@ function DebateSetup({
         <div className="dp-grid" />
         <div className="dp-setup-left-inner">
           <div className="dp-logo">
-            <div className="dp-logo-ico">⚔️</div>
+            <div className="dp-logo-ico">🎤</div>
             <span className="dp-logo-name">DebateArena</span>
           </div>
           <div className="dp-tag">
             <div className="dp-tag-dot" />
             Debate Setup
           </div>
-          <h2 className="dp-h1">
-            Launch your
-            <br />
-            <span className="gt">Debate Room.</span>
-          </h2>
+          <div className="dp-setup-intro">
+            <h2 className="dp-h1">
+              Launch your
+              <br />
+              <span className="gt">Debate Room.</span>
+            </h2>
+            <img className="dp-setup-robo" src={robotWaving} alt="" aria-hidden="true" />
+          </div>
           <p className="dp-p">
             {subMode === "ai"
               ? "1-on-1 · AI voice opponent · Auto turn-based scoring"
@@ -8451,7 +8501,7 @@ function DebateSetup({
                 ← Back
               </button>
             )}
-            <h2 className="setup-title">⚔️ Debate Setup</h2>
+            <h2 className="setup-title">📣 Debate Setup</h2>
             <p className="setup-sub">
               Complete all steps to launch your debate room.
             </p>
@@ -8804,7 +8854,7 @@ function DebateSetup({
           <div className="modal dark" style={{ maxWidth: 440 }}>
             <div className="mh">
               <span className="mh-title" style={{ color: "#fff" }}>
-                ⚔️ Ready to Enter?
+                🥳 Ready to Enter?
               </span>
               <button
                 className="mh-close"
@@ -8845,7 +8895,7 @@ function DebateSetup({
                     flexShrink: 0,
                   }}
                 >
-                  ⚔️
+                  🎙️
                 </div>
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 800, color: "#fff" }}>
@@ -8937,7 +8987,7 @@ function DebateSetup({
                 ) : perm !== "granted" ? (
                   "🎤 Allow Mic to Continue"
                 ) : (
-                  "⚔️ Enter Debate Room"
+                  "🚀 Enter Debate Room"
                 )}
               </button>
               {joinProgress > 0 && (
@@ -9861,7 +9911,7 @@ function DebateRoom({
       {/* TOP BAR */}
       <div className="room-bar">
         <div className="room-logo">
-          <div className="room-logo-ico">⚔️</div>DebateArena
+          <div className="room-logo-ico">🎤</div>DebateArena
         </div>
         <div className="rbar-div" />
         <div className="rbar-topic">
@@ -10732,7 +10782,7 @@ function DebateRoom({
                 <div className="dp-wrap">
                   {/* Team A vs B summary */}
                   <div className="score-card">
-                    <div className="sc-title">⚔️ Team Standings</div>
+                    <div className="sc-title">🏆 Team Standings</div>
                     <div className="sc-row">
                       <div className="sc-item">
                         <div
@@ -11031,7 +11081,7 @@ function DebateRoom({
               </div>
               {isMulti && (
                 <div className="a-sec">
-                  <div className="a-sec-title">⚔️ Team Scores</div>
+                  <div className="a-sec-title">📊 Team Scores</div>
                   <div className="score-grid-3">
                     {(["A", "B"] as Team[]).map((team) => (
                       <div key={team} className="score-box">
@@ -11670,7 +11720,7 @@ function DebateResults({ result, onNew }: { result: any; onNew: () => void }) {
             v: report.totalParticipants || report.participants.length,
             i: "👥",
           },
-          { l: "Teams", v: "2", i: "⚔️" },
+          { l: "Teams", v: "2", i: "🤝" },
           { l: "Turns", v: report.turns.length, i: "💬" },
         ].map((stat, index) => (
           <div
@@ -11823,7 +11873,7 @@ function DebateResults({ result, onNew }: { result: any; onNew: () => void }) {
         {result.meetingEnded ? "Session Ended" : "Debate Complete!"}
       </h2>
       <p className="res-sub">
-        ⚔️ Session lasted{" "}
+        ⏱️ Session lasted{" "}
         <strong style={{ color: "var(--ind)" }}>{result.timer}</strong> with{" "}
         <strong>{result.participants}</strong> participant(s).{" "}
         <span style={{ color: "var(--em)" }}>📅 Saved to Calendar.</span>

@@ -13,8 +13,6 @@ import {
 import { Label } from "../ui/label";
 import {
   BookOpen,
-  Moon,
-  Sun,
   ChevronLeft,
   ChevronRight,
   ArrowLeft,
@@ -29,8 +27,13 @@ import {
   Edit3,
   Hand,
   Volume2,
+  Pause,
+  Play,
+  VolumeX,
   CheckCircle2,
   AlertCircle,
+  Library,
+  Target,
 } from "lucide-react";
 
 import Navigation from "../../components/navigation";
@@ -55,6 +58,28 @@ import {
 } from "../../lib/gradeupApi";
 import { buildApiUrl } from "../../lib/apiBase";
 import PartTermFilterBar from "../PartTermFilterBar";
+import tamilSubject from "../../assets/dashboard/subject-tamil.png";
+import englishSubject from "../../assets/dashboard/subject-english.png";
+import scienceSubject from "../../assets/dashboard/subject-science.png";
+import socialSubject from "../../assets/dashboard/subject-social.png";
+import mathsSubject from "../../assets/dashboard/subject-maths.png";
+import studyRoboImg from "../../assets/dashboard/study-robo.png";
+import maleTeacherGif from "../../assets/male-teacher.gif";
+import femaleTeacherGif from "../../assets/female-teacher.gif";
+
+const BOOK_SUBJECT_ART: Record<string, string> = {
+  tamil: tamilSubject,
+  english: englishSubject,
+  science: scienceSubject,
+  social: socialSubject,
+  maths: mathsSubject,
+  mathematics: mathsSubject,
+};
+
+function getBookSubjectArt(subject: string): string | undefined {
+  const subjectKey = subject.toLowerCase().trim();
+  return Object.entries(BOOK_SUBJECT_ART).find(([key]) => subjectKey.includes(key))?.[1];
+}
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Chapter {
   id: number | string;
@@ -3319,24 +3344,6 @@ const ExplainSummarizePanel = ({
 };
 
 // ─── Subject icon helper ──────────────────────────────────────────────────────
-function getSubjectSymbol(subject: string): string {
-  if (
-    subject.includes("Science") ||
-    subject.includes("Biology") ||
-    subject.includes("Chemistry") ||
-    subject.includes("Environmental")
-  )
-    return "⚛";
-  if (subject.includes("Math")) return "π";
-  if (subject.includes("Physics")) return "⚡";
-  if (subject.includes("Computer")) return "💻";
-  if (subject.includes("History")) return "📜";
-  if (subject.includes("Geography")) return "🌍";
-  if (subject.includes("English")) return "✍️";
-  if (subject.includes("Economics")) return "📊";
-  return "📖";
-}
-
 // ─── Main component ───────────────────────────────────────────────────────────
 function flattenContentToText(value: any): string {
   if (!value) return "";
@@ -4556,6 +4563,16 @@ const BookContentWindowDemo = () => {
   const [isLoadingPage, setIsLoadingPage] = useState(true);
   const [bookLoadError, setBookLoadError] = useState<string | null>(null);
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
+  useEffect(() => {
+    const overflow = selectedBook ? "hidden" : "auto";
+    document.documentElement.style.overflow = overflow;
+    document.body.style.overflow = overflow;
+
+    return () => {
+      document.documentElement.style.removeProperty("overflow");
+      document.body.style.removeProperty("overflow");
+    };
+  }, [selectedBook]);
   const [activeChapter, setActiveChapter] = useState<any>(null);
   const [isTocView, setIsTocView] = useState(false);
   const [isFocus, setIsFocus] = useState(false);
@@ -4625,6 +4642,33 @@ const BookContentWindowDemo = () => {
       /* storage full — ignore */
     }
   }, [highlights, hlStorageKey]);
+
+  useEffect(() => {
+    if (!hlStorageKey) {
+      setIsBookmarked(false);
+      return;
+    }
+    try {
+      setIsBookmarked(
+        localStorage.getItem(hlStorageKey + "::bookmarked") === "1",
+      );
+    } catch {
+      setIsBookmarked(false);
+    }
+  }, [hlStorageKey]);
+
+  const toggleBookmark = () => {
+    setIsBookmarked((prev) => {
+      const next = !prev;
+      try {
+        if (hlStorageKey) {
+          if (next) localStorage.setItem(hlStorageKey + "::bookmarked", "1");
+          else localStorage.removeItem(hlStorageKey + "::bookmarked");
+        }
+      } catch {}
+      return next;
+    });
+  };
   const [isLoading, setIsLoading] = useState(false);
   const [timer, setTimer] = useState(0);
   const [toast, setToast] = useState<{
@@ -4644,6 +4688,19 @@ const BookContentWindowDemo = () => {
   const [currentSpreadIndex, setCurrentSpreadIndex] = useState(0);
   const [displaySpreadIndex, setDisplaySpreadIndex] = useState(0);
   const [isSinglePageView, setIsSinglePageView] = useState(true);
+  const [isReadingAloud, setIsReadingAloud] = useState(false);
+  const [isBookmarked, setIsBookmarked] = useState(false);
+  const [readAloudAvatar, setReadAloudAvatar] = useState<"male" | "female">("male");
+  const speechUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const blocksRef = useRef<Array<{ blockId: string; text: string; startChar: number; endChar: number }>>([]);
+  const [activeSpokenWord, setActiveSpokenWord] = useState<{
+    blockId: string;
+    word: string;
+    charIndexInBlock: number;
+    wordLength: number;
+  } | null>(null);
+  const [ttsRate, setTtsRate] = useState(1.0);
+  const [isTtsPaused, setIsTtsPaused] = useState(false);
   const [expandedUnit, setExpandedUnit] = useState<number | null>(null);
 
   const [isAiPanelOpen, setIsAiPanelOpen] = useState(false);
@@ -5070,7 +5127,13 @@ const BookContentWindowDemo = () => {
   }, [activeChapter]);
 
   useEffect(() => {
-    setIsSinglePageView(true);
+    const handleResize = () => {
+      if (window.innerWidth < 960) {
+        setIsSinglePageView(true);
+      }
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
   }, []);
 
   useEffect(() => {
@@ -5164,7 +5227,7 @@ const BookContentWindowDemo = () => {
 
   const { pages: readerPages, anchorToPage } = paginateReaderBlocks(
     allPageContent,
-    isSinglePageView ? 16 : 18,
+    isSinglePageView ? 8 : 10,
   );
   const readerSpreads = buildReaderSpreads(readerPages, isSinglePageView);
   const safeSpreadIndex = Math.min(
@@ -5295,6 +5358,170 @@ const BookContentWindowDemo = () => {
 
   const formatTime = (s: number) =>
     `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
+
+  const getReadAloudVoice = (voices: SpeechSynthesisVoice[], avatarType = readAloudAvatar) => {
+    const femalePattern = /female|zira|samantha|karen|susan|victoria|hazel|serena|ava|aria|jenny/i;
+    const malePattern = /male|david|mark|daniel|george|guy|ryan|christopher|james/i;
+    const genderPattern = avatarType === "female" ? femalePattern : malePattern;
+    return (
+      voices.find((voice) => genderPattern.test(voice.name)) ||
+      voices.find((voice) => /^en/i.test(voice.lang) && voice.localService) ||
+      voices.find((voice) => /^en/i.test(voice.lang)) ||
+      voices[0]
+    );
+  };
+
+  const startReadAloud = (customRate?: number, customAvatar?: "male" | "female") => {
+    if (typeof window === "undefined" || !window.speechSynthesis) {
+      pushToast({
+        title: "Read Aloud unavailable",
+        description: "Your browser does not support text to speech.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    setIsTtsPaused(false);
+
+    const blocks: Array<{ blockId: string; text: string; startChar: number; endChar: number }> = [];
+    let fullText = "";
+
+    const addItems = (items: any[], side: "left" | "right") => {
+      (items || []).forEach((item, idx) => {
+        if (item?.type === "pageBreak") return;
+        const raw = flattenContentToText(item?.content || item).trim();
+        if (!raw) return;
+        if (fullText.length > 0) fullText += " ";
+        const start = fullText.length;
+        fullText += raw;
+        const end = fullText.length;
+        blocks.push({
+          blockId: `${side}-${idx}`,
+          text: raw,
+          startChar: start,
+          endChar: end,
+        });
+      });
+    };
+
+    if (activeSpread.left?.items) addItems(activeSpread.left.items, "left");
+
+    if (!fullText.trim()) {
+      pushToast({ title: "Nothing to read on this page yet." });
+      return;
+    }
+
+    blocksRef.current = blocks;
+
+    const utterance = new SpeechSynthesisUtterance(fullText);
+    const voices = window.speechSynthesis.getVoices();
+    const avatarToUse = customAvatar || readAloudAvatar;
+    const selectedVoice = getReadAloudVoice(voices, avatarToUse);
+    if (selectedVoice) utterance.voice = selectedVoice;
+    utterance.rate = customRate ?? ttsRate;
+    utterance.pitch = 1.0;
+
+    utterance.onstart = () => {
+      setIsReadingAloud(true);
+      setIsTtsPaused(false);
+    };
+
+    utterance.onboundary = (event: any) => {
+      if (event.name === "word") {
+        const charIdx = event.charIndex;
+        const block = blocksRef.current.find((b) => charIdx >= b.startChar && charIdx <= b.endChar);
+        if (block) {
+          const localCharIdx = Math.max(0, charIdx - block.startChar);
+          const remaining = block.text.slice(localCharIdx);
+          const match = remaining.match(/^(\S+)/);
+          const word = match ? match[1] : "";
+          const wordLength = event.charLength || word.length || 1;
+          setActiveSpokenWord({
+            blockId: block.blockId,
+            word,
+            charIndexInBlock: localCharIdx,
+            wordLength,
+          });
+        }
+      }
+    };
+
+    utterance.onend = () => {
+      setIsReadingAloud(false);
+      setIsTtsPaused(false);
+      setActiveSpokenWord(null);
+    };
+
+    utterance.onerror = () => {
+      setIsReadingAloud(false);
+      setIsTtsPaused(false);
+      setActiveSpokenWord(null);
+    };
+
+    speechUtteranceRef.current = utterance;
+    window.speechSynthesis.speak(utterance);
+    setIsReadingAloud(true);
+  };
+
+  const toggleReadAloud = () => {
+    if (isReadingAloud) {
+      if (typeof window !== "undefined" && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+      setIsReadingAloud(false);
+      setIsTtsPaused(false);
+      setActiveSpokenWord(null);
+    } else {
+      startReadAloud();
+    }
+  };
+
+  const handlePauseResumeReadAloud = () => {
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    if (isTtsPaused) {
+      window.speechSynthesis.resume();
+      setIsTtsPaused(false);
+    } else {
+      window.speechSynthesis.pause();
+      setIsTtsPaused(true);
+    }
+  };
+
+  const cycleTtsSpeed = () => {
+    const speeds = [0.85, 1.0, 1.2];
+    const currentIdx = speeds.indexOf(ttsRate);
+    const nextSpeed = speeds[(currentIdx + 1) % speeds.length];
+    setTtsRate(nextSpeed);
+    if (isReadingAloud) {
+      startReadAloud(nextSpeed);
+    }
+  };
+
+  const handleSwitchReadAloudAvatar = (newAvatar: "male" | "female") => {
+    setReadAloudAvatar(newAvatar);
+    if (isReadingAloud) {
+      startReadAloud(ttsRate, newAvatar);
+    }
+  };
+
+  useEffect(() => {
+    if (isReadingAloud && typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+      setIsReadingAloud(false);
+      setIsTtsPaused(false);
+      setActiveSpokenWord(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [safeSpreadIndex, displayChapter?.id]);
+
+  useEffect(() => {
+    return () => {
+      if (typeof window !== "undefined" && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
 
   const triggerToast = (msg: string) => {
     setToast({ msg, type: msg.includes("✅") ? "success" : "error" });
@@ -5609,6 +5836,7 @@ const BookContentWindowDemo = () => {
 
   async function completeAvatarSession() {
     setAvatarStatus("completed");
+    setIsReadingAloud(false);
     if (!avatarSessionId || avatarEndCalledRef.current) return;
     avatarEndCalledRef.current = true;
     try {
@@ -5764,6 +5992,7 @@ const BookContentWindowDemo = () => {
       generateAvatarCardsForSession(String(sessionId), segments);
     } catch (error: any) {
       setAvatarStatus("idle");
+      setIsReadingAloud(false);
       setAvatarError(error?.message || "Unable to start Genius Mode.");
     } finally {
       setIsAvatarStarting(false);
@@ -5822,6 +6051,7 @@ const BookContentWindowDemo = () => {
       avatarAudioRef.current = null;
     }
     setIsAvatarOpen(false);
+    setIsReadingAloud(false);
     if (
       avatarSessionId &&
       avatarStatus !== "completed" &&
@@ -6120,8 +6350,76 @@ const BookContentWindowDemo = () => {
     return segs;
   };
 
-  const renderHighlightableText = (value: unknown, baseKey: string) => {
+  const renderHighlightableText = (
+    value: unknown,
+    baseKey: string,
+    spokenWordInfo?: {
+      blockId: string;
+      word: string;
+      charIndexInBlock: number;
+      wordLength: number;
+    } | null,
+  ) => {
     const text = String(value || "");
+
+    // If TTS is active and speaking in this block, highlight the active word
+    if (spokenWordInfo && spokenWordInfo.word) {
+      const start = spokenWordInfo.charIndexInBlock;
+      const wordLen = Math.max(1, spokenWordInfo.wordLength || spokenWordInfo.word.length);
+      let actualStart = start;
+      let actualEnd = Math.min(text.length, start + wordLen);
+
+      // Verify or adjust character boundary if there is minor offset drift
+      if (text.slice(actualStart, actualEnd).toLowerCase() !== spokenWordInfo.word.toLowerCase()) {
+        const windowStart = Math.max(0, start - 25);
+        const windowEnd = Math.min(text.length, start + wordLen + 25);
+        const searchWindow = text.slice(windowStart, windowEnd);
+        const found = searchWindow.toLowerCase().indexOf(spokenWordInfo.word.toLowerCase());
+        if (found !== -1) {
+          actualStart = windowStart + found;
+          actualEnd = actualStart + spokenWordInfo.word.length;
+        }
+      }
+
+      if (!hasMatchingHighlight(text)) {
+        if (actualStart >= 0 && actualEnd > actualStart && actualStart < text.length) {
+          const before = text.slice(0, actualStart);
+          const currentWord = text.slice(actualStart, actualEnd);
+          const after = text.slice(actualEnd);
+          return (
+            <>
+              {before ? <FormattedAIContent value={before} /> : null}
+              <mark className="tts-word-highlight">{currentWord}</mark>
+              {after ? <FormattedAIContent value={after} /> : null}
+            </>
+          );
+        }
+        return <FormattedAIContent value={value} />;
+      }
+
+      // If user highlights exist, highlight the word inside the segments
+      const segs = applyHighlights(text, baseKey);
+      let foundWord = false;
+      return segs.map((seg, sIdx) => {
+        if (typeof seg !== "string" || foundWord) return seg;
+        const matchIdx = seg.toLowerCase().indexOf(spokenWordInfo.word.toLowerCase());
+        if (matchIdx !== -1) {
+          foundWord = true;
+          const b = seg.slice(0, matchIdx);
+          const m = seg.slice(matchIdx, matchIdx + spokenWordInfo.word.length);
+          const a = seg.slice(matchIdx + spokenWordInfo.word.length);
+          return (
+            <React.Fragment key={`tts-${sIdx}`}>
+              {b}
+              <mark className="tts-word-highlight">{m}</mark>
+              {a}
+            </React.Fragment>
+          );
+        }
+        return seg;
+      });
+    }
+
     if (!hasMatchingHighlight(text)) {
       return <FormattedAIContent value={value} />;
     }
@@ -6129,21 +6427,36 @@ const BookContentWindowDemo = () => {
     return applyHighlights(text, baseKey);
   };
 
+  const classifyBlockCallout = (item: any) => {
+    if (item?.type !== "heading2" && item?.type !== "heading3") return null;
+    const heading = String(item.content || "").toLowerCase();
+    if (/objective/.test(heading)) return { cls: "kf-callout-objectives", icon: "🎯", label: "Learning Objectives" };
+    if (/key concept|key point/.test(heading)) return { cls: "kf-callout-key", icon: "💡", label: "Key Concept" };
+    if (/example/.test(heading)) return { cls: "kf-callout-example", icon: "📘", label: "Example" };
+    if (/important|remember|note/.test(heading)) return { cls: "kf-callout-important", icon: "⭐", label: "Important" };
+    if (/try it|practice|exercise/.test(heading)) return { cls: "kf-callout-try", icon: "✏️", label: "Try It" };
+    if (/think|question|doubt/.test(heading)) return { cls: "kf-callout-think", icon: "❓", label: "Think" };
+    return null;
+  };
+
   // ─── Render one content item ───────────────────────────────────────────────
   // Headings/images are NOT selectable (pointer-events:none / user-select:none
   // applied via className). Only .reader-paragraph nodes are selectable.
-  const renderItem = (item: any, index: number) => {
+  const renderItem = (item: any, index: number | string, side?: "left" | "right") => {
     // NEW: Skip pageBreak type (used only for pagination, not rendering)
     if (item.type === "pageBreak") {
       return null;
     }
+
+    const blockId = `${side || "left"}-${index}`;
+    const isSpokenBlock = isReadingAloud && activeSpokenWord?.blockId === blockId;
 
     // NEW: Flatten subsection_block — render children as individual items
     if (item.type === "subsection_block" && Array.isArray(item.children)) {
       return (
         <div key={index} className="reader-subsection-block">
           {item.children.map((child: any, childIdx: number) =>
-            renderItem(child, `${index}-${childIdx}`),
+            renderItem(child, `${index}-${childIdx}`, side),
           )}
         </div>
       );
@@ -6151,29 +6464,58 @@ const BookContentWindowDemo = () => {
 
     if (item.type === "text") {
       return (
-        <p key={index} className="reader-paragraph">
-          {renderHighlightableText(item.content, `p-${index}`)}
+        <p
+          key={index}
+          className={`reader-paragraph ${isSpokenBlock ? "reading-active-paragraph" : ""}`}
+        >
+          {renderHighlightableText(
+            item.content,
+            `p-${index}`,
+            isSpokenBlock ? activeSpokenWord : null,
+          )}
         </p>
       );
     }
     if (item.type === "heading1")
       return (
-        <h1 key={index} id={item.anchor} className="reader-h1 no-select">
+        <h1
+          key={index}
+          id={item.anchor}
+          className={`reader-h1 no-select ${isSpokenBlock ? "reading-active-paragraph" : ""}`}
+        >
           <FormattedAIContent value={item.content} />
         </h1>
       );
-    if (item.type === "heading2")
+    if (item.type === "heading2" || item.type === "heading3") {
+      const callout = classifyBlockCallout(item);
+      const Heading = item.type === "heading2" ? "h2" : "h3";
+      if (callout) {
+        return (
+          <div
+            key={index}
+            id={item.anchor}
+            className={`kf-callout ${callout.cls} no-select ${isSpokenBlock ? "reading-active-paragraph" : ""}`}
+          >
+            <div className="kf-callout-title">
+              <span>{callout.icon}</span>
+              <span>{callout.label}</span>
+            </div>
+            <Heading className={`reader-${item.type} kf-callout-heading`}>
+              <FormattedAIContent value={item.content} />
+            </Heading>
+          </div>
+        );
+      }
       return (
-        <h2 key={index} id={item.anchor} className="reader-h2 no-select">
+        <Heading
+          key={index}
+          id={item.anchor}
+          className={`reader-${item.type} no-select ${isSpokenBlock ? "reading-active-paragraph" : ""}`}
+        >
           <FormattedAIContent value={item.content} />
-        </h2>
+        </Heading>
       );
-    if (item.type === "heading3")
-      return (
-        <h3 key={index} id={item.anchor} className="reader-h3 no-select">
-          <FormattedAIContent value={item.content} />
-        </h3>
-      );
+    }
     if (item.type === "formula") {
       // NEW: Detect LaTeX syntax
       const hasLatex = /\$|\\\(|\\\[|\\[a-zA-Z]/.test(item.content);
@@ -6210,10 +6552,14 @@ const BookContentWindowDemo = () => {
     }
     if (item.type === "list" && Array.isArray(item.items)) {
       return (
-        <ul key={index} className="reader-list">
+        <ul key={index} className={`reader-list ${isSpokenBlock ? "reading-active-paragraph" : ""}`}>
           {item.items.map((listItem: string, itemIndex: number) => (
             <li key={`${index}-${itemIndex}`} className="reader-list-item">
-              {renderHighlightableText(listItem, `li-${index}-${itemIndex}`)}
+              {renderHighlightableText(
+                listItem,
+                `li-${index}-${itemIndex}`,
+                isSpokenBlock ? activeSpokenWord : null,
+              )}
             </li>
           ))}
         </ul>
@@ -6706,20 +7052,25 @@ const BookContentWindowDemo = () => {
                 {activeUnitTitle || displayChapter?.title}
               </h2>
               {activeSectionTitle ? (
-                <p className="bk-ch-subtitle">{activeSectionTitle}</p>
+                <div className="kf-banner">
+                  <span className="kf-banner-emoji">📌</span>
+                  <span className="kf-banner-text">{activeSectionTitle}</span>
+                </div>
               ) : null}
               <div className="bk-ch-rule" />
             </div>
           )}
           {page.items.length ? (
-            page.items.map(renderItem)
+            page.items.map((item, idx) => renderItem(item, idx, side))
           ) : (
             <p className="reader-paragraph">
               No content available for this section.
             </p>
           )}
         </div>
-        <div className="bk-page-number">{page.pageNumber}</div>
+        <div className="bk-page-number">
+          <span>Page {page.pageNumber} of {readerPages.length}</span>
+        </div>
       </section>
     );
   };
@@ -6831,11 +7182,16 @@ const BookContentWindowDemo = () => {
     });
 
     return (
-      <div className="app-root">
+      <div className="app-root library-app-root">
         <Navigation currentRole={currentRole} onRoleChange={setCurrentRole} />
         <div className="lib-root">
+          <span className="lib-bg-ribbon" aria-hidden="true" />
+          <span className="lib-bg-spark lib-bg-spark-one" aria-hidden="true" />
+          <span className="lib-bg-spark lib-bg-spark-two" aria-hidden="true" />
+          <span className="lib-bg-spark lib-bg-spark-three" aria-hidden="true" />
           {/* ── Hero ── */}
           <div className="lib-hero">
+            <div className="lib-hero-art" aria-hidden="true"><img src={studyRoboImg} alt="" /></div>
             <div className="lib-hero-inner">
               <div>
                 <div className="lib-hero-title">Your Digital Library 📚</div>
@@ -6888,7 +7244,7 @@ const BookContentWindowDemo = () => {
                   {
                     label: "Total Books",
                     value: booksForLibrary.length,
-                    icon: "📚",
+                    icon: <Library size={20} strokeWidth={2.2} />,
                     color: "blue",
                   },
                   {
@@ -6897,7 +7253,7 @@ const BookContentWindowDemo = () => {
                       (sum, book) => sum + book.chapters.length,
                       0,
                     ),
-                    icon: "📖",
+                    icon: <BookOpen size={20} strokeWidth={2.2} />,
                     color: "indigo",
                   },
                   {
@@ -6905,7 +7261,7 @@ const BookContentWindowDemo = () => {
                     value: new Set(
                       booksForLibrary.map((book) => getBookSubjectLabel(book)),
                     ).size,
-                    icon: "🎯",
+                    icon: <Target size={20} strokeWidth={2.2} />,
                     color: "purple",
                   },
                   {
@@ -6913,7 +7269,7 @@ const BookContentWindowDemo = () => {
                     value: booksForLibrary.filter(
                       (book) => book.chapters.length > 0,
                     ).length,
-                    icon: "✅",
+                    icon: <CheckCircle2 size={20} strokeWidth={2.2} />,
                     color: "green",
                   },
                 ].map((s, i) => (
@@ -6944,19 +7300,44 @@ const BookContentWindowDemo = () => {
               </button>
             ))}
           </div>
-          <div className="lib-filter-row">
-            {subjects.map((subject) => (
+          <h2 className="lib-section-heading">Subjects</h2>
+          <div className="lib-subject-filter-row">
+            {subjects.map((subject, index) => {
+              const subjectKey = subject.toLowerCase().split(" - ")[0].trim();
+              const subjectArt = BOOK_SUBJECT_ART[subjectKey];
+              const subjectBackgrounds = [
+                "linear-gradient(135deg,#ffcf5a,#ff7b54)",
+                "linear-gradient(135deg,#6ee7f2,#2389ff)",
+                "linear-gradient(135deg,#83e76d,#27b86a)",
+                "linear-gradient(135deg,#b48cff,#7e45e8)",
+                "linear-gradient(135deg,#ff9f54,#ff5f99)",
+              ];
+              return (
               <button
                 key={subject}
-                className={`lib-chip ${activeFilter === subject ? "active" : ""}`}
+                className={`lib-subject-card ${activeFilter === subject ? "active" : ""}`}
+                style={{ "--subject-bg": subjectBackgrounds[index % subjectBackgrounds.length] } as React.CSSProperties}
                 onClick={() => setActiveFilter(subject)}
               >
-                {subject}
+                <div className="lib-subject-name">{subject}</div>
+                <div className="lib-subject-visual">
+                  {subjectArt ? (
+                    <img src={subjectArt} alt="" className="lib-subject-art" aria-hidden />
+                  ) : (
+                    <BookOpen size={54} strokeWidth={1.5} aria-hidden />
+                  )}
+                </div>
+                <div className="lib-subject-footer">
+                  <span>{activeFilter === subject ? "Showing these books" : "View books"}</span>
+                  <span className="lib-subject-arrow" aria-hidden="true">→</span>
+                </div>
               </button>
-            ))}
+              );
+            })}
           </div>
 
           {/* ── Book grid ── */}
+          <h2 className="lib-section-heading">Class Cards</h2>
           <div className="lib-grid">
             {isLibraryLoading ? (
               Array.from({ length: 8 }).map((_, i) => (
@@ -7001,7 +7382,7 @@ const BookContentWindowDemo = () => {
               <>
                 {!isLibraryLoading && filteredBooks.length === 0 && (
                   <div className="lib-empty-card">
-                    <div className="lib-empty-icon">📚</div>
+                    <div className="lib-empty-icon"><Library size={42} strokeWidth={1.6} /></div>
                     <div className="lib-empty-title">No data available</div>
                     <div className="lib-empty-copy">
                       No subjects are available for the selected filter yet.
@@ -7036,7 +7417,9 @@ const BookContentWindowDemo = () => {
                       ) : null}
                       <div className="lib-cover-glare" />
                       <span className="lib-cover-symbol">
-                        {getSubjectSymbol(book.subject)}
+                        {getBookSubjectArt(book.subject) ? (
+                          <img src={getBookSubjectArt(book.subject)} alt="" className="lib-cover-subject-art" aria-hidden />
+                        ) : <BookOpen size={42} strokeWidth={1.5} aria-hidden />}
                       </span>
                     </div>
                     <div className="lib-book-info">
@@ -7092,7 +7475,7 @@ const BookContentWindowDemo = () => {
     );
 
     return (
-      <div className="app-root">
+      <div className="app-root library-app-root">
         <Navigation currentRole={currentRole} onRoleChange={setCurrentRole} />
         <div className="lib-root">
           {/* ── TOC Hero ── */}
@@ -7100,6 +7483,7 @@ const BookContentWindowDemo = () => {
             className="lib-hero toc-hero"
             style={{ background: selectedBook.color }}
           >
+            <div className="lib-hero-art" aria-hidden="true"><img src={studyRoboImg} alt="" /></div>
             <div className="lib-hero-inner">
               <div>
                 <div className="toc-hero-subject">{selectedBook.subject}</div>
@@ -7267,7 +7651,9 @@ const BookContentWindowDemo = () => {
                 <div className="sb-hero-inner">
                   <div className="sb-hero-top">
                     <div className="sb-book-icon">
-                      {getSubjectSymbol(selectedBook?.subject || "")}
+                      {getBookSubjectArt(selectedBook?.subject || "") ? (
+                        <img src={getBookSubjectArt(selectedBook?.subject || "")} alt="" className="sb-subject-art" aria-hidden />
+                      ) : <BookOpen size={30} strokeWidth={1.5} aria-hidden />}
                     </div>
                     <button
                       className="sb-close-btn"
@@ -7449,6 +7835,72 @@ const BookContentWindowDemo = () => {
                     </div>
                   </div>
                   <div className="reader-topbar-right">
+                    {!displayChapter?.isUnitIntro && (
+                      <>
+                        <div className="reader-avatar-mode" aria-label="Choose reading avatar">
+                          <button
+                            type="button"
+                            className={readAloudAvatar === "male" ? "active" : ""}
+                            onClick={() => {
+                              if (isReadingAloud) window.speechSynthesis?.cancel();
+                              setIsReadingAloud(false);
+                              setReadAloudAvatar("male");
+                            }}
+                            title="Male reading avatar"
+                            aria-label="Male reading avatar"
+                          >
+                            👨‍🏫
+                          </button>
+                          <button
+                            type="button"
+                            className={readAloudAvatar === "female" ? "active" : ""}
+                            onClick={() => {
+                              if (isReadingAloud) window.speechSynthesis?.cancel();
+                              setIsReadingAloud(false);
+                              setReadAloudAvatar("female");
+                            }}
+                            title="Female reading avatar"
+                            aria-label="Female reading avatar"
+                          >
+                            👩‍🏫
+                          </button>
+                        </div>
+                        <button
+                          className={`rb-pill ${isReadingAloud ? "active" : ""}`}
+                          onClick={toggleReadAloud}
+                          title="Read this page aloud"
+                        >
+                          <span className="rb-pill-icon">
+                            {isReadingAloud ? "⏸️" : "🔊"}
+                          </span>
+                          <span className="rb-pill-label">
+                            {isReadingAloud ? "Stop" : "Read Aloud"}
+                          </span>
+                        </button>
+                        <button
+                          className="rb-pill"
+                          onClick={() => setTheme(isDark ? "light" : "dark")}
+                          title="Toggle night mode"
+                        >
+                          <span className="rb-pill-icon">
+                            {isDark ? "🌙" : "☀️"}
+                          </span>
+                          <span className="rb-pill-label">Night Mode</span>
+                        </button>
+                        <button
+                          className={`rb-pill ${isBookmarked ? "active" : ""}`}
+                          onClick={toggleBookmark}
+                          title="Add to My Books"
+                        >
+                          <span className="rb-pill-icon">
+                            {isBookmarked ? "⭐" : "☆"}
+                          </span>
+                          <span className="rb-pill-label">
+                            {isBookmarked ? "Added" : "Add to My Books"}
+                          </span>
+                        </button>
+                      </>
+                    )}
                     {/* <button
                             className={`bk-float-btn bk-float-ai ${isAiPanelOpen ? "active" : ""}`}
                             onClick={e => { e.stopPropagation(); setIsAiPanelOpen(o => !o); }}
@@ -7515,13 +7967,6 @@ const BookContentWindowDemo = () => {
                       )}
                     </motion.button>
 
-                    <button
-                      className="rtb-icon-btn"
-                      onClick={() => setTheme(isDark ? "light" : "dark")}
-                      title="Toggle theme"
-                    >
-                      {isDark ? <Sun size={15} /> : <Moon size={15} />}
-                    </button>
                   </div>
                 </div>
 
@@ -7537,7 +7982,7 @@ const BookContentWindowDemo = () => {
                 <AnimatePresence>
                   {isAvatarOpen && (
                     <motion.div
-                      className="avatar-genius-backdrop"
+                      className={`avatar-genius-backdrop ${isReadingAloud ? "reader-avatar-overlay" : ""}`}
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
@@ -8256,12 +8701,6 @@ const BookContentWindowDemo = () => {
                     <div
                       className={`book-spread ${isFlipping ? `flipping-${direction}` : ""}`}
                     >
-                      {/* ── Real-book embossing layers ── */}
-                      <div className="book-shadow-left" />
-                      <div className="book-shadow-right" />
-                      <div className="book-desk-glow" />
-
-                      {/* ── Single paper sheet that holds both pages ── */}
                       <div className="book-sheet book-sheet-paged">
                         {false && (
                           <div className="bk-float-btns no-select">
@@ -8327,21 +8766,19 @@ const BookContentWindowDemo = () => {
                           </div>
                         )}
 
-                        {/* ── TOP HEADER BAR (non-selectable) ── */}
+                        {/* ── TOP HEADER BAR ── */}
                         <div className="bk-topbar no-select">
-                          <span className="bk-topbar-left">
-                            {selectedBook?.title?.toUpperCase()}
-                          </span>
-                          <div className="bk-topbar-spine-mark" />
-                          <span className="bk-topbar-right">
-                            {isSinglePageView
-                              ? `PAGE ${activeSpread.left.pageNumber} / ${readerPages.length}`
-                              : `SPREAD ${safeSpreadIndex + 1} / ${readerSpreads.length}`}
-                          </span>
+                          <div className="bk-topbar-breadcrumb">
+                            <span className="bk-topbar-book-title">{selectedBook?.title}</span>
+                            <span className="bk-topbar-separator">/</span>
+                            <span className="bk-topbar-chapter-title">
+                              {activeUnitTitle || displayChapter?.title || "Chapter"}
+                            </span>
+                          </div>
+                          <div className="bk-topbar-page-badge">
+                            Page {activeSpread.left.pageNumber} of {readerPages.length}
+                          </div>
                         </div>
-
-                        {/* ── SPINE LINE through the middle ── */}
-                        {!isSinglePageView && <div className="bk-spine" />}
 
                         {/* ── CHAPTER TITLE — first column, non-selectable ── */}
 
@@ -8362,36 +8799,29 @@ const BookContentWindowDemo = () => {
                           </div>
                         )}
 
-                        {/* ── BODY TEXT — two-column flow, fully selectable ── */}
+                        {/* ── BODY TEXT — single focused page document reader ── */}
                         {!displayChapter.isUnitIntro && (
                           <div
-                            className={`bk-pages-shell ${isSinglePageView ? "single" : "spread"}`}
-                            style={{ opacity: isFlipping ? 0.3 : 1 }}
+                            className="bk-pages-shell single"
+                            style={{ opacity: isFlipping ? 0.35 : 1 }}
                           >
                             {renderReaderPage(
                               activeSpread.left,
                               "left",
                               safeSpreadIndex === 0,
                             )}
-                            {!isSinglePageView &&
-                              renderReaderPage(activeSpread.right, "right")}
                           </div>
                         )}
 
-                        {/* ── BOTTOM FOOTER BAR (non-selectable) ── */}
+                        {/* ── BOTTOM FOOTER BAR ── */}
                         <div className="bk-footer no-select">
                           <span className="bk-footer-left">
                             {selectedBook?.subject}
                           </span>
-                          <div className="bk-footer-dots">
-                            <span />
-                            <span />
-                            <span />
-                          </div>
                           <span className="bk-footer-right">
                             {displayChapter?.isUnitIntro
-                              ? `${currentChIdx + 1} / ${allChapters.length}`
-                              : `${safeSpreadIndex + 1} / ${readerSpreads.length}`}
+                              ? `Chapter ${currentChIdx + 1} of ${allChapters.length}`
+                              : `Page ${activeSpread.left.pageNumber} of ${readerPages.length}`}
                           </span>
                         </div>
                       </div>
@@ -8400,90 +8830,117 @@ const BookContentWindowDemo = () => {
                   )}
                 </div>
 
-                {/* ── PREV / NEXT CHAPTER NAVIGATION ── */}
-                {!displayChapter?.isUnitIntro && (
-                  <div className="bk-nav-row bk-spread-row">
-                    <button
-                      className={`bk-nav-btn bk-nav-prev ${!hasPrevSpread ? "disabled" : ""}`}
-                      onClick={() => hasPrevSpread && goSpread(-1)}
-                      disabled={!hasPrevSpread}
-                    >
-                      <ChevronLeft size={18} />
-                      <span>Previous Page</span>
-                    </button>
-                    <div className="bk-nav-dots">
-                      {readerSpreads.slice(0, 10).map((_, i: number) => (
+                {/* ── UNIFIED READER BOTTOM NAVIGATION DOCK ── */}
+                {!displayChapter?.isUnitIntro ? (
+                  <div className="rb-bottombar no-select">
+                    <div className="rb-bb-left">
+                      <button
+                        className="rb-bb-btn"
+                        onClick={() => setIsSidebarOpen(true)}
+                        title="Open Table of Contents"
+                      >
+                        📚 Contents
+                      </button>
+                      {hasPrev && (
                         <button
-                          key={`spread-${i}`}
-                          className={`bk-nav-dot ${i === safeSpreadIndex ? "active" : ""}`}
-                          onClick={() => {
-                            setDirection(
-                              i >= safeSpreadIndex ? "next" : "prev",
-                            );
-                            setCurrentSpreadIndex(i);
-                            setDisplaySpreadIndex(i);
-                          }}
-                        />
-                      ))}
-                      {readerSpreads.length > 10 && (
-                        <span className="bk-nav-more">
-                          +{readerSpreads.length - 10}
-                        </span>
+                          className="rb-bb-btn"
+                          onClick={() => goChapter(-1)}
+                          title={`Previous Chapter: ${allChapters[currentChIdx - 1]?.title ?? ""}`}
+                        >
+                          ⏮ Prev Chapter
+                        </button>
                       )}
                     </div>
+
+                    <div className="rb-bb-center">
+                      <button
+                        className={`bk-nav-btn bk-nav-prev ${!hasPrevSpread ? "disabled" : ""}`}
+                        onClick={() => hasPrevSpread && goSpread(-1)}
+                        disabled={!hasPrevSpread}
+                        title="Previous Page"
+                      >
+                        <ChevronLeft size={16} />
+                        <span>Previous</span>
+                      </button>
+
+                      <div className="rb-bb-page-indicator">
+                        <span className="rb-bb-page-text">
+                          Page <strong>{activeSpread.left.pageNumber}</strong> of {readerPages.length}
+                        </span>
+                        <div className="bk-nav-dots">
+                          {readerSpreads.slice(0, 8).map((_, i: number) => (
+                            <button
+                              key={`spread-${i}`}
+                              className={`bk-nav-dot ${i === safeSpreadIndex ? "active" : ""}`}
+                              onClick={() => {
+                                setDirection(i >= safeSpreadIndex ? "next" : "prev");
+                                setCurrentSpreadIndex(i);
+                                setDisplaySpreadIndex(i);
+                              }}
+                              title={`Go to page ${i + 1}`}
+                            />
+                          ))}
+                          {readerSpreads.length > 8 && (
+                            <span className="bk-nav-more">+{readerSpreads.length - 8}</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <button
+                        className={`bk-nav-btn bk-nav-next primary ${!hasNextSpread ? "disabled" : ""}`}
+                        onClick={() => hasNextSpread && goSpread(1)}
+                        disabled={!hasNextSpread}
+                        title="Next Page"
+                      >
+                        <span>Next</span>
+                        <ChevronRight size={16} />
+                      </button>
+                    </div>
+
+                    <div className="rb-bb-right">
+                      {hasNext ? (
+                        <button
+                          className="rb-bb-btn"
+                          onClick={() => goChapter(1)}
+                          title={`Next Chapter: ${allChapters[currentChIdx + 1]?.title ?? ""}`}
+                        >
+                          Next Chapter ⏭
+                        </button>
+                      ) : (
+                        <div className="rb-bb-chapter-chip">
+                          Ch {currentChIdx + 1}/{allChapters.length}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bk-nav-row">
                     <button
-                      className={`bk-nav-btn bk-nav-next ${!hasNextSpread ? "disabled" : ""}`}
-                      onClick={() => hasNextSpread && goSpread(1)}
-                      disabled={!hasNextSpread}
+                      className={`bk-nav-btn bk-nav-prev ${!hasPrev ? "disabled" : ""}`}
+                      onClick={() => hasPrev && goChapter(-1)}
+                      disabled={!hasPrev}
                     >
-                      <span>Next Page</span>
+                      <ChevronLeft size={18} />
+                      <span>
+                        {hasPrev
+                          ? (allChapters[currentChIdx - 1]?.title ?? "Previous")
+                          : "First Chapter"}
+                      </span>
+                    </button>
+                    <button
+                      className={`bk-nav-btn bk-nav-next ${!hasNext ? "disabled" : ""}`}
+                      onClick={() => hasNext && goChapter(1)}
+                      disabled={!hasNext}
+                    >
+                      <span>
+                        {hasNext
+                          ? (allChapters[currentChIdx + 1]?.title ?? "Next")
+                          : "Last Chapter"}
+                      </span>
                       <ChevronRight size={18} />
                     </button>
                   </div>
                 )}
-                <div className="bk-nav-row">
-                  <button
-                    className={`bk-nav-btn bk-nav-prev ${!hasPrev ? "disabled" : ""}`}
-                    onClick={() => hasPrev && goChapter(-1)}
-                    disabled={!hasPrev}
-                  >
-                    <ChevronLeft size={18} />
-                    <span>
-                      {hasPrev
-                        ? (allChapters[currentChIdx - 1]?.title ?? "Previous")
-                        : "First Chapter"}
-                    </span>
-                  </button>
-
-                  {/* Chapter dots progress */}
-                  <div className="bk-nav-dots">
-                    {allChapters.slice(0, 8).map((_: any, i: number) => (
-                      <button
-                        key={i}
-                        className={`bk-nav-dot ${i === currentChIdx ? "active" : ""}`}
-                        onClick={() => setActiveChapter(allChapters[i])}
-                      />
-                    ))}
-                    {allChapters.length > 8 && (
-                      <span className="bk-nav-more">
-                        +{allChapters.length - 8}
-                      </span>
-                    )}
-                  </div>
-
-                  <button
-                    className={`bk-nav-btn bk-nav-next ${!hasNext ? "disabled" : ""}`}
-                    onClick={() => hasNext && goChapter(1)}
-                    disabled={!hasNext}
-                  >
-                    <span>
-                      {hasNext
-                        ? (allChapters[currentChIdx + 1]?.title ?? "Next")
-                        : "Last Chapter"}
-                    </span>
-                    <ChevronRight size={18} />
-                  </button>
-                </div>
 
                 {/* Tip bar */}
                 <div className="reader-tip-bar">
@@ -8546,6 +9003,122 @@ const BookContentWindowDemo = () => {
                 </>
               )}
             </AnimatePresence>
+
+            {selectedBook && !isTocView && (
+              <AnimatePresence>
+                {isReadingAloud ? (
+                  <motion.aside
+                    key="teacher-companion-dock"
+                    initial={{ opacity: 0, y: 40, scale: 0.92 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 40, scale: 0.92 }}
+                    transition={{ duration: 0.3, ease: "easeOut" }}
+                    className="teacher-companion-dock"
+                    aria-label="Interactive Teacher Companion"
+                  >
+                    {/* Live speech bubble above teacher */}
+                    <div className="teacher-dock-bubble">
+                      <div className="teacher-dock-bubble-top">
+                        <span className="teacher-dock-avatar-name">
+                          {readAloudAvatar === "female" ? "Teacher Sarah" : "Teacher David"}
+                        </span>
+                        <div className="teacher-audio-bars">
+                          <span className={`audio-bar ${isTtsPaused ? "paused" : ""}`} />
+                          <span className={`audio-bar ${isTtsPaused ? "paused" : ""}`} />
+                          <span className={`audio-bar ${isTtsPaused ? "paused" : ""}`} />
+                          <span className={`audio-bar ${isTtsPaused ? "paused" : ""}`} />
+                        </div>
+                      </div>
+                      <div className="teacher-dock-bubble-text">
+                        {isTtsPaused ? (
+                          <span className="teacher-status-paused">Paused</span>
+                        ) : activeSpokenWord?.word ? (
+                          <span className="teacher-status-word">
+                            "{activeSpokenWord.word}"
+                          </span>
+                        ) : (
+                          <span className="teacher-status-reading">Reading page... 📖</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Teacher figure pointing at book */}
+                    <div className="teacher-dock-figure-wrap">
+                      <img
+                        src={readAloudAvatar === "male" ? maleTeacherGif : femaleTeacherGif}
+                        alt={readAloudAvatar === "male" ? "Male Teacher pointer" : "Female Teacher pointer"}
+                        className="teacher-dock-gif"
+                      />
+                    </div>
+
+                    {/* Interactive Teacher Controls */}
+                    <div className="teacher-dock-controls">
+                      <button
+                        type="button"
+                        className="teacher-ctrl-btn teacher-ctrl-primary"
+                        onClick={handlePauseResumeReadAloud}
+                        title={isTtsPaused ? "Resume Reading" : "Pause Reading"}
+                        aria-label={isTtsPaused ? "Resume Reading" : "Pause Reading"}
+                      >
+                        {isTtsPaused ? <Play size={13} /> : <Pause size={13} />}
+                        <span>{isTtsPaused ? "Resume" : "Pause"}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className="teacher-ctrl-btn"
+                        onClick={cycleTtsSpeed}
+                        title={`Speed: ${ttsRate}x (Click to change)`}
+                        aria-label={`Reading speed ${ttsRate}x`}
+                      >
+                        <span>{ttsRate}x</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className="teacher-ctrl-btn"
+                        onClick={() => handleSwitchReadAloudAvatar(readAloudAvatar === "male" ? "female" : "male")}
+                        title={`Switch to ${readAloudAvatar === "male" ? "Female" : "Male"} Teacher`}
+                        aria-label="Switch Teacher Voice"
+                      >
+                        <span>{readAloudAvatar === "male" ? "👩‍🏫" : "👨‍🏫"}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className="teacher-ctrl-btn teacher-ctrl-stop"
+                        onClick={toggleReadAloud}
+                        title="Stop Reading"
+                        aria-label="Stop Reading"
+                      >
+                        <VolumeX size={14} />
+                      </button>
+                    </div>
+                  </motion.aside>
+                ) : (
+                  <motion.div
+                    key="rb-avatar-wrap"
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    className="rb-avatar-wrap"
+                  >
+                    <div className="rb-avatar-bubble">
+                      Tap me to read this page aloud!
+                    </div>
+                    <button
+                      className="rb-avatar-btn"
+                      onClick={toggleReadAloud}
+                      title="Read this page aloud"
+                      aria-label="Read this page aloud"
+                    >
+                      <img src={studyRoboImg} alt="Read aloud robot" />
+                      <span className="rb-avatar-badge">▶️</span>
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            )}
 
             {/* Explain/Summarize panel */}
             <AnimatePresence>
@@ -8963,13 +9536,36 @@ const libStyles = `
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
 /* ── Root ── */
+.app-root.library-app-root {
+  height: 100vh !important;
+  max-height: 100vh !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  -webkit-overflow-scrolling: touch !important;
+  scroll-behavior: smooth;
+}
 .lib-root {
   font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
-  padding: 24px 28px;
-  max-width: 1280px;
+  padding: 20px 24px 80px;
+  max-width: 1180px;
+  width: 100%;
   margin: 0 auto;
-  min-height: 100%;
+  min-height: auto;
+  flex: 1 0 auto;
+  position: relative;
+  overflow: visible !important;
+  background: radial-gradient(circle at 8% 18%, rgba(35,137,255,.10), transparent 24%), radial-gradient(circle at 92% 34%, rgba(255,95,153,.11), transparent 25%);
 }
+.lib-root > :not(.lib-bg-ribbon):not(.lib-bg-spark) { position:relative; z-index:1; }
+.lib-bg-ribbon { position:absolute; pointer-events:none; z-index:0; left:3%; right:3%; top:190px; height:190px; border-radius:50%; background:linear-gradient(90deg,rgba(35,137,255,.08),rgba(255,178,29,.10),rgba(39,184,106,.08)); filter:blur(18px); opacity:.8; animation:libBgWave 13s ease-in-out infinite; }
+.lib-bg-spark { position:absolute; pointer-events:none; z-index:0; border-radius:999px; opacity:.55; animation:libDrift 9s ease-in-out infinite; }
+.lib-bg-spark-one { left:14%; top:330px; width:9px; height:9px; background:#ffb21d; box-shadow:34px 28px 0 #27b86a,76px -14px 0 #2389ff; }
+.lib-bg-spark-two { right:10%; top:570px; width:7px; height:7px; background:#ff4d8d; box-shadow:-48px 46px 0 #7e45e8,-86px -18px 0 #00a7c8; animation-delay:-3s; }
+.lib-bg-spark-three { left:48%; bottom:120px; width:8px; height:8px; background:#27b86a; box-shadow:42px -34px 0 #ff791f,92px 18px 0 #2389ff; animation-delay:-5s; }
+@keyframes libBgWave { 0%,100% { transform:translate3d(-2%,0,0) rotate(0); } 50% { transform:translate3d(2%,-2%,0) rotate(2deg); } }
+@keyframes libDrift { 0%,100% { transform:translate3d(0,0,0) rotate(0); } 50% { transform:translate3d(18px,-14px,0) rotate(7deg); } }
 
 /* The Base Button */
 .bk-float-thunder:not(.locked) {
@@ -9050,13 +9646,15 @@ const libStyles = `
 }
 /* ═══════════════════════════ HERO ═══════════════════════════ */
 .lib-hero {
-  border-radius: 24px;
-  padding: 32px 36px;
-  margin-bottom: 28px;
+  border-radius: 20px;
+  padding: 30px 34px;
+  margin-bottom: 14px;
   position: relative;
   overflow: hidden;
-  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #ec4899 100%);
+  background: linear-gradient(112deg, #101b4d 0%, #172968 58%, #087e91 100%);
   color: #fff;
+  border: 1px solid rgba(139,229,255,.24);
+  box-shadow: 0 18px 36px rgba(20,42,104,.22);
   animation: libHeroIn .6s cubic-bezier(.34,1.56,.64,1) both;
 }
 @keyframes libHeroIn {
@@ -9064,21 +9662,29 @@ const libStyles = `
   to   { opacity:1; transform:none; }
 }
 .lib-hero::before {
-  content:''; position:absolute; top:-60px; right:-60px;
-  width:260px; height:260px; border-radius:50%; background:rgba(255,255,255,.1);
+  content:''; position:absolute; top:-115px; right:12%; width:330px; height:330px;
+  border-radius:50%; border:1px solid rgba(117,225,255,.26);
+  box-shadow:0 0 0 22px rgba(117,225,255,.05),0 0 0 52px rgba(117,225,255,.035);
+  animation:libHeroOrbit 12s linear infinite;
 }
 .lib-hero::after {
-  content:''; position:absolute; bottom:-80px; left:30%;
-  width:180px; height:180px; border-radius:50%; background:rgba(255,255,255,.07);
+  content:''; position:absolute; inset:auto -10% -72px 34%; height:130px;
+  background:linear-gradient(90deg,transparent,rgba(70,216,214,.24),transparent);
+  transform:rotate(-8deg); filter:blur(12px); animation:libHeroSweep 7s ease-in-out infinite;
 }
+@keyframes libHeroOrbit { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
+@keyframes libHeroSweep { 0%,100% { opacity:.35; transform:translateX(-8%) rotate(-8deg); } 50% { opacity:.8; transform:translateX(8%) rotate(-8deg); } }
 .lib-hero-inner  { display:flex; align-items:center; justify-content:space-between; position:relative; z-index:1; gap:16px; }
-.lib-hero-title  { font-size:clamp(20px,3vw,28px); font-weight:800; margin-bottom:6px; }
-.lib-hero-sub    { font-size:14px; opacity:.75; max-width:420px; line-height:1.5; }
-.lib-hero-right  { display:flex; align-items:center; gap:16px; flex-shrink:0; }
-.lib-hero-stat   { text-align:center; }
-.lib-hero-sn     { font-size:32px; font-weight:800; line-height:1; }
-.lib-hero-sl     { font-size:12px; opacity:.65; margin-top:2px; white-space:nowrap; }
-.lib-hero-div    { width:1px; height:50px; background:rgba(255,255,255,.2); }
+.lib-hero-art { position:absolute; z-index:2; left:50%; bottom:-8px; width:clamp(110px,13vw,160px); transform:translateX(-50%); filter:drop-shadow(0 16px 18px rgba(4,13,47,.28)); pointer-events:none; }
+.lib-hero-art img { display:block; width:100%; height:auto; }
+.lib-hero-title  { font-size:clamp(22px,3vw,32px); font-weight:800; letter-spacing:-.5px; margin-bottom:8px; }
+.lib-hero-title::before { content:'READ • EXPLORE • GROW'; display:block; color:#76e5dc; font-size:10px; letter-spacing:2px; margin-bottom:10px; }
+.lib-hero-sub    { font-size:13px; opacity:.78; max-width:420px; line-height:1.6; }
+.lib-hero-right  { display:flex; align-items:center; gap:18px; flex-shrink:0; }
+.lib-hero-stat   { min-width:116px; text-align:center; padding:13px 16px; border:1px solid rgba(255,255,255,.18); border-radius:18px; background:rgba(4,13,47,.24); backdrop-filter:blur(12px); }
+.lib-hero-sn     { font-size:38px; font-weight:800; line-height:1; color:#ffe08a; text-shadow:0 0 22px rgba(255,224,138,.3); }
+.lib-hero-sl     { font-size:10px; letter-spacing:1px; text-transform:uppercase; opacity:.68; margin-top:6px; white-space:nowrap; }
+.lib-hero-div    { width:1px; height:58px; background:rgba(255,255,255,.2); }
 .lib-hero-btn {
   padding:12px 24px; background:#fff; color:#6366f1; border:none; border-radius:14px;
   font-size:14px; font-weight:700; cursor:pointer; font-family:inherit;
@@ -9103,29 +9709,39 @@ const libStyles = `
 
 /* ═══════════════════════════ STAT MINI CARDS ═══════════════════════════ */
 .lib-stats-row {
-  display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:24px;
+  display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:16px;
 }
 .lib-stat-card {
-  background:#fff; border-radius:18px; padding:18px 20px;
-  border:1px solid rgba(0,0,0,.06); box-shadow:0 2px 12px rgba(0,0,0,.05);
+  position:relative; overflow:hidden; min-height:126px;
+  background:linear-gradient(145deg,#fff,#f4f8ff); border-radius:18px; padding:17px 18px 15px 66px;
+  border:1px solid rgba(35,137,255,.1); box-shadow:0 9px 20px rgba(35,57,116,.08);
   transition:all .25s cubic-bezier(.4,0,.2,1); cursor:default;
   animation:libCardIn .5s cubic-bezier(.34,1.56,.64,1) both;
   display:flex; flex-direction:column; gap:4px;
 }
-.lib-stat-card:hover { transform:translateY(-4px); box-shadow:0 12px 32px rgba(0,0,0,.10); }
-.dark .lib-stat-card { background:#1e1b4b; border-color:rgba(255,255,255,.08); }
-.lib-stat-card.lib-stat-blue   { border-top:3px solid #6366f1; }
-.lib-stat-card.lib-stat-indigo { border-top:3px solid #4f46e5; }
-.lib-stat-card.lib-stat-purple { border-top:3px solid #8b5cf6; }
-.lib-stat-card.lib-stat-green  { border-top:3px solid #10b981; }
-.lib-stat-icon  { font-size:22px; margin-bottom:2px; }
+.lib-stat-card:hover { transform:translateY(-5px) rotate(-.4deg); box-shadow:0 17px 30px rgba(35,57,116,.14); }
+.lib-stat-card::after { content:''; position:absolute; left:0; right:0; bottom:0; height:4px; background:var(--stat-accent); transform:scaleX(.45); transform-origin:left; transition:transform .3s; }
+.lib-stat-card:hover::after { transform:scaleX(1); }
+.dark .lib-stat-card { background:linear-gradient(145deg,#202957,#18203e); border-color:rgba(255,255,255,.1); }
+.lib-stat-card.lib-stat-blue   { --stat-accent:#2389ff; }
+.lib-stat-card.lib-stat-indigo { --stat-accent:#7e45e8; }
+.lib-stat-card.lib-stat-purple { --stat-accent:#ff5f99; }
+.lib-stat-card.lib-stat-green  { --stat-accent:#27b86a; }
+.lib-stat-icon  { position:absolute; left:17px; top:17px; width:36px; height:36px; display:grid; place-items:center; border-radius:12px; background:rgba(35,137,255,.12); font-size:20px; animation:libStatPulse 3.8s ease-in-out infinite; }
+.lib-stat-icon svg { animation:libSubjectFloat 4.6s ease-in-out infinite; }
+.lib-stat-indigo .lib-stat-icon { background:rgba(126,69,232,.13); }
+.lib-stat-purple .lib-stat-icon { background:rgba(255,95,153,.14); }
+.lib-stat-green .lib-stat-icon { background:rgba(39,184,106,.14); }
+@keyframes libStatPulse { 0%,100% { transform:translateY(0) rotate(0); } 50% { transform:translateY(-4px) rotate(4deg); } }
 .lib-stat-num   { font-size:28px; font-weight:800; color:#0f172a; letter-spacing:-1px; line-height:1; }
 .dark .lib-stat-num { color:#e2e8f0; }
-.lib-stat-label { font-size:12px; color:#64748b; font-weight:500; }
+.lib-stat-label { font-size:11px; color:#64748b; font-weight:800; text-transform:uppercase; letter-spacing:.5px; }
 
 /* ═══════════════════════════ FILTER CHIPS ═══════════════════════════ */
 .lib-filter-row { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:24px; }
 .lib-term-filter-row { margin-bottom:12px; }
+.lib-section-heading { margin:0 0 14px; color:#0f172a; font-size:18px; font-weight:800; letter-spacing:0; }
+.dark .lib-section-heading { color:#e2e8f0; }
 .lib-chip {
   padding:8px 18px; border-radius:24px; border:1.5px solid #e2e8f0;
   background:#fff; font-size:13px; font-weight:600; color:#64748b;
@@ -9142,6 +9758,60 @@ const libStyles = `
 .dark .lib-chip:hover {
   background:rgba(99,102,241,.18); border-color:#6366f1; color:#a5b4fc;
 }
+.lib-subject-filter-row {
+  display:grid;
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:10px;
+  margin-bottom:24px;
+  position:relative;
+}
+@keyframes libSubjectIn { from { opacity:0; transform:translateY(14px) scale(.97); } to { opacity:1; transform:none; } }
+.lib-subject-card {
+  min-height:190px;
+  padding:14px 12px;
+  border:0;
+  border-radius:18px;
+  background:var(--subject-bg);
+  color:#071235;
+  font:800 16px/1.2 'Plus Jakarta Sans',system-ui,sans-serif;
+  text-align:left;
+  cursor:pointer;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  overflow:hidden;
+  position:relative;
+  box-shadow:0 10px 22px rgba(38,57,116,.12);
+  transition:transform .2s,box-shadow .2s;
+  animation:libSubjectIn .45s cubic-bezier(.34,1.56,.64,1) both;
+}
+.lib-subject-card:nth-child(1) { animation-delay:.04s; }
+.lib-subject-card:nth-child(2) { animation-delay:.08s; }
+.lib-subject-card:nth-child(3) { animation-delay:.12s; }
+.lib-subject-card:nth-child(4) { animation-delay:.16s; }
+.lib-subject-card:nth-child(5) { animation-delay:.20s; }
+.lib-subject-card::before { content:''; position:absolute; top:-50%; left:-35%; width:34%; height:220%; background:linear-gradient(90deg,transparent,rgba(255,255,255,.42),transparent); transform:rotate(18deg); opacity:0; transition:opacity .2s; }
+.lib-subject-card:hover::before { opacity:1; animation:libSubjectShine 1.2s ease both; }
+@keyframes libSubjectShine { from { transform:translateX(-120%) rotate(18deg); } to { transform:translateX(360%) rotate(18deg); } }
+.lib-subject-card:hover { transform:translateY(-5px) rotate(-.45deg); box-shadow:0 18px 30px rgba(38,57,116,.18); }
+.lib-subject-card.active { outline:3px solid rgba(99,102,241,.35); outline-offset:2px; }
+.lib-subject-name { font-size:16px; line-height:1.2; min-height:20px; position:relative; z-index:2; }
+.lib-subject-visual { position:relative; z-index:1; min-height:112px; border-radius:18px; display:grid; place-items:center; background:linear-gradient(145deg,rgba(255,255,255,.78),rgba(255,255,255,.28)); box-shadow:inset 0 -8px 0 rgba(0,0,0,.05); overflow:hidden; }
+.lib-subject-visual::before { content:''; position:absolute; inset:auto -20px -36px auto; width:92px; height:92px; border-radius:50%; background:rgba(255,255,255,.28); }
+.lib-subject-art { width:110px; height:100px; object-fit:contain; filter:drop-shadow(0 13px 14px rgba(0,0,0,.15)); }
+.lib-subject-art { animation:libSubjectFloat 4.6s ease-in-out infinite; }
+.lib-cover-subject-art { width:72px; height:72px; object-fit:contain; filter:drop-shadow(0 12px 12px rgba(0,0,0,.2)); animation:libSubjectFloat 4.6s ease-in-out infinite; }
+@keyframes libSubjectFloat { 0%,100% { transform:translateY(0) rotate(-2deg); } 50% { transform:translateY(-8px) rotate(3deg); } }
+.lib-subject-card:nth-child(4) { transform:translateY(10px); }
+.lib-subject-card:nth-child(4):hover { transform:translateY(5px) rotate(-.45deg); }
+.lib-subject-footer { position:relative; z-index:1; margin-top:auto; padding:8px 10px; border-radius:12px; background:rgba(255,255,255,.38); font-size:10px; display:flex; align-items:center; justify-content:space-between; gap:6px; }
+.lib-subject-arrow { font-size:16px; line-height:1; transition:transform .2s; }
+.lib-subject-card:hover .lib-subject-arrow { transform:translateX(3px); }
+.lib-book-card:hover .lib-cover-subject-art { transform:translateY(-5px) rotate(4deg) scale(1.08); }
+.lib-subject-card { min-height:190px; padding:14px 12px; border-radius:16px; gap:10px; }
+.lib-subject-visual { min-height:104px; border-radius:15px; }
+.lib-subject-art { width:96px; height:86px; }
+.lib-subject-footer { padding:7px; border-radius:11px; font-size:9px; }
 
 /* ═══════════════════════════ BOOK GRID ═══════════════════════════ */
 .lib-grid {
@@ -9283,6 +9953,7 @@ const libStyles = `
 /* ═══════════════════════════ RESPONSIVE ═══════════════════════════ */
 @media (max-width:1024px) {
   .lib-stats-row { grid-template-columns:repeat(2,1fr); }
+  .lib-subject-filter-row { grid-template-columns:repeat(3,minmax(0,1fr)); }
 }
 @media (max-width:768px) {
   .lib-root       { padding:16px; }
@@ -9291,6 +9962,10 @@ const libStyles = `
   .lib-hero-right { width:100%; flex-wrap:wrap; }
   .lib-stats-row  { grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:18px; }
   .lib-grid       { grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:12px; }
+  .lib-subject-filter-row { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+  .lib-subject-card:nth-child(4) { transform:none; }
+  .lib-subject-card { min-height:174px; }
+  .lib-subject-art { width:82px; height:74px; }
   .lib-cover      { height:130px; }
   .lib-cover-symbol { font-size:40px; }
   .toc-grid       { grid-template-columns:1fr; }
@@ -9298,6 +9973,9 @@ const libStyles = `
 @media (max-width:480px) {
   .lib-stats-row  { grid-template-columns:repeat(2,1fr); }
   .lib-grid       { grid-template-columns:1fr 1fr; }
+  .lib-subject-filter-row { grid-template-columns:1fr; gap:10px; }
+  .lib-subject-card { min-height:166px; }
+  .lib-subject-art { width:74px; height:67px; }
   .lib-hero-right { gap:10px; }
 }
 
@@ -9373,6 +10051,7 @@ const libStyles = `
 // ── READER STYLES — all original reader/workstation styles ───────────────────
 // ══════════════════════════════════════════════════════════════════════════════
 const readerStyles = `
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
 :root {
   --bg-app:#fcfcfd; --text-main:#0f172a; --text-muted:#64748b;
   --card-bg:rgba(255,255,255,0.8); --border:#f1f5f9; --accent:#6366f1;
@@ -9398,7 +10077,11 @@ const readerStyles = `
   --glass:rgba(15,23,42,0.75);
 }
 
-.app-root { min-height:100vh; background:var(--bg-app); color:var(--text-main); font-family:'Plus Jakarta Sans',-apple-system,sans-serif; transition:all 0.4s cubic-bezier(0.4,0,0.2,1); }
+.app-root { min-height:100vh; position:relative; overflow:scroll; background:radial-gradient(circle at 12% 8%,rgba(126,87,255,.12),transparent 26%),radial-gradient(circle at 88% 16%,rgba(255,171,64,.14),transparent 25%),linear-gradient(180deg,#fbfcff,#f5f7ff); color:var(--text-main); font-family:'Plus Jakarta Sans',-apple-system,sans-serif; transition:all 0.4s cubic-bezier(0.4,0,0.2,1); }
+.app-root::before,.app-root::after { content:""; position:absolute; pointer-events:none; border-radius:999px; opacity:.55; filter:blur(.2px); }
+.app-root::before { width:250px; height:250px; left:-90px; top:120px; background:radial-gradient(circle,rgba(46,182,255,.18),transparent 68%); }
+.app-root::after { width:290px; height:290px; right:-110px; top:420px; background:radial-gradient(circle,rgba(255,95,153,.14),transparent 70%); }
+.dark.app-root,[data-theme="dark"] .app-root { background:radial-gradient(circle at 12% 8%,rgba(78,91,190,.18),transparent 26%),linear-gradient(180deg,#080d1f,#10172d); }
 
 /* Toast */
 .toast-notification { position:fixed; bottom:40px; left:50%; transform:translateX(-50%); padding:14px 28px; border-radius:16px; font-weight:700; z-index:9999; box-shadow:0 15px 30px rgba(0,0,0,0.2); backdrop-filter:blur(10px); border:1px solid rgba(255,255,255,0.1); color:white; }
@@ -9408,7 +10091,7 @@ const readerStyles = `
 /* Workstation shell */
 *{box-sizing:border-box;}
 .glass { background:var(--glass); backdrop-filter:blur(20px); border:1px solid var(--border); border-radius:20px; }
-.workstation { display:flex; height:100vh; padding:12px; gap:12px; overflow:hidden; background:var(--bg-app); }
+.workstation { display:flex; height:100vh; max-width:1212px; margin:0 auto; padding:16px; gap:14px; overflow:hidden; background:transparent; position:relative; z-index:1; }
 .main-viewport { flex:1; display:flex; flex-direction:column; min-width:0; overflow:hidden; }
 .scroll-canvas { flex:1; overflow-y:auto; position:relative; }
 .scroll-canvas::-webkit-scrollbar { width:5px; }
@@ -10245,19 +10928,15 @@ mark.reader-highlight:hover { filter: brightness(1.15); }
   transform-origin: center top;
   transition: opacity .4s ease;
 }
-.book-spread.flipping-next { animation: bkFlipNext .55s ease both; }
-.book-spread.flipping-prev { animation: bkFlipPrev .55s ease both; }
+.book-spread.flipping-next { animation: bkFlipNext 0.28s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.book-spread.flipping-prev { animation: bkFlipPrev 0.28s cubic-bezier(0.16, 1, 0.3, 1) both; }
 @keyframes bkFlipNext {
-  0%   { opacity:1; transform:rotateX(1.8deg) rotateY(0deg); }
-  40%  { opacity:0; transform:rotateX(1.8deg) rotateY(-7deg) scaleX(.97); }
-  60%  { opacity:0; transform:rotateX(1.8deg) rotateY( 5deg) scaleX(.97); }
-  100% { opacity:1; transform:rotateX(1.8deg) rotateY(0deg); }
+  0%   { opacity: 0.4; transform: translateX(12px); }
+  100% { opacity: 1; transform: translateX(0); }
 }
 @keyframes bkFlipPrev {
-  0%   { opacity:1; transform:rotateX(1.8deg) rotateY(0deg); }
-  40%  { opacity:0; transform:rotateX(1.8deg) rotateY( 7deg) scaleX(.97); }
-  60%  { opacity:0; transform:rotateX(1.8deg) rotateY(-5deg) scaleX(.97); }
-  100% { opacity:1; transform:rotateX(1.8deg) rotateY(0deg); }
+  0%   { opacity: 0.4; transform: translateX(-12px); }
+  100% { opacity: 1; transform: translateX(0); }
 }
 
 /* ── Embossing / depth layers ── */
@@ -11128,6 +11807,1391 @@ mark.reader-highlight:hover { filter: brightness(1.15); }
 @media(max-width:480px) {
   .workstation { padding:4px; gap:4px; }
   .modal { padding:22px 16px; }
+}
+
+/* Kid-friendly storybook reader theme */
+:root {
+  --book-paper: #fffdf7;
+  --book-paper-2: #fff9ec;
+  --book-ink: #2b2140;
+  --book-ink-soft: #4b4166;
+  --book-accent: #7c5cff;
+  --book-accent-2: #ff8a5c;
+  --book-accent-3: #22c1a1;
+  --book-accent-4: #ffb703;
+  --book-border: #f0e4c9;
+  --book-shadow-color: rgba(124, 92, 255, .16);
+  --book-heading-font: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --book-body-font: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+.dark {
+  --book-paper: #241c3a;
+  --book-paper-2: #2c2248;
+  --book-ink: #f5eeff;
+  --book-ink-soft: #d8c9ff;
+  --book-accent: #b19dff;
+  --book-accent-2: #ffb08a;
+  --book-accent-3: #6be3c9;
+  --book-accent-4: #ffd166;
+  --book-border: rgba(255, 255, 255, .12);
+  --book-shadow-color: rgba(177, 157, 255, .22);
+}
+.book-container-wrapper {
+  padding: 1.75rem 1rem 0;
+  perspective: 2000px;
+}
+.book-spread {
+  max-width: min(880px, calc(100% - 48px));
+  transition: opacity .4s ease;
+}
+.book-spread.flipping-next { animation: kfFlipNext 0.28s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.book-spread.flipping-prev { animation: kfFlipPrev 0.28s cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes kfFlipNext {
+  0% { opacity: 0.4; transform: translateX(12px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+@keyframes kfFlipPrev {
+  0% { opacity: 0.4; transform: translateX(-12px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+.book-shadow-left, .book-shadow-right, .book-desk-glow, .bk-spine { display: none; }
+.book-sheet {
+  background: var(--book-paper);
+  border: 3px solid var(--book-border);
+  border-radius: 28px;
+  box-shadow: 0 2px 0 rgba(0,0,0,.02), 0 18px 40px var(--book-shadow-color), 0 4px 14px rgba(0,0,0,.06);
+  overflow: hidden;
+}
+.book-sheet-paged { min-height: 70vh; }
+.bk-topbar {
+  padding: 12px 24px;
+  background: linear-gradient(90deg, var(--book-accent), var(--book-accent-2));
+}
+.bk-topbar-left, .bk-topbar-right, .bk-footer-left, .bk-footer-right {
+  color: rgba(255,255,255,.92);
+  font-family: var(--book-body-font);
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+}
+.bk-topbar-spine-mark {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.28);
+}
+.bk-topbar-spine-mark::before { content: '📖'; font-size: 12px; }
+.bk-chapter-header { padding: 30px 28px 14px; }
+.bk-ch-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  margin-bottom: 12px;
+  border-radius: 20px;
+  background: var(--book-accent);
+  color: #fff;
+  font-family: var(--book-body-font);
+  font-size: .72rem;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+}
+.bk-ch-eyebrow::before { content: '✨'; }
+.bk-ch-title, .bk-unit-label, .reader-h1, .reader-h2, .reader-h3 {
+  font-family: var(--book-heading-font);
+  color: var(--book-ink);
+}
+.bk-ch-title { max-width: 100%; font-size: clamp(1.6rem, 4vw, 2.3rem); line-height: 1.15; }
+.bk-ch-subtitle { max-width: 100%; color: var(--book-ink-soft); font-family: var(--book-body-font); }
+.bk-ch-rule { width: 64px; height: 6px; background: linear-gradient(90deg, var(--book-accent-4), var(--book-accent-2)); }
+.bk-unit-intro { padding: 60px 28px; min-height: 55vh; }
+.bk-unit-num {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  color: #fff;
+  background: linear-gradient(135deg, var(--book-accent), var(--book-accent-2));
+  box-shadow: 0 14px 30px var(--book-shadow-color);
+  font-family: var(--book-heading-font);
+  font-size: 3rem;
+}
+.bk-pages-shell { grid-template-columns: 1fr; min-height: 50vh; }
+.bk-page-surface { min-height: 50vh; padding: 4px 28px 36px; border-right: none !important; }
+.bk-page-inner {
+  max-width: 62ch;
+  margin: 0 auto;
+  color: var(--book-ink);
+  font-family: var(--book-body-font);
+  font-size: 1.15rem;
+  line-height: 1.95;
+}
+.bk-page-number { color: var(--book-accent); font-family: var(--book-heading-font); text-align: center; }
+.reader-paragraph {
+  margin-bottom: 1.35rem;
+  color: var(--book-ink);
+  font-family: var(--book-body-font);
+  font-size: 1.12rem;
+  line-height: 1.95;
+  text-align: left;
+  hyphens: none;
+}
+.reader-h1 { font-size: 2rem; line-height: 1.2; }
+.reader-h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px;
+  border-radius: 16px;
+  color: #fff;
+  background: linear-gradient(90deg, var(--book-accent), var(--book-accent-2));
+  box-shadow: 0 8px 18px var(--book-shadow-color);
+  font-size: 1.4rem;
+}
+.reader-h2::before { content: '📌'; font-size: 1.1rem; }
+.reader-h3 { color: var(--book-accent); font-size: 1.15rem; }
+.reader-h3::before { content: '💡'; font-size: 1rem; }
+.reader-list { color: var(--book-ink); font-family: var(--book-body-font); }
+.reader-list-item { font-size: 1.08rem; line-height: 1.85; }
+.reader-list li::marker { color: var(--book-accent-2); }
+.reader-paragraph strong, .reader-list strong, b { color: var(--book-accent); }
+.reader-paragraph em, .reader-list em, i { color: var(--book-accent-3); }
+.reader-formula {
+  padding: 14px 16px;
+  border: 2px dashed var(--book-accent-4);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--book-accent-4) 16%, var(--book-paper));
+  color: var(--book-ink);
+}
+.reader-table-wrap { border: 2px solid var(--book-border); border-radius: 16px; background: var(--book-paper-2); }
+.reader-table th { background: var(--book-accent); color: #fff; }
+.reader-table tbody tr:nth-child(even) { background: rgba(124,92,255,.05); }
+.reader-figure-img-wrap { border: 3px solid var(--book-border); border-radius: 18px; }
+.reader-figure-img { max-height: 260px; background: var(--book-paper-2); }
+.reader-figure-fallback { background: linear-gradient(135deg, var(--book-accent-4), var(--book-accent-2)); color: #fff; }
+.reader-figcaption {
+  display: block;
+  width: fit-content;
+  margin: 10px auto 0;
+  padding: 5px 12px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--book-accent) 12%, var(--book-paper));
+  color: var(--book-accent);
+  font-family: var(--book-body-font);
+  font-size: .82rem;
+  font-weight: 700;
+}
+.bk-footer { padding: 10px 24px; background: linear-gradient(90deg, var(--book-accent-3), var(--book-accent)); }
+.bk-footer-dots span { background: rgba(255,255,255,.85); }
+.bk-nav-btn, .bk-page-arrow {
+  border: 2px solid var(--book-border);
+  border-radius: 20px;
+  background: var(--book-paper);
+  color: var(--book-ink);
+  font-family: var(--book-heading-font);
+}
+.bk-nav-btn:hover:not(.disabled), .bk-page-arrow:hover:not(.disabled) {
+  border-color: var(--book-accent);
+  color: var(--book-accent);
+}
+.bk-nav-dot { background: var(--book-border); }
+.bk-nav-dot.active { background: var(--book-accent); box-shadow: 0 0 8px var(--book-shadow-color); }
+@media (max-width: 900px) {
+  .book-container-wrapper { padding: 1rem .5rem 0; }
+  .book-spread { max-width: 100%; }
+  .bk-chapter-header { padding: 22px 18px 10px; }
+  .bk-page-surface { padding: 4px 18px 28px; }
+  .bk-page-inner { max-width: 100%; font-size: 1.05rem; }
+  .reader-paragraph { font-size: 1.02rem; }
+  .reader-h2 { padding: 8px 14px; font-size: 1.2rem; }
+}
+@media (max-width: 480px) {
+  .bk-ch-title { font-size: 1.4rem; }
+  .bk-page-surface { padding: 4px 14px 22px; }
+  .reader-paragraph { font-size: .98rem; line-height: 1.85; }
+  .bk-topbar, .bk-footer { padding: 9px 14px; }
+  .bk-unit-num { width: 92px; height: 92px; font-size: 2.2rem; }
+}
+
+/* Open-book redesign */
+:root { --rb-desk-1:#1f3fae; --rb-desk-2:#0f2778; --rb-page:#fffaf0; --rb-page-2:#fff3dc; --rb-ink:#22243a; --rb-ink-soft:#565a78; --rb-accent:#7c5cff; --rb-accent-2:#ff7a45; --rb-accent-3:#17b897; --rb-accent-4:#ffb703; --rb-border:#f0e0c0; --rb-heading-font:'Plus Jakarta Sans',-apple-system,system-ui,sans-serif; --rb-body-font:'Plus Jakarta Sans','Inter',system-ui,sans-serif; }
+.dark { --rb-desk-1:#0a1230; --rb-desk-2:#050a1c; --rb-page:#241c3a; --rb-page-2:#2c2248; --rb-ink:#f5eeff; --rb-ink-soft:#cabdf0; --rb-accent:#b19dff; --rb-accent-2:#ffab82; --rb-accent-3:#6be3c9; --rb-accent-4:#ffd166; --rb-border:rgba(255,255,255,.14); }
+.book-container-wrapper { padding:18px 16px 0; border-radius:28px; background:radial-gradient(circle at 30% 0%,var(--rb-desk-1),var(--rb-desk-2) 72%); position:relative; overflow:hidden; }
+.book-container-wrapper::before { content:''; position:absolute; inset:0; pointer-events:none; background:radial-gradient(circle at 85% 15%,rgba(255,255,255,.08),transparent 30%),radial-gradient(circle at 10% 85%,rgba(255,255,255,.06),transparent 35%); }
+.book-spread { max-width:1040px; filter:drop-shadow(0 26px 50px rgba(0,0,0,.35)); z-index:2; }
+.book-shadow-left,.book-shadow-right,.book-desk-glow,.bk-spine { display:none; }
+.book-sheet { background:var(--rb-page); border:1px solid rgba(0,0,0,.04); border-radius:26px; overflow:hidden; }
+.book-sheet-paged { min-height:66vh; }
+.bk-topbar { padding:12px 24px; border:0; background:linear-gradient(90deg,var(--rb-accent),var(--rb-accent-2)); }
+.bk-topbar-left,.bk-topbar-right,.bk-footer-left,.bk-footer-right { color:rgba(255,255,255,.94); font-family:var(--rb-body-font); font-size:.68rem; font-weight:800; letter-spacing:1.4px; }
+.bk-topbar-spine-mark { width:26px; height:26px; border-radius:50%; background:rgba(255,255,255,.26); }
+.bk-topbar-spine-mark::before { content:'📖'; font-size:12px; }
+.bk-chapter-header { padding:26px 26px 6px; }
+.bk-ch-eyebrow { padding:4px 12px; border-radius:20px; background:var(--rb-accent); color:#fff; font-family:var(--rb-body-font); font-size:.68rem; font-weight:800; }
+.bk-ch-title { max-width:100%; padding:12px 20px; border-radius:16px; color:#fff; font-family:var(--rb-heading-font); font-size:clamp(1.3rem,3vw,1.8rem); background:linear-gradient(90deg,var(--rb-accent),var(--rb-accent-2)); }
+.bk-ch-subtitle { color:var(--rb-ink-soft); font-family:var(--rb-body-font); }
+.bk-pages-shell { grid-template-columns:1fr 1fr; min-height:52vh; }
+.bk-page-surface { min-height:52vh; padding:8px 26px 34px; }
+.bk-page-surface.left { background:var(--rb-page); border-right:2px dashed var(--rb-border); }
+.bk-page-surface.right { background:var(--rb-page-2); }
+.bk-pages-shell.single { grid-template-columns:1fr; }
+.bk-pages-shell.single .bk-page-surface.left { border-right:0; }
+.bk-page-inner,.reader-paragraph { color:var(--rb-ink); font-family:var(--rb-body-font); }
+.reader-paragraph { font-size:1.02rem; line-height:1.85; margin-bottom:1.1rem; text-align:left; hyphens:none; }
+.reader-h1,.reader-h2,.reader-h3 { font-family:var(--rb-heading-font); }
+.reader-h1 { color:var(--rb-ink); font-size:1.7rem; }
+.reader-h2 { gap:8px; padding:8px 14px; border-radius:12px; color:var(--rb-accent); background:rgba(124,92,255,.12); font-size:1.15rem; }
+.reader-h2::before { content:'💡'; }
+.reader-h3 { color:var(--rb-accent-2); }
+.reader-list { color:var(--rb-ink); font-family:var(--rb-body-font); }
+.reader-list li::marker { color:var(--rb-accent-2); }
+.reader-paragraph strong,.reader-list strong,b { color:var(--rb-accent); }
+.reader-paragraph em,.reader-list em,i { color:var(--rb-accent-3); }
+.bk-page-surface.right .reader-list { padding:14px 14px 14px 30px; border:2px solid var(--rb-accent-3); border-radius:16px; background:#fff; box-shadow:0 8px 18px rgba(23,184,151,.12); }
+.bk-page-surface.right .reader-list::before { content:'✏️ Try it!'; display:block; margin:-2px 0 8px -14px; color:var(--rb-accent-3); font-family:var(--rb-heading-font); font-weight:800; }
+.bk-page-surface.right .reader-formula { border:2px dashed #38a5ff; border-radius:16px; background:#eaf6ff; }
+.bk-page-surface.right .reader-formula::before { content:'🤔 Think about it'; display:block; color:#1d7fd6; font-family:var(--rb-heading-font); font-weight:800; }
+.reader-formula { border:2px dashed var(--rb-accent-4); border-radius:14px; color:var(--rb-ink); background:rgba(255,183,3,.16); }
+.reader-table-wrap { border:2px solid var(--rb-border); border-radius:14px; background:#fff; }
+.reader-table th { background:var(--rb-accent); color:#fff; }
+.reader-figure-img-wrap { border:2px solid var(--rb-border); border-radius:16px; }
+.reader-figure-img { max-height:220px; background:var(--rb-page-2); }
+.reader-figcaption { display:block; width:fit-content; margin:8px auto 0; padding:4px 10px; border-radius:20px; color:var(--rb-accent); background:rgba(124,92,255,.1); font-family:var(--rb-body-font); font-size:.78rem; font-weight:700; }
+.bk-footer { padding:10px 24px; border:0; background:linear-gradient(90deg,var(--rb-accent-3),var(--rb-accent)); }
+.rb-topctl-bar { width:100%; max-width:1040px; display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap; padding:4px 6px 16px; position:relative; z-index:3; }
+.rb-pill { display:inline-flex; align-items:center; gap:8px; padding:10px 18px; border:0; border-radius:999px; cursor:pointer; color:var(--rb-ink); background:#fff; font-family:var(--rb-heading-font); font-size:.85rem; font-weight:700; box-shadow:0 8px 20px rgba(0,0,0,.18); }
+.rb-pill.active { color:#fff; background:linear-gradient(135deg,var(--rb-accent),var(--rb-accent-2)); }
+.rb-bottombar { width:100%; max-width:1040px; margin-top:14px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding:12px 18px; border-radius:20px; background:rgba(10,15,35,.55); backdrop-filter:blur(10px); position:relative; z-index:3; }
+.rb-bb-btn { display:inline-flex; align-items:center; gap:8px; padding:9px 16px; border:0; border-radius:14px; cursor:pointer; color:#fff; background:rgba(255,255,255,.1); font-family:var(--rb-heading-font); font-size:.82rem; font-weight:700; }
+.rb-bb-btn.primary { background:linear-gradient(135deg,var(--rb-accent),var(--rb-accent-2)); }
+.rb-bb-btn:disabled { opacity:.35; cursor:not-allowed; }
+.rb-bb-progress { flex:1; min-width:160px; display:flex; align-items:center; gap:10px; }
+.rb-bb-progress-track { flex:1; height:8px; border-radius:8px; overflow:hidden; background:rgba(255,255,255,.15); }
+.rb-bb-progress-fill { height:100%; border-radius:8px; background:linear-gradient(90deg,var(--rb-accent-3),var(--rb-accent-4)); }
+.rb-bb-progress-label { color:rgba(255,255,255,.85); font-family:var(--rb-body-font); font-size:.74rem; font-weight:700; white-space:nowrap; }
+.rb-avatar-wrap { position:fixed; left:20px; bottom:20px; z-index:500; display:flex; align-items:flex-end; gap:10px; }
+.rb-avatar-bubble { max-width:190px; margin-bottom:6px; padding:10px 14px; border-radius:16px 16px 16px 4px; color:var(--rb-ink); background:#fff; font-family:var(--rb-body-font); font-size:.78rem; font-weight:700; line-height:1.4; box-shadow:0 10px 24px rgba(0,0,0,.18); }
+.rb-avatar-btn { width:66px; height:66px; padding:0; border:3px solid #fff; border-radius:50%; overflow:hidden; display:flex; align-items:center; justify-content:center; cursor:pointer; position:relative; background:linear-gradient(135deg,var(--rb-accent),var(--rb-accent-2)); box-shadow:0 10px 26px rgba(124,92,255,.42); }
+.rb-avatar-btn img { width:78%; height:78%; object-fit:contain; }
+.rb-avatar-btn.speaking { animation:rbAvatarTalk .5s ease-in-out infinite; }
+.rb-avatar-badge { position:absolute; top:-2px; right:-2px; width:20px; height:20px; border:2px solid #fff; border-radius:50%; display:flex; align-items:center; justify-content:center; background:var(--rb-accent-3); font-size:10px; }
+@keyframes rbAvatarTalk { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
+@media(max-width:900px) { .rb-topctl-bar{justify-content:center}.bk-pages-shell{grid-template-columns:1fr}.bk-page-surface.left{border-right:0}.bk-page-surface{min-height:auto;padding:8px 18px 26px}.rb-bottombar{justify-content:center}.rb-bb-progress{order:3;width:100%} }
+@media(max-width:480px) { .rb-pill-label{display:none}.rb-pill{padding:10px 12px}.rb-avatar-wrap{left:12px;bottom:12px}.rb-avatar-btn{width:54px;height:54px}.rb-avatar-bubble{display:none} }
+
+/* ==========================================================================
+   ELEGANT MODERN ACADEMIC BOOK READER THEME
+   - Professional, subtle palette with clean contrasts
+   - High readability typography (Plus Jakarta Sans / Inter)
+   - Realistic book aesthetic with subtle spine fold
+   - Fully responsive across mobile, tablet, and desktop
+   - Interactive Teacher Companion Dock with pointer mirror
+   - Real-time synchronized word-by-word read-along highlighting
+   ========================================================================== */
+
+:root {
+  --bk-bg: #f8fafc;
+  --bk-surface: #ffffff;
+  --bk-panel: #ffffff;
+  --bk-ink: #1e293b;
+  --bk-ink-secondary: #475569;
+  --bk-ink-muted: #94a3b8;
+  --bk-border: #e2e8f0;
+  --bk-border-subtle: #f1f5f9;
+  --bk-primary: #4f46e5;
+  --bk-primary-hover: #4338ca;
+  --bk-primary-soft: rgba(79, 70, 229, 0.08);
+  --bk-accent: #0ea5e9;
+  --bk-paper: #ffffff;
+  --bk-shadow-page: 0 16px 36px -10px rgba(15, 23, 42, 0.1), 0 0 0 1px rgba(15, 23, 42, 0.05);
+}
+
+.app-root {
+  min-height: 100vh;
+  height: 100vh;
+  overflow: scroll;
+  background: var(--bk-bg);
+  color: var(--bk-ink);
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+.app-root::before, .app-root::after { display: none; }
+
+.workstation {
+  width: 100%;
+  max-width: none;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  gap: 0;
+}
+
+.sidebar {
+  width: 270px;
+  border: 0;
+  border-right: 1px solid var(--bk-border);
+  border-radius: 0;
+  box-shadow: 4px 0 20px rgba(15, 23, 42, 0.03);
+  background: #ffffff;
+}
+.sb-hero { border-radius: 0; }
+.main-viewport { min-height: 0; }
+.scroll-canvas {
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-bottom: 32px;
+  background: var(--bk-bg);
+}
+
+/* ─── Topbar ─────────────────────────────────────────────────────────────── */
+.reader-topbar {
+  min-height: 58px;
+  padding: 8px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 60%, #312e81 100%);
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.12);
+}
+.reader-topbar-chapter {
+  color: #f8fafc;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.reader-hamburger {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+}
+.reader-hamburger span { background: #f8fafc; }
+.reader-topbar-right { gap: 10px; }
+.reader-avatar-mode {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+.reader-avatar-mode button {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  background: transparent;
+  font-size: 15px;
+  transition: all 0.15s ease;
+}
+.reader-avatar-mode button.active {
+  background: #ffffff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+.reader-avatar-mode button:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+.rtb-icon-btn {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #f8fafc;
+  border-radius: 8px;
+  transition: all 0.15s ease;
+}
+.rtb-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+}
+
+/* ─── Controls Bar ────────────────────────────────────────────────────────── */
+.rb-topctl-bar {
+  max-width: none;
+  justify-content: flex-end;
+  padding: 10px 28px 6px;
+  background: transparent;
+  gap: 8px;
+}
+.rb-pill {
+  padding: 7px 14px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--bk-ink-secondary);
+  background: #ffffff;
+  border: 1px solid var(--bk-border);
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+  transition: all 0.15s ease;
+}
+.rb-pill:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: var(--bk-ink);
+}
+.rb-pill.active {
+  color: #ffffff;
+  background: var(--bk-primary);
+  border-color: var(--bk-primary);
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.28);
+}
+
+/* ─── Book Spread Container ──────────────────────────────────────────────── */
+.book-container-wrapper {
+  padding: 16px 20px 24px;
+  background: radial-gradient(circle at 50% 10%, #ffffff 0%, #f8fafc 70%, #f1f5f9 100%);
+  position: relative;
+  min-height: calc(100vh - 165px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-sizing: border-box;
+}
+.book-spread {
+  width: 100%;
+  max-width: 860px;
+  margin: 0 auto;
+  position: relative;
+  transition: transform 0.28s ease, opacity 0.25s ease;
+  z-index: 2;
+}
+
+/* ─── Book Sheet Surface ─────────────────────────────────────────────────── */
+.book-sheet {
+  position: relative;
+  border-radius: 16px;
+  background: var(--bk-paper);
+  border: 1px solid var(--bk-border);
+  box-shadow: 0 4px 20px -4px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.04);
+  min-height: 58vh;
+  overflow: hidden;
+}
+.book-sheet-paged {
+  min-height: 58vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─── Chapter Top Header Strip ───────────────────────────────────────────── */
+.bk-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  background: #f8fafc;
+  border-bottom: 1px solid var(--bk-border);
+  position: relative;
+  z-index: 7;
+}
+
+.bk-topbar-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--bk-ink-secondary);
+}
+
+.bk-topbar-book-title {
+  color: var(--bk-ink-muted);
+  font-weight: 500;
+}
+
+.bk-topbar-separator {
+  color: #cbd5e1;
+  font-weight: 400;
+}
+
+.bk-topbar-chapter-title {
+  color: var(--bk-primary);
+  font-weight: 600;
+}
+
+.bk-topbar-page-badge {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--bk-ink-secondary);
+  background: #ffffff;
+  border: 1px solid var(--bk-border);
+  padding: 3px 10px;
+  border-radius: 20px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+/* Disable skeuomorphic spine */
+.bk-spine {
+  display: none !important;
+}
+
+/* ─── Chapter Header ─────────────────────────────────────────────────────── */
+.bk-chapter-header {
+  padding: 6px 0 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--bk-border);
+}
+.bk-ch-eyebrow {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--bk-primary);
+  margin-bottom: 4px;
+}
+.bk-ch-title {
+  max-width: 100%;
+  color: #0f172a;
+  font-size: 1.38rem;
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: -0.015em;
+  background: none;
+  padding: 0;
+  margin: 0 0 6px;
+}
+.bk-ch-rule {
+  height: 2px;
+  width: 42px;
+  background: var(--bk-primary);
+  border-radius: 2px;
+  margin-top: 8px;
+}
+
+/* ─── Section Banner ─────────────────────────────────────────────────────── */
+.kf-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 6px 0 8px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  color: #1e1b4b;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+}
+.kf-banner-emoji { font-size: 14px; }
+.kf-banner-text {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* ─── Pages Shell & Surfaces ─────────────────────────────────────────────── */
+.bk-pages-shell {
+  display: block;
+  min-height: 52vh;
+  position: relative;
+  flex: 1;
+}
+.bk-pages-shell.single {
+  display: block;
+}
+.bk-page-surface {
+  position: relative;
+  min-height: 52vh;
+  padding: 28px 44px 34px;
+  display: flex;
+  flex-direction: column;
+}
+.bk-page-surface.left {
+  border-right: 0 !important;
+  background: #ffffff;
+}
+.bk-pages-shell.single .bk-page-surface.left {
+  border-right: 0 !important;
+  background: #ffffff;
+  padding: 30px 48px 34px;
+}
+
+.bk-page-inner {
+  flex: 1;
+  color: var(--bk-ink);
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 15.5px;
+  line-height: 1.7;
+}
+.bk-pages-shell.single .bk-page-inner {
+  max-width: 740px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* ─── Page Numbers ───────────────────────────────────────────────────────── */
+.bk-page-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--bk-ink-muted);
+  padding-top: 14px;
+}
+.bk-page-surface.left .bk-page-number,
+.bk-page-surface.right .bk-page-number,
+.bk-pages-shell.single .bk-page-number {
+  justify-content: center;
+}
+.bk-page-num-ornament {
+  display: none !important;
+}
+
+/* ─── Reader Typography (Standard, normal sizes: not too small, not so big) ─── */
+.reader-paragraph {
+  font-size: 15.5px;
+  line-height: 1.7;
+  color: #334155;
+  margin-bottom: 1.15rem;
+  letter-spacing: -0.005em;
+}
+.reader-paragraph strong, .reader-list strong, b {
+  color: #0f172a !important;
+  font-weight: 600;
+}
+.reader-paragraph em, .reader-list em, i {
+  color: inherit !important;
+  font-style: italic;
+}
+.reader-h1 {
+  font-size: 1.32rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 1.25rem 0 0.6rem;
+  letter-spacing: -0.02em;
+}
+.reader-h2 {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 1.1rem 0 0.5rem;
+  background: transparent;
+  box-shadow: none;
+  letter-spacing: -0.015em;
+}
+.reader-h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #334155;
+  margin: 0.85rem 0 0.4rem;
+}
+.reader-list {
+  margin: 0.5rem 0 1rem 1.2rem;
+  padding: 0;
+}
+.reader-list li {
+  font-size: 15.5px;
+  line-height: 1.7;
+  color: #334155;
+  margin-bottom: 0.35rem;
+}
+
+/* ─── Educational Callouts ───────────────────────────────────────────────── */
+.kf-callout {
+  margin: 14px 0 16px;
+  padding: 12px 16px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  line-height: 1.6;
+  font-size: 14.5px;
+}
+.kf-callout-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.kf-callout-heading {
+  margin: 0;
+  font-size: 0.96rem;
+  font-weight: 600;
+  color: var(--bk-ink);
+}
+.kf-callout-objectives { background: #f0fdf4; border-color: #bbf7d0; }
+.kf-callout-objectives .kf-callout-title { color: #166534; }
+.kf-callout-key { background: #eef2ff; border-color: #c7d2fe; }
+.kf-callout-key .kf-callout-title { color: #3730a3; }
+.kf-callout-example { background: #f0f9ff; border-color: #bae6fd; }
+.kf-callout-example .kf-callout-title { color: #0369a1; }
+.kf-callout-important { background: #fffbeb; border-color: #fde68a; }
+.kf-callout-important .kf-callout-title { color: #92400e; }
+.kf-callout-try { background: #fdf2f8; border-color: #fbcfe8; }
+.kf-callout-try .kf-callout-title { color: #9d174d; }
+.kf-callout-think { background: #f0fdfa; border-color: #99f6e4; }
+.kf-callout-think .kf-callout-title { color: #115e59; }
+
+/* ─── Real-Time Word Highlighting & Spoken Active Block ───────────────────── */
+.tts-word-highlight {
+  background: #fde047 !important;
+  color: #0f172a !important;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 1px 4px;
+  box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.4), 0 2px 6px rgba(0, 0, 0, 0.06);
+  animation: ttsWordPulse 0.35s ease-out;
+  display: inline-block;
+}
+
+@keyframes ttsWordPulse {
+  0% {
+    transform: scale(1.06);
+    background: #facc15;
+  }
+  100% {
+    transform: scale(1);
+    background: #fde047;
+  }
+}
+
+.reading-active-paragraph {
+  background-color: rgba(99, 102, 241, 0.05);
+  border-left: 3px solid #6366f1;
+  padding-left: 12px;
+  border-radius: 0 8px 8px 0;
+  transition: all 0.25s ease;
+}
+
+/* ─── Bottom Footer Bar & Navigation Rows ────────────────────────────────── */
+.bk-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 24px;
+  background: #f8fafc;
+  border-top: 1px solid var(--bk-border);
+  color: var(--bk-ink-muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+.bk-footer-left { color: var(--bk-ink-secondary); font-weight: 600; }
+.bk-footer-dots { display: flex; gap: 4px; }
+.bk-footer-dots span { width: 4px; height: 4px; border-radius: 50%; background: var(--bk-border); }
+
+.bk-nav-row {
+  width: 100%;
+  max-width: 860px;
+  margin: 12px auto 0;
+  padding: 8px 16px;
+  background: #ffffff;
+  border: 1px solid var(--bk-border);
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.bk-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--bk-ink);
+  background: #ffffff;
+  border: 1px solid var(--bk-border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.bk-nav-btn:hover:not(:disabled) {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+.bk-nav-btn.primary {
+  background: var(--bk-primary);
+  border-color: var(--bk-primary);
+  color: #ffffff;
+}
+.bk-nav-btn.primary:hover:not(:disabled) {
+  background: var(--bk-primary-hover);
+}
+.bk-nav-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.bk-nav-dots {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.bk-nav-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 0;
+  background: #cbd5e1;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.15s ease;
+}
+.bk-nav-dot.active {
+  background: var(--bk-primary);
+  width: 14px;
+  border-radius: 4px;
+}
+.bk-nav-more {
+  font-size: 0.74rem;
+  color: var(--bk-ink-muted);
+}
+
+.rb-bottombar {
+  width: 100%;
+  max-width: 860px;
+  margin: 14px auto 0;
+  padding: 8px 16px;
+  background: #ffffff;
+  border: 1px solid var(--bk-border);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px -2px rgba(15, 23, 42, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.rb-bb-left, .rb-bb-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rb-bb-center {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.rb-bb-page-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.rb-bb-page-text {
+  font-size: 0.78rem;
+  color: var(--bk-ink-secondary);
+  font-weight: 500;
+}
+.rb-bb-page-text strong {
+  color: var(--bk-ink);
+  font-weight: 700;
+}
+.rb-bb-chapter-chip {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--bk-ink-muted);
+  background: #f8fafc;
+  border: 1px solid var(--bk-border);
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+.rb-bb-btn {
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--bk-ink);
+  background: #ffffff;
+  border: 1px solid var(--bk-border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.rb-bb-btn:hover:not(:disabled) {
+  background: #f8fafc;
+}
+.rb-bb-btn.primary {
+  background: var(--bk-primary);
+  border-color: var(--bk-primary);
+  color: #ffffff;
+}
+.rb-bb-btn.primary:hover:not(:disabled) {
+  background: var(--bk-primary-hover);
+}
+.rb-bb-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 160px;
+}
+.rb-bb-progress-label {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--bk-ink-secondary);
+}
+.rb-bb-progress-track {
+  width: 100%;
+  height: 6px;
+  background: #e2e8f0;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.rb-bb-progress-fill {
+  height: 100%;
+  background: var(--bk-primary);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.reader-tip-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 12px 28px 0;
+  padding: 6px 14px;
+  font-size: 0.78rem;
+  color: var(--bk-ink-muted);
+}
+.tip-bar-icon { color: var(--bk-primary); }
+
+/* ─── Read Aloud Trigger Wrap ────────────────────────────────────────────── */
+.rb-avatar-wrap {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.rb-avatar-bubble {
+  background: #ffffff;
+  border: 1px solid var(--bk-border);
+  border-radius: 12px;
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--bk-ink);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+  white-space: nowrap;
+}
+.rb-avatar-btn {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  background: linear-gradient(135deg, #4f46e5, #6366f1);
+  box-shadow: 0 4px 16px rgba(79, 70, 229, 0.35);
+  cursor: pointer;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease;
+}
+.rb-avatar-btn:hover {
+  transform: scale(1.06);
+}
+.rb-avatar-btn img {
+  width: 70%;
+  height: 70%;
+  object-fit: contain;
+}
+.rb-avatar-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 18px;
+  height: 18px;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #10b981;
+  font-size: 9px;
+}
+
+/* ─── Interactive Teacher Companion Dock ─────────────────────────────────── */
+.teacher-companion-dock {
+  position: fixed;
+  right: 28px;
+  bottom: 24px;
+  z-index: 999;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  pointer-events: auto;
+  max-width: 320px;
+}
+
+.teacher-dock-bubble {
+  background: #ffffff;
+  border: 1px solid var(--bk-border);
+  border-radius: 14px;
+  padding: 9px 13px;
+  box-shadow: 0 10px 25px -4px rgba(15, 23, 42, 0.12), 0 0 0 1px rgba(15, 23, 42, 0.04);
+  min-width: 170px;
+  max-width: 250px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  animation: teacherBubbleFloat 2.5s ease-in-out infinite;
+}
+
+@keyframes teacherBubbleFloat {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+.teacher-dock-bubble-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.teacher-dock-avatar-name {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--bk-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.teacher-audio-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+}
+
+.audio-bar {
+  width: 3px;
+  height: 10px;
+  background: #6366f1;
+  border-radius: 2px;
+  animation: audioWave 0.75s ease-in-out infinite alternate;
+}
+.audio-bar:nth-child(2) { animation-delay: 0.15s; height: 12px; }
+.audio-bar:nth-child(3) { animation-delay: 0.3s; height: 7px; }
+.audio-bar:nth-child(4) { animation-delay: 0.45s; height: 11px; }
+
+.audio-bar.paused {
+  animation-play-state: paused;
+  height: 3px !important;
+  background: #94a3b8;
+}
+
+@keyframes audioWave {
+  0% { height: 3px; }
+  100% { height: 12px; }
+}
+
+.teacher-dock-bubble-text {
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.teacher-status-word {
+  font-weight: 700;
+  color: #0f172a;
+  background: #fef08a;
+  padding: 1px 5px;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px rgba(234, 179, 8, 0.4);
+}
+
+.teacher-status-reading {
+  font-weight: 600;
+  color: var(--bk-ink-secondary);
+}
+
+.teacher-status-paused {
+  font-weight: 600;
+  color: #f59e0b;
+}
+
+/* Teacher Figure - Mirrored with Stick pointing toward book on the left */
+.teacher-dock-figure-wrap {
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-end;
+  margin-bottom: -4px;
+}
+
+.teacher-dock-gif {
+  height: 140px;
+  width: auto;
+  max-width: 170px;
+  object-fit: contain;
+  object-position: bottom;
+  transform: scaleX(-1); /* Mirrors the teacher so stick points towards book content! */
+  filter: drop-shadow(0 10px 20px rgba(15, 23, 42, 0.18));
+  transition: transform 0.3s ease;
+}
+
+/* Interactive Control Bar */
+.teacher-dock-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #ffffff;
+  border: 1px solid var(--bk-border);
+  border-radius: 30px;
+  padding: 4px 8px;
+  box-shadow: 0 8px 20px -3px rgba(15, 23, 42, 0.12);
+}
+
+.teacher-ctrl-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--bk-border);
+  background: #f8fafc;
+  border-radius: 20px;
+  padding: 4px 10px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--bk-ink);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.teacher-ctrl-btn:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.teacher-ctrl-primary {
+  background: var(--bk-primary);
+  border-color: var(--bk-primary);
+  color: #ffffff;
+}
+.teacher-ctrl-primary:hover {
+  background: var(--bk-primary-hover);
+  border-color: var(--bk-primary-hover);
+}
+
+.teacher-ctrl-stop {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #ef4444;
+  padding: 4px 8px;
+}
+.teacher-ctrl-stop:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+
+/* ─── Reader helpers: avatar genius overlay & Ask AI panel ─────────────── */
+.reader-avatar-overlay {
+  justify-content: flex-end;
+  align-items: stretch;
+  padding: 76px 0 0;
+  background: rgba(11, 18, 32, 0.26);
+  pointer-events: none;
+}
+.reader-avatar-overlay .avatar-genius-panel {
+  width: min(390px, 94vw);
+  max-height: none;
+  height: 100%;
+  border-radius: 24px 0 0 24px;
+  border-right: 0;
+  pointer-events: auto;
+}
+.ai-panel-desktop {
+  left: 0;
+  right: auto;
+  border-left: 0;
+  border-right: 1px solid var(--bk-border);
+}
+.dark .ai-panel-desktop, [data-theme="dark"] .ai-panel-desktop { border-right-color: #334155; }
+@media(max-width:768px) {
+  .reader-avatar-overlay { padding: 10px; align-items: stretch; }
+  .reader-avatar-overlay .avatar-genius-panel { width: 100%; height: 100%; border-radius: 18px; }
+}
+
+/* ─── Accessible Dark Theme ──────────────────────────────────────────────── */
+.dark.app-root, [data-theme="dark"] .app-root {
+  --bk-bg: #0f172a;
+  --bk-surface: #1e293b;
+  --bk-panel: #1e293b;
+  --bk-ink: #f1f5f9;
+  --bk-ink-secondary: #94a3b8;
+  --bk-ink-muted: #64748b;
+  --bk-border: #334155;
+  --bk-border-subtle: #1e293b;
+  --bk-paper: #1e293b;
+  --bk-shadow-page: 0 16px 36px -10px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  background: #0f172a;
+  color: #f1f5f9;
+}
+
+.dark .sidebar, [data-theme="dark"] .sidebar {
+  background: #0f172a;
+  border-right-color: #334155;
+  color: #f1f5f9;
+}
+.dark .sb-unit-label, .dark .sb-unit-label small,
+.dark .sb-ch-title, [data-theme="dark"] .sb-unit-label,
+[data-theme="dark"] .sb-unit-label small, [data-theme="dark"] .sb-ch-title {
+  color: #e2e8f0;
+}
+.dark .sb-section-label, .dark .sb-progress-pct,
+[data-theme="dark"] .sb-section-label, [data-theme="dark"] .sb-progress-pct {
+  color: #94a3b8;
+}
+.dark .scroll-canvas, [data-theme="dark"] .scroll-canvas {
+  background: #0f172a;
+}
+.dark .book-container-wrapper, [data-theme="dark"] .book-container-wrapper {
+  background: radial-gradient(circle at 50% 10%, #1e293b 0%, #0f172a 70%, #090d16 100%);
+}
+.dark .book-sheet, [data-theme="dark"] .book-sheet {
+  background: #1e293b;
+  border-color: #334155;
+  box-shadow: 0 16px 36px -10px rgba(0, 0, 0, 0.6);
+}
+.dark .bk-topbar, [data-theme="dark"] .bk-topbar {
+  background: #172033;
+  border-bottom-color: #334155;
+}
+.dark .bk-page-surface.left, [data-theme="dark"] .bk-page-surface.left {
+  background: #1e293b;
+  border-right: 0 !important;
+}
+.dark .bk-page-surface.right, [data-theme="dark"] .bk-page-surface.right {
+  background: #1e293b;
+}
+.dark .bk-pages-shell.single .bk-page-surface.left {
+  background: #1e293b;
+}
+.dark .bk-page-inner, .dark .reader-paragraph, .dark .reader-list,
+.dark .reader-list li, [data-theme="dark"] .bk-page-inner,
+[data-theme="dark"] .reader-paragraph, [data-theme="dark"] .reader-list,
+[data-theme="dark"] .reader-list li {
+  color: #cbd5e1;
+}
+.dark .reader-paragraph strong, .dark .reader-list strong, .dark b,
+[data-theme="dark"] .reader-paragraph strong, [data-theme="dark"] .reader-list strong, [data-theme="dark"] b {
+  color: #f8fafc !important;
+}
+.dark .reader-h1, [data-theme="dark"] .reader-h1 {
+  color: #f8fafc;
+}
+.dark .reader-h2, [data-theme="dark"] .reader-h2 {
+  color: #e2e8f0;
+}
+.dark .reader-h3, .dark .bk-ch-title,
+[data-theme="dark"] .reader-h3, [data-theme="dark"] .bk-ch-title {
+  color: #f8fafc;
+}
+.dark .bk-topbar-breadcrumb, [data-theme="dark"] .bk-topbar-breadcrumb {
+  color: #94a3b8;
+}
+.dark .bk-topbar-book-title, [data-theme="dark"] .bk-topbar-book-title {
+  color: #64748b;
+}
+.dark .bk-topbar-chapter-title, [data-theme="dark"] .bk-topbar-chapter-title {
+  color: #818cf8;
+}
+.dark .bk-topbar-page-badge, [data-theme="dark"] .bk-topbar-page-badge {
+  background: #0f172a;
+  border-color: #334155;
+  color: #cbd5e1;
+}
+.dark .bk-footer, [data-theme="dark"] .bk-footer {
+  background: #172033;
+  border-top-color: #334155;
+  color: #64748b;
+}
+.dark .bk-footer-left { color: #cbd5e1; }
+.dark .bk-nav-row, .dark .rb-bottombar, [data-theme="dark"] .bk-nav-row, [data-theme="dark"] .rb-bottombar {
+  background: #1e293b;
+  border-color: #334155;
+}
+.dark .bk-nav-btn, .dark .rb-bb-btn, [data-theme="dark"] .bk-nav-btn, [data-theme="dark"] .rb-bb-btn {
+  background: #0f172a;
+  border-color: #334155;
+  color: #cbd5e1;
+}
+.dark .bk-nav-btn:hover:not(:disabled), .dark .rb-bb-btn:hover:not(:disabled) {
+  background: #1e293b;
+  color: #f8fafc;
+}
+.dark .rb-bb-page-text, [data-theme="dark"] .rb-bb-page-text {
+  color: #94a3b8;
+}
+.dark .rb-bb-page-text strong, [data-theme="dark"] .rb-bb-page-text strong {
+  color: #f8fafc;
+}
+.dark .rb-bb-chapter-chip, [data-theme="dark"] .rb-bb-chapter-chip {
+  background: #0f172a;
+  border-color: #334155;
+  color: #94a3b8;
+}
+.dark .rb-pill, [data-theme="dark"] .rb-pill {
+  background: #1e293b;
+  border-color: #334155;
+  color: #cbd5e1;
+}
+.dark .rb-pill:hover {
+  background: #334155;
+}
+.dark .teacher-dock-bubble, [data-theme="dark"] .teacher-dock-bubble {
+  background: #1e293b;
+  border-color: #334155;
+  box-shadow: 0 10px 25px -4px rgba(0, 0, 0, 0.45);
+}
+.dark .teacher-dock-controls, [data-theme="dark"] .teacher-dock-controls {
+  background: #1e293b;
+  border-color: #334155;
+}
+.dark .teacher-ctrl-btn, [data-theme="dark"] .teacher-ctrl-btn {
+  background: #0f172a;
+  border-color: #334155;
+  color: #cbd5e1;
+}
+.dark .reading-active-paragraph {
+  background-color: rgba(99, 102, 241, 0.12);
+}
+
+/* ─── Responsive Layout ──────────────────────────────────────────────────── */
+@media (max-width: 1024px) {
+  .workstation { padding: 0; }
+  .book-spread { max-width: 100%; }
+}
+
+@media (max-width: 900px) {
+  .book-container-wrapper { padding: 8px 12px 16px; }
+  .bk-pages-shell { grid-template-columns: 1fr; }
+  .bk-page-surface.left { border-right: 0; }
+  .bk-page-surface { min-height: auto; padding: 18px 22px 24px; }
+  .bk-chapter-header { padding-left: 0; padding-right: 0; }
+  .bk-nav-row, .rb-bottombar { margin-left: 12px; margin-right: 12px; }
+  .teacher-companion-dock { right: 16px; bottom: 16px; max-width: 260px; }
+  .teacher-dock-gif { height: 115px; }
+}
+
+@media (max-width: 640px) {
+  .reader-avatar-mode { display: none; }
+  .bk-page-surface { padding: 14px 16px 20px; }
+  .bk-nav-btn { flex-basis: 140px; }
+  .rb-bottombar { padding: 8px 12px; gap: 8px; justify-content: center; }
+  .rb-bb-left, .rb-bb-right { justify-content: center; }
+  .teacher-companion-dock { right: 12px; bottom: 12px; }
+  .teacher-dock-gif { height: 95px; }
+  .teacher-dock-bubble { min-width: 140px; padding: 7px 10px; font-size: 0.78rem; }
+}
+
+@media (max-width: 480px) {
+  .rb-pill-label { display: none; }
+  .rb-pill { padding: 7px 10px; }
+  .bk-nav-row { gap: 8px; padding: 10px; }
+  .bk-nav-btn { flex-basis: calc(50% - 4px); padding: 8px 6px; font-size: 0.78rem; }
+  .bk-nav-dots { order: 3; width: 100%; justify-content: center; }
+  .rb-bottombar { padding: 8px; gap: 6px; flex-direction: column; align-items: stretch; }
+  .rb-bb-left, .rb-bb-center, .rb-bb-right { justify-content: space-between; width: 100%; }
+  .rb-bb-btn { padding: 6px 10px; font-size: 0.78rem; }
+  .rb-bb-progress { order: 3; flex-basis: 100%; min-width: 0; }
 }
 `;
 

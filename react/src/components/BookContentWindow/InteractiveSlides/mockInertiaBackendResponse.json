@@ -1,0 +1,745 @@
+{
+    "success": true,
+    "section_id": "1.2",
+    "section_title": "INERTIA",
+    "pattern": "science",
+    "stored_under": "enrichment",
+    "enrichment": {
+        "concept_overview": "This section introduces the concept of inertia, explaining it as the natural resistance of an object to changes in its state of motion or rest, using everyday examples and a simple activity to illustrate its different types.",
+        "faqs": [
+            {
+                "question": "What is the main idea of inertia?",
+                "answer": "Inertia is an object's natural resistance to any change in its current state of motion or rest. It's why things tend to keep doing what they're already doing, unless an outside force acts on them."
+            },
+            {
+                "question": "Can inertia be overcome?",
+                "answer": "Yes, inertia can be overcome by applying an external unbalanced force. This force causes the object to change its state of motion or rest."
+            },
+            {
+                "question": "Is inertia the same as momentum?",
+                "answer": "No, inertia and momentum are related but not the same. Inertia is a property of mass that resists changes in motion, while momentum is a measure of the 'quantity of motion' an object has, taking into account both its mass and velocity."
+            },
+            {
+                "question": "Does inertia only apply to moving objects?",
+                "answer": "No, inertia applies to all objects, whether they are at rest or in motion. Objects at rest exhibit 'inertia of rest,' resisting movement, and moving objects exhibit 'inertia of motion' and 'inertia of direction,' resisting changes in their movement or path."
+            }
+        ],
+        "practice_questions": [
+            {
+                "question": "Explain why a passenger in a car feels pressed backward when the car suddenly accelerates forward from a stop."
+            },
+            {
+                "question": "Describe an everyday example of 'inertia of rest' that is different from the bus example or the coin activity."
+            },
+            {
+                "question": "What would happen to a ball rolling on a perfectly frictionless surface in outer space if no forces acted upon it?"
+            },
+            {
+                "question": "Imagine you are trying to push a very heavy box. Why is it harder to get it moving than to keep it moving (once it's already in motion)?"
+            }
+        ],
+        "doubt_context": {
+            "related_sections": [
+                "Newton's First Law of Motion",
+                "Mass and Weight",
+                "Force and Motion"
+            ],
+            "board": "State Board",
+            "class_number": "10",
+            "subject": "science",
+            "unit_number": 1,
+            "section_title": "INERTIA",
+            "max_rag_chunks": 5,
+            "fallback_to_broader_context": true
+        },
+        "avatar_lesson": {
+            "version": 2,
+            "pattern": "science",
+            "phase_order": [
+                "hook",
+                "explanation",
+                "explore",
+                "mystery",
+                "real_world",
+                "explain_back",
+                "reflect"
+            ],
+            "phases": [
+                {
+                    "phase": "hook",
+                    "order": 1,
+                    "style": "mission_prediction",
+                    "title": "Bus Brake Mystery",
+                    "scenario": "Imagine you're standing in a bus, holding onto a strap. Suddenly, the driver applies the brakes.",
+                    "question": "What do you predict will happen to your body?",
+                    "options": {
+                        "A": "You'll be pushed backward towards the back of the bus.",
+                        "B": "You'll be thrown forward towards the front of the bus.",
+                        "C": "You'll remain perfectly still, unaffected by the braking."
+                    },
+                    "answer": "B",
+                    "option_explanations": {
+                        "A": "Not quite! While it might feel like a push, your body actually tends to continue its forward motion. This option isn't what typically happens in this scenario.",
+                        "B": "Yeah, you got the right answer! When the bus brakes, your body tends to keep moving forward due to its inertia, making you lurch in that direction.",
+                        "C": "That's an interesting thought, but our bodies don't remain perfectly still in such situations. There's a force at play that causes a noticeable change in our movement."
+                    },
+                    "resolutions": {
+                        "A": {
+                            "segment_id": "hook_res_A",
+                            "type": "teaching",
+                            "emotion": "encouraging",
+                            "text": "You predicted you'd be pushed backward. It's easy to get confused, but the bus stopping makes your body want to keep moving forward, so you actually lurch forward. We'll see why that is today!"
+                        },
+                        "B": {
+                            "segment_id": "hook_res_B",
+                            "type": "teaching",
+                            "emotion": "enthusiastic",
+                            "text": "You predicted you'd be thrown forward. Excellent! That's exactly what happens, and it's a great real-world example of the concept we're about to explore: inertia!"
+                        },
+                        "C": {
+                            "segment_id": "hook_res_C",
+                            "type": "teaching",
+                            "emotion": "thoughtful",
+                            "text": "You predicted you'd remain still. It's a common thought, but our bodies have a tendency to resist changes in motion. The bus stopping causes us to continue moving forward. Let's dive into why!"
+                        }
+                    },
+                    "intro": {
+                        "segment_id": "hook_intro",
+                        "type": "teaching",
+                        "emotion": "curious",
+                        "text": "Let's start with a quick thought experiment! Imagine you're standing in a bus, holding onto a strap. Suddenly, the driver applies the brakes. What do you predict will happen to your body?"
+                    },
+                    "bridge": {
+                        "segment_id": "hook_bridge",
+                        "type": "teaching",
+                        "emotion": "confident",
+                        "text": "You've just seen a real-world case of today's topic – now let's line that up with the science and study it properly. Today, we're going to learn all about inertia!"
+                    },
+                    "visual": {
+                        "image_url": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/state_board/10/science/unit-1/bus_passengers_interior_eb925a0d96.jpg",
+                        "origin_url": "https://images.pexels.com/photos/30090269/pexels-photo-30090269.jpeg?cs=srgb&dl=pexels-hanako-2148376889-30090269.jpg&fm=jpg",
+                        "page_url": "https://www.pexels.com/photo/busy-bus-interior-with-seated-passengers-30090269/",
+                        "source_name": "images.pexels.com",
+                        "stage": "searxng",
+                        "kind": "photo",
+                        "license": "",
+                        "attribution": "",
+                        "width": 853,
+                        "height": 1280,
+                        "shows": "The interior of a bus with passengers seated and standing.",
+                        "avatar_line": "This image shows the inside of a bus, with several passengers. Some people are seated along the sides, while others are standing in the aisle. Notice the red overhead bars and vertical poles, which standing passengers can hold onto for stability. These bars and poles help passengers brace themselves against sudden movements of the bus.",
+                        "look_prompt": "If this bus were to suddenly speed up, what would happen to the standing passengers who are not holding on, and why?",
+                        "look_answer": "Standing passengers not holding on would tend to fall backward, due to inertia, as their bodies would resist the forward motion of the bus.",
+                        "query": "bus passengers interior"
+                    }
+                },
+                {
+                    "phase": "explanation",
+                    "order": 2,
+                    "teaching_style": "storytelling",
+                    "total_duration_estimate": "4 minutes",
+                    "segments": [
+                        {
+                            "segment_id": "seg_001",
+                            "type": "teaching",
+                            "text": "Hello everyone! Today, we're going to explore a fascinating property of matter called inertia. It's all about how objects, including ourselves, resist changes in their movement or stillness. This image shows how particles are arranged in the three common phases of matter: solids, liquids, and gases. In a solid, like ice, the particles are tightly packed in a fixed pattern and can only vibrate in place. In a liquid, like water, the particles are close together but can slide past each other, giving liquids their fluid nature. In a gas, like steam, the particles are far apart and move freely, colliding with each other and the container walls.",
+                            "emotion": "enthusiastic",
+                            "visual": {
+                                "image_url": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/state_board/10/science/unit-1/matter_particles_30b0a0b4b1.jpg",
+                                "origin_url": "https://i.pinimg.com/originals/e6/e2/a1/e6e2a129d6672e8e04217758d7d7f071.png",
+                                "page_url": "https://www.expii.com/t/arrangement-of-particles-in-phases-of-matter-comparison-11086",
+                                "source_name": "expii",
+                                "stage": "searxng",
+                                "kind": "photo",
+                                "license": "",
+                                "attribution": "",
+                                "width": 1280,
+                                "height": 906,
+                                "shows": "a diagram illustrating the particle arrangement in solids, liquids, and gases.",
+                                "avatar_line": "This image shows how particles are arranged in the three common phases of matter: solids, liquids, and gases. In a solid, like ice, the particles are tightly packed in a fixed pattern and can only vibrate in place. In a liquid, like water, the particles are close together but can slide past each other, giving liquids their fluid nature. In a gas, like steam, the particles are far apart and move freely, colliding with each other and the container walls.",
+                                "query": "matter particles",
+                                "planned_because": "picture-based explanation (planner pass 1)"
+                            }
+                        },
+                        {
+                            "segment_id": "seg_002",
+                            "type": "teaching",
+                            "text": "Think about riding in a bus. When the bus suddenly brakes, you feel yourself lurching forward, right? Or when it suddenly starts moving, you're pushed backward. This feeling is your body demonstrating inertia! This image shows the inside of a bus with several passengers. You can see people standing and holding onto the poles, and others seated in the rows of seats. When the bus moves or stops suddenly, these passengers will experience the effects of inertia. Your body wants to keep doing what it was already doing, so it will resist the change in motion.",
+                            "emotion": "curious",
+                            "visual": {
+                                "image_url": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/state_board/10/science/unit-1/bus_passengers_braking_df9f55e244.jpg",
+                                "origin_url": "https://pixabay.com/get/g1ef18cf4c8f08d0e43697f3955cab9f6851b3e0fe40fd6514b7aaf394ca0a675ff0b540b2ff9b111f08dc0a6c6d05d108eef93f681747198870b1b49b51d407c_1280.jpg",
+                                "page_url": "https://pixabay.com/photos/bus-passengers-people-seats-metro-1868507/",
+                                "source_name": "Pixabay",
+                                "stage": "pixabay",
+                                "kind": "photo",
+                                "license": "Pixabay Content License",
+                                "attribution": "Pexels",
+                                "width": 1280,
+                                "height": 853,
+                                "shows": "passengers inside a bus, some standing and some seated",
+                                "avatar_line": "This image shows the inside of a bus with several passengers. You can see people standing and holding onto the poles, and others seated in the rows of seats. When the bus moves or stops suddenly, these passengers will experience the effects of inertia. Your body wants to keep doing what it was already doing, so it will resist the change in motion.",
+                                "query": "bus passengers braking",
+                                "planned_because": "picture-based explanation (planner pass 1)"
+                            }
+                        },
+                        {
+                            "segment_id": "seg_003",
+                            "type": "teaching",
+                            "text": "Inertia is the inherent property of a body to resist any change in its state. So, if something is at rest, it wants to stay at rest. If it's moving, it wants to keep moving at the same speed and in the same direction. It's quite stubborn, isn't it? Here you see a hand sliding a book onto a wooden shelf. The book is currently in motion, but once the hand lets go, the book will come to rest on the shelf. This is because the book has inertia, and it will resist the change in its state of motion until an external force acts upon it to stop it. Let me show you where this turns up in real life — shall I?",
+                            "emotion": "playful",
+                            "visual": {
+                                "image_url": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/state_board/10/science/unit-1/book_shelf_rest_9d6c803117.jpg",
+                                "origin_url": "https://upload.wikimedia.org/wikipedia/commons/c/cc/EFTA00001904_-_Hand_in_a_black_glove_rests_on_a_wooden_cabinet_shelf_holding_a_black_book_with_a_colorful_cover.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+                                "page_url": "https://commons.wikimedia.org/wiki/File:EFTA00001904_-_Hand_in_a_black_glove_rests_on_a_wooden_cabinet_shelf_holding_a_black_book_with_a_colorful_cover.jpg",
+                                "source_name": "upload.wikimedia.org",
+                                "stage": "searxng",
+                                "kind": "photo",
+                                "license": "",
+                                "attribution": "",
+                                "width": 1152,
+                                "height": 768,
+                                "shows": "a hand in a black glove sliding a book into a wooden bookshelf",
+                                "avatar_line": "Here you see a hand sliding a book onto a wooden shelf. The book is currently in motion, but once the hand lets go, the book will come to rest on the shelf. This is because the book has inertia, and it will resist the change in its state of motion until an external force acts upon it to stop it.",
+                                "query": "book shelf rest",
+                                "planned_because": "picture-based explanation (planner pass 1)"
+                            }
+                        },
+                        {
+                            "segment_id": "seg_004",
+                            "flashcard_id": "fc_001",
+                            "type": "flashcard",
+                            "flashcard_type": "informative",
+                            "cards": [
+                                {
+                                    "card_id": "fc_001_c1",
+                                    "card_title": "Riding a Skateboard",
+                                    "front": "When you're riding a skateboard and hit a small stone, the skateboard stops suddenly, but your body continues to move forward. This happens because your body, due to inertia of motion, tries to maintain its forward movement even when the skateboard's motion is interrupted.",
+                                    "avatar_line": "Ever been on a skateboard and had this happen? It's your body's inertia wanting to keep you going, even if the board stops!",
+                                    "avatar_emotion": "curious"
+                                }
+                            ]
+                        },
+                        {
+                            "segment_id": "seg_005",
+                            "type": "teaching",
+                            "text": "Let's try a little experiment in our minds. Imagine a glass tumbler with a small cardboard on top, and a coin sitting right in the middle of that cardboard. Now, if you flick the cardboard away really fast... This image shows the setup for a classic experiment. You can see a coin sitting on a piece of cardboard, which is balanced on top of a glass. A hand is positioned to flick the cardboard quickly. This setup demonstrates inertia, as the coin tends to stay in its original state of rest when the cardboard is removed suddenly.",
+                            "emotion": "thoughtful",
+                            "visual": {
+                                "image_url": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/state_board/10/science/unit-1/coin_on_cardboard_glass_eb5e8deffc.jpg",
+                                "origin_url": "https://allfortheboys.com/wp-content/uploads/2014/07/all-for-the-boys-coin-trick-for-kids-4w-1024x682.jpg",
+                                "page_url": "https://allfortheboys.com/coin-trick-for-kids/",
+                                "source_name": "All for the Boys",
+                                "stage": "searxng",
+                                "kind": "photo",
+                                "license": "",
+                                "attribution": "",
+                                "width": 1024,
+                                "height": 682,
+                                "shows": "a coin resting on a piece of cardboard, which is placed on top of a glass tumbler, with a hand poised to flick the cardboard",
+                                "avatar_line": "This image shows the setup for a classic experiment. You can see a coin sitting on a piece of cardboard, which is balanced on top of a glass. A hand is positioned to flick the cardboard quickly. This setup demonstrates inertia, as the coin tends to stay in its original state of rest when the cardboard is removed suddenly.",
+                                "query": "coin on cardboard glass",
+                                "planned_because": "picture-based explanation (planner pass 2)"
+                            }
+                        },
+                        {
+                            "segment_id": "seg_006",
+                            "type": "teaching",
+                            "text": "...the cardboard flies off, but the coin doesn't go with it! Instead, the coin drops straight down into the glass. This happens because of inertia of rest; the coin wants to stay put, even when its support is suddenly removed. Pretty neat, huh? This image shows the result of our inertia experiment: the coin has dropped into the glass. You can see the coin resting on the bottom of the glass, surrounded by water. The clear glass allows us to see the coin clearly from the top. This is exactly what happens when the cardboard is quickly flicked away, leaving the coin to fall due to gravity because of its inertia of rest. Let me show you where this turns up in real life, shall I?",
+                            "emotion": "surprised",
+                            "visual": {
+                                "image_url": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/state_board/10/science/unit-1/coin_in_glass_inertia_d06624ba72.jpg",
+                                "origin_url": "https://i.pinimg.com/originals/df/e4/c2/dfe4c260c7080641912f2abf5f9a3f34.jpg",
+                                "page_url": "https://www.pinterest.com/pin/202662051959998871/",
+                                "source_name": "i.pinimg.com",
+                                "stage": "searxng",
+                                "kind": "photo",
+                                "license": "",
+                                "attribution": "",
+                                "width": 610,
+                                "height": 458,
+                                "shows": "a coin at the bottom of a glass of water, viewed from above",
+                                "avatar_line": "This image shows the result of our inertia experiment: the coin has dropped into the glass. You can see the coin resting on the bottom of the glass, surrounded by water. The clear glass allows us to see the coin clearly from the top. This is exactly what happens when the cardboard is quickly flicked away, leaving the coin to fall due to gravity because of its inertia of rest.",
+                                "query": "coin in glass inertia",
+                                "planned_because": "picture-based explanation (planner pass 1)"
+                            }
+                        },
+                        {
+                            "segment_id": "seg_007",
+                            "flashcard_id": "fc_002",
+                            "type": "flashcard",
+                            "flashcard_type": "informative",
+                            "cards": [
+                                {
+                                    "card_id": "fc_002_c1",
+                                    "card_title": "Ketchup Bottle Shake",
+                                    "front": "When you're trying to get ketchup out of a nearly empty bottle, you often have to shake it downwards quickly and then stop abruptly. The ketchup keeps moving due to its inertia of motion, helping it to flow out of the bottle.",
+                                    "avatar_line": "Ever notice how shaking a ketchup bottle works? It's all about inertia helping you get that last bit out!",
+                                    "avatar_emotion": "playful"
+                                }
+                            ]
+                        },
+                        {
+                            "segment_id": "seg_008",
+                            "type": "teaching",
+                            "text": "We actually have three types of inertia! There's inertia of rest, which is what we just saw with the coin, where a body resists changing its state of stillness. Then there's inertia of motion, where a moving body resists slowing down or speeding up. This image shows a coin resting on a wooden surface, much like the coin we discussed earlier. Notice how the coin is perfectly still, not moving at all. This stillness is its natural state, and the coin will stay this way unless an outside force acts on it. This is a great example of inertia of rest, where an object resists any change to its state of being still.",
+                            "emotion": "encouraging",
+                            "visual": {
+                                "image_url": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/state_board/10/science/unit-1/coin_on_table_still_a1c26ebf97.jpg",
+                                "origin_url": "https://images.pexels.com/photos/28103488/pexels-photo-28103488.jpeg?cs=srgb&dl=pexels-abdullahesmail-28103488.jpg&fm=jpg",
+                                "page_url": "https://www.pexels.com/photo/an-egyptian-coin-one-pound-on-a-table-28103488/",
+                                "source_name": "images.pexels.com",
+                                "stage": "searxng",
+                                "kind": "photo",
+                                "license": "",
+                                "attribution": "",
+                                "width": 960,
+                                "height": 1280,
+                                "shows": "a coin resting on a wooden table, with light reflecting off its surface",
+                                "avatar_line": "This image shows a coin resting on a wooden surface, much like the coin we discussed earlier. Notice how the coin is perfectly still, not moving at all. This stillness is its natural state, and the coin will stay this way unless an outside force acts on it. This is a great example of inertia of rest, where an object resists any change to its state of being still.",
+                                "query": "coin on table still",
+                                "planned_because": "picture-based explanation (planner pass 1)"
+                            }
+                        },
+                        {
+                            "segment_id": "seg_009",
+                            "type": "teaching",
+                            "text": "And finally, we have inertia of direction. This is when a body resists changing the path it's moving along. Think about a car turning a corner; your body wants to keep going straight even as the car turns! This diagram shows two cars making turns at an intersection. The white car is turning left, and the blue car is turning right. Notice how each car's path is shown as a curve, made up of several smaller car images. The small orange bursts near each car show the force or resistance acting on the car as it changes direction. This illustrates how inertia of direction means objects resist changing their path of motion. Let's see some more examples of this in action, shall we?",
+                            "emotion": "warm",
+                            "visual": {
+                                "image_url": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/state_board/10/science/unit-1/car_turning_corner_2bd7334be2.jpg",
+                                "origin_url": "https://drivinginstructorblog.com/wp-content/uploads/2021/07/Simple-Work-Blog-Banner203-edited.png",
+                                "page_url": "https://drivinginstructorblog.com/turning-corners/",
+                                "source_name": "drivinginstructorblog.com",
+                                "stage": "searxng",
+                                "kind": "photo",
+                                "license": "",
+                                "attribution": "",
+                                "width": 800,
+                                "height": 450,
+                                "shows": "an overhead view of two cars turning at an intersection, with their paths shown as a series of smaller cars.",
+                                "avatar_line": "This diagram shows two cars making turns at an intersection. The white car is turning left, and the blue car is turning right. Notice how each car's path is shown as a curve, made up of several smaller car images. The small orange bursts near each car show the force or resistance acting on the car as it changes direction. This illustrates how inertia of direction means objects resist changing their path of motion.",
+                                "query": "car turning corner",
+                                "planned_because": "picture-based explanation (planner pass 1)"
+                            }
+                        },
+                        {
+                            "segment_id": "seg_010",
+                            "flashcard_id": "fc_003",
+                            "type": "flashcard",
+                            "flashcard_type": "informative",
+                            "cards": [
+                                {
+                                    "card_id": "fc_003_c1",
+                                    "card_title": "Spinning a Yo-Yo",
+                                    "front": "When you spin a yo-yo in a circle, the string constantly pulls it towards the center. If the string breaks, the yo-yo flies off in a straight line, continuing in the direction it was moving at the moment the string snapped.",
+                                    "avatar_line": "Isn't it fascinating how the yo-yo wants to keep going in a straight line even when we're trying to make it spin in a circle? That's inertia of direction at play!",
+                                    "avatar_emotion": "curious"
+                                }
+                            ]
+                        },
+                        {
+                            "segment_id": "seg_011",
+                            "type": "teaching",
+                            "role": "hook_answer",
+                            "text": "So, back to our original question: when the bus driver applies the brakes, your body, due to inertia of motion, wants to keep moving forward. That's why you'll be thrown forward towards the front of the bus. Your body resists the change from motion to rest!",
+                            "emotion": "confident",
+                            "visual": {
+                                "image_url": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/state_board/10/science/unit-1/bus_passengers_interior_eb925a0d96.jpg",
+                                "origin_url": "https://images.pexels.com/photos/30090269/pexels-photo-30090269.jpeg?cs=srgb&dl=pexels-hanako-2148376889-30090269.jpg&fm=jpg",
+                                "page_url": "https://www.pexels.com/photo/busy-bus-interior-with-seated-passengers-30090269/",
+                                "source_name": "images.pexels.com",
+                                "stage": "searxng",
+                                "kind": "photo",
+                                "license": "",
+                                "attribution": "",
+                                "width": 853,
+                                "height": 1280,
+                                "shows": "The interior of a bus with passengers seated and standing.",
+                                "avatar_line": "This image shows the inside of a bus, with several passengers. Some people are seated along the sides, while others are standing in the aisle. Notice the red overhead bars and vertical poles, which standing passengers can hold onto for stability. These bars and poles help passengers brace themselves against sudden movements of the bus.",
+                                "query": "bus passengers interior",
+                                "reused_from": "hook",
+                                "planned_because": "the hook answer returns to the hook's scene"
+                            }
+                        }
+                    ],
+                    "closing_segment_id": "seg_011",
+                    "informative_flags": [
+                        "fc_001",
+                        "fc_002",
+                        "fc_003"
+                    ],
+                    "cards_per_flag": 1
+                },
+                {
+                    "phase": "explore",
+                    "order": 3,
+                    "kind": "hands_on_activity",
+                    "title": "Coin Drop Challenge",
+                    "source": "textbook:Activity 1",
+                    "intro": {
+                        "segment_id": "explore_intro",
+                        "type": "teaching",
+                        "emotion": "playful",
+                        "text": "Now that we've technically learned about inertia, let's do a fun, hands-on activity to see it in action with everyday objects. Get ready to be surprised!"
+                    },
+                    "materials": [
+                        "A glass tumbler",
+                        "A small cardboard (like an index card or playing card)",
+                        "A coin"
+                    ],
+                    "steps": [
+                        "Take a glass tumbler and place a small cardboard on it.",
+                        "Keep a coin at the centre of the cardboard.",
+                        "Flick the cardboard quickly."
+                    ],
+                    "interaction": {
+                        "type": "choice",
+                        "prompt": "What did you observe after flicking the cardboard?",
+                        "options": [
+                            {
+                                "id": "A",
+                                "label": "The coin flies off with the cardboard.",
+                                "feedback": "That's a good guess! However, the coin behaves differently. It tries to maintain its state of rest."
+                            },
+                            {
+                                "id": "B",
+                                "label": "The coin drops into the glass.",
+                                "feedback": "Exactly! The coin, due to its inertia of rest, tries to stay in its original position and falls into the glass when the cardboard is removed from under it."
+                            },
+                            {
+                                "id": "C",
+                                "label": "The coin stays on the cardboard and wobbles.",
+                                "feedback": "Close, but not quite! While it might wobble for a moment, the primary observation is a direct result of inertia acting on the coin."
+                            }
+                        ],
+                        "answer": "B"
+                    },
+                    "wrap_up": {
+                        "segment_id": "explore_wrap",
+                        "type": "teaching",
+                        "emotion": "confident",
+                        "text": "Great job with that activity! It's amazing how a simple setup can demonstrate such a fundamental principle of physics. You've just experienced inertia of rest firsthand!"
+                    },
+                    "challenge": {
+                        "prompt": "Think about a tree branch with ripe fruit. If you shake the branch quickly, the fruit often falls off. How is this similar to the coin and cardboard experiment?",
+                        "interaction": {
+                            "type": "free_text",
+                            "prompt": "Think about a tree branch with ripe fruit. If you shake the branch quickly, the fruit often falls off. How is this similar to the coin and cardboard experiment?",
+                            "model_answer": "When the tree branch is shaken, the branch moves, but the fruit, due to its inertia of rest, tends to remain in its original position. This resistance to change in its state of rest causes it to detach from the moving branch and fall."
+                        }
+                    }
+                },
+                {
+                    "phase": "mystery",
+                    "order": 4,
+                    "show": 1,
+                    "intro": {
+                        "segment_id": "mystery_intro",
+                        "type": "teaching",
+                        "emotion": "playful",
+                        "text": "Now, can you spot inertia in the wild? I'm going to show you some pictures, and I want you to tell me what's happening and why, using what we've learned about inertia!"
+                    },
+                    "outro": {
+                        "segment_id": "mystery_outro",
+                        "type": "teaching",
+                        "emotion": "inspiring",
+                        "text": "Fantastic job with these mysteries! You're becoming an expert at identifying inertia in everyday situations. Keep an eye out for it in your daily life!"
+                    },
+                    "pool": [
+                        {
+                            "mystery_id": "m01",
+                            "title": "Sudden Start",
+                            "question": "What is happening to the person in the picture and why?",
+                            "ask": {
+                                "segment_id": "m01_ask",
+                                "type": "teaching",
+                                "emotion": "curious",
+                                "text": "Look closely at this picture. What is happening to the person in the picture and why?"
+                            },
+                            "options": {
+                                "A": "They are leaning forward because the vehicle is slowing down.",
+                                "B": "They are leaning backward because the vehicle is suddenly accelerating forward.",
+                                "C": "They are leaning sideways because the vehicle is turning sharply."
+                            },
+                            "answer": "B",
+                            "option_explanations": {
+                                "A": "Incorrect. Leaning forward typically happens when a vehicle slows down, not when it starts moving forward.",
+                                "B": "Yeah, you got the right answer! The person leans backward because their body, due to inertia of rest, resists the sudden forward motion of the vehicle.",
+                                "C": "Incorrect. Leaning sideways is usually a result of a change in direction, not a change in speed from rest."
+                            },
+                            "reveal": {
+                                "segment_id": "m01_reveal",
+                                "type": "teaching",
+                                "emotion": "confident",
+                                "text": "This person is experiencing inertia of rest! When the vehicle suddenly starts moving forward, their body tries to stay in its original state of rest, causing them to lean backward. It's a classic example!"
+                            },
+                            "visual": {
+                                "image_url": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/state_board/10/science/unit-1/bus_passenger_sudden_acceleration_eee26ed041.jpg",
+                                "origin_url": "https://image1.slideserve.com/1863978/effect-of-bus-accelerating-on-occupant-motion-l.jpg",
+                                "page_url": "https://www.slideserve.com/evania/transit-bus-injuries-incidence-biomechanics-prevention",
+                                "source_name": "slideserve.com",
+                                "stage": "searxng",
+                                "kind": "photo",
+                                "license": "",
+                                "attribution": "",
+                                "width": 1024,
+                                "height": 768,
+                                "shows": "a sequence of three diagrams showing a person in a bus as it accelerates, illustrating the effect on their motion.",
+                                "avatar_line": "This diagram shows a person standing in a bus as it suddenly accelerates forward. In the first panel, the person is standing upright. As the bus accelerates, their body tries to stay in its original position due to inertia, causing them to lean backward in the second panel. By the third panel, they have fallen backward, impacting the seat in front of them, showing the effect of inertia of rest.",
+                                "look_prompt": "What happens to the person's grip and shoe-floor contact as the bus accelerates, and why does this happen?",
+                                "look_answer": "As the bus accelerates, the person experiences a loss of grip and loss of shoe-floor contact because their body's inertia tries to keep it in place while the bus moves forward, causing them to lose balance.",
+                                "query": "bus passenger sudden acceleration"
+                            }
+                        },
+                        {
+                            "mystery_id": "m02",
+                            "title": "Dog Shaking Water",
+                            "question": "Why does the water fly off the dog when it shakes?",
+                            "ask": {
+                                "segment_id": "m02_ask",
+                                "type": "teaching",
+                                "emotion": "curious",
+                                "text": "Look closely at this picture. Why does the water fly off the dog when it shakes?"
+                            },
+                            "options": {
+                                "A": "The dog's fur absorbs the water and then releases it.",
+                                "B": "The water, due to its inertia of motion, continues moving while the dog's body changes direction.",
+                                "C": "The dog generates static electricity that repels the water."
+                            },
+                            "answer": "B",
+                            "option_explanations": {
+                                "A": "While fur does absorb water, this doesn't explain why it flies off when the dog shakes. It's about motion.",
+                                "B": "Yeah, you got the right answer! The dog's body rapidly changes direction, but the water droplets, due to their inertia of direction and motion, tend to continue in their original path and fly off.",
+                                "C": "No, static electricity isn't the primary reason water flies off a shaking dog. This phenomenon is about motion."
+                            },
+                            "reveal": {
+                                "segment_id": "m02_reveal",
+                                "type": "teaching",
+                                "emotion": "surprised",
+                                "text": "This is a great example of inertia of direction! When the dog shakes, its body rapidly changes direction, but the water droplets, due to their inertia, want to keep moving in their original direction, so they fly off!"
+                            },
+                            "visual": {
+                                "image_url": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/state_board/10/science/unit-1/wet_dog_shaking_water_b03b6c8946.jpg",
+                                "origin_url": "https://images.pexels.com/photos/25643335/pexels-photo-25643335.jpeg?cs=srgb&dl=pexels-miami302-25643335.jpg&fm=jpg",
+                                "page_url": "https://www.pexels.com/photo/wet-dog-shaking-water-off-25643335/",
+                                "source_name": "images.pexels.com",
+                                "stage": "searxng",
+                                "kind": "photo",
+                                "license": "",
+                                "attribution": "",
+                                "width": 853,
+                                "height": 1280,
+                                "shows": "A wet black dog shaking off water, with water droplets flying around it.",
+                                "avatar_line": "This picture shows a wet dog shaking itself dry. You can clearly see the water droplets flying off the dog's fur as it twists its body. The dog's rapid movement changes the direction of its body, but the water droplets keep moving in their original path. This is a perfect example of inertia of direction in action.",
+                                "look_prompt": "What does the path of the flying water droplets tell us about their inertia?",
+                                "look_answer": "The water droplets continue to move in a straight line, showing that they resist changing their direction even when the dog's body moves away.",
+                                "query": "wet dog shaking water"
+                            }
+                        },
+                        {
+                            "mystery_id": "m03",
+                            "title": "Ketchup Bottle Tap",
+                            "question": "Why do people often hit the bottom of a ketchup bottle to get the ketchup out?",
+                            "ask": {
+                                "segment_id": "m03_ask",
+                                "type": "teaching",
+                                "emotion": "curious",
+                                "text": "Look closely at this picture. Why do people often hit the bottom of a ketchup bottle to get the ketchup out?"
+                            },
+                            "options": {
+                                "A": "To create a vacuum that pulls the ketchup down.",
+                                "B": "To overcome the ketchup's inertia of rest, causing it to move downwards.",
+                                "C": "To warm up the ketchup, making it flow more easily."
+                            },
+                            "answer": "B",
+                            "option_explanations": {
+                                "A": "A vacuum isn't created by tapping the bottle. This is about getting a thick substance to move.",
+                                "B": "Yeah, you got the right answer! The ketchup, being thick, has inertia of rest. Tapping the bottle provides a sudden force, allowing the ketchup to overcome its inertia and flow out.",
+                                "C": "While temperature can affect viscosity, the primary reason for tapping is to overcome the ketchup's resistance to moving."
+                            },
+                            "reveal": {
+                                "segment_id": "m03_reveal",
+                                "type": "teaching",
+                                "emotion": "thoughtful",
+                                "text": "This is all about inertia of rest! The ketchup wants to stay put. When you tap the bottle, you provide a sudden force that overcomes the ketchup's inertia, making it flow out. Pretty neat, right?"
+                            },
+                            "visual": {
+                                "image_url": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/state_board/10/science/unit-1/ketchup_bottle_tap_ed0b5d6e1e.jpg",
+                                "origin_url": "https://images.unsplash.com/photo-1569790554690-1c0877b2fc6c?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixlib=rb-4.1.0&q=80&w=1080",
+                                "page_url": "https://unsplash.com/photos/heinz-tomato-ketchup-bottle-7cO4Fquqqak",
+                                "source_name": "images.unsplash.com",
+                                "stage": "searxng",
+                                "kind": "photo",
+                                "license": "",
+                                "attribution": "",
+                                "width": 1080,
+                                "height": 707,
+                                "shows": "a small glass bottle of tomato ketchup with a white cap",
+                                "avatar_line": "This is a small bottle of ketchup, like the kind you might find at a restaurant. Notice how the ketchup itself is thick and settled at the bottom of the bottle. When you try to pour it out, the ketchup often doesn't want to move immediately. This is because of inertia, where the ketchup resists a change in its state of rest.",
+                                "look_prompt": "How does the thickness of the ketchup in the bottle relate to the idea of inertia when you try to get it out?",
+                                "look_answer": "The thicker the ketchup, the more mass it has in a given volume, which means it has more inertia and will resist moving more strongly.",
+                                "query": "ketchup bottle tap"
+                            }
+                        },
+                        {
+                            "mystery_id": "m04",
+                            "title": "Skateboarding Stop",
+                            "question": "If a skateboarder hits a small obstacle and the skateboard stops, what usually happens to the skateboarder?",
+                            "ask": {
+                                "segment_id": "m04_ask",
+                                "type": "teaching",
+                                "emotion": "curious",
+                                "text": "Look closely at this picture. If a skateboarder hits a small obstacle and the skateboard stops, what usually happens to the skateboarder?"
+                            },
+                            "options": {
+                                "A": "The skateboarder stays on the skateboard without moving.",
+                                "B": "The skateboarder is thrown backward off the skateboard.",
+                                "C": "The skateboarder is thrown forward off the skateboard."
+                            },
+                            "answer": "C",
+                            "option_explanations": {
+                                "A": "This is incorrect. A sudden stop usually results in a change of the rider's motion.",
+                                "B": "Incorrect. Being thrown backward would suggest an opposite force acting on the rider.",
+                                "C": "Yeah, you got the right answer! The skateboard stops, but the skateboarder's body, due to its inertia of motion, continues moving forward and they are thrown off."
+                            },
+                            "reveal": {
+                                "segment_id": "m04_reveal",
+                                "type": "teaching",
+                                "emotion": "empathetic",
+                                "text": "This is a clear case of inertia of motion! The skateboard stops, but the skateboarder's body wants to keep moving forward due to its inertia, so they get thrown forward. Ouch! But a great demonstration of physics!"
+                            },
+                            "visual": {
+                                "image_url": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/state_board/10/science/unit-1/skateboarder_falling_forward_49649f242c.jpg",
+                                "origin_url": "https://pixabay.com/get/ga10fb225d4eb471e230bb8ccd0f6009c2fe66b0956ae76918605adca073c5890997486417aa3da156eabe709c329e1c2c6d513ce329e4f9cd42dd792d3a7b978_1280.jpg",
+                                "page_url": "https://pixabay.com/illustrations/skateboarder-skateboard-urban-fun-10430771/",
+                                "source_name": "Pixabay",
+                                "stage": "pixabay",
+                                "kind": "illustration",
+                                "license": "Pixabay Content License",
+                                "attribution": "flutie8211",
+                                "width": 720,
+                                "height": 1280,
+                                "shows": "A person on a skateboard in an urban setting.",
+                                "avatar_line": "This image shows a person riding a skateboard. Notice how one foot is firmly on the board while the other is slightly raised, as if they are about to push off or have just done so. The skateboard itself is a flat board with wheels, designed for riding. If this skateboard were to suddenly stop, the rider's body would continue to move forward due to inertia.",
+                                "look_prompt": "What part of the skateboarder's body would be most affected by inertia if the skateboard suddenly hit an obstacle and stopped?",
+                                "look_answer": "The skateboarder's upper body would be most affected, as it would continue to move forward due to inertia while the skateboard and feet stop.",
+                                "query": "skateboarder falling forward"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "phase": "real_world",
+                    "order": 5,
+                    "question": "Can you think of another everyday situation where you experience inertia?",
+                    "ask": {
+                        "segment_id": "rw_ask",
+                        "type": "teaching",
+                        "emotion": "curious",
+                        "text": "Now, let's connect the topic with a real-world example you might not have thought about. Can you think of another everyday situation where you experience inertia? Take a moment to consider it, then tap to reveal!"
+                    },
+                    "reveal": {
+                        "segment_id": "rw_reveal",
+                        "type": "teaching",
+                        "emotion": "thoughtful",
+                        "text": "Think about buckling up in a car! When the car suddenly stops, your seatbelt stops you from continuing to move forward. This is because of your body's inertia of motion, trying to maintain its previous state of movement."
+                    },
+                    "why_it_matters": "Understanding inertia helps us design safer vehicles and understand why seatbelts are crucial.",
+                    "visual": {
+                        "image_url": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/state_board/10/science/unit-1/seatbelt_car_crash_test_9abceb10c9.jpg",
+                        "origin_url": "https://images.unsplash.com/photo-1511377398397-8f0fb9ae372d?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixlib=rb-4.1.0&q=80&w=1080",
+                        "page_url": "https://unsplash.com/photos/black-car-headrest-VBFbVw8kZdI",
+                        "source_name": "images.unsplash.com",
+                        "stage": "searxng",
+                        "kind": "photo",
+                        "license": "",
+                        "attribution": "",
+                        "width": 1080,
+                        "height": 720,
+                        "shows": "a person wearing a seatbelt inside a car, with the road visible through the windshield.",
+                        "avatar_line": "This image shows the inside of a car, with a person's shoulder and the car seat headrest in the foreground. You can see the black seatbelt strap going across the person's chest. The road ahead is visible through the windshield, suggesting the car is moving or has just stopped. The seatbelt is designed to keep you safe by counteracting your body's inertia during sudden stops or collisions.",
+                        "look_prompt": "What would happen to the person in this picture if they were not wearing the seatbelt and the car suddenly braked?",
+                        "look_answer": "If the person were not wearing a seatbelt and the car suddenly braked, their body would continue to move forward due to inertia.",
+                        "query": "seatbelt car crash test"
+                    }
+                },
+                {
+                    "phase": "explain_back",
+                    "order": 6,
+                    "prompt": "Explain 'inertia' in your own words, as if to a friend who missed the class.",
+                    "ask": {
+                        "segment_id": "explain_ask",
+                        "type": "teaching",
+                        "emotion": "encouraging",
+                        "text": "You've done so well with all these activities and questions! Now, can you explain 'inertia' in your own words, as if you're teaching a friend who missed class? I'm eager to hear your explanation!"
+                    },
+                    "closing": {
+                        "segment_id": "explain_close",
+                        "type": "teaching",
+                        "emotion": "warm",
+                        "text": "That was a fantastic explanation! You've really grasped the concept. Keep up the great work!"
+                    },
+                    "key_points": [
+                        "Inertia is a property of matter.",
+                        "It describes an object's resistance to changes in its state of motion or rest.",
+                        "An external, unbalanced force is needed to change this state.",
+                        "There are types: inertia of rest, motion, and direction."
+                    ],
+                    "model_explanation": "Inertia is basically an object's 'stubbornness' to keep doing what it's already doing. So, if something is sitting still, it wants to stay still, and if it's moving, it wants to keep moving at the same speed and in the same direction. You need an outside push or pull – an unbalanced force – to make it change. There's inertia of rest, like a coin on a card, inertia of motion, like when a car brakes, and inertia of direction, like water flying off a spinning dog.",
+                    "guidance": "A good explanation states the definition in the student's own words, names the types or cases the section distinguishes, gives one everyday example for each, and says what makes the state change (the external unbalanced force / condition)."
+                },
+                {
+                    "phase": "reflect",
+                    "order": 7,
+                    "before_prompt": "Before the lesson I predicted…",
+                    "after_prompt": "After the lesson I think…",
+                    "ask": {
+                        "segment_id": "reflect_ask",
+                        "type": "teaching",
+                        "emotion": "thoughtful",
+                        "text": "Before we finish, let's revisit our very first question about the bus braking. How has your understanding changed after our lesson on inertia? What do you think now?"
+                    },
+                    "closing": {
+                        "segment_id": "reflect_close",
+                        "type": "teaching",
+                        "emotion": "inspiring",
+                        "text": "You've done a wonderful job today exploring the fascinating world of inertia! Keep observing the world around you; you'll see physics everywhere!"
+                    }
+                }
+            ],
+            "built_at": "2026-09-17T14:53:51.921501+00:00",
+            "models": {
+                "plan": "google/gemini-2.5-flash",
+                "teach": "google/gemini-2.5-flash",
+                "pools": "google/gemini-2.5-flash"
+            },
+            "section_title": "INERTIA",
+            "section_kind": "section"
+        }
+    },
+    "report": {
+        "section_title": "INERTIA",
+        "pattern": "science",
+        "phases": [
+            "hook",
+            "explanation",
+            "explore",
+            "mystery",
+            "real_world",
+            "explain_back",
+            "reflect"
+        ],
+        "segments": 11,
+        "flags": 3,
+        "cards": 3,
+        "mysteries": 4,
+        "pictures": 13,
+        "explanation_segments": 8,
+        "explanation_pictures": 8,
+        "audio": {
+            "skipped": "with_audio was false"
+        },
+        "seconds": 892.0
+    }
+}

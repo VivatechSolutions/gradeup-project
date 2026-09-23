@@ -2,6 +2,110 @@
 @tailwind components;
 @tailwind utilities;
 
+@import './styles/page-transitions.css';
+
+:root,
+[data-theme="light"] {
+  --background: 84 16% 96%;
+  --foreground: 222 38% 15%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 38% 15%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 38% 15%;
+  --primary: 229 64% 51%;
+  --primary-foreground: 45 38% 96%;
+  --secondary: 80 14% 92%;
+  --secondary-foreground: 222 38% 15%;
+  --muted: 80 14% 92%;
+  --muted-foreground: 218 15% 46%;
+  --accent: 39 49% 36%;
+  --accent-foreground: 45 38% 96%;
+  --destructive: 0 38% 50%;
+  --destructive-foreground: 45 38% 96%;
+  --border: 222 38% 15% / 0.1;
+  --input: 222 38% 15% / 0.12;
+  --ring: 229 64% 51%;
+  --radius: 0.875rem;
+  --chart-1: 232 76% 63%;
+  --chart-2: 159 37% 49%;
+  --chart-3: 38 54% 53%;
+  --chart-4: 0 42% 60%;
+  --chart-5: 247 67% 70%;
+  --sidebar-background: 0 0% 100%;
+  --sidebar-foreground: 222 38% 15%;
+  --sidebar-primary: 229 64% 51%;
+  --sidebar-primary-foreground: 45 38% 96%;
+  --sidebar-accent: 80 14% 92%;
+  --sidebar-accent-foreground: 222 38% 15%;
+  --sidebar-border: 222 38% 15% / 0.1;
+  --sidebar-ring: 229 64% 51%;
+  --theme-bg-app: #f6f7f4;
+  --theme-bg-panel: rgba(255,255,255,0.68);
+  --theme-bg-elevated: #ffffff;
+  --theme-text-main: #172033;
+  --theme-text-sub: #667085;
+  --theme-text-muted: #8a94a6;
+  --theme-border: rgba(23,32,51,0.10);
+  --theme-primary: #3454d1;
+  --theme-primary-soft: rgba(52,84,209,0.10);
+  --theme-primary-border: rgba(52,84,209,0.24);
+  --theme-gold: #8a6a2f;
+  --theme-gold-soft: rgba(138,106,47,0.12);
+  --theme-success: #2f8f6b;
+  --theme-warning: #c9822b;
+  --theme-danger: #b44a4a;
+  --theme-shadow: 0 12px 36px rgba(23,32,51,0.08);
+  --theme-shadow-strong: 0 18px 48px rgba(23,32,51,0.14);
+}
+
+.dark,
+[data-theme="dark"] {
+  --background: 224 49% 8%;
+  --foreground: 43 31% 93%;
+  --card: 222 37% 20%;
+  --card-foreground: 43 31% 93%;
+  --popover: 222 37% 20%;
+  --popover-foreground: 43 31% 93%;
+  --primary: 229 100% 78%;
+  --primary-foreground: 224 49% 8%;
+  --secondary: 219 42% 12%;
+  --secondary-foreground: 43 31% 93%;
+  --muted: 219 42% 12%;
+  --muted-foreground: 220 19% 72%;
+  --accent: 40 57% 64%;
+  --accent-foreground: 224 49% 8%;
+  --destructive: 0 69% 67%;
+  --destructive-foreground: 224 49% 8%;
+  --border: 0 0% 100% / 0.11;
+  --input: 0 0% 100% / 0.14;
+  --ring: 229 100% 78%;
+  --sidebar-background: 222 37% 20%;
+  --sidebar-foreground: 43 31% 93%;
+  --sidebar-primary: 229 100% 78%;
+  --sidebar-primary-foreground: 224 49% 8%;
+  --sidebar-accent: 219 42% 12%;
+  --sidebar-accent-foreground: 43 31% 93%;
+  --sidebar-border: 0 0% 100% / 0.11;
+  --sidebar-ring: 229 100% 78%;
+  --theme-bg-app: #0b1020;
+  --theme-bg-panel: rgba(24,32,52,0.66);
+  --theme-bg-elevated: rgba(35,45,68,0.78);
+  --theme-text-main: #f3f0e8;
+  --theme-text-sub: #aab3c5;
+  --theme-text-muted: #737f96;
+  --theme-border: rgba(255,255,255,0.11);
+  --theme-primary: #8ea2ff;
+  --theme-primary-soft: rgba(142,162,255,0.16);
+  --theme-primary-border: rgba(142,162,255,0.30);
+  --theme-gold: #d7b56d;
+  --theme-gold-soft: rgba(215,181,109,0.16);
+  --theme-success: #65c89a;
+  --theme-warning: #e0a458;
+  --theme-danger: #e57373;
+  --theme-shadow: 0 14px 40px rgba(0,0,0,0.34);
+  --theme-shadow-strong: 0 22px 60px rgba(0,0,0,0.48);
+}
+
 .sr-only:not(:focus) {
   position: absolute;
   width: 1px;

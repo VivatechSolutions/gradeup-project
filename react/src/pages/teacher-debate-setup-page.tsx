@@ -24,6 +24,8 @@ import {
   type LibrarySubject,
   type DebateHistoryEntry,
 } from "./debateMockApi";
+import { useAuth } from "../hooks/use-auth";
+import robotWaving from "../assets/dashboard/15_robot_waving.png";
 
 /**
  * ─────────────────────────────────────────────────────────────────────────
@@ -68,6 +70,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--t1);-webkit-font-s
 ::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-thumb{background:rgba(99,102,241,.2);border-radius:4px}
 button,input,select,textarea{font-family:var(--font)}
 .dp-app{height:100dvh;display:flex;flex-direction:column;overflow:hidden;background:var(--bg)}
+.dp-app{width:100%;height:100%;min-height:calc(100vh - 64px);display:flex;flex-direction:column;overflow:hidden;background:var(--bg);box-sizing:border-box}
 @keyframes fadeUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes scaleIn{from{opacity:0;transform:scale(.88)}to{opacity:1;transform:scale(1)}}
@@ -234,8 +237,10 @@ select.finput{cursor:pointer;appearance:none;background-image:url("data:image/sv
 .hist-loading{display:flex;align-items:center;justify-content:center;gap:10px;color:var(--t2);padding:40px 0;font-weight:700;font-size:13px}
 
 .dp-setup{height:100dvh;display:grid;grid-template-columns:32% 1fr;overflow:hidden}
+.dp-setup{width:100%;flex:1;min-height:0;display:grid;grid-template-columns:32% 1fr;overflow:hidden}
 .dp-setup-left{background:#060c1a;overflow:hidden;position:relative;display:flex;flex-direction:column}
 .dp-setup-left-inner{overflow-y:auto;flex:1;padding:clamp(20px,3vw,44px);display:flex;flex-direction:column;justify-content:center;position:relative;z-index:2}
+.dp-setup-left-inner{overflow-y:auto;flex:1;padding:clamp(18px,2.6vw,34px) clamp(16px,2vw,28px);display:flex;flex-direction:column;justify-content:flex-start;position:relative;z-index:2}
 .dp-orbs{position:absolute;inset:0;pointer-events:none}
 .dp-orb{position:absolute;border-radius:50%}
 .dp-orb1{width:320px;height:320px;background:radial-gradient(circle,rgba(99,102,241,.18) 0%,transparent 70%);top:-80px;left:-60px;animation:orbFloat 9s ease-in-out infinite}
@@ -277,6 +282,14 @@ select.finput{cursor:pointer;appearance:none;background-image:url("data:image/sv
 .mod-desc{font-size:10px;color:var(--t2);line-height:1.5}
 .module-card.sel .mod-title{color:var(--ind)}
 
+.submode-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:14px}
+.submode-card{padding:14px 13px;border-radius:14px;border:2px solid var(--bdr);background:var(--surf2);cursor:pointer;transition:all .22s;display:flex;align-items:flex-start;gap:9px}
+.submode-card:hover{border-color:rgba(99,102,241,.32);background:rgba(99,102,241,.03);transform:translateY(-2px)}
+.submode-card.sel{border-color:var(--ind);background:rgba(99,102,241,.06)}
+.submode-ico{font-size:22px;flex-shrink:0;margin-top:2px}
+.submode-title{font-size:12.5px;font-weight:800;color:var(--t1);margin-bottom:3px}
+.submode-desc{font-size:10.5px;color:var(--t2);line-height:1.5}
+
 .dtype-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:12px}
 .dtype-card{padding:12px 13px;border-radius:13px;border:2px solid var(--bdr);background:var(--surf2);cursor:pointer;transition:all .22s;display:flex;align-items:flex-start;gap:9px}
 .dtype-card:hover{border-color:rgba(99,102,241,.32);background:rgba(99,102,241,.03);transform:translateY(-1px)}
@@ -284,6 +297,48 @@ select.finput{cursor:pointer;appearance:none;background-image:url("data:image/sv
 .dtype-ico{font-size:19px;flex-shrink:0}
 .dtype-title{font-size:12px;font-weight:800;color:var(--t1);margin-bottom:2px}
 .dtype-desc{font-size:10px;color:var(--t2);line-height:1.45}
+
+/* Dashboard-inspired debate setup cards */
+@keyframes debateCardIn{from{opacity:0;transform:translateY(12px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes debateIconFloat{0%,100%{transform:translateY(0) rotate(-2deg)}50%{transform:translateY(-7px) rotate(3deg)}}
+@keyframes debateGlowMove{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+.module-card,.submode-card,.dp-feat-left{position:relative;overflow:hidden;background-size:180% 180%;animation:debateCardIn .45s cubic-bezier(.34,1.4,.64,1) both}
+.module-card::after,.submode-card::after,.dp-feat-left::after{content:"";position:absolute;right:-24px;bottom:-36px;width:106px;height:106px;border-radius:50%;background:rgba(255,255,255,.14);transition:transform .3s;pointer-events:none}
+.module-card:hover::after,.submode-card:hover::after,.dp-feat-left:hover::after{transform:scale(1.2)}
+.module-card:nth-child(2),.submode-card:nth-child(2),.dp-feat-left:nth-child(2){animation-delay:.08s}
+.module-card:nth-child(3),.dp-feat-left:nth-child(3){animation-delay:.16s}
+.dp-feat-left:nth-child(4){animation-delay:.24s}
+.module-card:nth-child(1){background:linear-gradient(135deg,#5146e5,#2389ff);border-color:rgba(255,255,255,.2)}
+.module-card:nth-child(2){background:linear-gradient(135deg,#f04f92,#f59e42);border-color:rgba(255,255,255,.2)}
+.submode-card:nth-child(1){background:linear-gradient(135deg,#0fa968,#18b8a0);border-color:rgba(255,255,255,.2)}
+.submode-card:nth-child(2){background:linear-gradient(135deg,#7650e8,#c643cf);border-color:rgba(255,255,255,.2)}
+.module-card .mod-title,.module-card .mod-desc,.submode-card .submode-title,.submode-card .submode-desc{color:#fff}
+.module-card .mod-desc,.submode-card .submode-desc{color:rgba(255,255,255,.9)}
+.module-card .mod-ic{background:linear-gradient(145deg,rgba(255,255,255,.82),rgba(255,255,255,.26));color:#10184c;box-shadow:inset 0 -8px 0 rgba(0,0,0,.08),0 12px 18px rgba(0,0,0,.18);animation:debateIconFloat 4.4s ease-in-out infinite}
+.submode-card .submode-ico{display:grid;place-items:center;min-width:42px;height:42px;border-radius:14px;background:linear-gradient(145deg,rgba(255,255,255,.82),rgba(255,255,255,.26));color:#10184c;box-shadow:inset 0 -8px 0 rgba(0,0,0,.08),0 12px 18px rgba(0,0,0,.18);animation:debateIconFloat 4.4s ease-in-out infinite;font-size:24px}
+.module-card:hover,.submode-card:hover{transform:translateY(-4px) scale(1.018);box-shadow:0 15px 26px rgba(38,57,116,.2);animation:debateGlowMove 2.6s ease infinite}
+.module-card.sel,.submode-card.sel{border-color:rgba(255,255,255,.8);box-shadow:0 0 0 3px rgba(255,255,255,.25),0 17px 30px rgba(38,57,116,.24)}
+.module-card.sel .mod-title,.module-card.sel .mod-desc,.submode-card.sel .submode-title,.submode-card.sel .submode-desc{color:#fff}
+.dp-feat-left{border-color:rgba(255,255,255,.18);box-shadow:0 9px 18px rgba(0,0,0,.18);transition:transform .18s,box-shadow .18s}
+.dp-feat-left:nth-child(1){background:linear-gradient(135deg,#5146e5,#2389ff)}
+.dp-feat-left:nth-child(2){background:linear-gradient(135deg,#f04f92,#f59e42)}
+.dp-feat-left:nth-child(3){background:linear-gradient(135deg,#0fa968,#18b8a0)}
+.dp-feat-left:nth-child(4){background:linear-gradient(135deg,#7650e8,#c643cf)}
+.dp-feat-left:hover{transform:translateY(-4px) scale(1.018);box-shadow:0 15px 26px rgba(0,0,0,.28);animation:debateGlowMove 2.6s ease infinite}
+.dp-feat-ico{background:linear-gradient(145deg,rgba(255,255,255,.82),rgba(255,255,255,.26));color:#10184c;box-shadow:inset 0 -8px 0 rgba(0,0,0,.08),0 12px 18px rgba(0,0,0,.18);animation:debateIconFloat 4.4s ease-in-out infinite}
+.dp-feat-txt span{color:rgba(255,255,255,.9)}
+.dp-setup-robo{display:block;width:min(210px,62%);max-height:150px;object-fit:contain;margin:18px auto 0;filter:drop-shadow(0 18px 16px rgba(0,0,0,.3));animation:debateRoboFloat 4.8s ease-in-out infinite;pointer-events:none}
+@keyframes debateRoboFloat{0%,100%{transform:translateY(0) rotate(-2deg)}50%{transform:translateY(-8px) rotate(2deg)}}
+.dp-setup-intro{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.dp-setup-intro .dp-h1{flex:1;min-width:0}
+.dp-setup-intro .dp-setup-robo{width:min(170px,42%);max-height:138px;margin:0}
+.module-card:active,.submode-card:active,.dp-feat-left:active,.setup-back:active,.btn-p:active,.btn-s:active,.btn-d:active{transform:scale(.97);transition-duration:.08s}
+.dark .module-card:nth-child(1),.dark .dp-feat-left:nth-child(1){background:linear-gradient(135deg,#3730a3,#075985)}
+.dark .module-card:nth-child(2),.dark .dp-feat-left:nth-child(2){background:linear-gradient(135deg,#9f285d,#9a4a12)}
+.dark .submode-card:nth-child(1),.dark .dp-feat-left:nth-child(3){background:linear-gradient(135deg,#086b43,#086b67)}
+.dark .submode-card:nth-child(2),.dark .dp-feat-left:nth-child(4){background:linear-gradient(135deg,#4c299f,#84228b)}
+.dark .module-card.sel,.dark .submode-card.sel{box-shadow:0 0 0 3px rgba(255,255,255,.32),0 16px 30px rgba(0,0,0,.48)}
+@media(prefers-reduced-motion:reduce){.module-card,.submode-card,.dp-feat-left,.module-card .mod-ic,.submode-card .submode-ico,.dp-feat-ico{animation:none}}
 
 .dp-room{height:100dvh;display:flex;flex-direction:column;overflow:hidden;background:#060c1a}
 .room-bar{height:50px;background:rgba(6,12,26,.97);backdrop-filter:blur(18px);border-bottom:1px solid rgba(255,255,255,.07);display:flex;align-items:center;padding:0 12px;gap:7px;flex-shrink:0;z-index:100;overflow:hidden}
@@ -396,12 +451,16 @@ select.finput{cursor:pointer;appearance:none;background-image:url("data:image/sv
 @media(max-width:900px){
   .dp-setup{grid-template-columns:1fr;overflow-y:auto;height:auto;min-height:100dvh}
   .dp-setup-left{min-height:200px;max-height:260px}
+  .dp-setup{grid-template-columns:1fr;overflow-y:auto;height:auto;min-height:100%}
+  .dp-setup-left{min-height:auto;max-height:none}
   .dp-setup-left-inner{justify-content:flex-start}
+  .dp-setup-intro .dp-setup-robo{width:140px;max-height:112px}
   .dp-feats-left{display:none}
   .ctx-card{display:none}
   .hist-stats-row{grid-template-columns:repeat(2,1fr)}
 }
 @media(max-width:768px){
+  .submode-grid,.dtype-grid{grid-template-columns:1fr}
   .room-body{flex-direction:column}
   .vid-grid{padding:8px;gap:8px}
   .team-stage{padding:8px}
@@ -1125,17 +1184,144 @@ function DebateHistoryScreen({ onNew }: { onNew: () => void }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// SCHEDULE DEBATE MODAL
+// ═══════════════════════════════════════════════════════════════════════════
+function ScheduleDebateModal({ config, onSchedule, onClose }: any) {
+  const [date, setDate] = useState("");
+  const [time, setTime] = useState("10:00");
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    if (!date) return;
+    setSaving(true);
+    await new Promise((r) => setTimeout(r, 600));
+    try {
+      const ev = {
+        id: `db-${Date.now()}`,
+        title: config?.topic || "Debate",
+        type: "debate",
+        date,
+        startTime: time,
+        subject: config?.subject || "",
+        unit: config?.unit || "",
+        link: config?.roomLink || "",
+      };
+      const ex = JSON.parse(
+        localStorage.getItem("gradeup_cal_events_v3") || "[]",
+      );
+      localStorage.setItem(
+        "gradeup_cal_events_v3",
+        JSON.stringify([...ex, ev]),
+      );
+      window.dispatchEvent(
+        new StorageEvent("storage", { key: "gradeup_cal_events_v3" }),
+      );
+    } catch {}
+    setSaving(false);
+    onSchedule({ date, time });
+  }
+
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 400 }} onClick={(e) => e.stopPropagation()}>
+        <div className="mh">
+          <span className="mh-title">📅 Schedule Debate</span>
+          <button className="mh-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="mb" style={{ padding: "16px 20px" }}>
+          <div
+            style={{
+              padding: "10px 12px",
+              borderRadius: 11,
+              background: "rgba(16,185,129,.06)",
+              border: "1px solid rgba(16,185,129,.18)",
+              marginBottom: 14,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            <span style={{ fontSize: 18 }}>📅</span>
+            <div>
+              <div style={{ fontSize: 11.5, fontWeight: 800, color: "var(--em)" }}>
+                Auto-synced to Calendar
+              </div>
+              <div style={{ fontSize: 10.5, color: "var(--t2)" }}>
+                Event saved automatically after scheduling
+              </div>
+            </div>
+          </div>
+          {config?.topic && (
+            <div
+              style={{
+                padding: "9px 12px",
+                borderRadius: 10,
+                background: "rgba(99,102,241,.06)",
+                border: "1px solid rgba(99,102,241,.18)",
+                marginBottom: 14,
+                fontSize: 12.5,
+                fontWeight: 700,
+                color: "var(--t1)",
+              }}
+            >
+              💬 "{config.topic}"
+            </div>
+          )}
+          <div className="fi-row fi">
+            <div>
+              <label className="fl">Date *</label>
+              <input
+                className="finput"
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="fl">Time</label>
+              <input
+                className="finput"
+                type="time"
+                value={time}
+                onChange={(e) => setTime(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+        <div className="mf">
+          <button className="btn-s" onClick={onClose} disabled={saving}>Cancel</button>
+          <button
+            className="btn-p"
+            style={{ width: "auto", padding: "9px 22px" }}
+            onClick={handleSave}
+            disabled={!date || saving}
+          >
+            {saving ? "Saving..." : "Confirm Schedule"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // SETUP SCREEN
 // ═══════════════════════════════════════════════════════════════════════════
 function DebateSetup({
+  teacherName,
   onBack,
   onLaunch,
 }: {
+  teacherName?: string;
   onBack: () => void;
   onLaunch: (cfg: any) => void;
 }) {
-  const [name, setName] = useState("");
-  const [subMode, setSubMode] = useState<"ai" | "multi" | "">("");
+  const [name, setName] = useState(teacherName || "");
+  const [subMode, setSubMode] = useState<"ai" | "multi">("ai");
+  const [debateType, setDebateType] = useState<"instant" | "schedule">("instant");
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [scheduled, setScheduled] = useState(false);
+  const [scheduledInfo, setScheduledInfo] = useState<any>(null);
   const [subjectCatalog, setSubjectCatalog] = useState<LibrarySubject[]>([]);
   const [subjectsLoading, setSubjectsLoading] = useState(true);
   const [subject, setSubject] = useState("");
@@ -1242,6 +1428,9 @@ function DebateSetup({
     { ico: "🤖", t: "AI Voice Opponent", d: "Live rebuttals & instant scoring" },
     { ico: "📊", t: "Analysis Reports", d: "Full feedback after each debate" },
     { ico: "👥", t: "Team Mode", d: "Blue vs Red with turn-based moderation" },
+    { ico: "🤖", t: "AI Voice Opponent", d: "Real-time voice rebuttals & live scoring" },
+    { ico: "📊", t: "Analysis Reports", d: "Full AI-generated feedback after each debate" },
+    { ico: "👥", t: "Team Debate", d: "Create a live room with AI moderation & balanced teams" },
     { ico: "🗒️", t: "Session History", d: "Every debate is saved automatically" },
   ];
 
@@ -1323,12 +1512,21 @@ function DebateSetup({
           <div className="dp-tag">
             <div className="dp-tag-dot" />
             Debate Setup
+            Teacher Debate Setup
           </div>
           <h2 className="dp-h1">
             Launch your
             <br />
             <span className="gt">Debate Room.</span>
           </h2>
+          <div className="dp-setup-intro">
+            <h2 className="dp-h1">
+              Launch your
+              <br />
+              <span className="gt">Debate Room.</span>
+            </h2>
+            <img className="dp-setup-robo" src={robotWaving} alt="" aria-hidden="true" />
+          </div>
           <p className="dp-p">
             {subMode === "ai"
               ? "1-on-1 practice with a live AI opponent and instant scoring."
@@ -1370,6 +1568,7 @@ function DebateSetup({
               }}
             >
               ← Back to History
+              ← View Past Debates
             </button>
             <h2 className="setup-title">⚔️ Debate Setup</h2>
             <p className="setup-sub">
@@ -1385,7 +1584,10 @@ function DebateSetup({
                 <div
                   key={item.id}
                   className={`module-card${subMode === item.id ? " sel" : ""}`}
-                  onClick={() => setSubMode(item.id as any)}
+                  onClick={() => {
+                    setSubMode(item.id as any);
+                    setDebateType("instant");
+                  }}
                 >
                   <div className="mod-ic">{item.ic}</div>
                   <div>
@@ -1530,6 +1732,74 @@ function DebateSetup({
                   </div>
                 )}
 
+                <div className="dtype-grid fi">
+                  {[
+                    { id: "instant", ico: "⚡", t: "Start Now", d: "Create or join the room immediately" },
+                    { id: "schedule", ico: "📅", t: "Schedule", d: "Plan debate for a future date & time" },
+                  ].map((item) => (
+                    <div
+                      key={item.id}
+                      className={`dtype-card${debateType === item.id ? " sel" : ""}`}
+                      onClick={() => setDebateType(item.id as any)}
+                    >
+                      <div className="dtype-ico">{item.ico}</div>
+                      <div>
+                        <div className="dtype-title">{item.t}</div>
+                        <div className="dtype-desc">{item.d}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {debateType === "schedule" && (
+                  <div
+                    style={{
+                      padding: 13,
+                      borderRadius: 13,
+                      background: "rgba(99,102,241,.05)",
+                      border: "1.5px solid rgba(99,102,241,.18)",
+                      marginBottom: 10,
+                    }}
+                  >
+                    {!scheduled ? (
+                      <>
+                        <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--t1)", marginBottom: 6 }}>
+                          📅 Set date & time for your debate
+                        </div>
+                        <div style={{ fontSize: 11.5, color: "var(--t2)", marginBottom: 10 }}>
+                          Event will appear as "Scheduled" in your debate history.
+                        </div>
+                        <button
+                          className="btn-s"
+                          style={{ width: "100%", justifyContent: "center" }}
+                          onClick={() => setShowSchedule(true)}
+                        >
+                          📅 Open Schedule Form
+                        </button>
+                      </>
+                    ) : (
+                      <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                        <span style={{ fontSize: 22 }}>✅</span>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 12, fontWeight: 800, color: "var(--em)" }}>
+                            Debate Scheduled
+                          </div>
+                          <div style={{ fontSize: 11, color: "var(--t2)" }}>
+                            📅 {scheduledInfo?.date} at {scheduledInfo?.time}
+                          </div>
+                        </div>
+                        <button
+                          className="btn-s"
+                          style={{ fontSize: 10.5, padding: "3px 8px" }}
+                          onClick={() => { setScheduled(false); setShowSchedule(true); }}
+                        >
+                          Edit
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <StepsComp steps={steps} />
                 <button
                   className="btn-p"
@@ -1538,12 +1808,38 @@ function DebateSetup({
                 >
                   {subMode === "ai" ? "🤖 Start 1 vs AI Debate" : "👥 Launch Team Debate"}
                 </button>
+                {debateType === "schedule" && scheduled && (
+                  <button
+                    className="btn-p"
+                    style={{ background: "var(--surf3)", color: "var(--t2)", boxShadow: "none" }}
+                    disabled
+                  >
+                    📅 Scheduled — appears in History
+                  </button>
+                )}
               </>
             )}
             <div style={{ height: 24 }} />
           </div>
         </div>
       </div>
+
+      {showSchedule && (
+        <ScheduleDebateModal
+          config={{
+            topic: finalTopic,
+            subject: selectedSubjectLabel,
+            unit: selectedUnitRecord?.unitTitle || "",
+          }}
+          onSchedule={(info: any) => {
+            setScheduledInfo(info);
+            setScheduled(true);
+            setShowSchedule(false);
+            toast$("Debate scheduled!", "success");
+          }}
+          onClose={() => setShowSchedule(false)}
+        />
+      )}
 
       {showConfirm && (
         <div className="overlay">
@@ -2519,8 +2815,11 @@ type Screen = "history" | "setup" | "room" | "results-loading" | "results";
 
 export default function TeacherDebatePage() {
   const [screen, setScreen] = useState<Screen>("history");
+  const { user } = useAuth();
   const [config, setConfig] = useState<any>(null);
   const [result, setResult] = useState<any>(null);
+
+  const teacherName = `${user?.firstName || ""} ${user?.lastName || ""}`.trim();
 
   return (
     <>
@@ -2532,6 +2831,7 @@ export default function TeacherDebatePage() {
 
         {screen === "setup" && (
           <DebateSetup
+            teacherName={teacherName}
             onBack={() => setScreen("history")}
             onLaunch={(cfg) => {
               setConfig(cfg);

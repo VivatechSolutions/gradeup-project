@@ -2,6 +2,7 @@ import React, { Suspense } from 'react';
 import { Switch, Route, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
+import PageTransition from "./components/PageTransition";
 import { Toaster } from "./components/ui/toaster";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { AuthProvider, useAuth } from "./hooks/use-auth";
@@ -39,6 +40,7 @@ import Landing from "./pages/landing";
 import NotFound from "./pages/not-found";
 import BookContentWindow from "./components/BookContentWindow/BookContentWindow";
 import BookContentWindowDemo from "./components/BookContentWindow/BookContentWindowDemo";
+import BookContentWindowRewamp from "./components/BookContentWindow/BookContentWindowRewamp";
 import AvatarGeniusView from "./components/BookContentWindow/AvatarGeniusView";
 import BookGallery from "./components/BookGallery";
 import SeminarToolPage from "./pages/seminar-tool-page";
@@ -64,6 +66,8 @@ import DebatePage from "./pages/DebatePage";
 import SeminarPage from "./pages/SeminarPage";
 import MeetingPage from "./pages/MeetingPage";
 import LiveEventsPage from "./pages/live-events-page";
+import TeacherSeminarPage from "./pages/teacher-seminar-page";
+import TeacherDebatePage from "./pages/teacher-debate-page";
 import TeacherMeetingPage from "./pages/teacher-meeting-page";
 import TeacherSeminarSetupPage from "./pages/teacher-seminar-setup-page";
 import TeacherDebateSetupPage from "./pages/teacher-debate-setup-page";
@@ -95,6 +99,7 @@ function AppWithAuth() {
   }
   return (
     <>
+      <PageTransition>
       <Switch>
         <Route path="/seminar/slides/:deckId/present"><Suspense fallback={<div>Loading presentation...</div>}><SlideEditorPage /></Suspense></Route>
         <Route path="/seminar/slides/:deckId"><Suspense fallback={<div>Loading editor...</div>}><SlideEditorPage /></Suspense></Route>
@@ -150,6 +155,7 @@ function AppWithAuth() {
         <ProtectedRoute path="/avatar-genius" component={AvatarGeniusView} />
         {/* <ProtectedRoute path="/bookExpanded" component={BookContentWindow} /> */}
         <ProtectedRoute path="/bookExpanded" component={BookContentWindowDemo} />
+        <ProtectedRoute path="/bookRewamp" component={BookContentWindowRewamp} />
         <ProtectedRoute path="/bookexpanded" component={BookContentWindow} />
         <ProtectedRoute path="/bookGallery" component={BookGallery} />
         <ProtectedRoute path="/seminar-tool" component={SeminarToolPage} />
@@ -172,6 +178,7 @@ function AppWithAuth() {
         <ProtectedRoute path="/meeting-system" component={MeetingSystem} />
         <Route component={NotFound} />
       </Switch>
+      </PageTransition>
     </>
   );
 }

@@ -1,10 +1,21 @@
 import React from "react";
 import { motion } from "framer-motion";
 import { Link } from "wouter";
-import gradeupLogo from "../../assets/new-logo-g.png";
+import { useTheme } from "../../hooks/use-theme";
+import logoDark from "../../assets/logo-dark.png";
+import logoWhite from "../../assets/logo-white.png";
 
 export default function Footer() {
   const currentYear = new Date().getFullYear();
+
+  let isDark = false;
+  try {
+    const themeContext = useTheme();
+    isDark = themeContext.isDark;
+  } catch {
+    // fallback if used outside ThemeProvider
+  }
+  const logo = isDark ? logoWhite : logoDark;
 
   return (
     <footer className="relative border-t border-white/10 bg-gradient-to-b from-transparent to-indigo-950/10">
@@ -19,7 +30,7 @@ export default function Footer() {
           >
             <Link href="/" className="flex items-center mb-4" aria-label="GradeUp AI home">
               <img
-                src={gradeupLogo}
+                src={logo}
                 alt="GradeUp AI"
                 className="h-11 w-auto object-contain"
               />

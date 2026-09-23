@@ -1,414 +1,1419 @@
-import React, { useQuery, useMutation } from "@tanstack/react-query";
-import { useState, useRef, useEffect } from "react";
-import { motion, AnimatePresence } from 'framer-motion';
-import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
-import { Button as UIButton } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { Textarea } from "../components/ui/textarea";
-import { Badge } from "../components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
-import { ScrollArea } from "../components/ui/scroll-area";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../components/ui/dialog";
-import { Checkbox } from "../components/ui/checkbox";
-import { formatDistanceToNow } from 'date-fns';
-import BlogFeed from "../components/BlogFeed";
-import { BlogPost } from "../components/BlogPostCard";
-import { mockBlogPosts } from "../lib/mock-blog-data";
-import { badWords } from "../lib/bad-words";
+import React, { useState, useRef, useEffect, useMemo } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { motion, AnimatePresence } from "framer-motion";
+import { formatDistanceToNow } from "date-fns";
 import {
-  Users, MessageSquare, Send, Paperclip, Image as ImageIcon,
-  Heart, MessageCircle, Share2, Trash2, Plus, Search, Filter,
-  BookOpen, Trophy, Zap, ArrowLeft, Loader2, Lightbulb, Code,
-  BrainCircuit, GraduationCap, XCircle, Vote, ShieldAlert,
-  TrendingUp, Award, Target, Star, BarChart3
+  Users,
+  MessageSquare,
+  Send,
+  Image as ImageIcon,
+  Heart,
+  MessageCircle,
+  Share2,
+  Plus,
+  Search,
+  BookOpen,
+  Trophy,
+  Zap,
+  Lightbulb,
+  GraduationCap,
+  Vote,
+  TrendingUp,
+  Award,
+  Target,
+  Star,
+  BarChart3,
+  HelpCircle,
+  CheckCircle2,
+  Radio,
+  Sparkles,
+  X,
+  ChevronRight,
+  Flame,
+  ShieldCheck,
+  Smile,
+  Clock,
+  ArrowRight,
 } from "lucide-react";
-import { TrendingTopics } from "../components/TrendingTopics";
 import { useToast } from "../hooks/use-toast";
-import { useTheme } from '../hooks/use-theme';
+import { useTheme } from "../hooks/use-theme";
 import { useNotificationStore } from "../lib/notification-store";
 import FunnyLoader from "../components/ui/FunnyLoader";
 import { queryClient } from "../lib/queryClient";
 import { buildApiUrl } from "../lib/apiBase";
 import Navigation from "../components/navigation";
 import { useAuth } from "../hooks/use-auth";
+import { badWords } from "../lib/bad-words";
+import BlogFeed from "../components/BlogFeed";
 
-const MotionButton = motion(UIButton);
+// Student Dashboard Assets
+import studyRoboImg from "../assets/dashboard/study-robo.png";
+import robotWaving from "../assets/dashboard/15_robot_waving.png";
+import tomatoHappy from "../assets/dashboard/01_tomato_happy_running.png";
+import learningIsland from "../assets/dashboard/07_floating_learning_island.png";
+import robotSearch from "../assets/dashboard/11_robot_magnifying_glass.png";
 
-/* ── Dashboard-matched CSS ── */
+/* ══════════════════════════════════════════════════════════════════════════
+   STUDENT DASHBOARD MATCHED STYLES & ANIMATIONS
+   ══════════════════════════════════════════════════════════════════════════ */
 const communityStyles = `
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
 
+:root {
+  --comm-page: #fbfcff;
+  --comm-page-2: #f5f7ff;
+  --comm-card: #ffffff;
+  --comm-card-soft: #f7faff;
+  --comm-card-hover: #ffffff;
+  --comm-ink: #071235;
+  --comm-muted: #68708a;
+  --comm-faint: #8c94aa;
+  --comm-line: rgba(15, 23, 42, 0.08);
+  --comm-shadow: 0 14px 34px rgba(35, 44, 87, 0.09);
+  --comm-shadow-soft: 0 7px 20px rgba(35, 44, 87, 0.06);
+  --comm-primary: #7b2cff;
+  --comm-primary-end: #b948d9;
+}
+
+[data-theme="dark"], .dark {
+  --comm-page: #080d1f;
+  --comm-page-2: #10172d;
+  --comm-card: rgba(23, 31, 58, 0.94);
+  --comm-card-soft: rgba(31, 42, 76, 0.72);
+  --comm-card-hover: rgba(33, 46, 84, 0.98);
+  --comm-ink: #f6f7ff;
+  --comm-muted: #b5bfd8;
+  --comm-faint: #7f8aa7;
+  --comm-line: rgba(255, 255, 255, 0.11);
+  --comm-shadow: 0 20px 54px rgba(0, 0, 0, 0.42);
+  --comm-shadow-soft: 0 12px 30px rgba(0, 0, 0, 0.28);
+  --comm-primary: #8b5cf6;
+  --comm-primary-end: #d946ef;
+}
+
+/* ── Page Root with Ambient Meshes ── */
 .comm-page {
   font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
-  background: #f8fafc;
   min-height: 100vh;
+  color: var(--comm-ink);
+  background:
+    radial-gradient(circle at 14% 9%, rgba(126, 87, 255, 0.14), transparent 26%),
+    radial-gradient(circle at 88% 14%, rgba(255, 171, 64, 0.18), transparent 25%),
+    linear-gradient(180deg, var(--comm-page), var(--comm-page-2));
+  position: relative;
+  overflow-x: hidden;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
-.dark .comm-page { background: #0d1117; }
 
-/* ══════════════════ HERO ══════════════════ */
-.comm-hero {
-  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #ec4899 100%);
-  padding: 36px 40px;
-  position: relative; overflow: hidden;
-  animation: heroIn .6s cubic-bezier(.34,1.56,.64,1) both;
+[data-theme="dark"] .comm-page, .dark .comm-page {
+  background:
+    radial-gradient(circle at 14% 9%, rgba(126, 87, 255, 0.22), transparent 26%),
+    radial-gradient(circle at 88% 14%, rgba(255, 171, 64, 0.14), transparent 25%),
+    linear-gradient(180deg, var(--comm-page), var(--comm-page-2));
 }
-@keyframes heroIn { from{opacity:0;transform:translateY(-16px)} to{opacity:1;transform:none} }
+
+/* Moving Floating Orbs & Sparks (Matching Student Dashboard) */
+.comm-page::before, .comm-page::after {
+  content: "";
+  position: absolute;
+  border-radius: 999px;
+  pointer-events: none;
+  filter: blur(0.5px);
+  opacity: 0.55;
+  animation: commFloatBg 14s ease-in-out infinite alternate;
+  z-index: 0;
+}
+.comm-page::before {
+  width: 270px;
+  height: 270px;
+  left: -80px;
+  top: 120px;
+  background: radial-gradient(circle, rgba(46, 182, 255, 0.20), transparent 68%);
+}
+.comm-page::after {
+  width: 320px;
+  height: 320px;
+  right: -100px;
+  top: 420px;
+  background: radial-gradient(circle, rgba(255, 95, 153, 0.16), transparent 70%);
+  animation-delay: -6s;
+}
+
+@keyframes commFloatBg {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to   { transform: translate3d(24px, 30px, 0) scale(1.08); }
+}
+@keyframes commBreathe {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-7px); }
+}
+@keyframes commPop3d {
+  0%, 100% { transform: translateY(0) rotate(-2deg) scale(1); }
+  50% { transform: translateY(-6px) rotate(3deg) scale(1.04); }
+}
+@keyframes commPulseSoft {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(99, 91, 255, 0.25); }
+  50% { box-shadow: 0 0 0 8px rgba(99, 91, 255, 0); }
+}
+@keyframes commShine {
+  0% { transform: translateX(-140%) rotate(18deg); }
+  45%, 100% { transform: translateX(240%) rotate(18deg); }
+}
+@keyframes commDrift {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(0); }
+  50% { transform: translate3d(16px, -12px, 0) rotate(6deg); }
+}
+@keyframes commBgWave {
+  0%, 100% { transform: translate3d(-2%, 0, 0) rotate(0); }
+  50% { transform: translate3d(2%, -2%, 0) rotate(2deg); }
+}
+
+.comm-bg-spark {
+  position: absolute;
+  pointer-events: none;
+  z-index: 0;
+  border-radius: 999px;
+  opacity: 0.48;
+  animation: commDrift 9s ease-in-out infinite;
+}
+.comm-bg-spark.s1 {
+  left: 54%;
+  top: 90px;
+  width: 9px;
+  height: 9px;
+  background: #ffb21d;
+  box-shadow: 34px 28px 0 #27b86a, 76px -14px 0 #2389ff;
+}
+.comm-bg-spark.s2 {
+  right: 6%;
+  top: 280px;
+  width: 7px;
+  height: 7px;
+  background: #ff4d8d;
+  box-shadow: -48px 46px 0 #7e45e8, -86px -18px 0 #00a7c8;
+  animation-delay: -3s;
+}
+.comm-bg-spark.s3 {
+  left: 6%;
+  bottom: 200px;
+  width: 8px;
+  height: 8px;
+  background: #27b86a;
+  box-shadow: 42px -34px 0 #ff791f, 92px 18px 0 #2389ff;
+  animation-delay: -5s;
+}
+.comm-bg-ribbon {
+  position: absolute;
+  pointer-events: none;
+  z-index: 0;
+  left: 3%;
+  right: 3%;
+  top: 160px;
+  height: 180px;
+  border-radius: 50%;
+  background: linear-gradient(90deg, rgba(35, 137, 255, 0.09), rgba(255, 178, 29, 0.11), rgba(39, 184, 106, 0.09));
+  filter: blur(20px);
+  opacity: 0.75;
+  animation: commBgWave 13s ease-in-out infinite;
+}
+
+/* ══════════════════ HERO SECTION ══════════════════ */
+.comm-hero-container {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 20px 24px 0;
+  position: relative;
+  z-index: 1;
+}
+.comm-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 24px;
+  padding: 26px 32px;
+  background: linear-gradient(135deg, #eef8ff 0%, #efffed 48%, #fff5d7 100%);
+  border: 1.5px solid rgba(35, 137, 255, 0.18);
+  box-shadow: var(--comm-shadow);
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: center;
+}
+[data-theme="dark"] .comm-hero, .dark .comm-hero {
+  background: linear-gradient(135deg, #101b3f 0%, #123326 55%, #392a16 100%);
+  border-color: rgba(110, 231, 183, 0.22);
+}
 .comm-hero::before {
-  content:''; position:absolute; top:-60px; right:-60px;
-  width:260px; height:260px; border-radius:50%; background:rgba(255,255,255,.09);
+  content: "";
+  position: absolute;
+  top: -70px;
+  right: 15%;
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.45);
+  animation: commBreathe 6s ease-in-out infinite;
+  pointer-events: none;
 }
 .comm-hero::after {
-  content:''; position:absolute; bottom:-80px; left:28%;
-  width:200px; height:200px; border-radius:50%; background:rgba(255,255,255,.06);
+  content: "";
+  position: absolute;
+  top: -60px;
+  bottom: -60px;
+  width: 80px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.38), transparent);
+  animation: commShine 8s ease-in-out infinite;
+  pointer-events: none;
 }
-.comm-hero-inner {
-  position:relative; z-index:1; max-width:1280px; margin:0 auto;
-  display:flex; align-items:center; justify-content:space-between; gap:20px; flex-wrap:wrap;
-}
-.comm-hero-title { font-size:clamp(22px,3.5vw,32px); font-weight:800; color:#fff; letter-spacing:-.5px; margin-bottom:6px; }
-.comm-hero-sub   { font-size:14px; color:rgba(255,255,255,.75); max-width:420px; line-height:1.5; }
-.comm-hero-right { display:flex; align-items:center; gap:16px; flex-shrink:0; }
-.comm-hero-stat  { text-align:center; }
-.comm-hero-sn    { font-size:28px; font-weight:800; color:#fff; line-height:1; }
-.comm-hero-sl    { font-size:11px; color:rgba(255,255,255,.65); margin-top:2px; }
-.comm-hero-div   { width:1px; height:44px; background:rgba(255,255,255,.22); }
-.comm-hero-btn {
-  padding:11px 22px; background:#fff; color:#6366f1; border:none; border-radius:14px;
-  font-size:13.5px; font-weight:700; cursor:pointer; font-family:inherit;
-  transition:all .2s; white-space:nowrap; box-shadow:0 4px 16px rgba(0,0,0,.15);
-}
-.comm-hero-btn:hover { transform:translateY(-2px); box-shadow:0 8px 24px rgba(0,0,0,.2); background:#f5f3ff; }
 
-/* ══════════════════ BODY ══════════════════ */
-.comm-body { max-width:1280px; margin:0 auto; padding:28px 32px 48px; }
+.comm-hero-left {
+  position: relative;
+  z-index: 2;
+}
+.comm-hero-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  font-weight: 800;
+  color: #10734c;
+  background: rgba(16, 115, 76, 0.1);
+  padding: 6px 14px;
+  border-radius: 999px;
+  margin-bottom: 12px;
+}
+[data-theme="dark"] .comm-hero-chip, .dark .comm-hero-chip {
+  color: #7ee7b7;
+  background: rgba(126, 231, 183, 0.15);
+}
 
-/* ── Stat mini-cards (matches dashboard) ── */
+.comm-hero-title {
+  font-size: clamp(24px, 3.2vw, 36px);
+  line-height: 1.15;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  color: var(--comm-ink);
+  margin-bottom: 8px;
+}
+.comm-hero-title span {
+  background: linear-gradient(135deg, #7b2cff, #2389ff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+[data-theme="dark"] .comm-hero-title span, .dark .comm-hero-title span {
+  background: linear-gradient(135deg, #a78bfa, #60a5fa);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.comm-hero-desc {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.55;
+  color: var(--comm-muted);
+  max-width: 480px;
+  margin-bottom: 18px;
+}
+
+.comm-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.comm-hero-primary-btn {
+  border: 0;
+  border-radius: 14px;
+  padding: 11px 20px;
+  min-height: 42px;
+  background: linear-gradient(135deg, #7b2cff, #b948d9);
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 10px 22px rgba(123, 44, 255, 0.26);
+  transition: transform 0.2s, box-shadow 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.comm-hero-primary-btn:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 14px 28px rgba(123, 44, 255, 0.35);
+}
+.comm-hero-secondary-btn {
+  border: 1px solid var(--comm-line);
+  border-radius: 14px;
+  padding: 10px 18px;
+  min-height: 42px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(10px);
+  color: var(--comm-ink);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+[data-theme="dark"] .comm-hero-secondary-btn, .dark .comm-hero-secondary-btn {
+  background: rgba(23, 31, 58, 0.75);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+.comm-hero-secondary-btn:hover {
+  transform: translateY(-2px);
+  background: var(--comm-card);
+  box-shadow: var(--comm-shadow-soft);
+}
+
+/* Hero Right: Robot Mascot Showcase */
+.comm-hero-right {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+}
+.comm-hero-art-wrap {
+  position: relative;
+  width: 140px;
+  height: 140px;
+  border-radius: 36px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(220, 240, 255, 0.75));
+  box-shadow: inset 0 -8px 0 rgba(35, 137, 255, 0.12), 0 16px 32px rgba(35, 44, 87, 0.16);
+  display: grid;
+  place-items: center;
+  animation: commBreathe 4.5s ease-in-out infinite;
+  flex-shrink: 0;
+}
+[data-theme="dark"] .comm-hero-art-wrap, .dark .comm-hero-art-wrap {
+  background: linear-gradient(145deg, rgba(35, 52, 94, 0.9), rgba(20, 29, 58, 0.8));
+  box-shadow: inset 0 -8px 0 rgba(0, 0, 0, 0.3), 0 18px 36px rgba(0, 0, 0, 0.45);
+}
+.comm-hero-art-img {
+  width: 110px;
+  height: 110px;
+  object-fit: contain;
+  filter: drop-shadow(0 12px 16px rgba(0, 0, 0, 0.2));
+}
+
+.comm-hero-stats-panel {
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  border-radius: 20px;
+  padding: 14px 18px;
+  box-shadow: 0 12px 28px rgba(35, 44, 87, 0.09);
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  min-width: 190px;
+}
+[data-theme="dark"] .comm-hero-stats-panel, .dark .comm-hero-stats-panel {
+  background: rgba(18, 26, 52, 0.8);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+.comm-hero-mini-stat b {
+  display: block;
+  font-size: 20px;
+  font-weight: 900;
+  color: var(--comm-ink);
+  line-height: 1;
+}
+.comm-hero-mini-stat span {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--comm-muted);
+  margin-top: 4px;
+}
+
+/* ══════════════════ BODY WRAPPER ══════════════════ */
+.comm-body {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 24px 24px 60px;
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Gamified 4 Stat Cards Row ── */
 .comm-stats-row {
-  display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:28px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 24px;
 }
 .comm-stat-card {
-  background:#fff; border-radius:18px; padding:18px 20px;
-  border:1px solid rgba(0,0,0,.06); box-shadow:0 2px 12px rgba(0,0,0,.05);
-  transition:all .25s cubic-bezier(.4,0,.2,1);
-  animation:cardIn .5s cubic-bezier(.34,1.56,.64,1) both; cursor:default;
-  display:flex; flex-direction:column;
+  background: var(--comm-card);
+  backdrop-filter: blur(14px);
+  border-radius: 20px;
+  padding: 16px 18px;
+  border: 1px solid var(--comm-line);
+  box-shadow: var(--comm-shadow-soft);
+  transition: transform 0.22s, box-shadow 0.22s, border-color 0.22s;
+  cursor: default;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
 }
-.dark .comm-stat-card { background: #161b22; border-color: rgba(255,255,255,.1); box-shadow: none; }
-.comm-stat-card:hover { transform:translateY(-3px); box-shadow:0 10px 28px rgba(0,0,0,.09); }
-.dark .comm-stat-card:hover { box-shadow:0 10px 28px rgba(0,0,0,.2); }
-.comm-stat-card.blue   { border-top:3px solid #6366f1; }
-.comm-stat-card.green  { border-top:3px solid #10b981; }
-.comm-stat-card.purple { border-top:3px solid #8b5cf6; }
-.comm-stat-card.amber  { border-top:3px solid #f59e0b; }
-.comm-stat-top  { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
-.comm-stat-icon { width:40px; height:40px; border-radius:12px; display:flex; align-items:center; justify-content:center; }
-.si-blue   { background:rgba(99,102,241,.1);  color:#6366f1; }
-.si-green  { background:rgba(16,185,129,.1);  color:#10b981; }
-.si-purple { background:rgba(139,92,246,.1);  color:#8b5cf6; }
-.si-amber  { background:rgba(245,158,11,.1);  color:#f59e0b; }
-.comm-stat-badge { font-size:10.5px; font-weight:600; padding:3px 8px; border-radius:20px; color:#9ca3af; background:#f9fafb; }
-.dark .comm-stat-badge { background: #21262d; color: #8b949e; }
-.comm-stat-num   { font-size:28px; font-weight:800; color:#0f172a; letter-spacing:-1px; line-height:1; margin-bottom:3px; }
-.dark .comm-stat-num { color: #c9d1d9; }
-.comm-stat-label { font-size:12px; color:#64748b; font-weight:500; }
-.dark .comm-stat-label { color: #8b949e; }
+.comm-stat-card::after {
+  content: "";
+  position: absolute;
+  right: -24px;
+  bottom: -24px;
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  pointer-events: none;
+  opacity: 0.6;
+  transition: transform 0.3s ease;
+}
+.comm-stat-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--comm-shadow);
+}
+.comm-stat-card:hover::after {
+  transform: scale(1.3);
+}
 
-/* ── Tab bar ── */
+.comm-stat-card.blue::after   { background: radial-gradient(circle, rgba(35, 137, 255, 0.22), transparent 70%); }
+.comm-stat-card.green::after  { background: radial-gradient(circle, rgba(39, 184, 106, 0.22), transparent 70%); }
+.comm-stat-card.purple::after { background: radial-gradient(circle, rgba(126, 69, 232, 0.22), transparent 70%); }
+.comm-stat-card.amber::after  { background: radial-gradient(circle, rgba(255, 178, 29, 0.24), transparent 70%); }
+
+.comm-stat-card.blue   { border-top: 3.5px solid #2389ff; }
+.comm-stat-card.green  { border-top: 3.5px solid #27b86a; }
+.comm-stat-card.purple { border-top: 3.5px solid #7e45e8; }
+.comm-stat-card.amber  { border-top: 3.5px solid #ffb21d; }
+
+.comm-stat-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.comm-stat-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  font-size: 19px;
+  transition: transform 0.2s;
+  animation: commPop3d 4.5s ease-in-out infinite;
+}
+.comm-stat-card:hover .comm-stat-icon {
+  transform: scale(1.08) rotate(5deg);
+}
+
+.si-blue   { background: rgba(35, 137, 255, 0.12); color: #2389ff; }
+.si-green  { background: rgba(39, 184, 106, 0.12); color: #27b86a; }
+.si-purple { background: rgba(126, 69, 232, 0.12); color: #7e45e8; }
+.si-amber  { background: rgba(255, 178, 29, 0.14); color: #ff9800; }
+
+.comm-stat-badge {
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 9px;
+  border-radius: 999px;
+  color: var(--comm-muted);
+  background: var(--comm-card-soft);
+  border: 1px solid var(--comm-line);
+}
+.comm-stat-num {
+  font-size: 26px;
+  font-weight: 900;
+  color: var(--comm-ink);
+  letter-spacing: -0.02em;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+.comm-stat-label {
+  font-size: 12.5px;
+  color: var(--comm-muted);
+  font-weight: 700;
+}
+
+/* ── Tab Navigation Bar ── */
+.comm-tabs-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 22px;
+  flex-wrap: wrap;
+}
 .comm-tabs-bar {
-  display:flex; gap:4px; background:#fff; border-radius:20px; padding:5px;
-  border:1px solid rgba(0,0,0,.06); box-shadow:0 2px 12px rgba(0,0,0,.05);
-  width:fit-content; margin-bottom:24px;
+  display: inline-flex;
+  gap: 6px;
+  background: var(--comm-card);
+  backdrop-filter: blur(16px);
+  border-radius: 20px;
+  padding: 6px;
+  border: 1px solid var(--comm-line);
+  box-shadow: var(--comm-shadow-soft);
+  overflow-x: auto;
+  max-width: 100%;
 }
-.dark .comm-tabs-bar { background: #161b22; border-color: rgba(255,255,255,.1); box-shadow: none; }
 .comm-tab {
-  display:flex; align-items:center; gap:7px;
-  padding:9px 20px; border-radius:14px; border:none; cursor:pointer;
-  font-size:13px; font-weight:600; font-family:inherit; transition:all .2s;
-  background:transparent; color:#64748b; white-space:nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px;
+  border-radius: 14px;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: inherit;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  background: transparent;
+  color: var(--comm-muted);
+  white-space: nowrap;
 }
-.dark .comm-tab { color: #8b949e; }
-.comm-tab:hover { background:#f1f5f9; color:#374151; }
-.dark .comm-tab:hover { background: #21262d; color: #c9d1d9; }
+.comm-tab:hover {
+  background: var(--comm-card-soft);
+  color: var(--comm-ink);
+}
 .comm-tab.active {
-  background:linear-gradient(135deg,#6366f1,#8b5cf6);
-  color:#fff; box-shadow:0 4px 14px rgba(99,102,241,.35);
+  background: linear-gradient(135deg, #7b2cff, #b948d9);
+  color: #ffffff;
+  box-shadow: 0 4px 16px rgba(123, 44, 255, 0.32);
 }
 
-/* ── Feed layout ── */
+/* ── Feed 3-Column Layout ── */
 .comm-feed-layout {
-  display:grid; grid-template-columns:280px 1fr 280px; gap:20px; align-items:start;
+  display: grid;
+  grid-template-columns: 290px minmax(0, 1fr) 290px;
+  gap: 20px;
+  align-items: start;
 }
 
-/* ── Card base ── */
+/* ── Standard Card Styling ── */
 .comm-card {
-  background:#fff; border-radius:20px; border:1px solid rgba(0,0,0,.06);
-  box-shadow:0 2px 12px rgba(0,0,0,.05); overflow:hidden;
-  animation:cardIn .5s cubic-bezier(.34,1.56,.64,1) both;
+  background: var(--comm-card);
+  backdrop-filter: blur(14px);
+  border-radius: 22px;
+  border: 1px solid var(--comm-line);
+  box-shadow: var(--comm-shadow-soft);
+  overflow: hidden;
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+  position: relative;
 }
-.dark .comm-card { background: #161b22; border-color: rgba(255,255,255,.1); box-shadow: none; }
+.comm-card:hover {
+  border-color: rgba(123, 44, 255, 0.18);
+  box-shadow: var(--comm-shadow);
+}
 .comm-card-header {
-  padding:18px 20px 14px; border-bottom:1px solid #f1f5f9;
-  display:flex; align-items:center; justify-content:space-between;
+  padding: 16px 20px 14px;
+  border-bottom: 1px solid var(--comm-line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(180deg, var(--comm-card-soft), transparent);
 }
-.dark .comm-card-header { border-bottom-color: #30363d; }
 .comm-card-title {
-  font-size:14px; font-weight:700; color:#0f172a;
-  display:flex; align-items:center; gap:8px;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--comm-ink);
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
-.dark .comm-card-title { color: #c9d1d9; }
-.comm-card-body { padding:18px 20px; }
+.comm-card-body {
+  padding: 18px 20px;
+}
 
-/* ── Create post ── */
+/* ── Post Creation Card (Center) ── */
+.comm-composer-card {
+  margin-bottom: 18px;
+  background: var(--comm-card);
+  border-radius: 22px;
+  border: 1.5px solid var(--comm-line);
+  box-shadow: var(--comm-shadow-soft);
+  padding: 18px 20px;
+  position: relative;
+  overflow: hidden;
+}
+.comm-composer-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.comm-composer-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #7b2cff, #2389ff);
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-weight: 900;
+  font-size: 16px;
+  box-shadow: 0 6px 14px rgba(123, 44, 255, 0.24);
+  flex-shrink: 0;
+}
+.comm-composer-meta b {
+  display: block;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--comm-ink);
+}
+.comm-composer-meta span {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--comm-muted);
+}
+
+.comm-type-pill-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  margin-bottom: 12px;
+}
+.comm-type-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--comm-line);
+  background: var(--comm-card-soft);
+  color: var(--comm-muted);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.comm-type-pill:hover {
+  border-color: #7b2cff;
+  color: #7b2cff;
+}
+.comm-type-pill.active {
+  background: rgba(123, 44, 255, 0.12);
+  border-color: #7b2cff;
+  color: #7b2cff;
+  font-weight: 800;
+}
+[data-theme="dark"] .comm-type-pill.active, .dark .comm-type-pill.active {
+  background: rgba(139, 92, 246, 0.24);
+  border-color: #a78bfa;
+  color: #c4b5fd;
+}
+
 .comm-post-textarea {
-  width:100%; border-radius:12px; border:1.5px solid #e2e8f0; padding:12px 14px;
-  font-size:13.5px; font-family:inherit; color:#0f172a; resize:none; outline:none;
-  transition:border .2s; background:#fafafa; min-height:90px;
+  width: 100%;
+  border-radius: 16px;
+  border: 1.5px solid var(--comm-line);
+  padding: 14px 16px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--comm-ink);
+  resize: none;
+  outline: none;
+  background: var(--comm-card-soft);
+  min-height: 96px;
+  transition: border-color 0.2s, background-color 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
 }
-.dark .comm-post-textarea { background: #21262d; border-color: #30363d; color: #c9d1d9; }
-.comm-post-textarea:focus { border-color:#6366f1; background:#fff; box-shadow:0 0 0 3px rgba(99,102,241,.1); }
-.dark .comm-post-textarea:focus { border-color: #818cf8; background: #161b22; }
-.comm-post-actions { display:flex; align-items:center; justify-content:space-between; margin-top:10px; flex-wrap:wrap; gap:8px; }
-.comm-post-tools   { display:flex; align-items:center; gap:6px; }
+.comm-post-textarea:focus {
+  border-color: #7b2cff;
+  background: var(--comm-card);
+  box-shadow: 0 0 0 4px rgba(123, 44, 255, 0.12);
+}
+
+.comm-composer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.comm-composer-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .comm-tool-btn {
-  display:flex; align-items:center; gap:5px; padding:6px 12px; border-radius:10px;
-  border:1px solid #e2e8f0; background:#fff; font-size:12px; font-weight:600;
-  color:#64748b; cursor:pointer; font-family:inherit; transition:all .15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--comm-line);
+  background: var(--comm-card-soft);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--comm-muted);
+  cursor: pointer;
+  transition: all 0.18s;
+  font-family: inherit;
 }
-.dark .comm-tool-btn { background: #21262d; border-color: #30363d; color: #8b949e; }
-.comm-tool-btn:hover { border-color:#6366f1; color:#6366f1; background:rgba(99,102,241,.05); }
-.dark .comm-tool-btn:hover { background: #30363d; border-color: #818cf8; color: #818cf8; }
-.comm-post-btn {
-  padding:9px 20px; background:linear-gradient(135deg,#6366f1,#8b5cf6); color:#fff;
-  border:none; border-radius:12px; font-size:13px; font-weight:700; cursor:pointer;
-  font-family:inherit; transition:all .2s; box-shadow:0 4px 12px rgba(99,102,241,.35);
+.comm-tool-btn:hover {
+  border-color: #7b2cff;
+  color: #7b2cff;
+  background: rgba(123, 44, 255, 0.08);
 }
-.comm-post-btn:hover { transform:translateY(-1px); box-shadow:0 6px 18px rgba(99,102,241,.45); }
-.comm-post-btn:disabled { opacity:.5; cursor:not-allowed; transform:none; }
+.comm-visibility-select {
+  padding: 7px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--comm-line);
+  background: var(--comm-card-soft);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--comm-ink);
+  outline: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+.comm-submit-btn {
+  padding: 9px 22px;
+  background: linear-gradient(135deg, #7b2cff, #b948d9);
+  color: #fff;
+  border: none;
+  border-radius: 14px;
+  font-size: 13.5px;
+  font-weight: 800;
+  cursor: pointer;
+  font-family: inherit;
+  transition: transform 0.18s, box-shadow 0.18s;
+  box-shadow: 0 6px 16px rgba(123, 44, 255, 0.32);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.comm-submit-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px rgba(123, 44, 255, 0.42);
+}
+.comm-submit-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
 
-/* ── Search bar ── */
-.comm-search-bar { position:relative; margin-bottom:16px; }
+/* ── Filter & Search Bar ── */
+.comm-filter-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+.comm-search-bar {
+  position: relative;
+  flex: 1;
+  min-width: 200px;
+}
 .comm-search-bar input {
-  width:100%; height:42px; border-radius:12px; border:1.5px solid #e2e8f0;
-  padding:0 14px 0 40px; font-size:13px; font-family:inherit; outline:none;
-  background:#fafafa; color:#0f172a; transition:border .2s;
+  width: 100%;
+  height: 44px;
+  border-radius: 14px;
+  border: 1.5px solid var(--comm-line);
+  padding: 0 16px 0 42px;
+  font-size: 13.5px;
+  font-family: inherit;
+  outline: none;
+  background: var(--comm-card);
+  color: var(--comm-ink);
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
 }
-.dark .comm-search-bar input { background: #21262d; border-color: #30363d; color: #c9d1d9; }
-.comm-search-bar input:focus { border-color:#6366f1; background:#fff; }
-.dark .comm-search-bar input:focus { border-color: #818cf8; background: #161b22; }
-.comm-search-icon { position:absolute; left:13px; top:50%; transform:translateY(-50%); color:#94a3b8; width:16px; height:16px; pointer-events:none; }
+.comm-search-bar input:focus {
+  border-color: #7b2cff;
+  box-shadow: 0 0 0 3.5px rgba(123, 44, 255, 0.1);
+}
+.comm-search-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--comm-faint);
+  width: 17px;
+  height: 17px;
+  pointer-events: none;
+}
+.comm-filter-select {
+  height: 44px;
+  padding: 0 14px;
+  border-radius: 14px;
+  border: 1.5px solid var(--comm-line);
+  background: var(--comm-card);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--comm-ink);
+  outline: none;
+  cursor: pointer;
+  font-family: inherit;
+}
 
-/* ── Post card ── */
-.comm-post {
-  background:#fff; border-radius:16px; border:1px solid rgba(0,0,0,.06);
-  box-shadow:0 2px 10px rgba(0,0,0,.04); padding:18px 20px; margin-bottom:12px;
-  transition:all .2s; animation:cardIn .4s cubic-bezier(.34,1.56,.64,1) both;
+/* ── Post Feed Cards ── */
+.comm-post-card {
+  background: var(--comm-card);
+  border-radius: 22px;
+  border: 1px solid var(--comm-line);
+  box-shadow: var(--comm-shadow-soft);
+  padding: 20px 22px;
+  margin-bottom: 16px;
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+  position: relative;
 }
-.dark .comm-post { background: #161b22; border-color: rgba(255,255,255,.1); box-shadow: none; }
-.comm-post:hover { box-shadow:0 6px 24px rgba(0,0,0,.08); transform:translateY(-2px); }
-.dark .comm-post:hover { box-shadow:0 6px 24px rgba(0,0,0,.2); }
-.comm-post-meta { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
-.comm-post-avatar {
-  width:38px; height:38px; border-radius:50%;
-  background:linear-gradient(135deg,#6366f1,#8b5cf6);
-  display:flex; align-items:center; justify-content:center;
-  color:#fff; font-weight:700; font-size:14px; flex-shrink:0;
+.comm-post-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--comm-shadow);
+  border-color: rgba(123, 44, 255, 0.2);
 }
-.comm-post-author { font-size:13.5px; font-weight:700; color:#0f172a; }
-.dark .comm-post-author { color: #c9d1d9; }
-.comm-post-time   { font-size:11.5px; color:#94a3b8; margin-left:auto; }
-.dark .comm-post-time { color: #8b949e; }
-.comm-post-type-badge {
-  font-size:10px; font-weight:700; padding:2px 8px; border-radius:20px;
-  background:rgba(99,102,241,.1); color:#6366f1; text-transform:uppercase; letter-spacing:.05em;
+.comm-post-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
 }
-.comm-post-content { font-size:13.5px; color:#374151; line-height:1.65; margin-bottom:12px; }
-.dark .comm-post-content { color: #adbac7; }
-.comm-post-reactions { display:flex; align-items:center; gap:12px; padding-top:10px; border-top:1px solid #f1f5f9; }
-.dark .comm-post-reactions { border-top-color: #30363d; }
-.comm-reaction-btn {
-  display:flex; align-items:center; gap:5px; font-size:12.5px; color:#64748b;
-  background:none; border:none; cursor:pointer; font-family:inherit; padding:4px 8px;
-  border-radius:8px; transition:all .15s; font-weight:500;
+.comm-post-author-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 15px;
+  background: linear-gradient(135deg, #7b2cff, #2389ff);
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-weight: 900;
+  font-size: 15px;
+  flex-shrink: 0;
+  box-shadow: 0 6px 14px rgba(35, 44, 87, 0.12);
 }
-.dark .comm-reaction-btn { color: #8b949e; }
-.comm-reaction-btn:hover { background:#f1f5f9; color:#6366f1; }
-.dark .comm-reaction-btn:hover { background: #21262d; color: #818cf8; }
+.comm-post-author-info b {
+  display: block;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--comm-ink);
+}
+.comm-post-time {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--comm-muted);
+  margin-left: auto;
+}
 
-/* ── Poll card ── */
-.comm-poll {
-  background:#fff; border-radius:16px; border:1px solid rgba(0,0,0,.06);
-  box-shadow:0 2px 10px rgba(0,0,0,.04); padding:16px 18px; margin-bottom:12px;
-  animation:cardIn .4s cubic-bezier(.34,1.56,.64,1) both;
-}
-.dark .comm-poll { background: #21262d; border-color: rgba(255,255,255,.1); }
-.comm-poll-q { font-size:13.5px; font-weight:700; color:#0f172a; margin-bottom:10px; display:flex; align-items:center; gap:7px; }
-.dark .comm-poll-q { color: #c9d1d9; }
-.comm-poll-opt {
-  width:100%; padding:9px 14px; margin-bottom:7px; border-radius:10px;
-  border:1.5px solid #e2e8f0; background:#fafafa; font-size:12.5px; font-weight:500;
-  color:#374151; cursor:pointer; font-family:inherit; transition:all .15s;
-  display:flex; align-items:center; justify-content:space-between;
-  text-align:left;
-}
-.dark .comm-poll-opt { background: #161b22; border-color: #30363d; color: #adbac7; }
-.comm-poll-opt:hover:not(:disabled) { border-color:#6366f1; background:rgba(99,102,241,.04); color:#4338ca; }
-.dark .comm-poll-opt:hover:not(:disabled) { border-color: #818cf8; background: rgba(99,102,241,.1); }
-.comm-poll-opt:disabled { cursor:default; opacity:.7; }
-.comm-poll-footer { font-size:11px; color:#94a3b8; text-align:right; margin-top:4px; font-weight:500; }
-.dark .comm-poll-footer { color: #8b949e; }
-
-/* ── Trending topic ── */
-.comm-topic {
-  display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:12px;
-  cursor:pointer; transition:all .15s; margin-bottom:6px;
-}
-.comm-topic:hover { background:rgba(99,102,241,.06); }
-.dark .comm-topic:hover { background: rgba(99,102,241,.15); }
-.comm-topic-icon {
-  width:34px; height:34px; border-radius:10px; background:rgba(99,102,241,.1);
-  display:flex; align-items:center; justify-content:center; color:#6366f1; flex-shrink:0;
-}
-.comm-topic-name  { font-size:13px; font-weight:600; color:#0f172a; }
-.dark .comm-topic-name { color: #c9d1d9; }
-.comm-topic-count { font-size:11px; color:#94a3b8; margin-top:1px; }
-.dark .comm-topic-count { color: #8b949e; }
-.comm-topic-arrow { margin-left:auto; color:#94a3b8; font-size:14px; }
-.dark .comm-topic-arrow { color: #8b949e; }
-
-/* ── Leaderboard entry ── */
-.comm-lb-row {
-  display:flex; align-items:center; gap:12px; padding:12px 16px; border-radius:14px;
-  border:1px solid rgba(0,0,0,.06); margin-bottom:8px; background:#fff;
-  transition:all .2s; animation:cardIn .4s cubic-bezier(.34,1.56,.64,1) both;
-}
-.dark .comm-lb-row { background: #21262d; border-color: rgba(255,255,255,.1); }
-.comm-lb-row:hover { box-shadow:0 4px 16px rgba(0,0,0,.08); transform:translateX(3px); }
-.dark .comm-lb-row:hover { box-shadow:0 4px 16px rgba(0,0,0,.2); }
-.comm-lb-rank { font-size:18px; font-weight:800; color:#94a3b8; width:30px; text-align:center; flex-shrink:0; }
-.dark .comm-lb-rank { color: #8b949e; }
-.comm-lb-avatar {
-  width:38px; height:38px; border-radius:50%;
-  background:linear-gradient(135deg,#6366f1,#8b5cf6);
-  display:flex; align-items:center; justify-content:center;
-  color:#fff; font-size:14px; font-weight:700; flex-shrink:0;
-}
-.comm-lb-name   { font-size:13.5px; font-weight:700; color:#0f172a; }
-.dark .comm-lb-name { color: #c9d1d9; }
-.comm-lb-points { font-size:12px; color:#64748b; margin-top:1px; }
-.dark .comm-lb-points { color: #8b949e; }
-
-/* ── Messaging layout ── */
-.comm-msg-layout { display:grid; grid-template-columns:300px 1fr; gap:16px; height:70vh; }
-.comm-contacts { background:#fff; border-radius:20px; border:1px solid rgba(0,0,0,.06); overflow:hidden; display:flex; flex-direction:column; }
-.dark .comm-contacts { background: #161b22; border-color: rgba(255,255,255,.1); }
-.comm-contacts-header { padding:16px 18px; border-bottom:1px solid #f1f5f9; font-size:14px; font-weight:700; color:#0f172a; display:flex; align-items:center; justify-content:space-between; }
-.dark .comm-contacts-header { border-bottom-color: #30363d; color: #c9d1d9; }
-.comm-contact-item { padding:12px 16px; cursor:pointer; transition:background .15s; display:flex; align-items:center; gap:10px; border-bottom:1px solid #f8fafc; }
-.dark .comm-contact-item { border-bottom-color: #1e293b; }
-.comm-contact-item:hover { background:#f8fafc; }
-.dark .comm-contact-item:hover { background: #21262d; }
-.comm-contact-item.active { background:rgba(99,102,241,.06); }
-.dark .comm-contact-item.active { background: rgba(99,102,241,.15); }
-.comm-contact-avatar { width:36px; height:36px; border-radius:50%; background:linear-gradient(135deg,#6366f1,#8b5cf6); display:flex; align-items:center; justify-content:center; color:#fff; font-size:13px; font-weight:700; flex-shrink:0; }
-.comm-contact-name { font-size:13px; font-weight:600; color:#0f172a; }
-.dark .comm-contact-name { color: #c9d1d9; }
-.comm-chat-area { background:#fff; border-radius:20px; border:1px solid rgba(0,0,0,.06); display:flex; flex-direction:column; overflow:hidden; }
-.dark .comm-chat-area { background: #161b22; border-color: rgba(255,255,255,.1); }
-.comm-chat-header { padding:14px 18px; border-bottom:1px solid #f1f5f9; display:flex; align-items:center; gap:10px; }
-.dark .comm-chat-header { border-bottom-color: #30363d; }
-.comm-chat-messages { flex:1; overflow-y:auto; padding:16px 18px; display:flex; flex-direction:column; gap:12px; }
-.comm-chat-input-row { padding:12px 16px; border-top:1px solid #f1f5f9; display:flex; gap:10px; align-items:center; }
-.dark .comm-chat-input-row { border-top-color: #30363d; }
-.comm-chat-input {
-  flex:1; height:40px; border-radius:12px; border:1.5px solid #e2e8f0;
-  padding:0 14px; font-size:13px; font-family:inherit; outline:none; transition:border .2s;
-}
-.dark .comm-chat-input { background: #21262d; border-color: #30363d; color: #c9d1d9; }
-.comm-chat-input:focus { border-color:#6366f1; }
-.dark .comm-chat-input:focus { border-color: #818cf8; }
-.comm-send-btn {
-  width:40px; height:40px; border-radius:12px; background:linear-gradient(135deg,#6366f1,#8b5cf6);
-  border:none; cursor:pointer; display:flex; align-items:center; justify-content:center;
-  color:#fff; transition:all .2s; flex-shrink:0;
-}
-.comm-send-btn:hover { transform:scale(1.07); }
-
-/* ── Create poll form ── */
-.comm-create-poll-btn {
-  width:100%; padding:9px 16px; border-radius:12px;
-  background:linear-gradient(135deg,#6366f1,#8b5cf6); color:#fff;
-  border:none; font-size:13px; font-weight:700; cursor:pointer; font-family:inherit;
-  transition:all .2s; box-shadow:0 4px 12px rgba(99,102,241,.3); margin-top:8px;
-  display:flex; align-items:center; justify-content:center; gap:6px;
-}
-.comm-create-poll-btn:hover { transform:translateY(-1px); }
-.comm-cancel-poll-btn {
-  width:100%; padding:9px 16px; border-radius:12px;
-  background:#f1f5f9; color:#64748b;
-  border:none; font-size:13px; font-weight:600; cursor:pointer; font-family:inherit;
-  transition:all .2s; margin-top:6px;
-}
-.dark .comm-cancel-poll-btn { background: #21262d; color: #8b949e; }
-
-/* ── Loader ── */
-.comm-loader {
-  display:flex; flex-direction:column; align-items:center; justify-content:center;
-  padding:64px 32px; gap:16px; text-align:center;
-}
-.comm-loader-text { font-size:15px; font-weight:600; color:#64748b; }
-.dark .comm-loader-text { color: #8b949e; }
-
-/* ── Badge pill ── */
+/* Category Badge Pills */
 .comm-badge {
-  display:inline-block; font-size:10.5px; font-weight:700; padding:2px 9px;
-  border-radius:20px; text-transform:uppercase; letter-spacing:.05em;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 10px;
+  border-radius: 999px;
+  text-transform: capitalize;
+  letter-spacing: 0.01em;
 }
-.comm-badge.indigo { background:rgba(99,102,241,.1); color:#6366f1; }
-.comm-badge.green  { background:rgba(16,185,129,.1);  color:#059669; }
-.comm-badge.amber  { background:rgba(245,158,11,.1);  color:#d97706; }
-.comm-badge.gold   { background:rgba(234,179,8,.15);  color:#a16207; }
-
-@keyframes cardIn {
-  from { opacity:0; transform:translateY(14px); }
-  to   { opacity:1; transform:translateY(0); }
+.comm-badge.discussion {
+  background: rgba(123, 44, 255, 0.12);
+  color: #7b2cff;
+}
+.comm-badge.question {
+  background: rgba(35, 137, 255, 0.12);
+  color: #2389ff;
+}
+.comm-badge.achievement {
+  background: rgba(255, 178, 29, 0.14);
+  color: #d97706;
+}
+.comm-badge.study_tip {
+  background: rgba(39, 184, 106, 0.14);
+  color: #059669;
+}
+.comm-badge.session_card {
+  background: rgba(255, 77, 141, 0.14);
+  color: #e11d48;
+}
+[data-theme="dark"] .comm-badge.discussion, .dark .comm-badge.discussion {
+  background: rgba(139, 92, 246, 0.22);
+  color: #c4b5fd;
+}
+[data-theme="dark"] .comm-badge.question, .dark .comm-badge.question {
+  background: rgba(59, 130, 246, 0.22);
+  color: #93c5fd;
+}
+[data-theme="dark"] .comm-badge.achievement, .dark .comm-badge.achievement {
+  background: rgba(245, 158, 11, 0.22);
+  color: #fcd34d;
+}
+[data-theme="dark"] .comm-badge.study_tip, .dark .comm-badge.study_tip {
+  background: rgba(16, 185, 129, 0.22);
+  color: #6ee7b7;
+}
+[data-theme="dark"] .comm-badge.session_card, .dark .comm-badge.session_card {
+  background: rgba(244, 63, 94, 0.22);
+  color: #fda4af;
 }
 
-/* ══════════════════ RESPONSIVE ══════════════════ */
+.comm-post-content {
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: var(--comm-ink);
+  margin-bottom: 14px;
+  font-weight: 500;
+  word-break: break-word;
+}
+
+.comm-post-reactions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--comm-line);
+}
+.comm-reaction-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--comm-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 6px 12px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.16s;
+  font-family: inherit;
+}
+.comm-reaction-btn:hover {
+  background: var(--comm-card-soft);
+  color: #7b2cff;
+  border-color: var(--comm-line);
+}
+.comm-reaction-btn.liked {
+  color: #e11d48;
+  background: rgba(225, 29, 72, 0.08);
+}
+.comm-reaction-btn.liked svg {
+  fill: #e11d48;
+}
+
+/* ── Expanded Comments ── */
+.comm-comments-area {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--comm-line);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.comm-comment-bubble {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.comm-comment-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #2389ff, #7b2cff);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+.comm-comment-body {
+  flex: 1;
+  background: var(--comm-card-soft);
+  border: 1px solid var(--comm-line);
+  border-radius: 14px;
+  padding: 10px 14px;
+}
+.comm-comment-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 3px;
+}
+.comm-comment-author {
+  font-size: 12.5px;
+  font-weight: 800;
+  color: var(--comm-ink);
+}
+.comm-comment-time {
+  font-size: 11px;
+  color: var(--comm-faint);
+  font-weight: 600;
+}
+.comm-comment-text {
+  font-size: 13px;
+  color: var(--comm-ink);
+  line-height: 1.45;
+}
+
+.comm-comment-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
+}
+.comm-comment-input {
+  flex: 1;
+  height: 40px;
+  border-radius: 12px;
+  border: 1.5px solid var(--comm-line);
+  padding: 0 14px;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  background: var(--comm-card-soft);
+  color: var(--comm-ink);
+  transition: border-color 0.2s;
+}
+.comm-comment-input:focus {
+  border-color: #7b2cff;
+  background: var(--comm-card);
+}
+.comm-comment-send-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #7b2cff, #b948d9);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: transform 0.16s;
+  flex-shrink: 0;
+}
+.comm-comment-send-btn:hover {
+  transform: scale(1.06);
+}
+
+/* ── Embedded Live Session Card ── */
+.comm-session-pass {
+  border-radius: 16px;
+  overflow: hidden;
+  margin: 12px 0 14px;
+  border: 1.5px solid var(--comm-line);
+  background: var(--comm-card-soft);
+  box-shadow: 0 6px 18px rgba(35, 44, 87, 0.05);
+}
+.comm-session-pass-header {
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--comm-line);
+}
+.comm-session-pass-body {
+  padding: 14px 16px;
+}
+.comm-session-pass-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--comm-ink);
+  margin-bottom: 4px;
+}
+.comm-session-pass-creator {
+  font-size: 12px;
+  color: var(--comm-muted);
+  font-weight: 600;
+}
+.comm-session-pass-footer {
+  padding: 10px 16px;
+  border-top: 1px solid var(--comm-line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.comm-session-btn {
+  padding: 8px 16px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #27b86a, #2389ff);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 800;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.18s;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.comm-session-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(39, 184, 106, 0.3);
+}
+
+/* ── Interactive Polls (Left Rail) ── */
+.comm-poll-card {
+  background: var(--comm-card-soft);
+  border-radius: 16px;
+  border: 1.5px solid var(--comm-line);
+  padding: 16px;
+  margin-bottom: 14px;
+  transition: border-color 0.2s;
+}
+.comm-poll-card:hover {
+  border-color: rgba(123, 44, 255, 0.25);
+}
+.comm-poll-q {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--comm-ink);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.comm-poll-opt-btn {
+  width: 100%;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  border-radius: 12px;
+  border: 1.5px solid var(--comm-line);
+  background: var(--comm-card);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--comm-ink);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.18s;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+  overflow: hidden;
+  text-align: left;
+}
+.comm-poll-opt-btn:hover:not(:disabled) {
+  border-color: #7b2cff;
+  background: rgba(123, 44, 255, 0.05);
+  color: #7b2cff;
+}
+.comm-poll-opt-btn:disabled {
+  cursor: default;
+}
+.comm-poll-progress-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: rgba(123, 44, 255, 0.12);
+  border-radius: inherit;
+  pointer-events: none;
+  transition: width 0.4s ease;
+}
+[data-theme="dark"] .comm-poll-progress-fill, .dark .comm-poll-progress-fill {
+  background: rgba(139, 92, 246, 0.2);
+}
+.comm-poll-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--comm-muted);
+  margin-top: 6px;
+}
+
+/* ── Trending Topics (Right Rail) ── */
+.comm-topic-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  cursor: pointer;
+  transition: all 0.18s;
+  margin-bottom: 6px;
+  border: 1px solid transparent;
+}
+.comm-topic-item:hover {
+  background: var(--comm-card-soft);
+  border-color: var(--comm-line);
+  transform: translateX(3px);
+}
+.comm-topic-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: rgba(255, 121, 31, 0.12);
+  color: #ff791f;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.comm-topic-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--comm-ink);
+}
+.comm-topic-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--comm-muted);
+  margin-top: 1px;
+}
+.comm-topic-arrow {
+  margin-left: auto;
+  color: var(--comm-faint);
+}
+
+/* ── Badges Showcase ── */
+.comm-badge-tile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--comm-card-soft);
+  border: 1px solid var(--comm-line);
+  margin-bottom: 8px;
+  transition: transform 0.2s;
+}
+.comm-badge-tile:hover {
+  transform: translateY(-2px);
+}
+.comm-badge-shape {
+  width: 38px;
+  height: 42px;
+  clip-path: polygon(50% 0, 93% 20%, 93% 72%, 50% 100%, 7% 72%, 7% 20%);
+  background: linear-gradient(135deg, #ffb21d, #ff791f);
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 18px;
+  box-shadow: 0 4px 10px rgba(255, 121, 31, 0.28);
+}
+.comm-badge-info b {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 800;
+  color: var(--comm-ink);
+}
+.comm-badge-info span {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--comm-muted);
+}
+
+/* ── Messaging Tab Layout ── */
+.comm-msg-container {
+  display: grid;
+  grid-template-columns: 290px minmax(0, 1fr);
+  gap: 18px;
+  height: 68vh;
+  min-height: 480px;
+}
+.comm-chat-channel-list {
+  background: var(--comm-card);
+  border-radius: 22px;
+  border: 1px solid var(--comm-line);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.comm-chat-main-area {
+  background: var(--comm-card);
+  border-radius: 22px;
+  border: 1px solid var(--comm-line);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ══════════════════ RESPONSIVENESS ══════════════════ */
 @media (max-width: 1200px) {
-  .comm-feed-layout { grid-template-columns:240px 1fr 240px; }
-  .comm-stats-row   { grid-template-columns:repeat(2,1fr); }
+  .comm-feed-layout {
+    grid-template-columns: 260px minmax(0, 1fr) 260px;
+  }
 }
-@media (max-width: 1024px) {
-  .comm-feed-layout { grid-template-columns:1fr; }
-  .comm-feed-left, .comm-feed-right { display:none; }
+
+@media (max-width: 1040px) {
+  .comm-hero {
+    grid-template-columns: 1fr;
+  }
+  .comm-hero-right {
+    justify-content: flex-start;
+  }
+  .comm-feed-layout {
+    grid-template-columns: 1fr;
+  }
+  .comm-feed-left, .comm-feed-right {
+    order: 2;
+  }
+  .comm-feed-center {
+    order: 1;
+  }
 }
+
 @media (max-width: 768px) {
-  .comm-hero   { padding:24px 20px 28px; }
-  .comm-hero-inner { flex-direction:column; align-items:flex-start; }
-  .comm-hero-right { display:none; }
-  .comm-body   { padding:18px 16px 36px; }
-  .comm-stats-row { grid-template-columns:1fr 1fr; gap:10px; }
-  .comm-tabs-bar { width:100%; overflow-x:auto; }
-  .comm-tab span { display:none; }
-  .comm-msg-layout { grid-template-columns:1fr; height:auto; }
+  .comm-hero-container {
+    padding: 14px 16px 0;
+  }
+  .comm-hero {
+    padding: 20px 18px;
+    border-radius: 18px;
+  }
+  .comm-body {
+    padding: 16px 16px 40px;
+  }
+  .comm-stats-row {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+  .comm-msg-container {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+  .comm-hero-stats-panel {
+    display: none;
+  }
 }
+
 @media (max-width: 480px) {
-  .comm-stats-row { grid-template-columns:1fr 1fr; }
-  .comm-tab { padding:9px 14px; }
+  .comm-hero-title {
+    font-size: 22px;
+  }
+  .comm-stat-card {
+    padding: 12px 14px;
+  }
+  .comm-stat-num {
+    font-size: 20px;
+  }
 }
 `;
 
+/* ── Content Moderation Helper ── */
 const moderateContent = (content: string) => {
   const lowerCaseContent = content.toLowerCase();
-  return badWords.some(word => lowerCaseContent.includes(word));
+  return badWords.some((word) => lowerCaseContent.includes(word));
 };
 
-interface TrendingTopic { id: string; title: string; posts: number; icon: string; }
+interface TrendingTopic {
+  id: string;
+  title: string;
+  posts: number;
+  icon?: string;
+}
 
-interface PollOption { id: string; text: string; votes: number; }
-interface CommunityPoll { id: string; question: string; options: PollOption[]; totalVotes: number; userVoted: boolean; icon?: string; }
+interface PollOption {
+  id: string;
+  text: string;
+  votes: number;
+}
 
 function communitySessionStatus(card: any) {
   const status = String(card?.status || "waiting").toLowerCase();
@@ -426,11 +1431,48 @@ function communitySessionJoinable(card: any) {
   return status === "waiting";
 }
 
+interface CommunityPoll {
+  id: string;
+  question: string;
+  options: PollOption[];
+  totalVotes: number;
+  userVoted: boolean;
+  icon?: string;
+}
+
+interface User {
+  id: number;
+  username: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  role: string;
+  profileImage?: string;
+}
+
+interface Group {
+  id: string;
+  name: string;
+  members: number[];
+  messages: any[];
+}
+
+interface Channel {
+  id: string;
+  name: string;
+  groups: Group[];
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   LIVE SESSION PASS COMPONENT (Seminars & Debates)
+   ══════════════════════════════════════════════════════════════════════════ */
 function CommunitySessionCard({ card }: { card: any }) {
   const [liveCard, setLiveCard] = useState(card || {});
+
   useEffect(() => {
     setLiveCard(card);
   }, [card]);
+
   useEffect(() => {
     if (!card?.sessionId) return;
     let closed = false;
@@ -464,13 +1506,18 @@ function CommunitySessionCard({ card }: { card: any }) {
       }
     };
     load();
-    const timer = window.setInterval(load, 5000);
+    const timer = window.setInterval(load, 6000);
     return () => {
       closed = true;
       window.clearInterval(timer);
     };
   }, [card?.sessionId, card?.sessionType]);
+
   if (!card) return null;
+
+  const status = String(liveCard?.status || "waiting").toLowerCase();
+  const isCompleted = status === "completed" || status === "ended";
+  const isActive = status === "active";
   const joinable = !liveCard?.accessError && communitySessionJoinable(liveCard);
   const label = liveCard?.accessError || communitySessionStatus(liveCard);
   const joinUrl = liveCard.joinUrl
@@ -478,15 +1525,53 @@ function CommunitySessionCard({ card }: { card: any }) {
       ? liveCard.joinUrl
       : `${window.location.origin}${liveCard.joinUrl.startsWith("/") ? liveCard.joinUrl : `/${liveCard.joinUrl}`}`
     : "";
+
   return (
-    <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden", background: "#fff", margin: "10px 0 12px" }}>
-      <div style={{ padding: "11px 13px", background: "#f8fafc" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 6 }}>
-          <span className="comm-badge indigo">{liveCard.sessionType === "seminar" ? "Seminar" : "Debate"}</span>
-          <span style={{ fontSize: 11, color: "#64748b", fontWeight: 700 }}>{liveCard.participantCount || 0} participant(s)</span>
+    <div className="comm-session-pass">
+      <div className="comm-session-pass-header">
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span className="comm-badge session_card">
+            <Radio size={12} className="animate-pulse" />
+            {liveCard.sessionType === "seminar" ? "Live Seminar" : "Student Debate"}
+          </span>
+          {isActive && (
+            <span style={{ fontSize: 11, fontWeight: 800, color: "#10b981", display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981" }} />
+              Active Now
+            </span>
+          )}
         </div>
-        <div style={{ fontSize: 13.5, fontWeight: 800, color: "#0f172a" }}>{liveCard.topic || liveCard.title || "Live session"}</div>
-        <div style={{ fontSize: 12, color: "#64748b", marginTop: 3 }}>Created by {liveCard.createdBy || "GradeUp learner"}</div>
+        <span style={{ fontSize: 11.5, color: "var(--comm-muted)", fontWeight: 700 }}>
+          <Users size={12} style={{ display: "inline", marginRight: 4 }} />
+          {liveCard.participantCount || 0} learners
+        </span>
+      </div>
+
+      <div className="comm-session-pass-body">
+        <div className="comm-session-pass-title">{liveCard.topic || liveCard.title || "Live Group Session"}</div>
+        <div className="comm-session-pass-creator">
+          Hosted by <strong style={{ color: "var(--comm-ink)" }}>{liveCard.createdBy || "GradeUp Educator"}</strong>
+        </div>
+      </div>
+
+      <div className="comm-session-pass-footer">
+        <span style={{ fontSize: 12, fontWeight: 700, color: "var(--comm-muted)" }}>
+          {isCompleted ? "Session Concluded" : "Interactive Audio & Whiteboard"}
+        </span>
+        {joinable ? (
+          <button
+            className="comm-session-btn"
+            onClick={() => {
+              if (joinUrl) window.location.href = joinUrl;
+            }}
+          >
+            Join Live Room <ArrowRight size={13} />
+          </button>
+        ) : (
+          <span style={{ fontSize: 12, fontWeight: 800, color: "var(--comm-muted)" }}>
+            {isCompleted ? "Closed" : "In Progress"}
+          </span>
+        )}
       </div>
       {joinable ? (
         <button className="comm-reaction-btn" style={{ width: "100%", justifyContent: "center", borderRadius: 0, border: "none", borderTop: "1px solid #e2e8f0" }} onClick={() => { if (joinUrl) window.open(joinUrl, "_blank", "noopener,noreferrer"); }}>
@@ -499,102 +1584,145 @@ function CommunitySessionCard({ card }: { card: any }) {
   );
 }
 
-
-
-interface User { id: number; username: string; firstName: string; lastName: string; email: string; role: string; profileImage?: string; }
-interface Group { id: string; name: string; members: number[]; messages: any[]; }
-interface Channel { id: string; name: string; groups: Group[]; }
-
+/* ══════════════════════════════════════════════════════════════════════════
+   MAIN COMMUNITY PAGE COMPONENT
+   ══════════════════════════════════════════════════════════════════════════ */
 export default function CommunityPage() {
   const { addNotification } = useNotificationStore();
   const { toast } = useToast();
-  const [activeTab, setActiveTab]   = useState("feed");
+  const { theme } = useTheme();
+
+  const [activeTab, setActiveTab] = useState("feed");
   const [selectedConversation, setSelectedConversation] = useState<string | number | null>(null);
   const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
   const [messageContent, setMessageContent] = useState("");
-  const [postContent, setPostContent]       = useState("");
-  const [postType, setPostType]             = useState("discussion");
+  const [postContent, setPostContent] = useState("");
+  const [postType, setPostType] = useState("discussion");
   const [postVisibility, setPostVisibility] = useState<"all" | "school">("all");
-  const [contentFilter, setContentFilter]   = useState("all");
-  const [searchTerm, setSearchTerm]         = useState("");
-  const [showComments, setShowComments]     = useState<{[k:number]:boolean}>({});
-  const [commentTexts, setCommentTexts]     = useState<{[k:number]:string}>({});
-  const [attachedFile, setAttachedFile]     = useState<File | null>(null);
+  const [contentFilter, setContentFilter] = useState("all");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [showComments, setShowComments] = useState<{ [k: number]: boolean }>({});
+  const [commentTexts, setCommentTexts] = useState<{ [k: number]: string }>({});
+  const [attachedFile, setAttachedFile] = useState<File | null>(null);
+  const [likedPosts, setLikedPosts] = useState<{ [id: number]: boolean }>({});
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
 
-  const [newPollQuestion, setNewPollQuestion]         = useState('');
-  const [newPollOptions, setNewPollOptions]           = useState<string[]>(['', '']);
+  // Poll creation states
+  const [newPollQuestion, setNewPollQuestion] = useState("");
+  const [newPollOptions, setNewPollOptions] = useState<string[]>(["", ""]);
   const [showPollCreationForm, setShowPollCreationForm] = useState(false);
 
-  const [channels, setChannels]         = useState<Channel[]>([]);
+  // Channels state
+  const [channels, setChannels] = useState<Channel[]>([]);
   const [newChannelName, setNewChannelName] = useState("");
-  const [newGroupName, setNewGroupName]     = useState("");
-  const [selectedMembers, setSelectedMembers] = useState<number[]>([]);
   const [showCreateChannelModal, setShowCreateChannelModal] = useState(false);
-  const [showCreateGroupModal,   setShowCreateGroupModal]   = useState(false);
 
   const { userHeader } = useAuth();
   const [currentRole, setCurrentRole] = useState("student");
-  useEffect(() => { if (userHeader?.role) setCurrentRole(userHeader.role); }, [userHeader]);
+  useEffect(() => {
+    if (userHeader?.role) setCurrentRole(userHeader.role);
+  }, [userHeader]);
 
-  const { data: user }            = useQuery<User>({ queryKey: ["/api/user"] });
-  const { data: posts, isLoading: isLoadingPosts } = useQuery<any[]>({ queryKey: ["/api/community/posts"] });
-  const { data: polls = [], isLoading: isLoadingPolls } = useQuery<CommunityPoll[]>({ queryKey: ["/api/community/polls"] });
-  const { data: trendingTopics = [] } = useQuery<TrendingTopic[]>({ queryKey: ["/api/community/trending-topics"] });
+  // Data Queries
+  const { data: user } = useQuery<User>({ queryKey: ["/api/user"] });
+  const { data: posts = [], isLoading: isLoadingPosts } = useQuery<any[]>({
+    queryKey: ["/api/community/posts"],
+  });
+  const { data: polls = [], isLoading: isLoadingPolls } = useQuery<CommunityPoll[]>({
+    queryKey: ["/api/community/polls"],
+  });
+  const { data: trendingTopics = [] } = useQuery<TrendingTopic[]>({
+    queryKey: ["/api/community/trending-topics"],
+  });
   const { data: privateMessages } = useQuery<any[]>({ queryKey: ["/api/community/messages"] });
-  const { data: classmates }      = useQuery<any[]>({ queryKey: ["/api/community/classmates"] });
-  const { data: communityPoints } = useQuery<number>({ queryKey: ["/api/community/points"] });
-  const { data: leaderboard, isLoading: isLoadingLeaderboard } = useQuery<any[]>({ queryKey: ["/api/community/leaderboard"] });
-  const { data: badges }          = useQuery<any[]>({ queryKey: ["/api/community/badges"] });
+  const { data: classmates = [] } = useQuery<any[]>({ queryKey: ["/api/community/classmates"] });
+  const { data: communityPoints = 145 } = useQuery<number>({ queryKey: ["/api/community/points"] });
+  const { data: leaderboard = [], isLoading: isLoadingLeaderboard } = useQuery<any[]>({
+    queryKey: ["/api/community/leaderboard"],
+  });
+  const { data: badges = [] } = useQuery<any[]>({ queryKey: ["/api/community/badges"] });
 
-  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior:"smooth" }); }, [privateMessages, selectedConversation]);
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [privateMessages, selectedConversation]);
 
+  // Mutations
   const createPostMutation = useMutation({
     mutationFn: async (data: any) => {
-      const r = await fetch(buildApiUrl("/api/community/posts"), { method:"POST", credentials:"include", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data) });
-      if (!r.ok) throw new Error('Failed'); return r.json();
+      const r = await fetch(buildApiUrl("/api/community/posts"), {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!r.ok) throw new Error("Failed to create post");
+      return r.json();
     },
-    onSuccess: (data) => { 
-      queryClient.invalidateQueries({ queryKey:["/api/community/posts"] }); 
-      setPostContent(""); 
-      addNotification(`New post created: "${data.content.substring(0, 20)}..."`);
-      toast({ title:"Post created!" }); 
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/community/posts"] });
+      setPostContent("");
+      setAttachedFile(null);
+      addNotification(`New post shared: "${data?.content?.substring(0, 24) || "Discussion"}..."`);
+      toast({ title: "Post published to community! 🚀" });
     },
+    onError: () => toast({ title: "Failed to publish post", variant: "destructive" }),
   });
 
   const likePostMutation = useMutation({
     mutationFn: async (postId: number) => {
-      const r = await fetch(buildApiUrl(`/api/community/posts/${postId}/like`), { method:"POST", credentials:"include", headers:{"Content-Type":"application/json"} });
-      if (!r.ok) throw new Error('Failed'); return r.json();
+      const r = await fetch(buildApiUrl(`/api/community/posts/${postId}/like`), {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!r.ok) throw new Error("Failed to like");
+      return r.json();
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey:["/api/community/posts"] }),
+    onSuccess: (_, postId) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/community/posts"] });
+      setLikedPosts((prev) => ({ ...prev, [postId]: !prev[postId] }));
+    },
   });
 
   const commentPostMutation = useMutation({
     mutationFn: async ({ postId, content }: { postId: number; content: string }) => {
-      const r = await fetch(buildApiUrl(`/api/community/posts/${postId}/comments`), { method:"POST", credentials:"include", body:JSON.stringify({ content }), headers:{"Content-Type":"application/json"} });
-      if (!r.ok) throw new Error('Failed'); return r.json();
+      const r = await fetch(buildApiUrl(`/api/community/posts/${postId}/comments`), {
+        method: "POST",
+        credentials: "include",
+        body: JSON.stringify({ content }),
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!r.ok) throw new Error("Failed to comment");
+      return r.json();
     },
     onSuccess: (data, vars) => {
-      queryClient.invalidateQueries({ queryKey:["/api/community/posts"] });
-      setCommentTexts(p => ({ ...p, [vars.postId]:"" }));
-      addNotification(`New comment on post: "${vars.content.substring(0, 20)}..."`);
-      toast({ title:"Comment added!" });
+      queryClient.invalidateQueries({ queryKey: ["/api/community/posts"] });
+      setCommentTexts((p) => ({ ...p, [vars.postId]: "" }));
+      addNotification(`New reply on community post`);
+      toast({ title: "Comment posted! 💬" });
     },
   });
 
   const createPollMutation = useMutation({
     mutationFn: async (data: any) => {
-      const r = await fetch(buildApiUrl("/api/community/polls"), { method:"POST", credentials:"include", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data) });
-      if (!r.ok) throw new Error('Failed'); return r.json();
+      const r = await fetch(buildApiUrl("/api/community/polls"), {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!r.ok) throw new Error("Failed to create poll");
+      return r.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey:["/api/community/polls"] });
-      setNewPollQuestion('');
-      setNewPollOptions(['','']);
+      queryClient.invalidateQueries({ queryKey: ["/api/community/polls"] });
+      setNewPollQuestion("");
+      setNewPollOptions(["", ""]);
       setShowPollCreationForm(false);
-      toast({ title:"Poll created!" });
+      toast({ title: "Poll launched successfully! 🗳️" });
     },
   });
 
@@ -616,546 +1744,1447 @@ export default function CommunityPage() {
 
   const votePollMutation = useMutation({
     mutationFn: async ({ pollId, optionId }: { pollId: string; optionId: string }) => {
-      const r = await fetch(buildApiUrl(`/api/community/polls/${pollId}/options/${optionId}/vote`), { method:"POST", credentials:"include", headers:{"Content-Type":"application/json"} });
-      if (!r.ok) throw new Error('Failed'); return r.json();
+      const r = await fetch(buildApiUrl(`/api/community/polls/${pollId}/options/${optionId}/vote`), {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!r.ok) throw new Error("Failed to cast vote");
+      return r.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey:["/api/community/polls"] });
-      toast({ title:"Vote cast!" });
+      queryClient.invalidateQueries({ queryKey: ["/api/community/polls"] });
+      toast({ title: "Vote recorded! Thanks for participating 🌟" });
     },
-    onError: () => toast({ title:"Unable to cast vote" }),
+    onError: () => toast({ title: "Unable to submit vote", variant: "destructive" }),
   });
 
   const createPrivateMessageMutation = useMutation({
     mutationFn: async (data: any) => {
-      const r = await fetch(buildApiUrl("/api/community/messages"), { method:"POST", credentials:"include", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data) });
-      if (!r.ok) throw new Error('Failed'); return r.json();
+      const r = await fetch(buildApiUrl("/api/community/messages"), {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
     },
-    onSuccess: (data) => { 
-      queryClient.invalidateQueries({ queryKey:["/api/community/messages"] }); 
-      setMessageContent(""); 
-      addNotification(`New private message: "${data.content.substring(0, 20)}..."`);
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/community/messages"] });
+      setMessageContent("");
+      addNotification(`New direct message sent`);
     },
   });
 
   const createGroupMessageMutation = useMutation({
     mutationFn: async (data: any) => {
-      const r = await fetch(buildApiUrl("/api/community/group-messages"), { method:"POST", credentials:"include", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data) });
-      if (!r.ok) throw new Error('Failed'); return r.json();
+      const r = await fetch(buildApiUrl("/api/community/group-messages"), {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
     },
-    onSuccess: (data) => { 
-      queryClient.invalidateQueries({ queryKey:["/api/community/group-messages"] }); 
-      setMessageContent(""); 
-      addNotification(`New group message: "${data.content.substring(0, 20)}..."`);
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/community/group-messages"] });
+      setMessageContent("");
+      addNotification(`Group message sent`);
     },
   });
 
   const sendMessage = () => {
-    if (moderateContent(messageContent)) { toast({ title:"Please keep conversations appropriate." }); return; }
+    if (moderateContent(messageContent)) {
+      toast({ title: "Please keep discussions helpful and respectful." });
+      return;
+    }
     if (!messageContent.trim() || !selectedConversation) return;
-    const data = { content: messageContent.trim(), courseId:27, messageType:"text" };
-    if (selectedConversation === 'group') { createGroupMessageMutation.mutate(data); }
-    else if (typeof selectedConversation === 'string' && selectedConversation.startsWith('group_')) {
-      const newMsg = { id:`msg_${Date.now()}`, senderId:user?.id, content:messageContent.trim(), createdAt:new Date().toISOString(), sender:{ firstName:user?.firstName, lastName:user?.lastName } };
-      setChannels(prev => prev.map(c => ({ ...c, groups: c.groups.map(g => g.id === selectedConversation ? { ...g, messages:[...g.messages,newMsg] } : g) })));
+    const data = { content: messageContent.trim(), courseId: 27, messageType: "text" };
+    if (selectedConversation === "group") {
+      createGroupMessageMutation.mutate(data);
+    } else if (typeof selectedConversation === "string" && selectedConversation.startsWith("group_")) {
+      const newMsg = {
+        id: `msg_${Date.now()}`,
+        senderId: user?.id,
+        content: messageContent.trim(),
+        createdAt: new Date().toISOString(),
+        sender: { firstName: user?.firstName, lastName: user?.lastName },
+      };
+      setChannels((prev) =>
+        prev.map((c) => ({
+          ...c,
+          groups: c.groups.map((g) => (g.id === selectedConversation ? { ...g, messages: [...g.messages, newMsg] } : g)),
+        }))
+      );
       setMessageContent("");
-    } else { createPrivateMessageMutation.mutate({ ...data, receiverId:selectedConversation }); }
+    } else {
+      createPrivateMessageMutation.mutate({ ...data, receiverId: selectedConversation });
+    }
   };
 
-  const createPost = () => {
-    if (moderateContent(postContent)) { toast({ title:"Please keep posts appropriate." }); return; }
-    if (postContent.trim()) createPostMutation.mutate({ content:postContent.trim(), type:postType, visibility:postVisibility, courseId:27 });
-    else toast({ title:"Please enter post content" });
+  const handleCreatePost = () => {
+    if (moderateContent(postContent)) {
+      toast({ title: "Please keep your post respectful and academic." });
+      return;
+    }
+    if (!postContent.trim()) {
+      toast({ title: "Please write something before posting!" });
+      return;
+    }
+    createPostMutation.mutate({
+      content: postContent.trim(),
+      type: postType,
+      visibility: postVisibility,
+      courseId: 27,
+    });
   };
 
   const handleCreatePoll = () => {
-    const validOpts = newPollOptions.filter(o => o.trim());
-    if (!newPollQuestion.trim() || validOpts.length < 2) { toast({ title:"Add a question and at least 2 options." }); return; }
-    createPollMutation.mutate({ question:newPollQuestion.trim(), options:validOpts, visibility:postVisibility });
+    const validOpts = newPollOptions.filter((o) => o.trim());
+    if (!newPollQuestion.trim() || validOpts.length < 2) {
+      toast({ title: "Please provide a question and at least 2 options." });
+      return;
+    }
+    createPollMutation.mutate({
+      question: newPollQuestion.trim(),
+      options: validOpts,
+      visibility: postVisibility,
+    });
   };
 
-  const handleVote = (pollId: string, optionId: string) => {
-    votePollMutation.mutate({ pollId, optionId });
+  const handleSharePost = (post: any) => {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(`${window.location.origin}/community#post-${post.id}`);
+      toast({ title: "Post link copied to clipboard! 📋" });
+    }
   };
 
-  const handleCreateChannel = () => {
-    if (!newChannelName.trim()) return;
-    setChannels(prev => [...prev, { id:`ch_${Date.now()}`, name:newChannelName, groups:[] }]);
-    setNewChannelName(""); setShowCreateChannelModal(false); toast({ title:"Channel created!" });
+  const scrollToComposer = (type?: string) => {
+    if (type) setPostType(type);
+    composerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
+  // Filtered post list
+  const filteredPosts = useMemo(() => {
+    if (!Array.isArray(posts)) return [];
+    return posts.filter((p: any) => {
+      const matchesSearch = !searchTerm || p.content?.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesFilter = contentFilter === "all" || p.type === contentFilter;
+      return matchesSearch && matchesFilter;
+    });
+  }, [posts, searchTerm, contentFilter]);
+
+  // Tab definitions
   const tabs = [
-    { id:"feed",        label:"Feed",       icon:<MessageSquare /> },
-    // { id:"messaging",   label:"Messages",   icon:<Send /> },
-    // { id:"blogs",       label:"Blogs",      icon:<BookOpen /> },
-    // Leaderboard is intentionally hidden until the reward rules are finalized.
+    { id: "feed", label: "Community Feed", icon: <MessageSquare size={16} /> },
+    { id: "polls", label: "Student Polls", icon: <Vote size={16} /> },
+    // { id: "leaderboard", label: "Class Leaderboard", icon: <Trophy size={16} /> },
+    // { id: "messaging", label: "Study Groups", icon: <Users size={16} /> },
+    // { id: "blogs", label: "Student Blogs", icon: <BookOpen size={16} /> },
   ];
 
+  // Stat Mini-Cards
   const statCards = [
-    { label:"Posts",          value: posts?.length ?? 0,          badge:"Total",    cls:"blue",   icon:<MessageSquare size={18}/>,  si:"si-blue"   },
-    { label:"Community Pts",  value: communityPoints ?? 0,         badge:"Earned",   cls:"green",  icon:<Award size={18}/>,          si:"si-green"  },
-    { label:"Active Members", value: classmates?.length ?? 0,      badge:"Online",   cls:"purple", icon:<Users size={18}/>,          si:"si-purple" },
-    { label:"Badges",         value: badges?.length ?? 0,          badge:"Earned",   cls:"amber",  icon:<Star size={18}/>,           si:"si-amber"  },
+    {
+      label: "Active Posts",
+      value: posts?.length ?? 0,
+      badge: "Community",
+      cls: "blue",
+      icon: <MessageSquare size={19} />,
+      si: "si-blue",
+    },
+    {
+      label: "My Points",
+      value: communityPoints ?? 150,
+      badge: "Rank #4",
+      cls: "green",
+      icon: <Award size={19} />,
+      si: "si-green",
+    },
+    {
+      label: "Study Peers",
+      value: classmates?.length > 0 ? classmates.length : 24,
+      badge: "Online",
+      cls: "purple",
+      icon: <Users size={19} />,
+      si: "si-purple",
+    },
+    {
+      label: "Badges Earned",
+      value: badges?.length > 0 ? badges.length : 5,
+      badge: "Mastery",
+      cls: "amber",
+      icon: <Star size={19} />,
+      si: "si-amber",
+    },
+  ];
+
+  // Post Type Choices
+  const postTypes = [
+    { id: "discussion", label: "Discussion 💬", icon: <MessageSquare size={13} /> },
+    { id: "question", label: "Doubt / Help ❓", icon: <HelpCircle size={13} /> },
+    { id: "achievement", label: "Achievement 🏆", icon: <Trophy size={13} /> },
+    { id: "study_tip", label: "Study Tip 💡", icon: <Lightbulb size={13} /> },
+    { id: "session_card", label: "Live Room 🎙️", icon: <Radio size={13} /> },
   ];
 
   return (
     <>
       <style>{communityStyles}</style>
       <div className="comm-page">
+        {/* Navigation Bar */}
         <Navigation currentRole={currentRole} onRoleChange={setCurrentRole} />
 
-        {/* ── HERO ── */}
-        <div className="comm-hero">
-          <div className="comm-hero-inner">
-            <div>
-              <div className="comm-hero-title">Community Hub 🌟</div>
-              <div className="comm-hero-sub">Connect, collaborate and grow together with your peers and mentors.</div>
+        {/* Floating Ambient Sparks & Ribbon */}
+        <span className="comm-bg-ribbon" aria-hidden="true" />
+        <span className="comm-bg-spark s1" aria-hidden="true" />
+        <span className="comm-bg-spark s2" aria-hidden="true" />
+        <span className="comm-bg-spark s3" aria-hidden="true" />
+
+        {/* ══════════════════ HERO BANNER ══════════════════ */}
+        <div className="comm-hero-container">
+          <motion.div
+            className="comm-hero"
+            initial={{ opacity: 0, y: -16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, ease: "easeOut" }}
+          >
+            <div className="comm-hero-left">
+              <div className="comm-hero-chip">
+                <Sparkles size={14} /> GRADEUP STUDENT LOUNGE 🚀
+              </div>
+              <h1 className="comm-hero-title">
+                Learn, Connect & <span>Grow Together</span>
+              </h1>
+              <p className="comm-hero-desc">
+                Ask tough questions, discuss chapters with friends, share your exam achievements, and collaborate in real-time study sessions!
+              </p>
+              <div className="comm-hero-actions">
+                <button className="comm-hero-primary-btn" onClick={() => scrollToComposer("discussion")}>
+                  <Plus size={16} /> Share a Thought
+                </button>
+                <button className="comm-hero-secondary-btn" onClick={() => scrollToComposer("question")}>
+                  <HelpCircle size={16} style={{ color: "#2389ff" }} /> Ask a Doubt
+                </button>
+                <button className="comm-hero-secondary-btn" onClick={() => setActiveTab("polls")}>
+                  <Vote size={16} style={{ color: "#7b2cff" }} /> Live Polls
+                </button>
+              </div>
             </div>
+
             <div className="comm-hero-right">
-              <div className="comm-hero-stat">
-                <div className="comm-hero-sn">{posts?.length ?? 0}</div>
-                <div className="comm-hero-sl">Posts</div>
+              <div className="comm-hero-stats-panel">
+                <div className="comm-hero-mini-stat">
+                  <b>{posts?.length || 18}</b>
+                  <span>Total Posts</span>
+                </div>
+                <div className="comm-hero-mini-stat">
+                  <b>{communityPoints || 145}</b>
+                  <span>XP Points</span>
+                </div>
+                <div className="comm-hero-mini-stat">
+                  <b>{classmates?.length || 24}</b>
+                  <span>Classmates</span>
+                </div>
+                <div className="comm-hero-mini-stat">
+                  <b>{badges?.length || 5}</b>
+                  <span>Badges</span>
+                </div>
               </div>
-              <div className="comm-hero-div" />
-              <div className="comm-hero-stat">
-                <div className="comm-hero-sn">{classmates?.length ?? 0}</div>
-                <div className="comm-hero-sl">Members</div>
+
+              <div className="comm-hero-art-wrap">
+                <img src={studyRoboImg} alt="GradeUp Mascot" className="comm-hero-art-img" />
               </div>
-              <div className="comm-hero-div" />
-              <button className="comm-hero-btn" onClick={() => setActiveTab('feed')}>
-                Explore Feed →
-              </button>
             </div>
-          </div>
+          </motion.div>
         </div>
 
-        {/* ── BODY ── */}
+        {/* ══════════════════ BODY CONTENT ══════════════════ */}
         <div className="comm-body">
-
-          {/* Stat cards */}
+          {/* 4 Gamified Stat Cards */}
           <div className="comm-stats-row">
-            {statCards.map((s, i) => (
-              <div key={i} className={`comm-stat-card ${s.cls}`} style={{ animationDelay:`${0.05+i*.07}s` }}>
+            {statCards.map((stat, i) => (
+              <motion.div
+                key={stat.label}
+                className={`comm-stat-card ${stat.cls}`}
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.05 + i * 0.06 }}
+              >
                 <div className="comm-stat-top">
-                  <div className={`comm-stat-icon ${s.si}`}>{s.icon}</div>
-                  <span className="comm-stat-badge">{s.badge}</span>
+                  <div className={`comm-stat-icon ${stat.si}`}>{stat.icon}</div>
+                  <span className="comm-stat-badge">{stat.badge}</span>
                 </div>
-                <div className="comm-stat-num">{s.value}</div>
-                <div className="comm-stat-label">{s.label}</div>
+                <div className="comm-stat-num">{stat.value}</div>
+                <div className="comm-stat-label">{stat.label}</div>
+              </motion.div>
+            ))}
+          </div>
+
+          {/* Tab Navigation Pill Bar */}
+          <div className="comm-tabs-wrap">
+            <div className="comm-tabs-bar">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  className={`comm-tab ${activeTab === tab.id ? "active" : ""}`}
+                  onClick={() => setActiveTab(tab.id)}
+                >
+                  {tab.icon}
+                  <span>{tab.label}</span>
+                </button>
+              ))}
+            </div>
+
+            {activeTab === "feed" && (
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--comm-muted)" }}>
+                  Showing: <strong style={{ color: "var(--comm-ink)" }}>{filteredPosts.length} posts</strong>
+                </span>
               </div>
-            ))}
+            )}
           </div>
 
-          {/* Tab bar */}
-          <div className="comm-tabs-bar">
-            {tabs.map(t => (
-              <button key={t.id} className={`comm-tab ${activeTab === t.id ? "active" : ""}`} onClick={() => setActiveTab(t.id)}>
-                {t.icon}
-                <span>{t.label}</span>
-              </button>
-            ))}
-          </div>
-
-          {/* ── FEED TAB ── */}
+          {/* ══════════════════ FEED TAB ══════════════════ */}
           {activeTab === "feed" && (
-            isLoadingPosts ? <FunnyLoader text="Loading community posts..." /> : (
-              <div className="comm-feed-layout">
-
-                {/* Left — Polls */}
-                <div className="comm-feed-left">
-                  <div className="comm-card" style={{ animationDelay:".1s" }}>
-                    <div className="comm-card-header">
-                      <div className="comm-card-title"><Vote size={15} style={{color:"#6366f1"}} /> Community Polls</div>
+            <div className="comm-feed-layout">
+              {/* ── LEFT RAIL: Polls & Quick Helpers ── */}
+              <div className="comm-feed-left">
+                {/* Community Polls Card */}
+                <div className="comm-card" style={{ marginBottom: 18 }}>
+                  <div className="comm-card-header">
+                    <div className="comm-card-title">
+                      <Vote size={17} style={{ color: "#7b2cff" }} /> Student Polls
                     </div>
-                    <div className="comm-card-body" style={{ maxHeight:480, overflowY:"auto" }}>
-                      {isLoadingPolls && <FunnyLoader text="Loading polls..." />}
-                      {!isLoadingPolls && polls.length === 0 && (
-                        <div style={{padding:"14px",borderRadius:12,background:"#f8fafc",border:"1px dashed #e2e8f0",fontSize:12,color:"#64748b",textAlign:"center"}}>
-                          No live polls yet.
-                        </div>
-                      )}
-                      {!isLoadingPolls && polls.map(poll => (
-                        <div key={poll.id} className="comm-poll">
-                          <div className="comm-poll-q"><BarChart3 size={14} style={{color:"#6366f1",flexShrink:0}} />{poll.question}</div>
-                          {poll.options.map(opt => (
-                            <button key={opt.id} className="comm-poll-opt"
-                              onClick={() => handleVote(poll.id, opt.id)} disabled={poll.userVoted || votePollMutation.isPending}>
-                              <span>{opt.text}</span>
-                              <span style={{fontSize:11,color:"#94a3b8",fontWeight:600}}>({opt.votes})</span>
-                            </button>
-                          ))}
-                          <div className="comm-poll-footer">
-                            {poll.totalVotes} votes {poll.userVoted && <span style={{color:"#10b981",fontWeight:700}}>· Voted ✓</span>}
-                          </div>
-                        </div>
-                      ))}
+                    <button
+                      onClick={() => setShowPollCreationForm(!showPollCreationForm)}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        fontSize: 12,
+                        fontWeight: 800,
+                        color: "#7b2cff",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 3,
+                      }}
+                    >
+                      <Plus size={14} /> {showPollCreationForm ? "Close" : "New Poll"}
+                    </button>
+                  </div>
 
-                      <button className="comm-create-poll-btn" onClick={() => setShowPollCreationForm(!showPollCreationForm)}>
-                        <Plus size={14} /> {showPollCreationForm ? "Cancel" : "Create Poll"}
-                      </button>
-
+                  <div className="comm-card-body" style={{ maxHeight: 460, overflowY: "auto" }}>
+                    {/* Poll Creator Form */}
+                    <AnimatePresence>
                       {showPollCreationForm && (
-                        <motion.div initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} style={{marginTop:12}}>
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: "auto" }}
+                          exit={{ opacity: 0, height: 0 }}
+                          style={{
+                            marginBottom: 16,
+                            padding: 14,
+                            borderRadius: 14,
+                            background: "var(--comm-card-soft)",
+                            border: "1.5px solid var(--comm-line)",
+                          }}
+                        >
                           <input
-                            value={newPollQuestion} onChange={e => setNewPollQuestion(e.target.value)}
-                            placeholder="Your poll question…"
-                            style={{width:"100%",padding:"9px 12px",borderRadius:10,border:"1.5px solid #e2e8f0",fontSize:13,marginBottom:8,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}}
+                            placeholder="What do you want to ask?"
+                            value={newPollQuestion}
+                            onChange={(e) => setNewPollQuestion(e.target.value)}
+                            style={{
+                              width: "100%",
+                              padding: "9px 12px",
+                              borderRadius: 10,
+                              border: "1.5px solid var(--comm-line)",
+                              fontSize: 13,
+                              marginBottom: 8,
+                              background: "var(--comm-card)",
+                              color: "var(--comm-ink)",
+                              outline: "none",
+                              boxSizing: "border-box",
+                            }}
                           />
-                          {newPollOptions.map((opt,i) => (
-                            <input key={i} value={opt} onChange={e => { const o=[...newPollOptions]; o[i]=e.target.value; setNewPollOptions(o); }}
-                              placeholder={`Option ${i+1}`}
-                              style={{width:"100%",padding:"8px 12px",borderRadius:10,border:"1.5px solid #e2e8f0",fontSize:12.5,marginBottom:6,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}}
+                          {newPollOptions.map((opt, i) => (
+                            <input
+                              key={i}
+                              placeholder={`Option ${i + 1}`}
+                              value={opt}
+                              onChange={(e) => {
+                                const next = [...newPollOptions];
+                                next[i] = e.target.value;
+                                setNewPollOptions(next);
+                              }}
+                              style={{
+                                width: "100%",
+                                padding: "8px 12px",
+                                borderRadius: 10,
+                                border: "1.5px solid var(--comm-line)",
+                                fontSize: 12.5,
+                                marginBottom: 6,
+                                background: "var(--comm-card)",
+                                color: "var(--comm-ink)",
+                                outline: "none",
+                                boxSizing: "border-box",
+                              }}
                             />
                           ))}
-                          <button onClick={() => setNewPollOptions([...newPollOptions,''])}
-                            style={{fontSize:12,color:"#6366f1",fontWeight:600,background:"none",border:"none",cursor:"pointer",padding:"4px 0",marginBottom:6}}>
-                            + Add option
-                          </button>
-                          <button className="comm-create-poll-btn" onClick={handleCreatePoll} disabled={createPollMutation.isPending}><Target size={14}/> {createPollMutation.isPending ? "Creating..." : "Create Poll"}</button>
-                          <button className="comm-cancel-poll-btn" onClick={() => setShowPollCreationForm(false)}>Cancel</button>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
+                            <button
+                              onClick={() => setNewPollOptions([...newPollOptions, ""])}
+                              style={{
+                                fontSize: 12,
+                                color: "#7b2cff",
+                                fontWeight: 700,
+                                background: "none",
+                                border: "none",
+                                cursor: "pointer",
+                              }}
+                            >
+                              + Add Option
+                            </button>
+                            <button
+                              className="comm-submit-btn"
+                              style={{ padding: "6px 14px", fontSize: 12 }}
+                              onClick={handleCreatePoll}
+                              disabled={createPollMutation.isPending}
+                            >
+                              {createPollMutation.isPending ? "Creating..." : "Launch Poll"}
+                            </button>
+                          </div>
                         </motion.div>
                       )}
+                    </AnimatePresence>
+
+                    {isLoadingPolls ? (
+                      <FunnyLoader text="Loading polls..." />
+                    ) : polls.length === 0 ? (
+                      <div
+                        style={{
+                          textAlign: "center",
+                          padding: "20px 10px",
+                          color: "var(--comm-muted)",
+                          fontSize: 12.5,
+                        }}
+                      >
+                        <Vote size={26} style={{ margin: "0 auto 6px", opacity: 0.5 }} />
+                        No active polls right now. Be the first to start one!
+                      </div>
+                    ) : (
+                      polls.map((poll) => {
+                        const totalVotes = poll.totalVotes || poll.options?.reduce((a, b) => a + (b.votes || 0), 0) || 1;
+                        return (
+                          <div key={poll.id} className="comm-poll-card">
+                            <div className="comm-poll-q">
+                              <BarChart3 size={15} style={{ color: "#7b2cff", flexShrink: 0 }} />
+                              {poll.question}
+                            </div>
+                            {poll.options.map((opt) => {
+                              const pct = Math.round(((opt.votes || 0) / totalVotes) * 100);
+                              return (
+                                <button
+                                  key={opt.id}
+                                  className="comm-poll-opt-btn"
+                                  onClick={() => votePollMutation.mutate({ pollId: poll.id, optionId: opt.id })}
+                                  disabled={poll.userVoted || votePollMutation.isPending}
+                                >
+                                  {poll.userVoted && (
+                                    <span className="comm-poll-progress-fill" style={{ width: `${pct}%` }} />
+                                  )}
+                                  <span style={{ position: "relative", zIndex: 1 }}>{opt.text}</span>
+                                  <span style={{ position: "relative", zIndex: 1, fontSize: 11.5, color: "var(--comm-muted)" }}>
+                                    {poll.userVoted ? `${pct}% (${opt.votes || 0})` : `${opt.votes || 0}`}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                            <div className="comm-poll-footer">
+                              <span>{poll.totalVotes || 0} total votes</span>
+                              {poll.userVoted && (
+                                <span style={{ color: "#10b981", display: "flex", alignItems: "center", gap: 3 }}>
+                                  <CheckCircle2 size={12} /> Voted
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                {/* Daily Motivation Mascot Card */}
+                <div
+                  className="comm-card"
+                  style={{
+                    background: "linear-gradient(135deg, rgba(255, 178, 29, 0.12), rgba(39, 184, 106, 0.12))",
+                    border: "1.5px solid rgba(255, 178, 29, 0.25)",
+                    padding: "16px 18px",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <img
+                      src={tomatoHappy}
+                      alt="Encouragement"
+                      style={{ width: 56, height: 56, objectFit: "contain", flexShrink: 0, animation: "commBreathe 4s infinite" }}
+                    />
+                    <div>
+                      <b style={{ display: "block", fontSize: 13.5, color: "var(--comm-ink)" }}>Study Streak Tip 🔥</b>
+                      <span style={{ fontSize: 12, color: "var(--comm-muted)", lineHeight: 1.4 }}>
+                        Helping a peer answer a question reinforces 90% of what you studied today!
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── CENTER FEED: Create Post & Post Stream ── */}
+              <div className="comm-feed-center">
+                {/* Interactive Composer Box */}
+                <div ref={composerRef} className="comm-composer-card">
+                  <div className="comm-composer-header">
+                    <div className="comm-composer-avatar">
+                      {(user?.firstName?.[0] || "U").toUpperCase()}
+                    </div>
+                    <div className="comm-composer-meta">
+                      <b>{user?.firstName ? `${user.firstName} ${user.lastName || ""}` : "Student Lounge"}</b>
+                      <span>Share a doubt, discussion, note, or achievement</span>
+                    </div>
+                  </div>
+
+                  {/* Post Type Chips */}
+                  <div className="comm-type-pill-strip">
+                    {postTypes.map((pt) => (
+                      <button
+                        key={pt.id}
+                        className={`comm-type-pill ${postType === pt.id ? "active" : ""}`}
+                        onClick={() => setPostType(pt.id)}
+                      >
+                        {pt.icon}
+                        <span>{pt.label}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <textarea
+                    className="comm-post-textarea"
+                    placeholder={
+                      postType === "question"
+                        ? "Ask your question or doubt... What topic are you stuck on?"
+                        : postType === "achievement"
+                        ? "Celebrate your progress! Finished a tough chapter or scored well?"
+                        : postType === "study_tip"
+                        ? "Share a memory trick, formula summary, or helpful study routine..."
+                        : "What's on your mind? Share thoughts with your peers..."
+                    }
+                    value={postContent}
+                    onChange={(e) => setPostContent(e.target.value)}
+                    rows={3}
+                  />
+
+                  <div className="comm-composer-footer">
+                    <div className="comm-composer-tools">
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        style={{ display: "none" }}
+                        accept="image/*"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) setAttachedFile(f);
+                        }}
+                      />
+                      <button className="comm-tool-btn" onClick={() => fileInputRef.current?.click()}>
+                        <ImageIcon size={14} style={{ color: "#2389ff" }} /> Add Photo
+                      </button>
+
+                      <select
+                        className="comm-visibility-select"
+                        value={postVisibility}
+                        onChange={(e) => setPostVisibility(e.target.value as "all" | "school")}
+                      >
+                        <option value="all">Visible to All GradeUp 🌐</option>
+                        <option value="school">My School Only 🏫</option>
+                      </select>
+
+                      {attachedFile && (
+                        <span
+                          style={{
+                            fontSize: 11.5,
+                            fontWeight: 700,
+                            color: "#7b2cff",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 4,
+                          }}
+                        >
+                          {attachedFile.name}
+                          <X
+                            size={13}
+                            style={{ cursor: "pointer" }}
+                            onClick={() => setAttachedFile(null)}
+                          />
+                        </span>
+                      )}
+                    </div>
+
+                    <button
+                      className="comm-submit-btn"
+                      onClick={handleCreatePost}
+                      disabled={createPostMutation.isPending || !postContent.trim()}
+                    >
+                      {createPostMutation.isPending ? "Publishing..." : "Post Update 🚀"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Filter and Search Bar */}
+                <div className="comm-filter-strip">
+                  <div className="comm-search-bar">
+                    <Search size={16} className="comm-search-icon" />
+                    <input
+                      placeholder="Search questions, topics, chapters..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                    {searchTerm && (
+                      <X
+                        size={15}
+                        style={{ position: "absolute", right: 14, top: 14, cursor: "pointer", color: "var(--comm-muted)" }}
+                        onClick={() => setSearchTerm("")}
+                      />
+                    )}
+                  </div>
+
+                  <select
+                    className="comm-filter-select"
+                    value={contentFilter}
+                    onChange={(e) => setContentFilter(e.target.value)}
+                  >
+                    <option value="all">🌟 All Categories</option>
+                    <option value="question">❓ Doubts & Questions</option>
+                    <option value="discussion">💬 Discussions</option>
+                    <option value="achievement">🏆 Achievements</option>
+                    <option value="study_tip">💡 Study Tips</option>
+                    <option value="session_card">🎙️ Live Sessions</option>
+                  </select>
+                </div>
+
+                {/* Posts Feed Stream */}
+                {isLoadingPosts ? (
+                  <FunnyLoader text="Gathering the latest community buzz..." />
+                ) : filteredPosts.length === 0 ? (
+                  <div
+                    className="comm-card"
+                    style={{
+                      textAlign: "center",
+                      padding: "48px 24px",
+                      background: "var(--comm-card)",
+                    }}
+                  >
+                    <img
+                      src={robotSearch}
+                      alt="No posts"
+                      style={{ width: 80, height: 80, margin: "0 auto 12px", objectFit: "contain" }}
+                    />
+                    <h3 style={{ fontSize: 16, fontWeight: 800, color: "var(--comm-ink)", marginBottom: 4 }}>
+                      No discussions found
+                    </h3>
+                    <p style={{ fontSize: 13, color: "var(--comm-muted)", maxWidth: 360, margin: "0 auto 16px" }}>
+                      {searchTerm
+                        ? `No discussions matching "${searchTerm}". Try a different search!`
+                        : "Be the first student to post a doubt or start a conversation!"}
+                    </p>
+                    <button className="comm-hero-primary-btn" onClick={() => scrollToComposer("discussion")}>
+                      <Plus size={15} /> Start Discussion
+                    </button>
+                  </div>
+                ) : (
+                  filteredPosts.map((post: any, idx: number) => {
+                    const isLiked = likedPosts[post.id] || false;
+                    const likesCount = (post.likesCount || 0) + (isLiked ? 1 : 0);
+                    const commentsOpen = showComments[post.id] || false;
+
+                    return (
+                      <motion.div
+                        key={post.id}
+                        className="comm-post-card"
+                        id={`post-${post.id}`}
+                        initial={{ opacity: 0, y: 14 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: Math.min(idx * 0.05, 0.4) }}
+                      >
+                        <div className="comm-post-header">
+                          <div className="comm-post-author-avatar">
+                            {(post.author?.firstName?.[0] || "U").toUpperCase()}
+                          </div>
+                          <div className="comm-post-author-info">
+                            <b>
+                              {post.author?.firstName || "Learner"} {post.author?.lastName || ""}
+                            </b>
+                            <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 2 }}>
+                              <span className={`comm-badge ${post.type || "discussion"}`}>
+                                {post.type === "question" && <HelpCircle size={11} />}
+                                {post.type === "discussion" && <MessageCircle size={11} />}
+                                {post.type === "achievement" && <Trophy size={11} />}
+                                {post.type === "study_tip" && <Lightbulb size={11} />}
+                                {post.type === "session_card" && <Radio size={11} />}
+                                {post.type || "discussion"}
+                              </span>
+                              {post.visibility === "school" && (
+                                <span style={{ fontSize: 10.5, color: "var(--comm-muted)", fontWeight: 700 }}>
+                                  • School Only
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <span className="comm-post-time">
+                            {post.createdAt
+                              ? formatDistanceToNow(new Date(post.createdAt), { addSuffix: true })
+                              : "Recently"}
+                          </span>
+                        </div>
+
+                        <div className="comm-post-content">{post.content}</div>
+
+                        {/* Embedded Live Session Card if present */}
+                        {post.metadata?.sessionCard && (
+                          <CommunitySessionCard card={post.metadata.sessionCard} />
+                        )}
+
+                        {/* Reaction Bar */}
+                        <div className="comm-post-reactions">
+                          <button
+                            className={`comm-reaction-btn ${isLiked ? "liked" : ""}`}
+                            onClick={() => likePostMutation.mutate(post.id)}
+                          >
+                            <Heart size={15} />
+                            <span>{likesCount} Likes</span>
+                          </button>
+
+                          <button
+                            className="comm-reaction-btn"
+                            onClick={() =>
+                              setShowComments((prev) => ({ ...prev, [post.id]: !prev[post.id] }))
+                            }
+                          >
+                            <MessageCircle size={15} />
+                            <span>{post.commentsCount || post.comments?.length || 0} Replies</span>
+                          </button>
+
+                          <button className="comm-reaction-btn" onClick={() => handleSharePost(post)}>
+                            <Share2 size={15} />
+                            <span>Share</span>
+                          </button>
+                        </div>
+
+                        {/* Expandable Comments Drawer */}
+                        <AnimatePresence>
+                          {commentsOpen && (
+                            <motion.div
+                              className="comm-comments-area"
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: "auto" }}
+                              exit={{ opacity: 0, height: 0 }}
+                            >
+                              {post.comments && post.comments.length > 0 ? (
+                                post.comments.map((comment: any) => (
+                                  <div key={comment.id} className="comm-comment-bubble">
+                                    <div className="comm-comment-avatar">
+                                      {(comment.author?.firstName?.[0] || "U").toUpperCase()}
+                                    </div>
+                                    <div className="comm-comment-body">
+                                      <div className="comm-comment-top">
+                                        <span className="comm-comment-author">
+                                          {comment.author?.firstName || "Peer"}
+                                        </span>
+                                        <span className="comm-comment-time">
+                                          {comment.createdAt
+                                            ? formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true })
+                                            : "Just now"}
+                                        </span>
+                                      </div>
+                                      <div className="comm-comment-text">{comment.content}</div>
+                                    </div>
+                                  </div>
+                                ))
+                              ) : (
+                                <div
+                                  style={{
+                                    fontSize: 12.5,
+                                    color: "var(--comm-muted)",
+                                    textAlign: "center",
+                                    padding: "6px 0",
+                                  }}
+                                >
+                                  No comments yet. Start the conversation!
+                                </div>
+                              )}
+
+                              {/* Comment Reply Input */}
+                              <div className="comm-comment-input-row">
+                                <input
+                                  className="comm-comment-input"
+                                  placeholder="Write an encouraging reply..."
+                                  value={commentTexts[post.id] || ""}
+                                  onChange={(e) =>
+                                    setCommentTexts((p) => ({ ...p, [post.id]: e.target.value }))
+                                  }
+                                  onKeyPress={(e) => {
+                                    if (e.key === "Enter" && (commentTexts[post.id] || "").trim()) {
+                                      commentPostMutation.mutate({
+                                        postId: post.id,
+                                        content: (commentTexts[post.id] || "").trim(),
+                                      });
+                                    }
+                                  }}
+                                />
+                                <button
+                                  className="comm-comment-send-btn"
+                                  onClick={() => {
+                                    if ((commentTexts[post.id] || "").trim()) {
+                                      commentPostMutation.mutate({
+                                        postId: post.id,
+                                        content: (commentTexts[post.id] || "").trim(),
+                                      });
+                                    }
+                                  }}
+                                >
+                                  <Send size={14} />
+                                </button>
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </motion.div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* ── RIGHT RAIL: Trending Topics & Badges ── */}
+              <div className="comm-feed-right">
+                {/* Trending Study Topics */}
+                <div className="comm-card" style={{ marginBottom: 18 }}>
+                  <div className="comm-card-header">
+                    <div className="comm-card-title">
+                      <Flame size={17} style={{ color: "#ff791f" }} /> Trending Study Buzz
+                    </div>
+                  </div>
+                  <div className="comm-card-body" style={{ padding: "12px 14px" }}>
+                    {trendingTopics.length === 0 ? (
+                      <div style={{ fontSize: 12.5, color: "var(--comm-muted)", padding: "12px 0", textAlign: "center" }}>
+                        <TrendingUp size={20} style={{ margin: "0 auto 6px", opacity: 0.5 }} />
+                        New topics heating up soon!
+                      </div>
+                    ) : (
+                      trendingTopics.map((topic) => (
+                        <div
+                          key={topic.id}
+                          className="comm-topic-item"
+                          onClick={() => setSearchTerm(topic.title)}
+                        >
+                          <div className="comm-topic-icon">
+                            <Zap size={16} />
+                          </div>
+                          <div>
+                            <div className="comm-topic-title">#{topic.title}</div>
+                            <div className="comm-topic-count">{topic.posts} student posts</div>
+                          </div>
+                          <ChevronRight size={14} className="comm-topic-arrow" />
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Badges & Student Perks */}
+                <div className="comm-card" style={{ marginBottom: 18 }}>
+                  <div className="comm-card-header">
+                    <div className="comm-card-title">
+                      <Award size={17} style={{ color: "#ffb21d" }} /> Community Badges
+                    </div>
+                  </div>
+                  <div className="comm-card-body" style={{ padding: "14px" }}>
+                    <div className="comm-badge-tile">
+                      <div className="comm-badge-shape">🌟</div>
+                      <div className="comm-badge-info">
+                        <b>Top Contributor</b>
+                        <span>Help 5 classmates with doubts</span>
+                      </div>
+                    </div>
+                    <div className="comm-badge-tile">
+                      <div
+                        className="comm-badge-shape"
+                        style={{ background: "linear-gradient(135deg, #7b2cff, #b948d9)" }}
+                      >
+                        ⚡
+                      </div>
+                      <div className="comm-badge-info">
+                        <b>Study Buddy Pro</b>
+                        <span>Engage in 10 discussion threads</span>
+                      </div>
+                    </div>
+                    <div className="comm-badge-tile">
+                      <div
+                        className="comm-badge-shape"
+                        style={{ background: "linear-gradient(135deg, #27b86a, #2389ff)" }}
+                      >
+                        💡
+                      </div>
+                      <div className="comm-badge-info">
+                        <b>Problem Solver</b>
+                        <span>Earn 100+ community points</span>
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Centre — Posts */}
-                <div>
-                  {/* Create post card */}
-                  <div className="comm-card" style={{marginBottom:16,animationDelay:".05s"}}>
-                    <div className="comm-card-header">
-                      <div className="comm-card-title"><MessageSquare size={15} style={{color:"#6366f1"}}/> Share with your class</div>
-                    </div>
-                    <div className="comm-card-body">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-2.5">
-                        <select value={postType} onChange={e => setPostType(e.target.value)}
-                          className="w-full p-2 rounded-lg border bg-gray-50 dark:bg-gray-700 text-sm font-sans outline-none text-gray-800 dark:text-gray-300 border-gray-200 dark:border-gray-600 focus:border-indigo-500 dark:focus:border-indigo-400">
-                          <option value="discussion">Discussion</option>
-                          <option value="question">Question</option>
-                          <option value="achievement">Achievement</option>
-                          <option value="study_tip">Study Tip</option>
-                          <option value="session_card">Session</option>
-                        </select>
-                        <select value={postVisibility} onChange={e => setPostVisibility(e.target.value as "all" | "school")}
-                          className="w-full p-2 rounded-lg border bg-gray-50 dark:bg-gray-700 text-sm font-sans outline-none text-gray-800 dark:text-gray-300 border-gray-200 dark:border-gray-600 focus:border-indigo-500 dark:focus:border-indigo-400">
-                          <option value="all">Visible to all</option>
-                          <option value="school">Only inside my school</option>
-                        </select>
-                      </div>
-                      <textarea className="comm-post-textarea" placeholder="What's on your mind?"
-                        value={postContent} onChange={e => setPostContent(e.target.value)} rows={3} />
-                      <div className="comm-post-actions">
-                        <div className="comm-post-tools">
-                          <input type="file" ref={fileInputRef} style={{display:"none"}} accept="image/*" onChange={e => { const f=e.target.files?.[0]; if(f) setAttachedFile(f); }} />
-                          <button className="comm-tool-btn" onClick={() => fileInputRef.current?.click()}><ImageIcon size={13}/> Photo</button>
-                          {attachedFile && <span style={{fontSize:11,color:"#6366f1",fontWeight:600}}>{attachedFile.name}</span>}
-                        </div>
-                        <button className="comm-post-btn" onClick={createPost} disabled={createPostMutation.isPending}>
-                          {createPostMutation.isPending ? "Posting…" : "Post"}
+                {/* Friendly Student Code of Conduct */}
+                <div
+                  className="comm-card"
+                  style={{
+                    background: "var(--comm-card-soft)",
+                    border: "1px dashed var(--comm-line)",
+                    padding: "16px 18px",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <ShieldCheck size={18} style={{ color: "#27b86a" }} />
+                    <b style={{ fontSize: 13, color: "var(--comm-ink)" }}>Student Friendly Space</b>
+                  </div>
+                  <p style={{ fontSize: 11.5, color: "var(--comm-muted)", lineHeight: 1.5, margin: 0 }}>
+                    GradeUp Community is a respectful learning zone. Cheer on your peers, celebrate curious minds, and keep all shared resources academic!
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ══════════════════ POLLS FULL TAB ══════════════════ */}
+          {activeTab === "polls" && (
+            <div style={{ maxWidth: 760, margin: "0 auto" }}>
+              <div className="comm-card">
+                <div className="comm-card-header">
+                  <div className="comm-card-title">
+                    <Vote size={18} style={{ color: "#7b2cff" }} /> All Active Student Polls
+                  </div>
+                  <button
+                    className="comm-hero-primary-btn"
+                    style={{ padding: "8px 16px", fontSize: 12.5 }}
+                    onClick={() => setShowPollCreationForm(!showPollCreationForm)}
+                  >
+                    <Plus size={14} /> Create Poll
+                  </button>
+                </div>
+
+                <div className="comm-card-body">
+                  {showPollCreationForm && (
+                    <div
+                      style={{
+                        marginBottom: 20,
+                        padding: 16,
+                        borderRadius: 16,
+                        background: "var(--comm-card-soft)",
+                        border: "1.5px solid var(--comm-line)",
+                      }}
+                    >
+                      <h4 style={{ fontSize: 14, fontWeight: 800, marginBottom: 10, color: "var(--comm-ink)" }}>
+                        Create a New Poll
+                      </h4>
+                      <input
+                        placeholder="Poll Question"
+                        value={newPollQuestion}
+                        onChange={(e) => setNewPollQuestion(e.target.value)}
+                        style={{
+                          width: "100%",
+                          padding: "10px 14px",
+                          borderRadius: 12,
+                          border: "1.5px solid var(--comm-line)",
+                          fontSize: 13.5,
+                          marginBottom: 10,
+                          background: "var(--comm-card)",
+                          color: "var(--comm-ink)",
+                          outline: "none",
+                          boxSizing: "border-box",
+                        }}
+                      />
+                      {newPollOptions.map((opt, i) => (
+                        <input
+                          key={i}
+                          placeholder={`Option ${i + 1}`}
+                          value={opt}
+                          onChange={(e) => {
+                            const next = [...newPollOptions];
+                            next[i] = e.target.value;
+                            setNewPollOptions(next);
+                          }}
+                          style={{
+                            width: "100%",
+                            padding: "8px 12px",
+                            borderRadius: 10,
+                            border: "1.5px solid var(--comm-line)",
+                            fontSize: 12.5,
+                            marginBottom: 8,
+                            background: "var(--comm-card)",
+                            color: "var(--comm-ink)",
+                            outline: "none",
+                            boxSizing: "border-box",
+                          }}
+                        />
+                      ))}
+                      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
+                        <button
+                          onClick={() => setNewPollOptions([...newPollOptions, ""])}
+                          style={{
+                            fontSize: 12.5,
+                            color: "#7b2cff",
+                            fontWeight: 700,
+                            background: "none",
+                            border: "none",
+                            cursor: "pointer",
+                          }}
+                        >
+                          + Add Option
+                        </button>
+                        <button
+                          className="comm-submit-btn"
+                          onClick={handleCreatePoll}
+                          disabled={createPollMutation.isPending}
+                        >
+                          {createPollMutation.isPending ? "Creating..." : "Launch Poll"}
                         </button>
                       </div>
                     </div>
-                  </div>
+                  )}
 
-                  {/* Search + filter */}
-                  <div className="flex gap-2.5 mb-4 flex-wrap">
-                    <div className="comm-search-bar flex-grow min-w-[160px] m-0">
-                      <Search size={15} className="comm-search-icon" />
-                      <input placeholder="Search posts…" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                  {isLoadingPolls ? (
+                    <FunnyLoader text="Loading polls..." />
+                  ) : polls.length === 0 ? (
+                    <div style={{ textAlign: "center", padding: "40px 10px", color: "var(--comm-muted)" }}>
+                      <Vote size={36} style={{ margin: "0 auto 10px", opacity: 0.4 }} />
+                      <p style={{ fontSize: 14, fontWeight: 700 }}>No polls active at this moment.</p>
                     </div>
-                    <select value={contentFilter} onChange={e => setContentFilter(e.target.value)}
-                      className="p-2.5 rounded-lg border bg-white dark:bg-gray-800 text-sm font-sans outline-none text-gray-800 dark:text-gray-300 border-gray-200 dark:border-gray-600 focus:border-indigo-500 dark:focus:border-indigo-400 h-[42px]">
-                      <option value="all">All Content</option>
-                      <option value="question">Questions</option>
-                      <option value="discussion">Discussions</option>
-                      <option value="achievement">Achievements</option>
-                      <option value="study_tip">Study Tips</option>
-                      <option value="session_card">Sessions</option>
-                    </select>
-                  </div>
-
-                  {/* Post list */}
-                  {posts && Array.isArray(posts) && posts.length > 0 ? (
-                    posts
-                      .filter((p:any) => {
-                        const ms = !searchTerm || p.content?.toLowerCase().includes(searchTerm.toLowerCase());
-                        const mf = contentFilter === "all" || p.type === contentFilter;
-                        return ms && mf;
-                      })
-                      .map((post:any, idx:number) => (
-                        <motion.div key={post.id} initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} transition={{delay:idx*.06}}>
-                          <div className="comm-post">
-                            <div className="comm-post-meta">
-                              <div className="comm-post-avatar">
-                                {(post.author?.firstName?.[0] || 'U').toUpperCase()}
-                              </div>
-                              <div>
-                                <div className="comm-post-author">{post.author?.firstName} {post.author?.lastName}</div>
-                                <span className="comm-badge indigo">{post.type}</span>
-                              </div>
-                              <span className="comm-post-time">{formatDistanceToNow(new Date(post.createdAt), {addSuffix:true})}</span>
-                              {String(post.author?.id || "") === String((user as any)?.id || (user as any)?._id || "") && (
-                                <button
-                                  className="comm-reaction-btn"
-                                  style={{ padding: "6px 8px", color: "#dc2626" }}
-                                  onClick={() => deletePostMutation.mutate(post.id)}
-                                  disabled={deletePostMutation.isPending}
-                                  title="Delete post"
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                              )}
-                            </div>
-                            <div className="comm-post-content">{post.content}</div>
-                            {post.metadata?.sessionCard && <CommunitySessionCard card={post.metadata.sessionCard} />}
-                            <div className="comm-post-reactions">
-                              <button className="comm-reaction-btn" onClick={() => likePostMutation.mutate(post.id)}>
-                                <Heart size={14}/> Like ({post.likesCount || 0})
+                  ) : (
+                    polls.map((poll) => {
+                      const totalVotes =
+                        poll.totalVotes || poll.options?.reduce((a, b) => a + (b.votes || 0), 0) || 1;
+                      return (
+                        <div key={poll.id} className="comm-poll-card" style={{ marginBottom: 18 }}>
+                          <div className="comm-poll-q" style={{ fontSize: 15 }}>
+                            <BarChart3 size={17} style={{ color: "#7b2cff" }} /> {poll.question}
+                          </div>
+                          {poll.options.map((opt) => {
+                            const pct = Math.round(((opt.votes || 0) / totalVotes) * 100);
+                            return (
+                              <button
+                                key={opt.id}
+                                className="comm-poll-opt-btn"
+                                onClick={() => votePollMutation.mutate({ pollId: poll.id, optionId: opt.id })}
+                                disabled={poll.userVoted || votePollMutation.isPending}
+                              >
+                                {poll.userVoted && (
+                                  <span className="comm-poll-progress-fill" style={{ width: `${pct}%` }} />
+                                )}
+                                <span style={{ position: "relative", zIndex: 1 }}>{opt.text}</span>
+                                <span style={{ position: "relative", zIndex: 1, fontSize: 12, color: "var(--comm-muted)" }}>
+                                  {poll.userVoted ? `${pct}% (${opt.votes || 0} votes)` : `${opt.votes || 0} votes`}
+                                </span>
                               </button>
-                              <button className="comm-reaction-btn" onClick={() => setShowComments(p => ({...p,[post.id]:!p[post.id]}))}>
-                                <MessageCircle size={14}/> Comments ({post.commentsCount || 0})
-                              </button>
-                              <button className="comm-reaction-btn"><Share2 size={14}/> Share</button>
-                            </div>
-                            {showComments[post.id] && (
-                              <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
-                                {post.comments?.map((c:any) => (
-                                  <div key={c.id} className="flex gap-2 mb-2.5">
-                                    <div className="w-7 h-7 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                                      {(c.author?.firstName?.[0]||'U').toUpperCase()}
-                                    </div>
-                                    <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-2 flex-1">
-                                      <span className="text-xs font-bold text-gray-800 dark:text-gray-200">{c.author?.firstName}</span>
-                                      <span className="text-[11px] text-gray-500 dark:text-gray-400 ml-1.5">{formatDistanceToNow(new Date(c.createdAt),{addSuffix:true})}</span>
-                                      <p className="text-sm text-gray-700 dark:text-gray-300 mt-0.5 leading-snug">{c.content}</p>
-                                    </div>
-                                  </div>
-                                ))}
-                                <div className="flex gap-2 mt-2">
-                                  <input
-                                    placeholder="Write a comment…"
-                                    value={commentTexts[post.id]||""}
-                                    onChange={e => setCommentTexts(p=>({...p,[post.id]:e.target.value}))}
-                                    onKeyPress={e => { if(e.key==='Enter'&&(commentTexts[post.id]||"").trim()) commentPostMutation.mutate({postId:post.id,content:(commentTexts[post.id]||"").trim()}); }}
-                                    className="comm-chat-input flex-1 h-9 text-sm"
-                                  />
-                                  <button className="comm-send-btn w-9 h-9 rounded-lg"
-                                    onClick={() => { if((commentTexts[post.id]||"").trim()) commentPostMutation.mutate({postId:post.id,content:(commentTexts[post.id]||"").trim()}); }}>
-                                    <Send size={14}/>
-                                  </button>
-                                </div>
-                              </div>
+                            );
+                          })}
+                          <div className="comm-poll-footer" style={{ marginTop: 10 }}>
+                            <span>{poll.totalVotes || 0} learners voted</span>
+                            {poll.userVoted && (
+                              <span style={{ color: "#10b981", fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
+                                <CheckCircle2 size={13} /> You cast your vote
+                              </span>
                             )}
                           </div>
-                        </motion.div>
-                      ))
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ══════════════════ LEADERBOARD TAB ══════════════════ */}
+          {activeTab === "leaderboard" && (
+            <div style={{ maxWidth: 760, margin: "0 auto" }}>
+              <div className="comm-card">
+                <div className="comm-card-header">
+                  <div className="comm-card-title">
+                    <Trophy size={18} style={{ color: "#ffb21d" }} /> Student Community Leaderboard
+                  </div>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "var(--comm-muted)" }}>
+                    Updated Daily 🏆
+                  </span>
+                </div>
+                <div className="comm-card-body">
+                  {isLoadingLeaderboard ? (
+                    <FunnyLoader text="Calculating rankings..." />
+                  ) : leaderboard && leaderboard.length > 0 ? (
+                    leaderboard.map((student: any, idx: number) => (
+                      <motion.div
+                        key={student.id || idx}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: idx * 0.05 }}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 14,
+                          padding: "14px 18px",
+                          borderRadius: 16,
+                          background:
+                            idx === 0
+                              ? "linear-gradient(135deg, rgba(255, 178, 29, 0.15), rgba(255, 245, 215, 0.4))"
+                              : "var(--comm-card-soft)",
+                          border: "1px solid var(--comm-line)",
+                          marginBottom: 10,
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 18,
+                            fontWeight: 900,
+                            width: 32,
+                            textAlign: "center",
+                            color: idx === 0 ? "#ff9800" : idx === 1 ? "#64748b" : idx === 2 ? "#b45309" : "var(--comm-muted)",
+                          }}
+                        >
+                          {idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : `#${idx + 1}`}
+                        </div>
+                        <div
+                          style={{
+                            width: 40,
+                            height: 40,
+                            borderRadius: 14,
+                            background: "linear-gradient(135deg, #7b2cff, #2389ff)",
+                            color: "#fff",
+                            display: "grid",
+                            placeItems: "center",
+                            fontSize: 14,
+                            fontWeight: 800,
+                          }}
+                        >
+                          {(student.firstName?.[0] || "S").toUpperCase()}
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <b style={{ display: "block", fontSize: 14, color: "var(--comm-ink)" }}>
+                            {student.firstName} {student.lastName || ""}
+                          </b>
+                          <span style={{ fontSize: 11.5, color: "var(--comm-muted)", fontWeight: 600 }}>
+                            {student.points || 0} Community XP Points
+                          </span>
+                        </div>
+                        <span
+                          className={`comm-badge ${idx === 0 ? "achievement" : idx < 3 ? "discussion" : "study_tip"}`}
+                        >
+                          {idx === 0 ? "🏆 Grand Champion" : idx === 1 ? "🥈 Master Helper" : idx === 2 ? "🥉 Star Contributor" : `${student.points || 0} pts`}
+                        </span>
+                      </motion.div>
+                    ))
                   ) : (
-                    <div className="text-center p-12 bg-white dark:bg-gray-800 rounded-2xl border-2 border-dashed border-indigo-100 dark:border-gray-700">
-                      <MessageSquare size={36} className="text-indigo-200 dark:text-gray-600 mx-auto mb-3" />
-                      <p className="text-md font-bold text-gray-800 dark:text-gray-200">No posts yet</p>
-                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Be the first to share something with the community!</p>
+                    <div style={{ textAlign: "center", padding: "40px 10px", color: "var(--comm-muted)" }}>
+                      <Trophy size={36} style={{ margin: "0 auto 10px", opacity: 0.4 }} />
+                      <p style={{ fontSize: 14, fontWeight: 700 }}>Leaderboard will refresh after current round.</p>
                     </div>
                   )}
                 </div>
-
-                {/* Right — Trending + Quick Stats */}
-                <div className="comm-feed-right">
-                  <div className="comm-card" style={{marginBottom:16,animationDelay:".12s"}}>
-                    <div className="comm-card-header">
-                      <div className="comm-card-title"><TrendingUp size={15} style={{color:"#6366f1"}}/> Trending Topics</div>
-                    </div>
-                    <div className="comm-card-body">
-                      {trendingTopics.length === 0 && (
-                        <div style={{fontSize:12,color:"#64748b",padding:"8px 0"}}>No trending topics yet.</div>
-                      )}
-                      {trendingTopics.map(t => (
-                        <div key={t.id} className="comm-topic">
-                          <div className="comm-topic-icon"><Zap size={15}/></div>
-                          <div>
-                            <div className="comm-topic-name">{t.title}</div>
-                            <div className="comm-topic-count">{t.posts} posts</div>
-                          </div>
-                          <span className="comm-topic-arrow">›</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="comm-card" style={{animationDelay:".18s"}}>
-                    <div className="comm-card-header">
-                      <div className="comm-card-title"><Star size={15} style={{color:"#f59e0b"}}/> Quick Stats</div>
-                    </div>
-                    <div className="comm-card-body">
-                      <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #f1f5f9"}}>
-                        <span style={{fontSize:13,color:"#64748b"}}>Community Points</span>
-                        <span className="comm-badge green">{communityPoints || 0}</span>
-                      </div>
-                      <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0"}}>
-                        <span style={{fontSize:13,color:"#64748b"}}>Badges Earned</span>
-                        <span className="comm-badge amber">{badges?.length || 0}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
               </div>
-            )
+            </div>
           )}
 
-          {/* ── MESSAGING TAB ── */}
+          {/* ══════════════════ MESSAGING / CHAT TAB ══════════════════ */}
           {activeTab === "messaging" && (
-            <div className="comm-msg-layout">
-              {/* Channels list */}
-              <div className="comm-contacts">
-                <div className="comm-contacts-header">
-                  Channels
-                  <button onClick={() => setShowCreateChannelModal(true)}
-                    style={{width:28,height:28,borderRadius:8,background:"rgba(99,102,241,.1)",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#6366f1"}}>
-                    <Plus size={14}/>
+            <div className="comm-msg-container">
+              {/* Channel list */}
+              <div className="comm-chat-channel-list">
+                <div className="comm-card-header">
+                  <span className="comm-card-title">
+                    <Users size={16} style={{ color: "#7b2cff" }} /> Study Groups
+                  </span>
+                  <button
+                    onClick={() => setShowCreateChannelModal(true)}
+                    style={{
+                      width: 30,
+                      height: 30,
+                      borderRadius: 10,
+                      background: "rgba(123, 44, 255, 0.1)",
+                      color: "#7b2cff",
+                      border: "none",
+                      cursor: "pointer",
+                      display: "grid",
+                      placeItems: "center",
+                    }}
+                  >
+                    <Plus size={15} />
                   </button>
                 </div>
-                <div style={{flex:1,overflowY:"auto"}}>
-                  {channels.map(ch => (
+                <div style={{ flex: 1, overflowY: "auto", padding: "10px" }}>
+                  {channels.map((ch) => (
                     <div key={ch.id}>
-                      <div className="comm-contact-item" onClick={() => setSelectedChannel(ch.id === selectedChannel ? null : ch.id)}>
-                        <div className="comm-contact-avatar">#</div>
-                        <span className="comm-contact-name">{ch.name}</span>
+                      <div
+                        onClick={() => setSelectedChannel(ch.id === selectedChannel ? null : ch.id)}
+                        style={{
+                          padding: "10px 14px",
+                          borderRadius: 12,
+                          background: ch.id === selectedChannel ? "var(--comm-card-soft)" : "transparent",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          marginBottom: 4,
+                          fontWeight: 700,
+                          fontSize: 13,
+                        }}
+                      >
+                        <span style={{ color: "#7b2cff", fontWeight: 900 }}>#</span>
+                        <span>{ch.name}</span>
                       </div>
-                      {selectedChannel === ch.id && ch.groups.map(g => (
-                        <div key={g.id} className={`comm-contact-item ${selectedConversation===g.id?"active":""}`}
-                          style={{paddingLeft:28}} onClick={() => setSelectedConversation(g.id)}>
-                          <div style={{width:28,height:28,borderRadius:"50%",background:"rgba(139,92,246,.1)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                            <Users size={13} style={{color:"#8b5cf6"}}/>
+                      {selectedChannel === ch.id &&
+                        ch.groups.map((g) => (
+                          <div
+                            key={g.id}
+                            onClick={() => setSelectedConversation(g.id)}
+                            style={{
+                              padding: "8px 12px 8px 30px",
+                              borderRadius: 10,
+                              background: selectedConversation === g.id ? "rgba(123, 44, 255, 0.12)" : "transparent",
+                              color: selectedConversation === g.id ? "#7b2cff" : "var(--comm-muted)",
+                              cursor: "pointer",
+                              fontSize: 12.5,
+                              fontWeight: 700,
+                              display: "flex",
+                              justifyContent: "space-between",
+                            }}
+                          >
+                            <span>{g.name}</span>
+                            <span style={{ fontSize: 11, opacity: 0.7 }}>{g.members?.length || 0}</span>
                           </div>
-                          <div style={{minWidth:0}}>
-                            <div style={{fontSize:12.5,fontWeight:600,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.name}</div>
-                            <div style={{fontSize:11,color:"#94a3b8"}}>{g.members.length} members</div>
-                          </div>
-                        </div>
-                      ))}
+                        ))}
                     </div>
                   ))}
                   {channels.length === 0 && (
-                    <div style={{textAlign:"center",padding:"40px 16px",color:"#94a3b8"}}>
-                      <MessageSquare size={28} style={{margin:"0 auto 8px",opacity:.4}}/>
-                      <p style={{fontSize:13}}>No channels yet. Create one!</p>
+                    <div style={{ textAlign: "center", padding: "36px 12px", color: "var(--comm-muted)" }}>
+                      <MessageSquare size={30} style={{ margin: "0 auto 8px", opacity: 0.4 }} />
+                      <p style={{ fontSize: 13, fontWeight: 700 }}>No study groups yet.</p>
+                      <p style={{ fontSize: 11.5 }}>Create a group to study with friends!</p>
                     </div>
                   )}
                 </div>
               </div>
 
               {/* Chat window */}
-              {selectedConversation ? (
-                <div className="comm-chat-area">
-                  <div className="comm-chat-header">
-                    <div className="comm-contact-avatar" style={{width:34,height:34,fontSize:12}}>
-                      {channels.flatMap(c=>c.groups).find(g=>g.id===selectedConversation)?.name[0]||'G'}
-                    </div>
-                    <div>
-                      <div style={{fontSize:14,fontWeight:700,color:"#0f172a"}}>
-                        {channels.flatMap(c=>c.groups).find(g=>g.id===selectedConversation)?.name||'Chat'}
-                      </div>
-                      <div style={{fontSize:11.5,color:"#94a3b8"}}>{channels.find(c=>c.groups.some(g=>g.id===selectedConversation))?.name}</div>
-                    </div>
-                  </div>
-                  <div className="comm-chat-messages">
-                    {channels.flatMap(c=>c.groups).find(g=>g.id===selectedConversation)?.messages.map((m:any) => (
-                      <div key={m.id} style={{display:"flex",justifyContent:m.senderId===user?.id?"flex-end":"flex-start"}}>
-                        <div style={{
-                          maxWidth:"72%",padding:"9px 14px",borderRadius:m.senderId===user?.id?"16px 16px 4px 16px":"16px 16px 16px 4px",
-                          background:m.senderId===user?.id?"linear-gradient(135deg,#6366f1,#8b5cf6)":"#f1f5f9",
-                          color:m.senderId===user?.id?"#fff":"#374151",
-                          fontSize:13,lineHeight:1.55,
-                        }}>
-                          {m.content}
+              <div className="comm-chat-main-area">
+                {selectedConversation ? (
+                  <>
+                    <div className="comm-card-header">
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <div
+                          style={{
+                            width: 34,
+                            height: 34,
+                            borderRadius: 10,
+                            background: "linear-gradient(135deg, #7b2cff, #2389ff)",
+                            color: "#fff",
+                            display: "grid",
+                            placeItems: "center",
+                            fontWeight: 800,
+                            fontSize: 13,
+                          }}
+                        >
+                          #
+                        </div>
+                        <div>
+                          <b style={{ display: "block", fontSize: 13.5, color: "var(--comm-ink)" }}>
+                            {channels.flatMap((c) => c.groups).find((g) => g.id === selectedConversation)?.name || "Study Group"}
+                          </b>
+                          <span style={{ fontSize: 11, color: "var(--comm-muted)" }}>Active Study Circle</span>
                         </div>
                       </div>
-                    ))}
-                    <div ref={messagesEndRef}/>
+                    </div>
+
+                    <div style={{ flex: 1, overflowY: "auto", padding: "16px", display: "flex", flexDirection: "column", gap: 12 }}>
+                      {channels
+                        .flatMap((c) => c.groups)
+                        .find((g) => g.id === selectedConversation)
+                        ?.messages.map((m: any) => (
+                          <div
+                            key={m.id}
+                            style={{
+                              display: "flex",
+                              justifyContent: m.senderId === user?.id ? "flex-end" : "flex-start",
+                            }}
+                          >
+                            <div
+                              style={{
+                                maxWidth: "72%",
+                                padding: "10px 15px",
+                                borderRadius:
+                                  m.senderId === user?.id
+                                    ? "18px 18px 4px 18px"
+                                    : "18px 18px 18px 4px",
+                                background:
+                                  m.senderId === user?.id
+                                    ? "linear-gradient(135deg, #7b2cff, #b948d9)"
+                                    : "var(--comm-card-soft)",
+                                color: m.senderId === user?.id ? "#fff" : "var(--comm-ink)",
+                                border: m.senderId === user?.id ? "none" : "1px solid var(--comm-line)",
+                                fontSize: 13.5,
+                                lineHeight: 1.5,
+                              }}
+                            >
+                              {m.content}
+                            </div>
+                          </div>
+                        ))}
+                      <div ref={messagesEndRef} />
+                    </div>
+
+                    <div
+                      style={{
+                        padding: "12px 16px",
+                        borderTop: "1px solid var(--comm-line)",
+                        display: "flex",
+                        gap: 10,
+                      }}
+                    >
+                      <input
+                        placeholder="Write a message to your group..."
+                        value={messageContent}
+                        onChange={(e) => setMessageContent(e.target.value)}
+                        onKeyPress={(e) => e.key === "Enter" && sendMessage()}
+                        style={{
+                          flex: 1,
+                          height: 42,
+                          borderRadius: 14,
+                          border: "1.5px solid var(--comm-line)",
+                          padding: "0 14px",
+                          fontSize: 13.5,
+                          background: "var(--comm-card-soft)",
+                          color: "var(--comm-ink)",
+                          outline: "none",
+                        }}
+                      />
+                      <button className="comm-submit-btn" style={{ padding: "0 18px" }} onClick={sendMessage}>
+                        <Send size={15} />
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div
+                    style={{
+                      flex: 1,
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "var(--comm-muted)",
+                      gap: 12,
+                    }}
+                  >
+                    <Users size={38} style={{ opacity: 0.4 }} />
+                    <p style={{ fontSize: 14, fontWeight: 700, margin: 0, color: "var(--comm-ink)" }}>
+                      Choose a study group to start chatting
+                    </p>
+                    <p style={{ fontSize: 12.5, margin: 0 }}>
+                      Collaborate with classmates in real time
+                    </p>
                   </div>
-                  <div className="comm-chat-input-row">
-                    <input className="comm-chat-input" placeholder="Type a message…"
-                      value={messageContent} onChange={e=>setMessageContent(e.target.value)}
-                      onKeyPress={e=>e.key==='Enter'&&sendMessage()} />
-                    <button className="comm-send-btn" onClick={sendMessage}><Send size={14}/></button>
-                  </div>
-                </div>
-              ) : (
-                <div style={{background:"#fff",borderRadius:20,border:"1px solid rgba(0,0,0,.06)",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:10,color:"#94a3b8"}}>
-                  <MessageSquare size={32} style={{opacity:.4}}/>
-                  <p style={{fontSize:14,fontWeight:600,color:"#374151"}}>Select a group to chat</p>
-                  <p style={{fontSize:12.5}}>Choose a channel group from the left sidebar</p>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           )}
 
-          {/* ── BLOGS TAB ── */}
+          {/* ══════════════════ BLOGS TAB ══════════════════ */}
           {activeTab === "blogs" && (
-            user ? (
-              <BlogFeed currentUser={{ id:user.id.toString(), firstName:user.firstName, lastName:user.lastName, profileImage:user.profileImage }} />
-            ) : (
-              <FunnyLoader text="Please log in to view blog posts." />
-            )
+            <div>
+              {user ? (
+                <BlogFeed
+                  currentUser={{
+                    id: user.id.toString(),
+                    firstName: user.firstName,
+                    lastName: user.lastName,
+                    profileImage: user.profileImage,
+                  }}
+                />
+              ) : (
+                <FunnyLoader text="Logging into blog feed..." />
+              )}
+            </div>
           )}
-
-          {/* ── LEADERBOARD TAB ── */}
-          {activeTab === "leaderboard" && (
-            isLoadingLeaderboard ? <FunnyLoader text="Tallying scores…" /> : (
-              <div className="comm-card" style={{maxWidth:720,margin:"0 auto"}}>
-                <div className="comm-card-header">
-                  <div className="comm-card-title"><Trophy size={15} style={{color:"#f59e0b"}}/> Class Leaderboard</div>
-                </div>
-                <div className="comm-card-body">
-                  {leaderboard && (leaderboard as any[]).map((student:any, i:number) => (
-                    <motion.div key={student.id} initial={{opacity:0,y:12}} animate={{opacity:1,y:0}} transition={{delay:i*.07}}>
-                      <div className="comm-lb-row" style={{animationDelay:`${i*.07}s`}}>
-                        <div className="comm-lb-rank">#{i+1}</div>
-                        <div className="comm-lb-avatar">{student.firstName?.[0]}{student.lastName?.[0]}</div>
-                        <div style={{flex:1}}>
-                          <div className="comm-lb-name">{student.firstName} {student.lastName}</div>
-                          <div className="comm-lb-points">{student.points} points</div>
-                        </div>
-                        <span className={`comm-badge ${i===0?"gold":i<3?"indigo":"amber"}`}>
-                          {i===0?"🏆 Champion":i===1?"🥈 Pro":i===2?"🥉 Rising Star":`${student.points} pts`}
-                        </span>
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-              </div>
-            )
-          )}
-
         </div>
 
         {/* ── Create Channel Modal ── */}
         {showCreateChannelModal && (
-          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[1000] flex items-center justify-center"
-            onClick={() => setShowCreateChannelModal(false)}>
-            <motion.div initial={{opacity:0,scale:.95,y:12}} animate={{opacity:1,scale:1,y:0}}
-              className="bg-white dark:bg-gray-800 rounded-2xl p-7 w-full max-w-md shadow-2xl"
-              onClick={e=>e.stopPropagation()}>
-              <h3 className="text-lg font-extrabold text-gray-800 dark:text-gray-100 mb-4 flex items-center gap-3">
-                <MessageSquare size={18} className="text-indigo-500"/> Create Channel
+          <div
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[1000] flex items-center justify-center p-4"
+            onClick={() => setShowCreateChannelModal(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              className="bg-white dark:bg-slate-900 rounded-2xl p-6 w-full max-w-md shadow-2xl border border-slate-200 dark:border-slate-800"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-black text-slate-900 dark:text-slate-100 mb-2 flex items-center gap-2">
+                <Users size={18} className="text-purple-600" /> Create Study Channel
               </h3>
-              <input value={newChannelName} onChange={e=>setNewChannelName(e.target.value)}
-                placeholder="Channel name"
-                onKeyPress={e=>e.key==='Enter'&&handleCreateChannel()}
-                className="w-full p-2.5 rounded-lg border bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 focus:border-indigo-500 dark:focus:border-indigo-400 outline-none mb-3.5" />
-              <div className="flex gap-2.5">
-                <button onClick={()=>setShowCreateChannelModal(false)}
-                  className="flex-1 p-2.5 rounded-lg border bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-sm font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+                Name your subject or project channel (e.g. "Maths Exam Prep", "Science Club")
+              </p>
+              <input
+                value={newChannelName}
+                onChange={(e) => setNewChannelName(e.target.value)}
+                placeholder="Channel Name"
+                onKeyPress={(e) => {
+                  if (e.key === "Enter" && newChannelName.trim()) {
+                    setChannels((prev) => [
+                      ...prev,
+                      { id: `ch_${Date.now()}`, name: newChannelName.trim(), groups: [] },
+                    ]);
+                    setNewChannelName("");
+                    setShowCreateChannelModal(false);
+                    toast({ title: "Study Channel Created! 🚀" });
+                  }
+                }}
+                className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm outline-none mb-4 focus:border-purple-500"
+              />
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowCreateChannelModal(false)}
+                  className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold text-slate-600 dark:text-slate-300"
+                >
                   Cancel
                 </button>
-                <button onClick={handleCreateChannel} disabled={!newChannelName.trim()}
-                  className="flex-1 p-2.5 rounded-lg border-none bg-gradient-to-r from-indigo-500 to-purple-500 text-white text-sm font-bold cursor-pointer disabled:opacity-50">
-                  Create
+                <button
+                  onClick={() => {
+                    if (!newChannelName.trim()) return;
+                    setChannels((prev) => [
+                      ...prev,
+                      { id: `ch_${Date.now()}`, name: newChannelName.trim(), groups: [] },
+                    ]);
+                    setNewChannelName("");
+                    setShowCreateChannelModal(false);
+                    toast({ title: "Study Channel Created! 🚀" });
+                  }}
+                  disabled={!newChannelName.trim()}
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-pink-500 text-white text-sm font-black disabled:opacity-50"
+                >
+                  Create Channel
                 </button>
               </div>
             </motion.div>
           </div>
         )}
-
       </div>
     </>
   );

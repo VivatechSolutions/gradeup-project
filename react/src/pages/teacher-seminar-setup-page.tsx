@@ -1,5 +1,104 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import jsPDF from "jspdf";
+import {
+  AlertTriangle,
+  BarChart3,
+  Bot,
+  BookOpen,
+  CalendarDays,
+  Check,
+  ClipboardList,
+  Copy,
+  Eye,
+  FileText,
+  GraduationCap,
+  HelpCircle,
+  Lightbulb,
+  Link as LinkIcon,
+  MessageSquare,
+  Mic,
+  MonitorUp,
+  Pencil,
+  Play,
+  Presentation,
+  Radio,
+  Send,
+  Share2,
+  TrendingUp,
+  Trophy,
+  Users,
+  Zap,
+} from "lucide-react";
+import robotWaving from "../assets/dashboard/15_robot_waving.png";
+import { useAuth } from "../hooks/use-auth";
+
+const seminarIcons = {
+  alert: AlertTriangle,
+  ai: Bot,
+  book: BookOpen,
+  calendar: CalendarDays,
+  chart: BarChart3,
+  check: Check,
+  clipboard: ClipboardList,
+  copy: Copy,
+  eye: Eye,
+  file: FileText,
+  graduation: GraduationCap,
+  help: HelpCircle,
+  lightbulb: Lightbulb,
+  link: LinkIcon,
+  message: MessageSquare,
+  mic: Mic,
+  monitor: MonitorUp,
+  pencil: Pencil,
+  play: Play,
+  presentation: Presentation,
+  radio: Radio,
+  send: Send,
+  share: Share2,
+  trend: TrendingUp,
+  trophy: Trophy,
+  users: Users,
+  zap: Zap,
+};
+
+function SeminarIcon({
+  name,
+  size = 16,
+  strokeWidth = 2.5,
+}: {
+  name: keyof typeof seminarIcons | string;
+  size?: number;
+  strokeWidth?: number;
+}) {
+  const rawName = String(name);
+  const normalizedName = rawName.includes("¤")
+    ? "ai"
+    : rawName.includes("’¬")
+      ? "message"
+      : rawName.includes("‘¥")
+        ? "users"
+        : rawName.includes("“‹")
+          ? "clipboard"
+          : rawName.includes("š¡")
+            ? "zap"
+            : rawName.includes("Ž™") || rawName.includes("Ž¤")
+              ? "mic"
+              : rawName.includes("‘")
+                ? "eye"
+                : rawName.includes("“Š")
+                  ? "chart"
+                  : rawName.includes("–¥")
+                    ? "monitor"
+                    : rawName.includes("Ž“")
+                      ? "graduation"
+                      : rawName.includes("œ")
+                        ? "check"
+                        : rawName;
+  const Icon =
+    seminarIcons[normalizedName as keyof typeof seminarIcons] || MessageSquare;
+  return <Icon aria-hidden="true" size={size} strokeWidth={strokeWidth} />;
+}
 
 /* ============================================================================================
    MOCK API LAYER
@@ -332,12 +431,7 @@ function getErrorMessage(error, fallback) {
 
 /* ============================================================================================
    LIGHTWEIGHT STUB HOOKS
-   (swap for your real app's useAuth / component library when integrating)
    ============================================================================================ */
-function useAuth() {
-  const [user] = useState(() => ({ firstName: "Alex", lastName: "Morgan", id: readLS("teacherarena_local_id", null) }));
-  return { user };
-}
 
 function FormattedAIContent({ content }) {
   const lines = String(content || "").split("\n");
@@ -442,6 +536,42 @@ select.finput{cursor:pointer;appearance:none;background-image:url("data:image/sv
 .sp-grid-lines{position:absolute;inset:0;background-image:linear-gradient(rgba(0,195,122,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(0,195,122,.055) 1px,transparent 1px);background-size:42px 42px;pointer-events:none}
 .sp-glow1{position:absolute;width:380px;height:380px;border-radius:50%;background:radial-gradient(circle,rgba(0,195,122,.15) 0%,transparent 70%);top:-120px;left:-120px;pointer-events:none}
 .sp-glow2{position:absolute;width:280px;height:280px;border-radius:50%;background:radial-gradient(circle,rgba(45,156,219,.1) 0%,transparent 70%);bottom:-60px;right:-40px;pointer-events:none;animation:pulse 7s ease-in-out infinite}
+.sp-setup{
+  --sp-page:#f5f8ff;
+  --sp-panel:#ffffff;
+  --sp-card:#ffffff;
+  --sp-soft:#eef4ff;
+  --sp-ink:#111827;
+  --sp-muted:#58677d;
+  --sp-line:rgba(15,23,42,.08);
+  --sp-green:#23b26d;
+  --sp-blue:#3b82f6;
+  --sp-violet:#7c3aed;
+  --sp-shadow:0 18px 38px rgba(34,50,86,.12);
+  display:grid;
+  grid-template-columns:36% 1fr;
+  height:100%;
+  overflow:hidden;
+  width:100%;
+  flex:1;
+  min-height:0;
+  background:
+    radial-gradient(circle at 12% 10%, rgba(124,58,237,.12), transparent 24%),
+    radial-gradient(circle at 88% 8%, rgba(59,130,246,.14), transparent 20%),
+    linear-gradient(180deg,#f7faff 0%,#edf4ff 32%,#f4faf7 100%);
+}
+.sp-left{
+  background:linear-gradient(180deg,#edf5ff 0%,#eefbf4 100%);
+  position:relative;
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+  border-right:1px solid rgba(88,103,125,.1);
+}
+.sp-left-inner{flex:1;overflow-y:auto;padding:clamp(18px,2.6vw,34px) clamp(16px,2vw,28px);position:relative;z-index:2;display:flex;flex-direction:column}
+.sp-grid-lines{position:absolute;inset:0;background-image:linear-gradient(rgba(59,130,246,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(35,178,109,.05) 1px,transparent 1px);background-size:42px 42px;pointer-events:none}
+.sp-glow1{position:absolute;width:360px;height:360px;border-radius:50%;background:radial-gradient(circle,rgba(124,58,237,.14) 0%,transparent 68%);top:-120px;left:-120px;pointer-events:none}
+.sp-glow2{position:absolute;width:290px;height:290px;border-radius:50%;background:radial-gradient(circle,rgba(59,130,246,.12) 0%,transparent 70%);bottom:-60px;right:-40px;pointer-events:none;animation:pulse 7s ease-in-out infinite}
 .sp-logo{display:flex;align-items:center;gap:9px;margin-bottom:16px;animation:fadeUp .45s ease both}
 .sp-logo-ico{width:32px;height:32px;background:var(--grad);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:15px;box-shadow:0 6px 18px rgba(0,195,122,.35)}
 .sp-logo-name{font-size:14px;font-weight:800;background:linear-gradient(90deg,#fff 0%,#5ee3b7 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
@@ -460,14 +590,37 @@ select.finput{cursor:pointer;appearance:none;background-image:url("data:image/sv
 .ctx-chip-lbl{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;color:var(--em);margin-bottom:3px}
 .ctx-chip-val{font-size:12px;font-weight:700;color:#fff}
 .ctx-chip-sub{font-size:10px;color:rgba(255,255,255,.38);margin-top:1px}
+.sp-logo-ico{width:34px;height:34px;background:linear-gradient(135deg,#7c3aed,#2389ff 58%,#1cc5a3);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:15px;color:#fff;box-shadow:0 12px 22px rgba(72,83,255,.24)}
+.sp-logo-name{font-size:14px;font-weight:800;letter-spacing:.02em;color:#0f172a}
+.sp-badge{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;background:rgba(35,178,109,.1);border:1px solid rgba(35,178,109,.18);font-size:10px;font-weight:800;color:#117857;letter-spacing:.11em;text-transform:uppercase;margin-bottom:14px;animation:fadeUp .45s ease .08s both;width:fit-content}
+.sp-badge-dot{width:6px;height:6px;border-radius:50%;background:#1ec678;animation:pulse 1.8s infinite}
+.sp-h1{font-size:clamp(18px,2vw,28px);font-weight:900;line-height:1.08;letter-spacing:-.55px;color:#0f172a;margin-bottom:8px;animation:fadeUp .45s ease .14s both}
+.sp-h1 .hl{background:linear-gradient(135deg,#7c3aed 0%,#2389ff 50%,#1dbf95 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.sp-desc{font-size:11.5px;color:#5c6d85;line-height:1.75;margin-bottom:16px;animation:fadeUp .45s ease .2s both}
+.sp-features{display:flex;flex-direction:column;gap:7px;animation:fadeUp .45s ease .26s both}
+.sp-feat{display:flex;align-items:center;gap:10px;padding:10px 12px;background:rgba(255,255,255,.76);border:1px solid rgba(15,23,42,.06);border-radius:14px;box-shadow:0 10px 20px rgba(37,54,80,.06);transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease}
+.sp-feat:hover{transform:translateY(-2px);box-shadow:0 14px 24px rgba(37,54,80,.1);border-color:rgba(59,130,246,.18)}
+.sp-feat-ic{width:30px;height:30px;border-radius:10px;background:linear-gradient(135deg,rgba(124,58,237,.12),rgba(59,130,246,.14));display:flex;align-items:center;justify-content:center;font-size:12px;color:#3d55d4;flex-shrink:0}
+.sp-feat-t{font-size:11px;font-weight:800;color:#0f172a}
+.sp-feat-d{font-size:9.5px;color:#5d6f86;margin-top:1px}
+.ctx-chip{margin-top:auto;padding:11px 12px;border-radius:14px;background:linear-gradient(135deg,rgba(110,231,183,.18),rgba(59,130,246,.12));border:1px solid rgba(59,130,246,.12);box-shadow:0 12px 20px rgba(35,50,86,.08);animation:fadeUp .45s ease .32s both}
+.ctx-chip-lbl{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;color:#2468d7;margin-bottom:4px}
+.ctx-chip-val{font-size:12px;font-weight:800;color:#0f172a}
+.ctx-chip-sub{font-size:10px;color:#4f667f;margin-top:2px}
 
 .sp-right{background:var(--surf);overflow:hidden;display:flex;flex-direction:column}
 .sp-right-scroll{overflow-y:auto;flex:1;padding:clamp(14px,2vw,28px);-webkit-overflow-scrolling:touch}
+.sp-right{background:linear-gradient(180deg,#f8faff 0%,#f5f8ff 100%);overflow:hidden;display:flex;flex-direction:column}
+.sp-right-scroll{overflow-y:auto;flex:1;padding:clamp(16px,2vw,28px);-webkit-overflow-scrolling:touch}
 .sp-right-inner{max-width:560px;margin:0 auto;width:100%}
 .back-btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:9px;border:1.5px solid rgba(0,195,122,.25);background:rgba(0,195,122,.06);cursor:pointer;font-size:12.5px;font-weight:700;color:var(--em);transition:all .2s;margin-bottom:14px;font-family:var(--font)}
 .back-btn:hover{background:rgba(0,195,122,.12);transform:translateX(-2px)}
 .setup-h{font-size:clamp(14px,1.6vw,18px);font-weight:900;letter-spacing:-.3px;color:var(--t1);margin-bottom:3px}
 .setup-sub{font-size:11px;color:var(--t2);margin-bottom:14px;line-height:1.6}
+.back-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:11px;border:1px solid rgba(124,58,237,.18);background:rgba(124,58,237,.06);cursor:pointer;font-size:12.5px;font-weight:800;color:#5b38d8;transition:all .2s;margin-bottom:14px;font-family:var(--font)}
+.back-btn:hover{background:rgba(124,58,237,.1);transform:translateX(-2px)}
+.setup-h{font-size:clamp(18px,1.8vw,22px);font-weight:900;letter-spacing:-.35px;color:#111827;margin-bottom:4px;display:flex;align-items:center;gap:8px}
+.setup-sub{font-size:12px;color:#5a6881;margin-bottom:16px;line-height:1.65}
 
 .module-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:14px}
 .module-card{padding:13px;border-radius:13px;border:2px solid var(--bdr);background:var(--surf2);cursor:pointer;transition:all .2s;display:flex;gap:10px;align-items:flex-start}
@@ -478,6 +631,15 @@ select.finput{cursor:pointer;appearance:none;background-image:url("data:image/sv
 .mod-title{font-size:12px;font-weight:800;color:var(--t1);margin-bottom:3px}
 .mod-desc{font-size:10px;color:var(--t2);line-height:1.5}
 .module-card.sel .mod-title{color:var(--em)}
+.module-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px}
+.module-card{padding:14px 12px;border-radius:16px;border:1px solid var(--bdr);background:linear-gradient(180deg,#fff,#f9fbff);cursor:pointer;transition:all .2s;display:flex;gap:10px;align-items:flex-start;box-shadow:0 8px 18px rgba(38,57,116,.04)}
+.module-card:hover{border-color:rgba(59,130,246,.28);background:linear-gradient(180deg,#fff,#f1f7ff);transform:translateY(-2px);box-shadow:0 15px 28px rgba(38,57,116,.08)}
+.module-card.sel{border-color:rgba(124,58,237,.24);background:linear-gradient(180deg,#fff,#f5f2ff);box-shadow:0 16px 28px rgba(124,58,237,.1), inset 0 0 0 1px rgba(124,58,237,.06)}
+.mod-ic{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,rgba(124,58,237,.14),rgba(59,130,246,.14));display:flex;align-items:center;justify-content:center;font-size:16px;color:#4338ca;flex-shrink:0;transition:.2s}
+.module-card.sel .mod-ic{background:linear-gradient(135deg,rgba(124,58,237,.18),rgba(59,130,246,.16));color:#3826bf}
+.mod-title{font-size:12px;font-weight:800;color:#111827;margin-bottom:3px}
+.mod-desc{font-size:10px;color:#5f6e86;line-height:1.5}
+.module-card.sel .mod-title{color:#3d2bb3}
 
 .submode-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:14px}
 .submode-card{padding:15px 13px;border-radius:13px;border:2px solid var(--bdr);background:var(--surf2);cursor:pointer;transition:all .22s;text-align:center;display:flex;flex-direction:column;align-items:center;gap:5px}
@@ -487,9 +649,19 @@ select.finput{cursor:pointer;appearance:none;background-image:url("data:image/sv
 .submode-title{font-size:12.5px;font-weight:800;color:var(--t1)}
 .submode-desc{font-size:10px;color:var(--t2);line-height:1.5}
 .submode-card.sel .submode-title{color:var(--em)}
+.submode-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.submode-card{padding:14px 12px;border-radius:15px;border:1px solid var(--bdr);background:linear-gradient(180deg,#fff,#f7f9ff);cursor:pointer;transition:all .22s;text-align:center;display:flex;flex-direction:column;align-items:center;gap:5px;box-shadow:0 8px 18px rgba(38,57,116,.04)}
+.submode-card:hover{border-color:rgba(35,178,109,.28);transform:translateY(-2px);box-shadow:0 16px 26px rgba(32,93,79,.08)}
+.submode-card.sel{border-color:rgba(35,178,109,.24);background:linear-gradient(180deg,#f8fff9,#eefbf4);box-shadow:0 16px 26px rgba(35,178,109,.08), inset 0 0 0 1px rgba(35,178,109,.06)}
+.submode-ic{font-size:25px;margin-bottom:2px;color:#1f8f64}
+.submode-title{font-size:12.5px;font-weight:800;color:#111827}
+.submode-desc{font-size:10px;color:#5f6e86;line-height:1.5}
+.submode-card.sel .submode-title{color:#0f8f5a}
 
 .sec-div{font-size:9.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);margin-bottom:8px;margin-top:6px;display:flex;align-items:center;gap:7px}
 .sec-div::after{content:'';flex:1;height:1px;background:var(--bdr)}
+.sec-div{font-size:9.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#6c7a8d;margin-bottom:8px;margin-top:6px;display:flex;align-items:center;gap:7px}
+.sec-div::after{content:'';flex:1;height:1px;background:rgba(15,23,42,.08)}
 
 .timing-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
 .timing-card{padding:11px 12px;border-radius:11px;border:2px solid var(--bdr);background:var(--surf2);cursor:pointer;transition:all .2s;display:flex;align-items:flex-start;gap:9px}
@@ -499,11 +671,21 @@ select.finput{cursor:pointer;appearance:none;background-image:url("data:image/sv
 .timing-title{font-size:12px;font-weight:800;color:var(--t1);margin-bottom:1px}
 .timing-desc{font-size:10px;color:var(--t2)}
 .timing-card.sel .timing-title{color:var(--em)}
+.timing-card{padding:11px 12px;border-radius:12px;border:1px solid var(--bdr);background:linear-gradient(180deg,#fff,#f7faff);cursor:pointer;transition:all .2s;display:flex;align-items:flex-start;gap:9px;box-shadow:0 8px 18px rgba(38,57,116,.04)}
+.timing-card:hover{border-color:rgba(59,130,246,.22)}
+.timing-card.sel{border-color:rgba(35,178,109,.24);background:linear-gradient(180deg,#f7fff9,#f1fbf6)}
+.timing-ic{font-size:16px;color:#1d8ae3}
+.timing-title{font-size:12px;font-weight:800;color:#111827;margin-bottom:1px}
+.timing-desc{font-size:10px;color:#5f6e86}
+.timing-card.sel .timing-title{color:#0e8754}
 
 .steps{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
 .step-r{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:9px;border:1px solid var(--bdr);background:var(--surf2);transition:.18s}
 .step-r.done{border-color:rgba(0,195,122,.28);background:rgba(0,195,122,.04)}
 .step-r.act{border-color:rgba(45,156,219,.28);background:rgba(45,156,219,.04)}
+.step-r{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:10px;border:1px solid var(--bdr);background:linear-gradient(180deg,#fff,#f7f9ff);transition:.18s}
+.step-r.done{border-color:rgba(35,178,109,.2);background:rgba(35,178,109,.04)}
+.step-r.act{border-color:rgba(59,130,246,.25);background:rgba(59,130,246,.05)}
 .step-r.pend{opacity:.42}
 .step-num{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;flex-shrink:0}
 .step-r.done .step-num{background:var(--em);color:#fff}
@@ -511,13 +693,113 @@ select.finput{cursor:pointer;appearance:none;background-image:url("data:image/sv
 .step-r.pend .step-num{background:var(--surf3);color:var(--t3)}
 .step-lbl{font-size:12px;font-weight:600;color:var(--t2)}
 .step-r.done .step-lbl{color:var(--em)}.step-r.act .step-lbl{color:var(--t1)}.step-r.pend .step-lbl{color:var(--t3)}
+.step-r.done .step-num{background:linear-gradient(135deg,#18b26d,#2ecf90);color:#fff}
+.step-r.act .step-num{background:linear-gradient(135deg,#3b82f6,#60a5fa);color:#fff}
+.step-r.pend .step-num{background:#ebedf2;color:#67788e}
+.step-lbl{font-size:12px;font-weight:600;color:#58677d}
+.step-r.done .step-lbl{color:#148a5e}.step-r.act .step-lbl{color:#111827}.step-r.pend .step-lbl{color:#7b8798}
 
 .link-box{border-radius:12px;background:rgba(0,195,122,.04);border:1.5px solid rgba(0,195,122,.15);padding:11px 13px;margin-top:10px}
 .link-lbl{font-size:9.5px;font-weight:800;color:var(--em);text-transform:uppercase;letter-spacing:.07em;margin-bottom:7px}
 .link-row{display:flex;align-items:center;gap:7px;padding:8px 10px;border-radius:8px;background:var(--surf);border:1px solid var(--bdr)}
 .link-val{flex:1;font-family:var(--mono);font-size:10px;color:var(--em);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .copy-btn{padding:4px 10px;border-radius:6px;border:none;cursor:pointer;background:var(--grad);color:#fff;font-size:11px;font-weight:700;transition:.15s;flex-shrink:0}
+.link-box{border-radius:14px;background:linear-gradient(135deg,rgba(35,178,109,.06),rgba(59,130,246,.06));border:1.5px solid rgba(59,130,246,.14);padding:11px 13px;margin-top:10px}
+.link-lbl{font-size:9.5px;font-weight:800;color:#1a7f5f;text-transform:uppercase;letter-spacing:.07em;margin-bottom:7px}
+.link-row{display:flex;align-items:center;gap:7px;padding:8px 10px;border-radius:8px;background:#fff;border:1px solid rgba(15,23,42,.08)}
+.link-val{flex:1;font-family:var(--mono);font-size:10px;color:#2e6fe8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.copy-btn{padding:4px 10px;border-radius:7px;border:none;cursor:pointer;background:linear-gradient(135deg,#7c3aed,#3b82f6);color:#fff;font-size:11px;font-weight:800;transition:.15s;flex-shrink:0}
 .copy-btn:hover{transform:scale(1.04)}
+.create-open-link{display:flex;align-items:center;justify-content:center;margin-top:10px;padding:10px 12px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#3b82f6);color:#fff;text-decoration:none;font-size:12.5px;font-weight:800;box-shadow:0 12px 22px rgba(92,92,255,.2)}
+.create-open-link:hover{transform:translateY(-1px);box-shadow:0 16px 26px rgba(92,92,255,.3)}
+.create-link-ready{animation:fadeUp .22s ease both}
+.obs-join-section{padding:14px;border-radius:16px;background:linear-gradient(135deg,rgba(59,130,246,.08),rgba(124,58,237,.06));border:1.5px solid rgba(59,130,246,.15);margin-bottom:14px;box-shadow:0 12px 20px rgba(48,65,98,.06)}
+.obs-join-title{font-size:12px;font-weight:800;color:#2a5ec7;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.obs-join-input-row{display:flex;gap:7px;margin-bottom:10px}
+.obs-join-or{text-align:center;font-size:10px;font-weight:700;color:#75849b;margin:8px 0;position:relative}
+.obs-join-or::before,.obs-join-or::after{content:'';position:absolute;top:50%;width:40%;height:1px;background:rgba(15,23,42,.08)}
+.obs-join-or::before{left:0}.obs-join-or::after{right:0}
+.ongoing-list{display:flex;flex-direction:column;gap:7px;margin-bottom:12px}
+.ongoing-card{padding:12px 14px;border-radius:12px;border:1px solid rgba(15,23,42,.08);background:linear-gradient(180deg,#fff,#f8fbff);cursor:pointer;transition:all .2s;display:flex;gap:11px;align-items:center;box-shadow:0 8px 16px rgba(38,57,116,.04)}
+.ongoing-card:hover{border-color:rgba(59,130,246,.2);background:linear-gradient(180deg,#fff,#f1f7ff);transform:translateY(-1px)}
+.ongoing-card.sel{border-color:rgba(35,178,109,.2);background:linear-gradient(180deg,#f8fff9,#eefaf4)}
+.ongoing-live-dot{width:8px;height:8px;border-radius:50%;animation:pulse 1.2s infinite;flex-shrink:0}
+.ongoing-info{flex:1;min-width:0}
+.ongoing-topic{font-size:12.5px;font-weight:700;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ongoing-meta{font-size:10.5px;color:#5f6e86;margin-top:2px}
+.ongoing-count{font-size:10px;font-weight:800;padding:2px 8px;border-radius:6px}
+.ongoing-empty{text-align:center;padding:18px;font-size:12px;color:#75849b;border-radius:12px;background:linear-gradient(180deg,#fff,#f7f9ff);border:1px dashed rgba(15,23,42,.08)}
+
+/* Colorful mode cards and accessible theme states */
+@keyframes spCardIn{from{opacity:0;transform:translateY(14px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes spSelectedPop{0%{transform:scale(.98)}55%{transform:scale(1.015)}100%{transform:scale(1)}}
+@keyframes spLeftDrift{0%,100%{transform:translate3d(0,0,0) rotate(0)}50%{transform:translate3d(10px,-8px,0) rotate(2deg)}}
+@keyframes spShimmer{from{transform:translateX(-130%) rotate(18deg)}to{transform:translateX(380%) rotate(18deg)}}
+.module-card,.submode-card{position:relative;overflow:hidden;animation:spCardIn .45s cubic-bezier(.34,1.4,.64,1) both;isolation:isolate}
+.module-card::before,.submode-card::before{content:"";position:absolute;inset:0;z-index:-1;opacity:0;background:linear-gradient(110deg,transparent 20%,rgba(255,255,255,.5) 48%,transparent 72%);transform:translateX(-130%) rotate(18deg);transition:opacity .2s}
+.module-card:hover::before,.submode-card:hover::before{opacity:1;animation:spShimmer .9s ease both}
+.module-card:nth-child(2),.submode-card:nth-child(2){animation-delay:.08s}
+.module-card:nth-child(3),.submode-card:nth-child(3){animation-delay:.16s}
+.module-card:nth-child(1){background:linear-gradient(135deg,#ff5f99,#ff9f54);border-color:rgba(255,255,255,.18);color:#fff}
+.module-card:nth-child(2){background:linear-gradient(135deg,#2eb6ff,#2676e8);border-color:rgba(255,255,255,.18);color:#fff}
+.submode-card:nth-child(1){background:linear-gradient(135deg,#40c95f,#11a48c);border-color:rgba(255,255,255,.18);color:#fff}
+.submode-card:nth-child(2){background:linear-gradient(135deg,#8a4fff,#cf4bd8);border-color:rgba(255,255,255,.18);color:#fff}
+.module-card::after,.submode-card::after{content:"";position:absolute;right:-24px;bottom:-36px;width:106px;height:106px;border-radius:50%;background:rgba(255,255,255,.14);z-index:-1;transition:transform .3s}
+.module-card:hover::after,.submode-card:hover::after{transform:scale(1.2)}
+.module-card .mod-title,.module-card .mod-desc,.submode-card .submode-title,.submode-card .submode-desc{color:#fff}
+.module-card .mod-desc,.submode-card .submode-desc{color:rgba(255,255,255,.9)}
+.module-card .mod-ic,.submode-card .submode-ic{background:linear-gradient(145deg,rgba(255,255,255,.82),rgba(255,255,255,.26));color:#071235;box-shadow:inset 0 -8px 0 rgba(0,0,0,.08),0 12px 18px rgba(0,0,0,.18);animation:spIconFloat 4.4s ease-in-out infinite}
+@keyframes spIconFloat{0%,100%{transform:translateY(0) rotate(-2deg)}50%{transform:translateY(-7px) rotate(3deg)}}
+.module-card:hover,.submode-card:hover{transform:translateY(-4px) scale(1.018);box-shadow:0 15px 26px rgba(38,57,116,.18);animation:spGlowMove 2.6s ease infinite}
+.module-card.sel,.submode-card.sel{border-color:rgba(255,255,255,.72);box-shadow:0 0 0 3px rgba(255,255,255,.25),0 17px 30px rgba(38,57,116,.22)}
+.module-card.sel .mod-title,.module-card.sel .mod-desc,.submode-card.sel .submode-title,.submode-card.sel .submode-desc{color:#fff}
+.module-card.sel .mod-ic,.submode-card.sel .submode-ic{color:#071235;filter:drop-shadow(0 8px 10px rgba(0,0,0,.18));transform:scale(1.08)}
+@keyframes spGlowMove{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+.module-card:nth-child(1),.module-card:nth-child(2),.submode-card:nth-child(1),.submode-card:nth-child(2){background-size:180% 180%}
+.module-card.sel,.submode-card.sel{animation:spSelectedPop .28s ease both}
+.module-card:active,.submode-card:active,.btn-p:active,.btn-s:active,.btn-d:active,.back-btn:active{transform:scale(.97);transition-duration:.08s}
+.module-card.sel .mod-ic,.submode-card.sel .submode-ic{filter:drop-shadow(0 5px 8px rgba(67,56,202,.2));transform:scale(1.08)}
+.sp-left::after{content:"";position:absolute;width:180px;height:180px;right:-70px;top:28%;border-radius:42% 58% 62% 38%;background:linear-gradient(135deg,rgba(124,58,237,.14),rgba(35,178,109,.12));filter:blur(1px);pointer-events:none;animation:spLeftDrift 9s ease-in-out infinite}
+.sp-feat{animation:fadeUp .5s ease both,spLeftDrift 8s ease-in-out infinite;animation-delay:var(--sp-delay,0s),1.2s}
+.sp-feat:nth-child(2){animation-delay:.08s,2s}.sp-feat:nth-child(3){animation-delay:.16s,2.8s}.sp-feat:nth-child(4){animation-delay:.24s,3.6s}
+.sp-feat{position:relative;overflow:hidden;border-color:rgba(255,255,255,.18);background-size:180% 180%;color:#fff;box-shadow:0 9px 18px rgba(38,57,116,.12);transition:transform .18s,box-shadow .18s}
+.sp-feat:nth-child(1){background:linear-gradient(135deg,#ff5f99,#ff9f54)}
+.sp-feat:nth-child(2){background:linear-gradient(135deg,#2eb6ff,#2676e8)}
+.sp-feat:nth-child(3){background:linear-gradient(135deg,#40c95f,#11a48c)}
+.sp-feat:nth-child(4){background:linear-gradient(135deg,#8a4fff,#cf4bd8)}
+.sp-feat::before{content:"";position:absolute;right:-24px;bottom:-36px;width:106px;height:106px;border-radius:50%;background:rgba(255,255,255,.14);transition:transform .3s}
+.sp-feat:hover{transform:translateY(-4px) scale(1.018);box-shadow:0 15px 26px rgba(38,57,116,.18);animation:spGlowMove 2.6s ease infinite}
+.sp-feat:hover::before{transform:scale(1.2)}
+.sp-feat .sp-feat-ic{background:linear-gradient(145deg,rgba(255,255,255,.82),rgba(255,255,255,.26));color:#071235;box-shadow:inset 0 -8px 0 rgba(0,0,0,.08),0 12px 18px rgba(0,0,0,.18);animation:spIconFloat 4.4s ease-in-out infinite}
+.sp-feat .sp-feat-t{color:#fff}.sp-feat .sp-feat-d{color:rgba(255,255,255,.9)}
+.sp-setup-robo{display:block;width:min(210px,62%);max-height:150px;object-fit:contain;margin:18px auto 0;filter:drop-shadow(0 18px 16px rgba(0,0,0,.3));animation:spRoboFloat 4.8s ease-in-out infinite;pointer-events:none}
+@keyframes spRoboFloat{0%,100%{transform:translateY(0) rotate(-2deg)}50%{transform:translateY(-8px) rotate(2deg)}}
+.sp-setup-intro{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.sp-setup-intro .sp-h1{flex:1;min-width:0}
+.sp-setup-intro .sp-setup-robo{width:min(170px,42%);max-height:138px;margin:0}
+.sp-logo-ico,.sp-badge-dot{animation:pulse 2.4s ease-in-out infinite}
+.dark .sp-setup{background:radial-gradient(circle at 12% 10%,rgba(124,58,237,.28),transparent 26%),radial-gradient(circle at 88% 8%,rgba(59,130,246,.22),transparent 23%),linear-gradient(180deg,#0b1222 0%,#101827 48%,#0b1d20 100%)}
+.dark .sp-left{background:linear-gradient(180deg,#111b36 0%,#102a2a 100%);border-right-color:rgba(226,232,240,.12)}
+.dark .sp-right{background:linear-gradient(180deg,#0e1627 0%,#121c2c 100%)}
+.dark .sp-logo-name,.dark .sp-h1,.dark .setup-h,.dark .mod-title,.dark .submode-title,.dark .timing-title,.dark .ongoing-topic{color:#f8fafc}
+.dark .sp-desc,.dark .setup-sub,.dark .mod-desc,.dark .submode-desc,.dark .timing-desc,.dark .ongoing-meta{color:#b7c4d8}
+.dark .sp-feat{border-color:rgba(255,255,255,.2);box-shadow:0 12px 24px rgba(0,0,0,.3)}
+.dark .sp-feat:nth-child(1){background:linear-gradient(135deg,#b52f68,#b45b21)}
+.dark .sp-feat:nth-child(2){background:linear-gradient(135deg,#126b9d,#194fa8)}
+.dark .sp-feat:nth-child(3){background:linear-gradient(135deg,#187b3e,#087b6d)}
+.dark .sp-feat:nth-child(4){background:linear-gradient(135deg,#5c2aaa,#9b269d)}
+.dark .sp-feat-t{color:#f8fafc}.dark .sp-feat-d,.dark .ctx-chip-sub{color:#b7c4d8}.dark .ctx-chip-val{color:#f8fafc}
+.dark .module-card:nth-child(1){background:linear-gradient(135deg,#b52f68,#b45b21)}
+.dark .module-card:nth-child(2){background:linear-gradient(135deg,#126b9d,#194fa8)}
+.dark .submode-card:nth-child(1){background:linear-gradient(135deg,#187b3e,#087b6d)}
+.dark .submode-card:nth-child(2){background:linear-gradient(135deg,#5c2aaa,#9b269d)}
+.dark .module-card.sel,.dark .submode-card.sel{box-shadow:0 0 0 3px rgba(255,255,255,.3),0 16px 30px rgba(0,0,0,.45)}
+.dark .sec-div{color:#aebbd0}.dark .sec-div::after{background:rgba(226,232,240,.14)}
+.dark .timing-card,.dark .step-r,.dark .ongoing-card,.dark .ongoing-empty{background:linear-gradient(180deg,#172235,#121c2c);border-color:rgba(226,232,240,.13)}
+.dark .finput,.dark .link-row{background:#172235;color:#f8fafc;border-color:rgba(226,232,240,.16)}
+.dark .finput::placeholder{color:#91a0b5}.dark .link-val{color:#93c5fd}
+@media(prefers-reduced-motion:reduce){.sp-left::after,.sp-feat,.module-card,.submode-card,.sp-logo-ico,.sp-badge-dot,.module-card .mod-ic,.submode-card .submode-ic{animation:none}.module-card::before,.submode-card::before{display:none}}
+
 
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);backdrop-filter:blur(8px);z-index:700;display:flex;align-items:center;justify-content:center;padding:16px;animation:fadeIn .18s ease}
 .modal{background:var(--surf);border:1px solid var(--bdr);border-radius:var(--r);width:100%;max-height:calc(100dvh - 28px);display:flex;flex-direction:column;overflow:hidden;box-shadow:var(--sh3);animation:slideUp .25s cubic-bezier(.34,1.1,.64,1)}
@@ -1359,8 +1641,8 @@ function AnalysisModal({ topic, subject, unit, timer, presenterName, apiScores, 
    ============================================================================================ */
 function TeacherSeminarSetup({ teacherName, onBack, onLaunch }) {
   const [name, setName] = useState(teacherName || "");
-  const [seminarMode, setSeminarMode] = useState(""); // "prepare" | "session"
-  const [sessionSubMode, setSessionSubMode] = useState(""); // "host" | "coteach"
+  const [seminarMode, setSeminarMode] = useState<"prepare" | "session">("session");
+  const [sessionSubMode, setSessionSubMode] = useState<"host" | "coteach" | "">("host");
   const [subjectCatalog, setSubjectCatalog] = useState([]);
   const [subject, setSubject] = useState("");
   const [unit, setUnit] = useState("");
@@ -1393,11 +1675,27 @@ function TeacherSeminarSetup({ teacherName, onBack, onLaunch }) {
   const availableUnits = selectedSubjectEntry?.units || [];
   const copyLink = () => { navigator.clipboard.writeText(roomLink); setCopied(true); toast$("Link copied", "info"); setTimeout(() => setCopied(false), 2200); };
 
-  const leftFeatures = seminarMode === "prepare"
-    ? [{ ic: "🤖", t: "AI Co-Teacher", d: "Rehearse your lesson with live AI guidance" }, { ic: "🎙️", t: "Voice Transcript", d: "Your speech transcribed live in the browser" }, { ic: "📋", t: "Notes Board", d: "AI answers saved as reusable notes" }, { ic: "▶️", t: "Demo Mode", d: "Practice a full run-through with feedback" }]
-    : sessionSubMode === "coteach"
-    ? [{ ic: "🔗", t: "Join by Link", d: "Enter an existing class room as co-teacher" }, { ic: "💬", t: "Chat", d: "Message the host and students in real time" }, { ic: "🖐️", t: "Speaking Access", d: "Request the floor when you want to jump in" }]
-    : [{ ic: "🖥️", t: "Screen Share", d: "Present your slides or board live" }, { ic: "🎙️", t: "Live Transcript", d: "AI transcribes your teaching in real time" }, { ic: "🤖", t: "AI Co-Teacher", d: "Intro, pacing tips, and a full report" }, { ic: "📊", t: "Auto Report", d: "Full class performance analysis" }];
+  const leftFeatures =
+    seminarMode === "prepare"
+      ? [
+          { ic: "ai", t: "AI Co-Teacher", d: "Rehearse your lesson with live AI guidance" },
+          { ic: "mic", t: "Voice Transcript", d: "Your speech transcribed live in the browser" },
+          { ic: "board", t: "Notes Board", d: "AI answers saved as reusable notes" },
+          { ic: "play", t: "Demo Mode", d: "Practice a full run-through with feedback" },
+        ]
+      : sessionSubMode === "coteach"
+        ? [
+            { ic: "link", t: "Join by Link", d: "Enter an existing class room as co-teacher" },
+            { ic: "chat", t: "Chat", d: "Message the host and students in real time" },
+            { ic: "hand", t: "Speaking Access", d: "Request the floor when you want to jump in" },
+            { ic: "users", t: "Collaborative Cohort", d: "Co-teach and monitor student questions together" },
+          ]
+        : [
+            { ic: "presentation", t: "Screen Share", d: "Present your slides or board live" },
+            { ic: "mic", t: "Live Transcript", d: "AI transcribes your teaching in real time" },
+            { ic: "ai", t: "AI Co-Teacher", d: "Intro, pacing tips, and a full report" },
+            { ic: "board", t: "Auto Report", d: "Full class performance analysis" },
+          ];
 
   const steps = seminarMode === "session" && sessionSubMode === "coteach"
     ? [{ label: "Enter your name", done: name.trim().length > 0 }, { label: "Enter a room link or ID", done: joinId.trim().length >= 4 }]
@@ -1408,15 +1706,27 @@ function TeacherSeminarSetup({ teacherName, onBack, onLaunch }) {
     <div className="sp-setup route-enter">
       <div className="sp-left">
         <div className="sp-grid-lines" /><div className="sp-glow1" /><div className="sp-glow2" />
+        <div className="sp-grid-lines" />
+        <div className="sp-glow1" />
+        <div className="sp-glow2" />
         <div className="sp-left-inner">
           <div className="sp-logo"><div className="sp-logo-ico">🎓</div><span className="sp-logo-name">SeminarArena</span></div>
+          <div className="sp-logo">
+            <div className="sp-logo-ico"><SeminarIcon name="graduation" size={17} /></div>
+            <span className="sp-logo-name">SeminarArena</span>
+          </div>
           <div className="sp-badge"><div className="sp-badge-dot" />Teacher Setup</div>
           <h2 className="sp-h1">Your class,<br /><span className="hl">your stage.</span></h2>
+          <div className="sp-setup-intro">
+            <h2 className="sp-h1">Your class,<br /><span className="hl">your stage.</span></h2>
+            <img className="sp-setup-robo" src={robotWaving} alt="" aria-hidden="true" />
+          </div>
           <p className="sp-desc">AI-assisted class sessions with voice transcription, screen sharing, student chat & full performance reports.</p>
           <div className="sp-features">
             {leftFeatures.map((f, i) => (
               <div key={f.t} className="sp-feat" style={{ animationDelay: `${0.1 + i * 0.06}s` }}>
                 <div className="sp-feat-ic">{f.ic}</div>
+                <div className="sp-feat-ic"><SeminarIcon name={f.ic} size={17} /></div>
                 <div><div className="sp-feat-t">{f.t}</div><div className="sp-feat-d">{f.d}</div></div>
               </div>
             ))}
@@ -1436,14 +1746,29 @@ function TeacherSeminarSetup({ teacherName, onBack, onLaunch }) {
           <div className="sp-right-inner">
             <button className="back-btn" onClick={onBack}>← Back to History</button>
             <h2 className="setup-h">🎓 New Seminar</h2>
+            <button className="back-btn" onClick={onBack}>← View Past Seminars</button>
+            <h2 className="setup-h"><SeminarIcon name="presentation" size={22} /> Seminar Setup</h2>
             <p className="setup-sub">Prepare privately with AI, or start a live class that students join by link.</p>
 
             <div className="sec-div">Choose Mode</div>
             <div className="module-grid fi">
-              {[{ id: "prepare", ic: "🤖", t: "Prepare with AI", d: "Rehearse your lesson with an AI co-teacher before going live." }, { id: "session", ic: "🔴", t: "Live Class Session", d: "Host a live class with screen share, or join one as a co-teacher." }].map((m) => (
-                <div key={m.id} className={`module-card${seminarMode === m.id ? " sel" : ""}`} onClick={() => { setSeminarMode(m.id); setSessionSubMode(""); }}>
-                  <div className="mod-ic">{m.ic}</div>
-                  <div><div className="mod-title">{m.t}</div><div className="mod-desc">{m.d}</div></div>
+              {[
+                { id: "prepare", ic: "ai", t: "Prepare with AI", d: "Rehearse your lesson with an AI co-teacher before going live." },
+                { id: "session", ic: "presentation", t: "Live Class Session", d: "Host a live class with screen share, or join one as a co-teacher." },
+              ].map((m) => (
+                <div
+                  key={m.id}
+                  className={`module-card${seminarMode === m.id ? " sel" : ""}`}
+                  onClick={() => {
+                    setSeminarMode(m.id as "prepare" | "session");
+                    setSessionSubMode(m.id === "session" ? "host" : "");
+                  }}
+                >
+                  <div className="mod-ic"><SeminarIcon name={m.ic} size={20} /></div>
+                  <div>
+                    <div className="mod-title">{m.t}</div>
+                    <div className="mod-desc">{m.d}</div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -1454,10 +1779,14 @@ function TeacherSeminarSetup({ teacherName, onBack, onLaunch }) {
                 <div className="submode-grid fi">
                   <div className={`submode-card${sessionSubMode === "host" ? " sel" : ""}`} onClick={() => setSessionSubMode("host")}>
                     <div className="submode-ic">🎙️</div><div className="submode-title">Host This Class</div>
+                    <div className="submode-ic"><SeminarIcon name="mic" size={20} /></div>
+                    <div className="submode-title">Host This Class</div>
                     <div className="submode-desc">Start a room, share your screen, teach live.</div>
                   </div>
                   <div className={`submode-card${sessionSubMode === "coteach" ? " sel" : ""}`} onClick={() => setSessionSubMode("coteach")}>
                     <div className="submode-ic">🔗</div><div className="submode-title">Join as Co-Teacher</div>
+                    <div className="submode-ic"><SeminarIcon name="link" size={20} /></div>
+                    <div className="submode-title">Join as Co-Teacher</div>
                     <div className="submode-desc">Join an existing class room using a link.</div>
                   </div>
                 </div>
@@ -1508,9 +1837,20 @@ function TeacherSeminarSetup({ teacherName, onBack, onLaunch }) {
                   <>
                     <div className="sec-div">Session Timing</div>
                     <div className="timing-grid fi">
-                      {[{ id: "instant", ic: "⚡", t: "Start Now", d: "Launch immediately" }, { id: "schedule", ic: "📅", t: "Schedule", d: "Plan for a future date" }].map((o) => (
-                        <div key={o.id} className={`timing-card${seminarType === o.id ? " sel" : ""}`} onClick={() => setSeminarType(o.id)}>
-                          <div className="timing-ic">{o.ic}</div><div><div className="timing-title">{o.t}</div><div className="timing-desc">{o.d}</div></div>
+                      {[
+                        { id: "instant", ic: "bolt", t: "Start Now", d: "Launch immediately" },
+                        { id: "schedule", ic: "calendar", t: "Schedule", d: "Plan for a future date" },
+                      ].map((o) => (
+                        <div
+                          key={o.id}
+                          className={`timing-card${seminarType === o.id ? " sel" : ""}`}
+                          onClick={() => setSeminarType(o.id)}
+                        >
+                          <div className="timing-ic"><SeminarIcon name={o.ic} size={18} /></div>
+                          <div>
+                            <div className="timing-title">{o.t}</div>
+                            <div className="timing-desc">{o.d}</div>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -2366,8 +2706,8 @@ function AutoAdvance({ delay: d, onDone }) {
 export default function TeacherSeminarPage() {
   const { user } = useAuth();
   const [screen, setScreen] = useState("history"); // history | setup | loading | room | results-loading | results
-  const [config, setConfig] = useState(null);
-  const [result, setResult] = useState(null);
+  const [config, setConfig] = useState<any>(null);
+  const [result, setResult] = useState<any>(null);
   const [pageInitialLoad, setPageInitialLoad] = useState(true);
 
   const teacherName = `${user?.firstName || ""} ${user?.lastName || ""}`.trim();
@@ -2409,6 +2749,10 @@ export default function TeacherSeminarPage() {
             teacherName={teacherName}
             onNewSeminar={handleNewSeminar}
             onOpenResult={(item) => setResult({ modeType: "prepare", timer: item.duration, topic: item.topic, subject: item.subject, unit: item.unit, presenterName: teacherName, scores: { total_score: item.score }, canViewFeedback: true }) || setScreen("results")}
+            onOpenResult={(item: any) => {
+              setResult({ modeType: "prepare", timer: item.duration, topic: item.topic, subject: item.subject, unit: item.unit, presenterName: teacherName, scores: { total_score: item.score }, canViewFeedback: true });
+              setScreen("results");
+            }}
           />
         )}
 

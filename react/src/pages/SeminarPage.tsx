@@ -33,41 +33,42 @@ import {
 
 import Navigation from "../components/navigation";
 import FormattedAIContent from "../components/ai/FormattedAIContent";
+import robotWaving from "../assets/dashboard/15_robot_waving.png";
 import { useAuth } from "../hooks/use-auth";
 import { useSessionState } from "../hooks/useSessionState";
 import {
-   createSeminarAiDocument,
-   createSeminarRoom,
-   deleteSeminarAiDocument,
-   endSeminarWithTranscript,
-   getActiveSeminarSessions,
-   getCandidateContext,
-   getLibrarySubjects,
-   listGroupChats,
-   getSeminarAiDocument,
-   getSeminarSession,
-   getSeminarTopics,
-   getUnitContent,
-   guideSeminar,
-   joinSeminarSession,
-   removeSeminarParticipant,
-   respondSeminar,
-   requestSeminarSpeakingAccess,
-   respondSeminarSpeakingAccess,
-   sendSeminarMessage,
-   saveSeminarAiDocument,
-   startSeminar,
-   startSeminarChat,
-   startSeminarPptSession,
-   respondSeminarChat,
-   sendSeminarAiDocumentChat,
-   shareSessionToCommunity,
-   shareSessionToGroup,
-   sendSessionInviteEmails,
-   startSeminarRoom,
-   updateSeminarVisibility,
-   transcribeDebateAudio,
-   synthesizeDebateSpeech,
+  createSeminarAiDocument,
+  createSeminarRoom,
+  deleteSeminarAiDocument,
+  endSeminarWithTranscript,
+  getActiveSeminarSessions,
+  getCandidateContext,
+  getLibrarySubjects,
+  listGroupChats,
+  getSeminarAiDocument,
+  getSeminarSession,
+  getSeminarTopics,
+  getUnitContent,
+  guideSeminar,
+  joinSeminarSession,
+  removeSeminarParticipant,
+  respondSeminar,
+  requestSeminarSpeakingAccess,
+  respondSeminarSpeakingAccess,
+  sendSeminarMessage,
+  saveSeminarAiDocument,
+  startSeminar,
+  startSeminarChat,
+  startSeminarPptSession,
+  respondSeminarChat,
+  sendSeminarAiDocumentChat,
+  shareSessionToCommunity,
+  shareSessionToGroup,
+  sendSessionInviteEmails,
+  startSeminarRoom,
+  updateSeminarVisibility,
+  transcribeDebateAudio,
+  synthesizeDebateSpeech,
   type LibrarySubject,
 } from "../lib/gradeupApi";
 
@@ -299,107 +300,240 @@ select.finput option{background:#fff;color:#111827}
 .mic-toggle-btn.off{background:rgba(229,62,62,.72)}
 
 /* SETUP PAGE */
-.sp-setup{display:grid;grid-template-columns:36% 1fr;height:calc(100% - 0px);overflow:hidden;width:100%;flex:1;min-height:0}
-.sp-left{background:#060e1c;position:relative;overflow:hidden;display:flex;flex-direction:column}
-.sp-left-inner{flex:1;overflow-y:auto;padding:clamp(16px,2.5vw,32px) clamp(14px,2vw,28px);position:relative;z-index:2;display:flex;flex-direction:column}
-.sp-grid-lines{position:absolute;inset:0;background-image:linear-gradient(rgba(0,195,122,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(0,195,122,.055) 1px,transparent 1px);background-size:42px 42px;pointer-events:none}
-.sp-glow1{position:absolute;width:380px;height:380px;border-radius:50%;background:radial-gradient(circle,rgba(0,195,122,.15) 0%,transparent 70%);top:-120px;left:-120px;pointer-events:none}
-.sp-glow2{position:absolute;width:280px;height:280px;border-radius:50%;background:radial-gradient(circle,rgba(45,156,219,.1) 0%,transparent 70%);bottom:-60px;right:-40px;pointer-events:none;animation:pulse 7s ease-in-out infinite}
+.sp-setup{
+  --sp-page:#f5f8ff;
+  --sp-panel:#ffffff;
+  --sp-card:#ffffff;
+  --sp-soft:#eef4ff;
+  --sp-ink:#111827;
+  --sp-muted:#58677d;
+  --sp-line:rgba(15,23,42,.08);
+  --sp-green:#23b26d;
+  --sp-blue:#3b82f6;
+  --sp-violet:#7c3aed;
+  --sp-shadow:0 18px 38px rgba(34,50,86,.12);
+  display:grid;
+  grid-template-columns:36% 1fr;
+  height:100%;
+  overflow:hidden;
+  width:100%;
+  flex:1;
+  min-height:0;
+  background:
+    radial-gradient(circle at 12% 10%, rgba(124,58,237,.12), transparent 24%),
+    radial-gradient(circle at 88% 8%, rgba(59,130,246,.14), transparent 20%),
+    linear-gradient(180deg,#f7faff 0%,#edf4ff 32%,#f4faf7 100%);
+}
+.sp-left{
+  background:linear-gradient(180deg,#edf5ff 0%,#eefbf4 100%);
+  position:relative;
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+  border-right:1px solid rgba(88,103,125,.1);
+}
+.sp-left-inner{flex:1;overflow-y:auto;padding:clamp(18px,2.6vw,34px) clamp(16px,2vw,28px);position:relative;z-index:2;display:flex;flex-direction:column}
+.sp-grid-lines{position:absolute;inset:0;background-image:linear-gradient(rgba(59,130,246,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(35,178,109,.05) 1px,transparent 1px);background-size:42px 42px;pointer-events:none}
+.sp-glow1{position:absolute;width:360px;height:360px;border-radius:50%;background:radial-gradient(circle,rgba(124,58,237,.14) 0%,transparent 68%);top:-120px;left:-120px;pointer-events:none}
+.sp-glow2{position:absolute;width:290px;height:290px;border-radius:50%;background:radial-gradient(circle,rgba(59,130,246,.12) 0%,transparent 70%);bottom:-60px;right:-40px;pointer-events:none;animation:pulse 7s ease-in-out infinite}
 .sp-logo{display:flex;align-items:center;gap:9px;margin-bottom:16px;animation:fadeUp .45s ease both}
-.sp-logo-ico{width:32px;height:32px;background:var(--grad);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:15px;box-shadow:0 6px 18px rgba(0,195,122,.35)}
-.sp-logo-name{font-size:14px;font-weight:800;background:linear-gradient(90deg,#fff 0%,#5ee3b7 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.sp-badge{display:inline-flex;align-items:center;gap:6px;padding:3px 11px;border-radius:100px;background:rgba(0,195,122,.12);border:1px solid rgba(0,195,122,.28);font-size:10px;font-weight:700;color:#5ee3b7;letter-spacing:.1em;text-transform:uppercase;margin-bottom:10px;animation:fadeUp .45s ease .08s both;width:fit-content}
-.sp-badge-dot{width:5px;height:5px;border-radius:50%;background:#5ee3b7;animation:pulse 1.8s infinite}
-.sp-h1{font-size:clamp(16px,1.8vw,24px);font-weight:900;line-height:1.1;letter-spacing:-.5px;color:#fff;margin-bottom:7px;animation:fadeUp .45s ease .14s both}
-.sp-h1 .hl{background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.sp-desc{font-size:11px;color:rgba(255,255,255,.38);line-height:1.8;margin-bottom:14px;animation:fadeUp .45s ease .2s both}
-.sp-features{display:flex;flex-direction:column;gap:5px;animation:fadeUp .45s ease .26s both}
-.sp-feat{display:flex;align-items:center;gap:8px;padding:7px 10px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);border-radius:10px;transition:.25s}
-.sp-feat:hover{background:rgba(0,195,122,.08);border-color:rgba(0,195,122,.22)}
-.sp-feat-ic{width:28px;height:28px;border-radius:8px;background:rgba(0,195,122,.18);display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0}
-.sp-feat-t{font-size:11px;font-weight:700;color:#fff}
-.sp-feat-d{font-size:9.5px;color:rgba(255,255,255,.35);margin-top:1px}
-.ctx-chip{margin-top:10px;padding:9px 12px;border-radius:11px;background:rgba(0,195,122,.07);border:1px solid rgba(0,195,122,.2);animation:fadeUp .45s ease .32s both}
-.ctx-chip-lbl{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;color:var(--em);margin-bottom:3px}
-.ctx-chip-val{font-size:12px;font-weight:700;color:#fff}
-.ctx-chip-sub{font-size:10px;color:rgba(255,255,255,.38);margin-top:1px}
+.sp-logo-ico{width:34px;height:34px;background:linear-gradient(135deg,#7c3aed,#2389ff 58%,#1cc5a3);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:15px;color:#fff;box-shadow:0 12px 22px rgba(72,83,255,.24)}
+.sp-logo-name{font-size:14px;font-weight:800;letter-spacing:.02em;color:#0f172a}
+.sp-badge{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;background:rgba(35,178,109,.1);border:1px solid rgba(35,178,109,.18);font-size:10px;font-weight:800;color:#117857;letter-spacing:.11em;text-transform:uppercase;margin-bottom:14px;animation:fadeUp .45s ease .08s both;width:fit-content}
+.sp-badge-dot{width:6px;height:6px;border-radius:50%;background:#1ec678;animation:pulse 1.8s infinite}
+.sp-h1{font-size:clamp(18px,2vw,28px);font-weight:900;line-height:1.08;letter-spacing:-.55px;color:#0f172a;margin-bottom:8px;animation:fadeUp .45s ease .14s both}
+.sp-h1 .hl{background:linear-gradient(135deg,#7c3aed 0%,#2389ff 50%,#1dbf95 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.sp-desc{font-size:11.5px;color:#5c6d85;line-height:1.75;margin-bottom:16px;animation:fadeUp .45s ease .2s both}
+.sp-features{display:flex;flex-direction:column;gap:7px;animation:fadeUp .45s ease .26s both}
+.sp-feat{display:flex;align-items:center;gap:10px;padding:10px 12px;background:rgba(255,255,255,.76);border:1px solid rgba(15,23,42,.06);border-radius:14px;box-shadow:0 10px 20px rgba(37,54,80,.06);transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease}
+.sp-feat:hover{transform:translateY(-2px);box-shadow:0 14px 24px rgba(37,54,80,.1);border-color:rgba(59,130,246,.18)}
+.sp-feat-ic{width:30px;height:30px;border-radius:10px;background:linear-gradient(135deg,rgba(124,58,237,.12),rgba(59,130,246,.14));display:flex;align-items:center;justify-content:center;font-size:12px;color:#3d55d4;flex-shrink:0}
+.sp-feat-t{font-size:11px;font-weight:800;color:#0f172a}
+.sp-feat-d{font-size:9.5px;color:#5d6f86;margin-top:1px}
+.ctx-chip{margin-top:auto;padding:11px 12px;border-radius:14px;background:linear-gradient(135deg,rgba(110,231,183,.18),rgba(59,130,246,.12));border:1px solid rgba(59,130,246,.12);box-shadow:0 12px 20px rgba(35,50,86,.08);animation:fadeUp .45s ease .32s both}
+.ctx-chip-lbl{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;color:#2468d7;margin-bottom:4px}
+.ctx-chip-val{font-size:12px;font-weight:800;color:#0f172a}
+.ctx-chip-sub{font-size:10px;color:#4f667f;margin-top:2px}
 
-.sp-right{background:var(--surf);overflow:hidden;display:flex;flex-direction:column}
-.sp-right-scroll{overflow-y:auto;flex:1;padding:clamp(14px,2vw,28px);-webkit-overflow-scrolling:touch}
+.sp-right{background:linear-gradient(180deg,#f8faff 0%,#f5f8ff 100%);overflow:hidden;display:flex;flex-direction:column}
+.sp-right-scroll{overflow-y:auto;flex:1;padding:clamp(16px,2vw,28px);-webkit-overflow-scrolling:touch}
 .sp-right-inner{max-width:560px;margin:0 auto;width:100%}
-.back-btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:9px;border:1.5px solid rgba(0,195,122,.25);background:rgba(0,195,122,.06);cursor:pointer;font-size:12.5px;font-weight:700;color:var(--em);transition:all .2s;margin-bottom:14px;font-family:var(--font)}
-.back-btn:hover{background:rgba(0,195,122,.12);transform:translateX(-2px)}
-.setup-h{font-size:clamp(14px,1.6vw,18px);font-weight:900;letter-spacing:-.3px;color:var(--t1);margin-bottom:3px}
-.setup-sub{font-size:11px;color:var(--t2);margin-bottom:14px;line-height:1.6}
+.back-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:11px;border:1px solid rgba(124,58,237,.18);background:rgba(124,58,237,.06);cursor:pointer;font-size:12.5px;font-weight:800;color:#5b38d8;transition:all .2s;margin-bottom:14px;font-family:var(--font)}
+.back-btn:hover{background:rgba(124,58,237,.1);transform:translateX(-2px)}
+.setup-h{font-size:clamp(18px,1.8vw,22px);font-weight:900;letter-spacing:-.35px;color:#111827;margin-bottom:4px}
+.setup-sub{font-size:12px;color:#5a6881;margin-bottom:16px;line-height:1.65}
 
-.module-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:14px}
-.module-card{padding:13px;border-radius:13px;border:2px solid var(--bdr);background:var(--surf2);cursor:pointer;transition:all .2s;display:flex;gap:10px;align-items:flex-start}
-.module-card:hover{border-color:rgba(0,195,122,.3);background:rgba(0,195,122,.03);transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,195,122,.1)}
-.module-card.sel{border-color:var(--em);background:rgba(0,195,122,.06);box-shadow:0 6px 20px rgba(0,195,122,.12)}
-.mod-ic{width:36px;height:36px;border-radius:11px;background:rgba(0,195,122,.12);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;transition:.2s}
-.module-card.sel .mod-ic{background:rgba(0,195,122,.2)}
-.mod-title{font-size:12px;font-weight:800;color:var(--t1);margin-bottom:3px}
-.mod-desc{font-size:10px;color:var(--t2);line-height:1.5}
-.module-card.sel .mod-title{color:var(--em)}
+.module-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+.module-card{padding:14px 12px;border-radius:16px;border:1px solid var(--bdr);background:linear-gradient(180deg,#fff,#f9fbff);cursor:pointer;transition:all .2s;display:flex;gap:10px;align-items:flex-start;box-shadow:0 8px 18px rgba(38,57,116,.04)}
+.module-card:hover{border-color:rgba(59,130,246,.28);background:linear-gradient(180deg,#fff,#f1f7ff);transform:translateY(-2px);box-shadow:0 15px 28px rgba(38,57,116,.08)}
+.module-card.sel{border-color:rgba(124,58,237,.24);background:linear-gradient(180deg,#fff,#f5f2ff);box-shadow:0 16px 28px rgba(124,58,237,.1), inset 0 0 0 1px rgba(124,58,237,.06)}
+.mod-ic{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,rgba(124,58,237,.14),rgba(59,130,246,.14));display:flex;align-items:center;justify-content:center;font-size:16px;color:#4338ca;flex-shrink:0;transition:.2s}
+.module-card.sel .mod-ic{background:linear-gradient(135deg,rgba(124,58,237,.18),rgba(59,130,246,.16));color:#3826bf}
+.mod-title{font-size:12px;font-weight:800;color:#111827;margin-bottom:3px}
+.mod-desc{font-size:10px;color:#5f6e86;line-height:1.5}
+.module-card.sel .mod-title{color:#3d2bb3}
 
-.submode-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:14px}
-.submode-card{padding:15px 13px;border-radius:13px;border:2px solid var(--bdr);background:var(--surf2);cursor:pointer;transition:all .22s;text-align:center;display:flex;flex-direction:column;align-items:center;gap:5px}
-.submode-card:hover{border-color:rgba(0,195,122,.3);transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,195,122,.1)}
-.submode-card.sel{border-color:var(--em);background:rgba(0,195,122,.06);box-shadow:0 6px 20px rgba(0,195,122,.14)}
-.submode-ic{font-size:26px;margin-bottom:2px}
-.submode-title{font-size:12.5px;font-weight:800;color:var(--t1)}
-.submode-desc{font-size:10px;color:var(--t2);line-height:1.5}
-.submode-card.sel .submode-title{color:var(--em)}
+.submode-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.submode-card{padding:14px 12px;border-radius:15px;border:1px solid var(--bdr);background:linear-gradient(180deg,#fff,#f7f9ff);cursor:pointer;transition:all .22s;text-align:center;display:flex;flex-direction:column;align-items:center;gap:5px;box-shadow:0 8px 18px rgba(38,57,116,.04)}
+.submode-card:hover{border-color:rgba(35,178,109,.28);transform:translateY(-2px);box-shadow:0 16px 26px rgba(32,93,79,.08)}
+.submode-card.sel{border-color:rgba(35,178,109,.24);background:linear-gradient(180deg,#f8fff9,#eefbf4);box-shadow:0 16px 26px rgba(35,178,109,.08), inset 0 0 0 1px rgba(35,178,109,.06)}
+.submode-ic{font-size:25px;margin-bottom:2px;color:#1f8f64}
+.submode-title{font-size:12.5px;font-weight:800;color:#111827}
+.submode-desc{font-size:10px;color:#5f6e86;line-height:1.5}
+.submode-card.sel .submode-title{color:#0f8f5a}
 
-.sec-div{font-size:9.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);margin-bottom:8px;margin-top:6px;display:flex;align-items:center;gap:7px}
-.sec-div::after{content:'';flex:1;height:1px;background:var(--bdr)}
+.sec-div{font-size:9.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#6c7a8d;margin-bottom:8px;margin-top:6px;display:flex;align-items:center;gap:7px}
+.sec-div::after{content:'';flex:1;height:1px;background:rgba(15,23,42,.08)}
 
 .timing-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
-.timing-card{padding:11px 12px;border-radius:11px;border:2px solid var(--bdr);background:var(--surf2);cursor:pointer;transition:all .2s;display:flex;align-items:flex-start;gap:9px}
-.timing-card:hover{border-color:rgba(0,195,122,.28)}
-.timing-card.sel{border-color:var(--em);background:rgba(0,195,122,.05)}
-.timing-ic{font-size:16px}
-.timing-title{font-size:12px;font-weight:800;color:var(--t1);margin-bottom:1px}
-.timing-desc{font-size:10px;color:var(--t2)}
-.timing-card.sel .timing-title{color:var(--em)}
+.timing-card{padding:11px 12px;border-radius:12px;border:1px solid var(--bdr);background:linear-gradient(180deg,#fff,#f7faff);cursor:pointer;transition:all .2s;display:flex;align-items:flex-start;gap:9px;box-shadow:0 8px 18px rgba(38,57,116,.04)}
+.timing-card:hover{border-color:rgba(59,130,246,.22)}
+.timing-card.sel{border-color:rgba(35,178,109,.24);background:linear-gradient(180deg,#f7fff9,#f1fbf6)}
+.timing-ic{font-size:16px;color:#1d8ae3}
+.timing-title{font-size:12px;font-weight:800;color:#111827;margin-bottom:1px}
+.timing-desc{font-size:10px;color:#5f6e86}
+.timing-card.sel .timing-title{color:#0e8754}
 
 .steps{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
-.step-r{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:9px;border:1px solid var(--bdr);background:var(--surf2);transition:.18s}
-.step-r.done{border-color:rgba(0,195,122,.28);background:rgba(0,195,122,.04)}
-.step-r.act{border-color:rgba(45,156,219,.28);background:rgba(45,156,219,.04)}
+.step-r{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:10px;border:1px solid var(--bdr);background:linear-gradient(180deg,#fff,#f7f9ff);transition:.18s}
+.step-r.done{border-color:rgba(35,178,109,.2);background:rgba(35,178,109,.04)}
+.step-r.act{border-color:rgba(59,130,246,.25);background:rgba(59,130,246,.05)}
 .step-r.pend{opacity:.42}
 .step-num{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;flex-shrink:0}
-.step-r.done .step-num{background:var(--em);color:#fff}
-.step-r.act .step-num{background:var(--sky);color:#fff}
-.step-r.pend .step-num{background:var(--surf3);color:var(--t3)}
-.step-lbl{font-size:12px;font-weight:600;color:var(--t2)}
-.step-r.done .step-lbl{color:var(--em)}.step-r.act .step-lbl{color:var(--t1)}.step-r.pend .step-lbl{color:var(--t3)}
+.step-r.done .step-num{background:linear-gradient(135deg,#18b26d,#2ecf90);color:#fff}
+.step-r.act .step-num{background:linear-gradient(135deg,#3b82f6,#60a5fa);color:#fff}
+.step-r.pend .step-num{background:#ebedf2;color:#67788e}
+.step-lbl{font-size:12px;font-weight:600;color:#58677d}
+.step-r.done .step-lbl{color:#148a5e}.step-r.act .step-lbl{color:#111827}.step-r.pend .step-lbl{color:#7b8798}
 
-.link-box{border-radius:12px;background:rgba(0,195,122,.04);border:1.5px solid rgba(0,195,122,.15);padding:11px 13px;margin-top:10px}
-.link-lbl{font-size:9.5px;font-weight:800;color:var(--em);text-transform:uppercase;letter-spacing:.07em;margin-bottom:7px}
-.link-row{display:flex;align-items:center;gap:7px;padding:8px 10px;border-radius:8px;background:var(--surf);border:1px solid var(--bdr)}
-.link-val{flex:1;font-family:var(--mono);font-size:10px;color:var(--em);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.copy-btn{padding:4px 10px;border-radius:6px;border:none;cursor:pointer;background:var(--grad);color:#fff;font-size:11px;font-weight:700;transition:.15s;flex-shrink:0}
+.link-box{border-radius:14px;background:linear-gradient(135deg,rgba(35,178,109,.06),rgba(59,130,246,.06));border:1.5px solid rgba(59,130,246,.14);padding:11px 13px;margin-top:10px}
+.link-lbl{font-size:9.5px;font-weight:800;color:#1a7f5f;text-transform:uppercase;letter-spacing:.07em;margin-bottom:7px}
+.link-row{display:flex;align-items:center;gap:7px;padding:8px 10px;border-radius:8px;background:#fff;border:1px solid rgba(15,23,42,.08)}
+.link-val{flex:1;font-family:var(--mono);font-size:10px;color:#2e6fe8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.copy-btn{padding:4px 10px;border-radius:7px;border:none;cursor:pointer;background:linear-gradient(135deg,#7c3aed,#3b82f6);color:#fff;font-size:11px;font-weight:800;transition:.15s;flex-shrink:0}
 .copy-btn:hover{transform:scale(1.04)}
-.create-open-link{display:flex;align-items:center;justify-content:center;margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--grad);color:#fff;text-decoration:none;font-size:12.5px;font-weight:800;box-shadow:0 5px 18px rgba(0,195,122,.22)}
-.create-open-link:hover{transform:translateY(-1px);box-shadow:0 8px 24px rgba(0,195,122,.32)}
+.create-open-link{display:flex;align-items:center;justify-content:center;margin-top:10px;padding:10px 12px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#3b82f6);color:#fff;text-decoration:none;font-size:12.5px;font-weight:800;box-shadow:0 12px 22px rgba(92,92,255,.2)}
+.create-open-link:hover{transform:translateY(-1px);box-shadow:0 16px 26px rgba(92,92,255,.3)}
 .create-link-ready{animation:fadeUp .22s ease both}
-.obs-join-section{padding:14px;border-radius:14px;background:linear-gradient(135deg,rgba(45,156,219,.07),rgba(124,58,237,.05));border:1.5px solid rgba(45,156,219,.2);margin-bottom:14px}
-.obs-join-title{font-size:12px;font-weight:800;color:var(--sky);margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.obs-join-section{padding:14px;border-radius:16px;background:linear-gradient(135deg,rgba(59,130,246,.08),rgba(124,58,237,.06));border:1.5px solid rgba(59,130,246,.15);margin-bottom:14px;box-shadow:0 12px 20px rgba(48,65,98,.06)}
+.obs-join-title{font-size:12px;font-weight:800;color:#2a5ec7;margin-bottom:10px;display:flex;align-items:center;gap:6px}
 .obs-join-input-row{display:flex;gap:7px;margin-bottom:10px}
-.obs-join-or{text-align:center;font-size:10px;font-weight:700;color:var(--t3);margin:8px 0;position:relative}
-.obs-join-or::before,.obs-join-or::after{content:'';position:absolute;top:50%;width:40%;height:1px;background:var(--bdr)}
+.obs-join-or{text-align:center;font-size:10px;font-weight:700;color:#75849b;margin:8px 0;position:relative}
+.obs-join-or::before,.obs-join-or::after{content:'';position:absolute;top:50%;width:40%;height:1px;background:rgba(15,23,42,.08)}
 .obs-join-or::before{left:0}.obs-join-or::after{right:0}
 .ongoing-list{display:flex;flex-direction:column;gap:7px;margin-bottom:12px}
-.ongoing-card{padding:12px 14px;border-radius:12px;border:1.5px solid var(--bdr);background:var(--surf2);cursor:pointer;transition:all .2s;display:flex;gap:11px;align-items:center}
-.ongoing-card:hover{border-color:rgba(0,195,122,.3);background:rgba(0,195,122,.04);transform:translateY(-1px)}
-.ongoing-card.sel{border-color:var(--em);background:rgba(0,195,122,.06)}
+.ongoing-card{padding:12px 14px;border-radius:12px;border:1px solid rgba(15,23,42,.08);background:linear-gradient(180deg,#fff,#f8fbff);cursor:pointer;transition:all .2s;display:flex;gap:11px;align-items:center;box-shadow:0 8px 16px rgba(38,57,116,.04)}
+.ongoing-card:hover{border-color:rgba(59,130,246,.2);background:linear-gradient(180deg,#fff,#f1f7ff);transform:translateY(-1px)}
+.ongoing-card.sel{border-color:rgba(35,178,109,.2);background:linear-gradient(180deg,#f8fff9,#eefaf4)}
 .ongoing-live-dot{width:8px;height:8px;border-radius:50%;animation:pulse 1.2s infinite;flex-shrink:0}
 .ongoing-info{flex:1;min-width:0}
-.ongoing-topic{font-size:12.5px;font-weight:700;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ongoing-meta{font-size:10.5px;color:var(--t2);margin-top:2px}
-.ongoing-count{font-size:10px;font-weight:700;padding:2px 8px;border-radius:6px}
-.ongoing-empty{text-align:center;padding:18px;font-size:12px;color:var(--t3);border-radius:11px;background:var(--surf2);border:1px dashed var(--bdr)}
+.ongoing-topic{font-size:12.5px;font-weight:700;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ongoing-meta{font-size:10.5px;color:#5f6e86;margin-top:2px}
+.ongoing-count{font-size:10px;font-weight:800;padding:2px 8px;border-radius:6px}
+.ongoing-empty{text-align:center;padding:18px;font-size:12px;color:#75849b;border-radius:12px;background:linear-gradient(180deg,#fff,#f7f9ff);border:1px dashed rgba(15,23,42,.08)}
+
+.fi{margin-bottom:10px}.fl{display:block;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#677a92;margin-bottom:5px}
+.finput{width:100%;padding:10px 12px;border-radius:12px;border:1.5px solid rgba(15,23,42,.08);background:rgba(255,255,255,.9);color:#111827;font-size:13.5px;outline:none;transition:all .16s;box-shadow:inset 0 1px 1px rgba(0,0,0,.02)}
+.finput:focus{border-color:rgba(59,130,246,.45);box-shadow:0 0 0 4px rgba(59,130,246,.08)}
+.finput::placeholder{color:#8a95a3}.finput:disabled{opacity:.4;cursor:not-allowed}
+select.finput{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%235f6e86' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px}
+.fi-row{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.btn-p{padding:12px 20px;border-radius:12px;border:none;cursor:pointer;background:linear-gradient(135deg,#7c3aed,#3b82f6 58%,#15b3b2);color:#fff;font-size:13.5px;font-weight:800;transition:all .2s;box-shadow:0 12px 22px rgba(91,69,255,.22);display:inline-flex;align-items:center;justify-content:center;gap:7px;font-family:var(--font);width:100%}
+.btn-p:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 16px 28px rgba(91,69,255,.28)}
+.btn-p:disabled{opacity:.35;cursor:not-allowed;transform:none;box-shadow:none}
+.btn-s{padding:9px 14px;border-radius:10px;border:1.5px solid rgba(59,130,246,.18);background:rgba(59,130,246,.05);cursor:pointer;color:#2d5bd0;font-size:12.5px;font-weight:800;transition:.16s;font-family:var(--font);display:inline-flex;align-items:center;justify-content:center;gap:5px}
+.btn-s:hover{border-color:rgba(59,130,246,.28);background:rgba(59,130,246,.08)}
+.btn-d{padding:9px 14px;border-radius:10px;border:1.5px solid rgba(229,62,62,.18);background:rgba(229,62,62,.05);cursor:pointer;color:#cc3434;font-size:12.5px;font-weight:800;transition:.16s;font-family:var(--font);display:inline-flex;align-items:center;justify-content:center;gap:5px}
+.btn-d:hover{background:rgba(229,62,62,.09)}
+
+@media(max-width:1024px){
+  .sp-setup{grid-template-columns:34% 1fr}
+}
+@media(max-width:860px){
+  .sp-setup{grid-template-columns:1fr;height:auto;overflow:visible}
+  html,body{overflow:auto}.sp-app{height:auto;min-height:100dvh;overflow:visible}.sp-left{min-height:auto}.sp-left-inner{padding:16px}
+  .sp-features{display:grid;grid-template-columns:1fr 1fr;gap:5px}.ctx-chip{display:none}
+  .sp-right{height:auto;overflow:visible}.sp-right-scroll{overflow:visible;height:auto}
+  .fi-row{grid-template-columns:1fr}.module-grid{grid-template-columns:1fr}.submode-grid{grid-template-columns:1fr 1fr}
+}
+@media(max-width:640px){
+  .sp-setup .btn-p{padding:11px 16px}
+  .submode-grid{grid-template-columns:1fr}
+  .module-grid{grid-template-columns:1fr}
+  .sp-features{grid-template-columns:1fr}
+  .obs-join-input-row{flex-direction:column}
+  .fi-row{grid-template-columns:1fr}
+}
+
+/* Colorful mode cards and accessible theme states */
+@keyframes spCardIn{from{opacity:0;transform:translateY(14px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes spSelectedPop{0%{transform:scale(.98)}55%{transform:scale(1.015)}100%{transform:scale(1)}}
+@keyframes spLeftDrift{0%,100%{transform:translate3d(0,0,0) rotate(0)}50%{transform:translate3d(10px,-8px,0) rotate(2deg)}}
+@keyframes spShimmer{from{transform:translateX(-130%) rotate(18deg)}to{transform:translateX(380%) rotate(18deg)}}
+.module-card,.submode-card{position:relative;overflow:hidden;animation:spCardIn .45s cubic-bezier(.34,1.4,.64,1) both;isolation:isolate}
+.module-card::before,.submode-card::before{content:"";position:absolute;inset:0;z-index:-1;opacity:0;background:linear-gradient(110deg,transparent 20%,rgba(255,255,255,.5) 48%,transparent 72%);transform:translateX(-130%) rotate(18deg);transition:opacity .2s}
+.module-card:hover::before,.submode-card:hover::before{opacity:1;animation:spShimmer .9s ease both}
+.module-card:nth-child(2),.submode-card:nth-child(2){animation-delay:.08s}
+.module-card:nth-child(3),.submode-card:nth-child(3){animation-delay:.16s}
+.module-card:nth-child(1){background:linear-gradient(135deg,#ff5f99,#ff9f54);border-color:rgba(255,255,255,.18);color:#fff}
+.module-card:nth-child(2){background:linear-gradient(135deg,#2eb6ff,#2676e8);border-color:rgba(255,255,255,.18);color:#fff}
+.submode-card:nth-child(1){background:linear-gradient(135deg,#40c95f,#11a48c);border-color:rgba(255,255,255,.18);color:#fff}
+.submode-card:nth-child(2){background:linear-gradient(135deg,#8a4fff,#cf4bd8);border-color:rgba(255,255,255,.18);color:#fff}
+.module-card::after,.submode-card::after{content:"";position:absolute;right:-24px;bottom:-36px;width:106px;height:106px;border-radius:50%;background:rgba(255,255,255,.14);z-index:-1;transition:transform .3s}
+.module-card:hover::after,.submode-card:hover::after{transform:scale(1.2)}
+.module-card .mod-title,.module-card .mod-desc,.submode-card .submode-title,.submode-card .submode-desc{color:#fff}
+.module-card .mod-desc,.submode-card .submode-desc{color:rgba(255,255,255,.9)}
+.module-card .mod-ic,.submode-card .submode-ic{background:linear-gradient(145deg,rgba(255,255,255,.82),rgba(255,255,255,.26));color:#071235;box-shadow:inset 0 -8px 0 rgba(0,0,0,.08),0 12px 18px rgba(0,0,0,.18);animation:spIconFloat 4.4s ease-in-out infinite}
+@keyframes spIconFloat{0%,100%{transform:translateY(0) rotate(-2deg)}50%{transform:translateY(-7px) rotate(3deg)}}
+.module-card:hover,.submode-card:hover{transform:translateY(-4px) scale(1.018);box-shadow:0 15px 26px rgba(38,57,116,.18);animation:spGlowMove 2.6s ease infinite}
+.module-card.sel,.submode-card.sel{border-color:rgba(255,255,255,.72);box-shadow:0 0 0 3px rgba(255,255,255,.25),0 17px 30px rgba(38,57,116,.22)}
+.module-card.sel .mod-title,.module-card.sel .mod-desc,.submode-card.sel .submode-title,.submode-card.sel .submode-desc{color:#fff}
+.module-card.sel .mod-ic,.submode-card.sel .submode-ic{color:#071235;filter:drop-shadow(0 8px 10px rgba(0,0,0,.18));transform:scale(1.08)}
+@keyframes spGlowMove{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+.module-card:nth-child(1),.module-card:nth-child(2),.submode-card:nth-child(1),.submode-card:nth-child(2){background-size:180% 180%}
+.module-card.sel,.submode-card.sel{animation:spSelectedPop .28s ease both}
+.module-card:active,.submode-card:active,.btn-p:active,.btn-s:active,.btn-d:active,.back-btn:active{transform:scale(.97);transition-duration:.08s}
+.module-card.sel .mod-ic,.submode-card.sel .submode-ic{filter:drop-shadow(0 5px 8px rgba(67,56,202,.2));transform:scale(1.08)}
+.sp-left::after{content:"";position:absolute;width:180px;height:180px;right:-70px;top:28%;border-radius:42% 58% 62% 38%;background:linear-gradient(135deg,rgba(124,58,237,.14),rgba(35,178,109,.12));filter:blur(1px);pointer-events:none;animation:spLeftDrift 9s ease-in-out infinite}
+.sp-feat{animation:fadeUp .5s ease both,spLeftDrift 8s ease-in-out infinite;animation-delay:var(--sp-delay,0s),1.2s}
+.sp-feat:nth-child(2){animation-delay:.08s,2s}.sp-feat:nth-child(3){animation-delay:.16s,2.8s}.sp-feat:nth-child(4){animation-delay:.24s,3.6s}
+.sp-feat{position:relative;overflow:hidden;border-color:rgba(255,255,255,.18);background-size:180% 180%;color:#fff;box-shadow:0 9px 18px rgba(38,57,116,.12);transition:transform .18s,box-shadow .18s}
+.sp-feat:nth-child(1){background:linear-gradient(135deg,#ff5f99,#ff9f54)}
+.sp-feat:nth-child(2){background:linear-gradient(135deg,#2eb6ff,#2676e8)}
+.sp-feat:nth-child(3){background:linear-gradient(135deg,#40c95f,#11a48c)}
+.sp-feat:nth-child(4){background:linear-gradient(135deg,#8a4fff,#cf4bd8)}
+.sp-feat::before{content:"";position:absolute;right:-24px;bottom:-36px;width:106px;height:106px;border-radius:50%;background:rgba(255,255,255,.14);transition:transform .3s}
+.sp-feat:hover{transform:translateY(-4px) scale(1.018);box-shadow:0 15px 26px rgba(38,57,116,.18);animation:spGlowMove 2.6s ease infinite}
+.sp-feat:hover::before{transform:scale(1.2)}
+.sp-feat .sp-feat-ic{background:linear-gradient(145deg,rgba(255,255,255,.82),rgba(255,255,255,.26));color:#071235;box-shadow:inset 0 -8px 0 rgba(0,0,0,.08),0 12px 18px rgba(0,0,0,.18);animation:spIconFloat 4.4s ease-in-out infinite}
+.sp-feat .sp-feat-t{color:#fff}.sp-feat .sp-feat-d{color:rgba(255,255,255,.9)}
+.sp-setup-robo{display:block;width:min(210px,62%);max-height:150px;object-fit:contain;margin:18px auto 0;filter:drop-shadow(0 18px 16px rgba(0,0,0,.3));animation:spRoboFloat 4.8s ease-in-out infinite;pointer-events:none}
+@keyframes spRoboFloat{0%,100%{transform:translateY(0) rotate(-2deg)}50%{transform:translateY(-8px) rotate(2deg)}}
+.sp-setup-intro{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.sp-setup-intro .sp-h1{flex:1;min-width:0}
+.sp-setup-intro .sp-setup-robo{width:min(170px,42%);max-height:138px;margin:0}
+.sp-logo-ico,.sp-badge-dot{animation:pulse 2.4s ease-in-out infinite}
+.dark .sp-setup{background:radial-gradient(circle at 12% 10%,rgba(124,58,237,.28),transparent 26%),radial-gradient(circle at 88% 8%,rgba(59,130,246,.22),transparent 23%),linear-gradient(180deg,#0b1222 0%,#101827 48%,#0b1d20 100%)}
+.dark .sp-left{background:linear-gradient(180deg,#111b36 0%,#102a2a 100%);border-right-color:rgba(226,232,240,.12)}
+.dark .sp-right{background:linear-gradient(180deg,#0e1627 0%,#121c2c 100%)}
+.dark .sp-logo-name,.dark .sp-h1,.dark .setup-h,.dark .mod-title,.dark .submode-title,.dark .timing-title,.dark .ongoing-topic{color:#f8fafc}
+.dark .sp-desc,.dark .setup-sub,.dark .mod-desc,.dark .submode-desc,.dark .timing-desc,.dark .ongoing-meta{color:#b7c4d8}
+.dark .sp-feat{border-color:rgba(255,255,255,.2);box-shadow:0 12px 24px rgba(0,0,0,.3)}
+.dark .sp-feat:nth-child(1){background:linear-gradient(135deg,#b52f68,#b45b21)}
+.dark .sp-feat:nth-child(2){background:linear-gradient(135deg,#126b9d,#194fa8)}
+.dark .sp-feat:nth-child(3){background:linear-gradient(135deg,#187b3e,#087b6d)}
+.dark .sp-feat:nth-child(4){background:linear-gradient(135deg,#5c2aaa,#9b269d)}
+.dark .sp-feat-t{color:#f8fafc}.dark .sp-feat-d,.dark .ctx-chip-sub{color:#b7c4d8}.dark .ctx-chip-val{color:#f8fafc}
+.dark .module-card:nth-child(1){background:linear-gradient(135deg,#b52f68,#b45b21)}
+.dark .module-card:nth-child(2){background:linear-gradient(135deg,#126b9d,#194fa8)}
+.dark .submode-card:nth-child(1){background:linear-gradient(135deg,#187b3e,#087b6d)}
+.dark .submode-card:nth-child(2){background:linear-gradient(135deg,#5c2aaa,#9b269d)}
+.dark .module-card.sel,.dark .submode-card.sel{box-shadow:0 0 0 3px rgba(255,255,255,.3),0 16px 30px rgba(0,0,0,.45)}
+.dark .sec-div{color:#aebbd0}.dark .sec-div::after{background:rgba(226,232,240,.14)}
+.dark .timing-card,.dark .step-r,.dark .ongoing-card,.dark .ongoing-empty{background:linear-gradient(180deg,#172235,#121c2c);border-color:rgba(226,232,240,.13)}
+.dark .finput,.dark .link-row{background:#172235;color:#f8fafc;border-color:rgba(226,232,240,.16)}
+.dark .finput::placeholder{color:#91a0b5}.dark .link-val{color:#93c5fd}
+@media(prefers-reduced-motion:reduce){.sp-left::after,.sp-feat,.module-card,.submode-card,.sp-logo-ico,.sp-badge-dot,.module-card .mod-ic,.submode-card .submode-ic{animation:none}.module-card::before,.submode-card::before{display:none}}
 
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);backdrop-filter:blur(8px);z-index:700;display:flex;align-items:center;justify-content:center;padding:16px;animation:fadeIn .18s ease}
 .modal{background:var(--surf);border:1px solid var(--bdr);border-radius:var(--r);width:100%;max-height:calc(100dvh - 28px);display:flex;flex-direction:column;overflow:hidden;box-shadow:var(--sh3);animation:slideUp .25s cubic-bezier(.34,1.1,.64,1)}
@@ -936,6 +1070,7 @@ select.finput option{background:#fff;color:#111827}
   .doc-status{width:100%;margin-left:0}
 }
 @media(max-width:480px){
+  .sp-setup-intro .sp-setup-robo{width:120px;max-height:105px}
   .room-bar{height:44px;padding:0 8px;gap:4px}.r-pill{font-size:8.5px;padding:2px 5px}
   .strip-tile{width:100px;min-width:100px;height:66px}
   .res-acts{flex-direction:column;width:100%;max-width:280px}.res-acts button{width:100%}
@@ -4255,11 +4390,19 @@ function SeminarSetup({ onBack, onLaunch }) {
             <div className="sp-badge-dot" />
             Seminar Setup
           </div>
-          <h2 className="sp-h1">
-            Your stage,
-            <br />
-            <span className="hl">your seminar.</span>
-          </h2>
+          <div className="sp-setup-intro">
+            <h2 className="sp-h1">
+              Your stage,
+              <br />
+              <span className="hl">your seminar.</span>
+            </h2>
+            <img
+              className="sp-setup-robo"
+              src={robotWaving}
+              alt=""
+              aria-hidden="true"
+            />
+          </div>
           <p className="sp-desc">
             AI-facilitated sessions with voice transcription, screen sharing,
             observer chat & full performance reports.
@@ -4311,7 +4454,7 @@ function SeminarSetup({ onBack, onLaunch }) {
               </button>
             )}
             <h2 className="setup-h">
-              <SeminarIcon name="graduation" /> Seminar Setup
+              <SeminarIcon name="presentation" /> Seminar Setup
             </h2>
             <p className="setup-sub">
               Choose your mode — prepare alone with AI, run a live seminar, or
@@ -5436,19 +5579,33 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
         request_id: crypto.randomUUID(),
       };
 
-      const startKey = 'gradeup_presentation_start';
-      const fingerprint = JSON.stringify({ ...pptPayload, request_id: undefined });
-      const pendingStart = JSON.parse(sessionStorage.getItem(startKey) || 'null');
-      if (pendingStart?.fingerprint === fingerprint) pptPayload.request_id = pendingStart.requestId;
-      sessionStorage.setItem(startKey, JSON.stringify({ fingerprint, requestId: pptPayload.request_id }));
+      const startKey = "gradeup_presentation_start";
+      const fingerprint = JSON.stringify({
+        ...pptPayload,
+        request_id: undefined,
+      });
+      const pendingStart = JSON.parse(
+        sessionStorage.getItem(startKey) || "null",
+      );
+      if (pendingStart?.fingerprint === fingerprint)
+        pptPayload.request_id = pendingStart.requestId;
+      sessionStorage.setItem(
+        startKey,
+        JSON.stringify({ fingerprint, requestId: pptPayload.request_id }),
+      );
       const pptSession = await startSeminarPptSession(pptPayload);
 
-      if (!pptSession?.session_id || !pptSession?.deck_id || !pptSession?.edit_url || pptSession?.deck_mode !== "gradeup") {
+      if (
+        !pptSession?.session_id ||
+        !pptSession?.deck_id ||
+        !pptSession?.edit_url ||
+        pptSession?.deck_mode !== "gradeup"
+      ) {
         throw new Error("Slides session did not return an edit URL.");
       }
 
       const createdDocument = {
-        id: pptSession.deck_id,
+       id: pptSession.deck_id,
         name,
         subject: selectedSubjectLabel,
         unit,
@@ -5470,10 +5627,10 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
       setCreateDocConfig(createdDocument);
       setCreateDocLink(pptSession.edit_url);
       setShowCreateLinkModal(true);
-      sessionStorage.removeItem(startKey);
+     sessionStorage.removeItem(startKey);
       window.location.assign(pptSession.edit_url);
       toast$(
-        "Your GradeUp presentation is ready.",
+       "Your GradeUp presentation is ready.",
         "success",
       );
     } catch (error) {
@@ -5497,7 +5654,7 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
     if (
       externalEditUrl &&
       /^https?:\/\//i.test(externalEditUrl) &&
-      /\/seminar\/slides\//i.test(externalEditUrl)
+     /\/seminar\/slides\//i.test(externalEditUrl)
     ) {
       window.open(externalEditUrl, "_blank", "noopener,noreferrer");
       return;
@@ -5602,10 +5759,16 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
           candidateId: candidate.candidateId,
           candidateName: candidate.candidateName,
           topic: finalTopic,
-          visibility: sessionVisibility as "public" | "school" | "class" | "private",
+          visibility: sessionVisibility as
+            | "public"
+            | "school"
+            | "class"
+            | "private",
         });
-        const createdSessionId = room?.session_id || room?.sessionId || roomId.current;
-        const createdJoinUrl = room?.shareLink || room?.liveSession?.shareLink || roomLink;
+        const createdSessionId =
+          room?.session_id || room?.sessionId || roomId.current;
+        const createdJoinUrl =
+          room?.shareLink || room?.liveSession?.shareLink || roomLink;
         if (shareToCommunity && sessionVisibility !== "private") {
           try {
             await shareSessionToCommunity({
@@ -5618,7 +5781,11 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
               status: "waiting",
               participantCount: 1,
               source: "seminar_setup",
-              visibility: sessionVisibility as "public" | "school" | "class" | "private",
+              visibility: sessionVisibility as
+                | "public"
+                | "school"
+                | "class"
+                | "private",
             });
           } catch (error) {
             console.warn("Failed to share seminar to community", error);
@@ -5639,7 +5806,7 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
           date: scheduledInfo?.date,
           time: scheduledInfo?.time,
           unitId: selectedUnitId,
-           roomId: createdSessionId,
+          roomId: createdSessionId,
           sessionId: createdSessionId,
           liveSession: room?.liveSession || null,
           visibility: sessionVisibility,
@@ -5735,11 +5902,19 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
             <div className="sp-badge-dot" />
             Seminar Setup
           </div>
-          <h2 className="sp-h1">
-            Your stage,
-            <br />
-            <span className="hl">your seminar.</span>
-          </h2>
+          <div className="sp-setup-intro">
+            <h2 className="sp-h1">
+              Your stage,
+              <br />
+              <span className="hl">your seminar.</span>
+            </h2>
+            <img
+              className="sp-setup-robo"
+              src={robotWaving}
+              alt=""
+              aria-hidden="true"
+            />
+          </div>
           <p className="sp-desc">
             Switch between AI preparation, presenter session mode, and observer
             join flow without losing the real API-backed seminar behavior.
@@ -5791,7 +5966,7 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
               </button>
             )}
             <h2 className="setup-h">
-              <SeminarIcon name="graduation" /> Seminar Setup
+              <SeminarIcon name="presentation" /> Seminar Setup
             </h2>
             <p className="setup-sub">
               Choose your setup path first. Prepare, create a seminar file with
@@ -6348,7 +6523,9 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
                           <option value="public">Access to all</option>
                           <option value="school">Only to school</option>
                           <option value="class">Only to class</option>
-                          <option value="private">Private - invited only</option>
+                          <option value="private">
+                            Private - invited only
+                          </option>
                         </select>
                       </div>
                       <label
@@ -6381,10 +6558,18 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
                       </label>
                       <div className="link-box">
                         <div className="link-lbl">
-                          🔗 Invite link will be generated after the seminar room is created
+                          🔗 Invite link will be generated after the seminar
+                          room is created
                         </div>
-                        <div style={{ fontSize: 11, color: "var(--t2)", marginTop: 4 }}>
-                          You can send the seminar card to a group or email observers from the waiting room.
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: "var(--t2)",
+                            marginTop: 4,
+                          }}
+                        >
+                          You can send the seminar card to a group or email
+                          observers from the waiting room.
                         </div>
                       </div>
                     </>
@@ -11149,8 +11334,10 @@ function PresenterRoom({ config, onEnd }) {
   const pendingRequest = pendingRequests[0] || null;
   const roomStatus = liveSession?.status || "waiting";
   const observerCount = observerList.length;
-  const currentVisibility = liveSession?.visibility || config.visibility || "public";
-  const waitingInviteUrl = liveSession?.shareLink || config.roomLink || genRoomLink(config.sessionId);
+  const currentVisibility =
+    liveSession?.visibility || config.visibility || "public";
+  const waitingInviteUrl =
+    liveSession?.shareLink || config.roomLink || genRoomLink(config.sessionId);
   const waitingInvitePayload = {
     sessionType: "seminar" as const,
     sessionId: config.sessionId,
@@ -11317,10 +11504,7 @@ function PresenterRoom({ config, onEnd }) {
       }
       setInviteOpen(false);
     } catch (error) {
-      toast$(
-        getErrorMessage(error, "Unable to send seminar invite."),
-        "error",
-      );
+      toast$(getErrorMessage(error, "Unable to send seminar invite."), "error");
     } finally {
       setInviteSending(false);
     }
@@ -11330,7 +11514,10 @@ function PresenterRoom({ config, onEnd }) {
     if (!config.sessionId || nextVisibility === currentVisibility) return;
     setVisibilitySaving(true);
     try {
-      const updated = await updateSeminarVisibility(config.sessionId, nextVisibility);
+      const updated = await updateSeminarVisibility(
+        config.sessionId,
+        nextVisibility,
+      );
       setLiveSession(updated || null);
       toast$("Seminar visibility updated.", "success");
     } catch (error) {
@@ -11724,7 +11911,9 @@ function PresenterRoom({ config, onEnd }) {
                   className="finput"
                   value={currentVisibility}
                   disabled={visibilitySaving}
-                  onChange={(event) => handleVisibilityChange(event.target.value)}
+                  onChange={(event) =>
+                    handleVisibilityChange(event.target.value)
+                  }
                   style={{
                     background: "rgba(255,255,255,.05)",
                     borderColor: "rgba(255,255,255,.12)",
@@ -11747,10 +11936,22 @@ function PresenterRoom({ config, onEnd }) {
               }}
             >
               <div className="link-box-title">Invite Observers</div>
-              <div style={{ fontSize: 12, color: "rgba(255,255,255,.58)", lineHeight: 1.6, marginBottom: 10 }}>
-                Send this seminar as a group card or email invite. The link is generated for the invite card.
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "rgba(255,255,255,.58)",
+                  lineHeight: 1.6,
+                  marginBottom: 10,
+                }}
+              >
+                Send this seminar as a group card or email invite. The link is
+                generated for the invite card.
               </div>
-              <button className="btn-p" style={{ width: "auto" }} onClick={() => setInviteOpen(true)}>
+              <button
+                className="btn-p"
+                style={{ width: "auto" }}
+                onClick={() => setInviteOpen(true)}
+              >
                 Invite
               </button>
             </div>
@@ -12341,10 +12542,7 @@ function PresenterRoom({ config, onEnd }) {
           >
             <div className="mh">
               <div className="mh-title">Invite to Seminar</div>
-              <button
-                className="mh-close"
-                onClick={() => setInviteOpen(false)}
-              >
+              <button className="mh-close" onClick={() => setInviteOpen(false)}>
                 x
               </button>
             </div>
@@ -12365,20 +12563,35 @@ function PresenterRoom({ config, onEnd }) {
               >
                 <strong>{config.topic || "Seminar session"}</strong>
                 <br />
-                Created by {config.name || "Presenter"} · {observerCount} participant(s) waiting
+                Created by {config.name || "Presenter"} · {observerCount}{" "}
+                participant(s) waiting
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 8,
+                }}
+              >
                 <button
                   className="btn-s"
                   onClick={() => setInviteMode("group")}
-                  style={inviteMode === "group" ? { borderColor: "var(--em)", color: "var(--em)" } : {}}
+                  style={
+                    inviteMode === "group"
+                      ? { borderColor: "var(--em)", color: "var(--em)" }
+                      : {}
+                  }
                 >
                   Send to group
                 </button>
                 <button
                   className="btn-s"
                   onClick={() => setInviteMode("email")}
-                  style={inviteMode === "email" ? { borderColor: "var(--em)", color: "var(--em)" } : {}}
+                  style={
+                    inviteMode === "email"
+                      ? { borderColor: "var(--em)", color: "var(--em)" }
+                      : {}
+                  }
                 >
                   Send email
                 </button>
@@ -12387,7 +12600,9 @@ function PresenterRoom({ config, onEnd }) {
                 <select
                   className="finput"
                   value={selectedInviteGroup}
-                  onChange={(event) => setSelectedInviteGroup(event.target.value)}
+                  onChange={(event) =>
+                    setSelectedInviteGroup(event.target.value)
+                  }
                 >
                   <option value="">Select group</option>
                   {inviteGroups.map((group) => (
@@ -14779,7 +14994,9 @@ export default function SeminarPage() {
     setEntryError(null);
     try {
       if (!user) {
-        setEntryError("Please log in with your student account to join this seminar session.");
+        setEntryError(
+          "Please log in with your student account to join this seminar session.",
+        );
         setScreen("entry");
         setEntryLoading(false);
         return;
@@ -14861,7 +15078,9 @@ export default function SeminarPage() {
       joinLinkedSeminar().catch(() => null);
       return;
     }
-    setEntryError("Please log in with your student account to join this seminar session.");
+    setEntryError(
+      "Please log in with your student account to join this seminar session.",
+    );
     setScreen("entry");
   }, [user]);
 
@@ -14998,7 +15217,8 @@ export default function SeminarPage() {
                     lineHeight: 1.7,
                   }}
                 >
-                  You opened a seminar room link. Log in with your student account to enter the waiting room.
+                  You opened a seminar room link. Log in with your student
+                  account to enter the waiting room.
                 </div>
               </div>
               <div style={{ padding: "18px 20px" }}>
@@ -15047,7 +15267,9 @@ export default function SeminarPage() {
                         onClick={() => joinLinkedSeminar().catch(() => null)}
                         disabled={entryLoading}
                       >
-                        {entryLoading ? "Checking Room..." : "Continue to Waiting Room"}
+                        {entryLoading
+                          ? "Checking Room..."
+                          : "Continue to Waiting Room"}
                       </button>
                       <button
                         className="btn-s"
