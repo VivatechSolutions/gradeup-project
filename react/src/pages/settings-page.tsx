@@ -38,21 +38,21 @@ export const CSS = `
   --sp-toggle-bdr: rgba(0,0,0,.05);
 }
 
-[data-theme="dark"] {
-  --sp-bg:         #0b1120;
-  --sp-surface:    #1e293b;
-  --sp-surface2:   #0f172a;
-  --sp-text:       #f1f5f9;
-  --sp-text2:      #cbd5e1;
+[data-theme="dark"], .dark {
+  --sp-bg:         #080d1f;
+  --sp-surface:    rgba(23,31,58,.92);
+  --sp-surface2:   rgba(16,23,45,.7);
+  --sp-text:       #f6f7ff;
+  --sp-text2:      #b5bfd8;
   --sp-muted:      #94a3b8;
   --sp-subtle:     #64748b;
-  --sp-border:     rgba(255,255,255,.07);
-  --sp-border2:    rgba(255,255,255,.10);
+  --sp-border:     rgba(255,255,255,.08);
+  --sp-border2:    rgba(255,255,255,.14);
   --sp-shadow:     0 2px 12px rgba(0,0,0,.35);
-  --sp-input-bg:   #0f172a;
-  --sp-toggle-bg:  rgba(255,255,255,.03);
-  --sp-toggle-hov: rgba(99,102,241,.07);
-  --sp-toggle-bdr: rgba(255,255,255,.06);
+  --sp-input-bg:   rgba(14,20,40,.85);
+  --sp-toggle-bg:  rgba(255,255,255,.05);
+  --sp-toggle-hov: rgba(99,102,241,.12);
+  --sp-toggle-bdr: rgba(255,255,255,.1);
 }
 
 .sp-root{

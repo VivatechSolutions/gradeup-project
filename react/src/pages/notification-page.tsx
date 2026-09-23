@@ -28,16 +28,16 @@ export const CSS = `
   --np-shadow:    0 2px 12px rgba(0,0,0,.05);
 }
 
-[data-theme="dark"] {
-  --np-bg:        #0b1120;
-  --np-surface:   #1e293b;
-  --np-surface2:  #0f172a;
-  --np-text:      #f1f5f9;
-  --np-text2:     #cbd5e1;
+[data-theme="dark"], .dark {
+  --np-bg:        #080d1f;
+  --np-surface:   rgba(23,31,58,.92);
+  --np-surface2:  rgba(16,23,45,.7);
+  --np-text:      #f6f7ff;
+  --np-text2:     #b5bfd8;
   --np-muted:     #94a3b8;
   --np-subtle:    #64748b;
-  --np-border:    rgba(255,255,255,.07);
-  --np-border2:   rgba(255,255,255,.10);
+  --np-border:    rgba(255,255,255,.08);
+  --np-border2:   rgba(255,255,255,.14);
   --np-shadow:    0 2px 12px rgba(0,0,0,.35);
 }
 

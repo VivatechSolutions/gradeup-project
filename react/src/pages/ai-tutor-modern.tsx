@@ -91,6 +91,7 @@ import AskAIPanel from "../components/AskAIPanel";
 import { ChatHistoryPanel } from "../components/ChatHistoryPanel";
 import FormattedAIContent from "../components/ai/FormattedAIContent";
 import { useAuth } from "../hooks/use-auth";
+import { useTheme } from "../hooks/use-theme";
 import Navigation from "../components/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -203,7 +204,12 @@ const CSS = `
   position: fixed;
   inset: 0;
 }
-.dark .at-root { background: #0f172a; color: #f1f5f9; }
+.dark .at-root, [data-theme="dark"] .at-root {
+  background: radial-gradient(circle at 14% 9%,rgba(126,87,255,.14),transparent 26%),
+              radial-gradient(circle at 88% 14%,rgba(255,171,64,.16),transparent 25%),
+              linear-gradient(180deg,#080d1f,#10172d);
+  color: #f6f7ff;
+}
 
 /* ── Scrollbar ── */
 .at-scroll::-webkit-scrollbar { width: 4px; }
@@ -237,7 +243,13 @@ const CSS = `
   transition: box-shadow .2s;
 }
 .at-panel:hover { box-shadow: 0 4px 24px rgba(0,0,0,.08); }
-.dark .at-panel { background: #1e293b; border-color: rgba(255,255,255,.08); }
+.dark .at-panel, [data-theme="dark"] .at-panel {
+  background: rgba(23,31,58,.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-color: rgba(255,255,255,.12);
+  box-shadow: 0 16px 44px rgba(0,0,0,.36);
+}
 
 .at-panel-head {
   padding: 14px 16px 12px;
@@ -249,7 +261,7 @@ const CSS = `
   flex-shrink: 0;
   min-height: 56px;
 }
-.dark .at-panel-head { border-color: rgba(255,255,255,.06); }
+.dark .at-panel-head, [data-theme="dark"] .at-panel-head { border-color: rgba(255,255,255,.08); }
 
 /* ── Collapsed panel head ── center the toggle */
 .at-panel-head.collapsed {
@@ -267,7 +279,7 @@ const CSS = `
   letter-spacing: -.2px;
   flex: 1;
 }
-.dark .at-panel-title { color: #f1f5f9; }
+.dark .at-panel-title, [data-theme="dark"] .at-panel-title { color: #f6f7ff; }
 
 .at-panel-sub {
   font-size: 11px;
@@ -344,7 +356,7 @@ const CSS = `
   pointer-events: none; color: #6366f1;
 }
 .dark .at-select-wrap select {
-  background: #0f172a; border-color: rgba(255,255,255,.1); color: #f1f5f9;
+  background: rgba(14,20,40,.85); border-color: rgba(255,255,255,.12); color: #f1f5f9;
 }
 
 .at-divider { height: 1px; background: #f1f5f9; }
@@ -412,8 +424,9 @@ const CSS = `
 }
 .at-hist-item:hover { background: #fff; border-color: #e0e7ff; box-shadow: 0 2px 8px rgba(99,102,241,.08); }
 .at-hist-item.active { background: rgba(99,102,241,.08); border-color: rgba(99,102,241,.25); }
-.dark .at-hist-item { background: rgba(255,255,255,.03); }
-.dark .at-hist-item.active { background: rgba(99,102,241,.15); }
+.dark .at-hist-item { background: rgba(16,23,45,.6); border-color: rgba(255,255,255,.06); }
+.dark .at-hist-item:hover { background: rgba(23,31,58,.9); border-color: rgba(255,255,255,.12); }
+.dark .at-hist-item.active { background: rgba(99,102,241,.2); border-color: rgba(99,102,241,.4); }
 
 .at-hist-title {
   font-size: 12px; font-weight: 600; color: #0f172a;
@@ -461,11 +474,15 @@ const CSS = `
    MAIN CHAT PANEL
 ══════════════════════════════════════════ */
 .at-chat-header {
-  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #ec4899 100%);
+  background: linear-gradient(135deg, #0f172a 0%, #1d4ed8 32%, #0ea5e9 68%, #f59e0b 100%);
   padding: 12px 16px;
   position: relative; overflow: hidden;
   flex-shrink: 0;
   border-radius: 20px 20px 0 0;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.12);
+}
+.dark .at-chat-header {
+  background: linear-gradient(135deg, #0b1220 0%, #12377a 36%, #0ea5e9 68%, #f59e0b 100%);
 }
 .at-chat-header::before {
   content: ''; position: absolute; top: -40px; right: -40px;
@@ -491,7 +508,7 @@ const CSS = `
   font-size: 10px; font-weight: 700; color: #fff; margin-bottom: 3px;
 }
 .at-chat-title { font-size: 15px; font-weight: 800; color: #fff; line-height: 1.2; }
-.at-chat-sub { font-size: 11px; color: rgba(255,255,255,.7); margin-top: 1px; }
+.at-chat-sub { font-size: 11px; color: rgba(255,255,255,.78); margin-top: 1px; }
 .at-chat-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .at-hbtn {
   padding: 6px 12px; border-radius: 9px; border: none;
@@ -501,8 +518,9 @@ const CSS = `
   transition: all .2s; backdrop-filter: blur(6px); white-space: nowrap;
 }
 .at-hbtn:hover { background: rgba(255,255,255,.28); transform: translateY(-1px); }
-.at-hbtn.white { background: #fff; color: #6366f1; box-shadow: 0 3px 10px rgba(0,0,0,.15); }
-.at-hbtn.white:hover { background: #f5f3ff; transform: translateY(-2px); }
+.at-hbtn.white { background: #fff; color: #0f172a; box-shadow: 0 3px 10px rgba(0,0,0,.15); }
+.dark .at-hbtn.white { color: #0f172a; }
+.at-hbtn.white:hover { background: #f8fafc; transform: translateY(-2px); }
 
 /* ── Messages area ── */
 .at-msgs-area {
@@ -569,7 +587,8 @@ const CSS = `
   box-shadow: 0 2px 8px rgba(0,0,0,.05);
 }
 .dark .at-bubble.bot {
-  background: #1e293b; border-color: rgba(255,255,255,.08); color: #f1f5f9;
+  background: rgba(31,42,76,.76); border-color: rgba(255,255,255,.12); color: #f6f7ff;
+  box-shadow: 0 4px 16px rgba(0,0,0,.25);
 }
 .at-bubble.user {
   background: linear-gradient(135deg, #6366f1, #8b5cf6);
@@ -613,7 +632,7 @@ const CSS = `
   flex-shrink: 0; background: #fff;
   border-radius: 0 0 20px 20px;
 }
-.dark .at-input-area { background: #1e293b; border-color: rgba(255,255,255,.06); }
+.dark .at-input-area { background: rgba(23,31,58,.94); border-color: rgba(255,255,255,.1); }
 
 .at-attachments { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 7px; }
 .at-attach-chip {
@@ -649,8 +668,8 @@ const CSS = `
   background: #fff;
 }
 .at-textarea::placeholder { color: #94a3b8; }
-.dark .at-textarea { background: #0f172a; border-color: rgba(255,255,255,.1); color: #f1f5f9; }
-.dark .at-textarea:focus { background: rgba(99,102,241,.05); }
+.dark .at-textarea { background: rgba(14,20,40,.85); border-color: rgba(255,255,255,.12); color: #f1f5f9; }
+.dark .at-textarea:focus { background: rgba(16,24,48,.95); border-color: #6366f1; }
 .dark .at-textarea-wrap.listening .at-textarea {
   border-color: rgba(248,113,113,.55);
   background: rgba(239,68,68,.06);
@@ -767,7 +786,8 @@ const CSS = `
 .at-ml-card.orange { background: rgba(245,158,11,.05); border-color: rgba(245,158,11,.2); }
 .at-ml-card.orange::before { background: linear-gradient(90deg,#f59e0b,#f97316); }
 .at-ml-card.col2 { grid-column: span 2; }
-.dark .at-ml-card { background: rgba(255,255,255,.03); }
+.dark .at-ml-card { background: rgba(23,31,58,.6); border-color: rgba(255,255,255,.08); }
+.dark .at-ml-card:hover { background: rgba(31,42,76,.8); border-color: rgba(255,255,255,.16); }
 .at-ml-icon { font-size: 28px; margin-bottom: 7px; display: block; }
 .at-ml-name { font-size: 12.5px; font-weight: 800; color: #0f172a; margin-bottom: 2px; }
 .dark .at-ml-name { color: #f1f5f9; }
@@ -791,7 +811,7 @@ const CSS = `
 .at-tip-wrap { position: relative; }
 .at-tooltip {
   position: fixed; z-index: 9999;
-  background: #1e293b; border: 1px solid rgba(99,102,241,.4);
+  background: #10172d; border: 1px solid rgba(99,102,241,.4);
   color: #f1f5f9; font-size: 11px; font-weight: 600;
   padding: 4px 10px; border-radius: 7px; white-space: nowrap;
   box-shadow: 0 6px 20px rgba(0,0,0,.4);
@@ -824,7 +844,7 @@ const CSS = `
   border-top: 1px solid #f1f5f9;
   background: #fff; flex-shrink: 0;
 }
-.dark .at-bottom-nav { background: #1e293b; border-color: rgba(255,255,255,.06); }
+.dark .at-bottom-nav { background: rgba(23,31,58,.94); border-color: rgba(255,255,255,.1); }
 .at-bnav-btn {
   display: flex; flex-direction: column; align-items: center; gap: 2px;
   flex: 1; padding: 5px 3px; border-radius: 10px;
@@ -1428,6 +1448,7 @@ export default function AITutorModern() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const isMobile = useIsMobile();
+  const { isDark } = useTheme();
   const { userHeader } = useAuth();
 
   const [selectedSubject, setSelectedSubject] = useState<number>(0);
@@ -3902,10 +3923,13 @@ export default function AITutorModern() {
       <div
         style={{
           height: "100dvh",
-          background: "#f8fafc",
+          background: isDark
+            ? "radial-gradient(circle at 14% 9%,rgba(126,87,255,.14),transparent 26%), radial-gradient(circle at 88% 14%,rgba(255,171,64,.16),transparent 25%), linear-gradient(180deg,#080d1f,#10172d)"
+            : "radial-gradient(circle at 14% 9%,rgba(126,87,255,.12),transparent 26%), radial-gradient(circle at 88% 14%,rgba(255,171,64,.16),transparent 25%), linear-gradient(180deg,#fbfcff,#f5f7ff)",
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
+          color: isDark ? "#f6f7ff" : "#071235",
         }}
       >
         <style>{CSS}</style>

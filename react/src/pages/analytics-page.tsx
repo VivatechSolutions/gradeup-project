@@ -38,18 +38,18 @@ const css = `
 }
 
 /* ── Variables — Dark ── */
-[data-theme="dark"] {
-  --an-bg:          #0b1120;
-  --an-card:        #141f35;
-  --an-card2:       #1a2540;
-  --an-border:      rgba(255,255,255,.07);
-  --an-border2:     rgba(255,255,255,.06);
+[data-theme="dark"], .dark {
+  --an-bg:          #080d1f;
+  --an-card:        rgba(23,31,58,0.92);
+  --an-card2:       rgba(31,42,76,0.72);
+  --an-border:      rgba(255,255,255,.12);
+  --an-border2:     rgba(255,255,255,.08);
   --an-shadow:      0 2px 12px rgba(0,0,0,.3);
   --an-shadow2:     0 12px 32px rgba(0,0,0,.5);
-  --an-text:        #f1f5f9;
+  --an-text:        #f6f7ff;
   --an-text2:       #94a3b8;
   --an-text3:       #64748b;
-  --an-text4:       #cbd5e1;
+  --an-text4:       #b5bfd8;
   --an-bar-bg:      rgba(255,255,255,.07);
   --an-qa-bg:       rgba(255,255,255,.03);
   --an-qa-border:   rgba(255,255,255,.06);
@@ -60,10 +60,10 @@ const css = `
   --an-btn-htext:   #a5b4fc;
   --an-badge-bg:    rgba(255,255,255,.08);
   --an-badge-text:  #64748b;
-  --an-sel-bg:      #1a2540;
+  --an-sel-bg:      rgba(14,20,40,.85);
   --an-sel-text:    #94a3b8;
   --an-sel-border:  rgba(255,255,255,.12);
-  --an-input-bg:    #1a2540;
+  --an-input-bg:    rgba(14,20,40,.85);
   --an-input-border:rgba(255,255,255,.12);
 }
 

@@ -33,6 +33,7 @@ import {
 
 import Navigation from "../components/navigation";
 import FormattedAIContent from "../components/ai/FormattedAIContent";
+import FunnyLoader from "../components/ui/FunnyLoader";
 import robotWaving from "../assets/dashboard/15_robot_waving.png";
 import { useAuth } from "../hooks/use-auth";
 import { useSessionState } from "../hooks/useSessionState";
@@ -172,19 +173,6 @@ button,input,select,textarea{font-family:var(--font)}
 ::-webkit-scrollbar{width:4px;height:4px}
 ::-webkit-scrollbar-thumb{background:rgba(0,195,122,.25);border-radius:4px}
 .sp-app{height:100dvh;display:flex;flex-direction:column;overflow:hidden;width:100vw}
-
-.page-loader{position:fixed;inset:0;background:#060e1c;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px}
-.page-loader-logo{width:60px;height:60px;background:var(--grad);border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:28px;animation:loaderPulse 1.4s ease-in-out infinite;box-shadow:0 0 40px rgba(0,195,122,.35)}
-.page-loader-text{font-size:15px;font-weight:700;color:#fff;letter-spacing:.05em}
-.page-loader-sub{font-size:11px;color:rgba(255,255,255,.35);letter-spacing:.08em;text-transform:uppercase}
-.page-loader-bar{width:200px;height:3px;background:rgba(255,255,255,.08);border-radius:3px;overflow:hidden}
-.page-loader-fill{height:100%;background:var(--grad);border-radius:3px;transition:width .25s ease}
-.page-loader-steps{display:flex;flex-direction:column;gap:8px;margin-top:4px;width:240px}
-.page-loader-step{display:flex;align-items:center;gap:9px;padding:7px 11px;border-radius:9px;font-size:11px;font-weight:700;transition:all .3s}
-.page-loader-step.done{background:rgba(0,195,122,.1);border:1px solid rgba(0,195,122,.2);color:#5ee3b7}
-.page-loader-step.active{background:rgba(45,156,219,.1);border:1px solid rgba(45,156,219,.2);color:#7ed3f7}
-.page-loader-step.pending{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);color:rgba(255,255,255,.3)}
-@keyframes loaderPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
 
 .route-enter{animation:routeIn .32s cubic-bezier(.34,1.05,.64,1) both}
 @keyframes routeIn{from{opacity:0;transform:scale(.97) translateY(8px)}to{opacity:1;transform:none}}
@@ -3127,61 +3115,10 @@ function SoundAnalyser({ active, color = "#00c37a", bars = 7, size = 32 }) {
 }
 
 function PageLoader({
-  label = "Launching…",
+  label = "Launching...",
   sublabel = "Setting up your session",
-  steps = [],
 }) {
-  const [progress, setProgress] = useState(0);
-  const [step, setStep] = useState(0);
-  useEffect(() => {
-    let p = 0;
-    const id = setInterval(() => {
-      p += Math.random() * 18 + 8;
-      if (p >= 100) {
-        p = 100;
-        clearInterval(id);
-      }
-      setProgress(Math.min(p, 100));
-    }, 180);
-    return () => clearInterval(id);
-  }, []);
-  useEffect(() => {
-    if (!steps.length) return;
-    const delays = [600, 1100, 1700, 2200];
-    const timers = delays.map((d, i) => setTimeout(() => setStep(i + 1), d));
-    return () => timers.forEach(clearTimeout);
-  }, [steps]);
-  return (
-    <div className="page-loader">
-      <div className="page-loader-logo">🎓</div>
-      <div className="page-loader-text">{label}</div>
-      <div className="page-loader-sub">{sublabel}</div>
-      <div className="page-loader-bar">
-        <div className="page-loader-fill" style={{ width: `${progress}%` }} />
-      </div>
-      {steps.length > 0 && (
-        <div className="page-loader-steps">
-          {steps.map((s, i) => (
-            <div
-              key={i}
-              className={`page-loader-step ${i < step ? "done" : i === step ? "active" : "pending"}`}
-            >
-              <span style={{ display: "inline-flex" }}>
-                <SeminarIcon name={s.ic} size={13} />
-              </span>
-              <span>
-                {i < step ? "✓ " : ""}
-                {s.label}
-              </span>
-              {i === step && (
-                <span className="loader-spin" style={{ marginLeft: "auto" }} />
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+  return <FunnyLoader text={label} subtext={sublabel} fullScreen />;
 }
 
 function ResultsLoader({ onDone, isObserver }) {

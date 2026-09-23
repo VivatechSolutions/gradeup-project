@@ -4,7 +4,7 @@ import {
   AlertTriangle, Check, Mic, MicOff, Shield,
   Timer as TimerIcon, Star, Sun, Moon, GripVertical,
   LayoutGrid, ChevronLeft, ChevronRight, BookOpen,
-  HelpCircle, PencilRuler, BrainCircuit, Download, FileText,
+  HelpCircle, PencilRuler, BrainCircuit, Sparkles,
 } from 'lucide-react';
 import {
   Drawer, DrawerClose, DrawerContent, DrawerFooter,
@@ -15,277 +15,734 @@ import { useTheme } from '../hooks/use-theme';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { mockExamQuestions, Question } from '../lib/mock-exam-data';
 
-
 export const S = `
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
 *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
 .ep * { font-family:'Plus Jakarta Sans',system-ui,sans-serif; }
 
-/* ── THEME VARIABLES ── */
+/* ── THEME VARIABLES (Aligned with Student Dashboard) ── */
 :root {
-  --ep-bg:         #f8fafc;
-  --ep-surface:    #ffffff;
-  --ep-surface2:   #fafafa;
-  --ep-text:       #0f172a;
-  --ep-text2:      #374151;
-  --ep-muted:      #64748b;
-  --ep-subtle:     #94a3b8;
-  --ep-border:     #f1f5f9;
-  --ep-border2:    #e2e8f0;
-  --ep-input-bg:   #fafafa;
-  --ep-opt-bg:     #fafafa;
-  --ep-opt-bdr:    #f1f5f9;
-  --ep-pal-bg:     #ffffff;
-  --ep-rc-bg:      #ffffff;
-  --ep-sub-bg:     #ffffff;
-  --ep-stm-bg:     #f8fafc;
-  --ep-nav-bg:     #ffffff;
-  --ep-nav-text:   #64748b;
-  --ep-btn-un:     #f1f5f9;
-  --ep-btn-un-txt: #64748b;
-  --ep-loader-bg:  #ffffff;
-  --ep-shadow:     0 2px 12px rgba(0,0,0,.05);
+  --ep-page:        #fbfcff;
+  --ep-page-2:      #f5f7ff;
+  --ep-surface:     rgba(255,255,255,.90);
+  --ep-surface2:    #f7faff;
+  --ep-text:        #071235;
+  --ep-text2:       #243048;
+  --ep-muted:       #68708a;
+  --ep-subtle:      #8c94aa;
+  --ep-border:      rgba(15,23,42,.09);
+  --ep-border2:     rgba(15,23,42,.14);
+  --ep-input-bg:    #f8fbff;
+  --ep-opt-bg:      rgba(255,255,255,.78);
+  --ep-opt-bdr:     rgba(15,23,42,.09);
+  --ep-pal-bg:      rgba(255,255,255,.90);
+  --ep-rc-bg:       rgba(255,255,255,.90);
+  --ep-sub-bg:      rgba(255,255,255,.90);
+  --ep-stm-bg:      #f5f8ff;
+  --ep-nav-bg:      rgba(255,255,255,.82);
+  --ep-nav-text:    #071235;
+  --ep-btn-un:      #f1f4fb;
+  --ep-btn-un-txt:  #68708a;
+  --ep-loader-bg:   #fbfcff;
+  --ep-shadow:      0 12px 30px rgba(35,44,87,.10);
+  --ep-shadow-soft: 0 7px 18px rgba(35,44,87,.08);
 }
 
-[data-theme="dark"] {
-  --ep-bg:         #0b1120;
-  --ep-surface:    #1e293b;
-  --ep-surface2:   #0f172a;
-  --ep-text:       #f1f5f9;
-  --ep-text2:      #cbd5e1;
-  --ep-muted:      #94a3b8;
-  --ep-subtle:     #64748b;
-  --ep-border:     rgba(255,255,255,.06);
-  --ep-border2:    rgba(255,255,255,.10);
-  --ep-input-bg:   #0f172a;
-  --ep-opt-bg:     #0f172a;
-  --ep-opt-bdr:    rgba(255,255,255,.08);
-  --ep-pal-bg:     #1e293b;
-  --ep-rc-bg:      #1e293b;
-  --ep-sub-bg:     #1e293b;
-  --ep-stm-bg:     #0f172a;
-  --ep-nav-bg:     #1e293b;
-  --ep-nav-text:   #94a3b8;
-  --ep-btn-un:     #334155;
-  --ep-btn-un-txt: #94a3b8;
-  --ep-loader-bg:  #0b1120;
-  --ep-shadow:     0 2px 12px rgba(0,0,0,.35);
+[data-theme="dark"], .dark {
+  --ep-page:        #080d1f;
+  --ep-page-2:      #10172d;
+  --ep-surface:     rgba(23,31,58,.92);
+  --ep-surface2:    rgba(31,42,76,.72);
+  --ep-text:        #f6f7ff;
+  --ep-text2:       #cbd5e1;
+  --ep-muted:       #b5bfd8;
+  --ep-subtle:      #7f8aa7;
+  --ep-border:      rgba(255,255,255,.12);
+  --ep-border2:     rgba(255,255,255,.18);
+  --ep-input-bg:    rgba(14,20,40,.85);
+  --ep-opt-bg:      rgba(26,35,66,.72);
+  --ep-opt-bdr:     rgba(255,255,255,.12);
+  --ep-pal-bg:      rgba(23,31,58,.92);
+  --ep-rc-bg:       rgba(23,31,58,.92);
+  --ep-sub-bg:      rgba(23,31,58,.92);
+  --ep-stm-bg:      rgba(16,23,45,.75);
+  --ep-nav-bg:      rgba(23,31,58,.88);
+  --ep-nav-text:    #b5bfd8;
+  --ep-btn-un:      rgba(35,47,84,.8);
+  --ep-btn-un-txt:  #cbd5e1;
+  --ep-loader-bg:   #080d1f;
+  --ep-shadow:      0 20px 54px rgba(0,0,0,.38);
+  --ep-shadow-soft: 0 12px 30px rgba(0,0,0,.24);
 }
 
-/* ── ROOT ── */
+/* ── ANIMATIONS ── */
+@keyframes sdFloatBg {
+  from { transform: translate3d(0,0,0) scale(1); }
+  to   { transform: translate3d(24px,28px,0) scale(1.08); }
+}
+@keyframes sdDrift {
+  0%,100% { transform: translate3d(0,0,0) rotate(0deg); }
+  50%     { transform: translate3d(14px,-10px,0) rotate(6deg); }
+}
+@keyframes sdBreathe {
+  0%,100% { transform: translateY(0); }
+  50%     { transform: translateY(-5px); }
+}
+@keyframes sdPop3d {
+  0%,100% { transform: translateY(0) scale(1); }
+  50%     { transform: translateY(-3px) scale(1.03); }
+}
+@keyframes sdProgressSweep {
+  0%   { transform: translateX(-120%) skewX(-20deg); }
+  100% { transform: translateX(220%) skewX(-20deg); }
+}
+@keyframes tpulse {
+  0%,100% { opacity:1; transform:scale(1); }
+  50%     { opacity:.75; transform:scale(1.02); }
+}
+@keyframes wave {
+  0%,100% { height:6px; opacity:.5; }
+  50%     { height:18px; opacity:1; }
+}
+
+/* ── ROOT CONTAINER ── */
 .ep {
   display:flex; flex-direction:column;
-  height:100dvh; background:var(--ep-bg);
+  height:100dvh;
+  background: radial-gradient(circle at 14% 9%,rgba(126,87,255,.12),transparent 26%),
+              radial-gradient(circle at 88% 14%,rgba(255,171,64,.16),transparent 25%),
+              linear-gradient(180deg,var(--ep-page),var(--ep-page-2));
+  color:var(--ep-text);
   overflow:hidden; position:relative;
   transition:background .3s,color .3s;
 }
+[data-theme="dark"] .ep, .dark .ep {
+  background: radial-gradient(circle at 14% 9%,rgba(126,87,255,.16),transparent 26%),
+              radial-gradient(circle at 88% 14%,rgba(255,171,64,.12),transparent 25%),
+              linear-gradient(180deg,var(--ep-page),var(--ep-page-2));
+}
 
-/* ── TOP BAR ── */
+.ep::before, .ep::after {
+  content:""; position:absolute; border-radius:999px;
+  pointer-events:none; filter:blur(1px); opacity:.55;
+  animation:sdFloatBg 14s ease-in-out infinite alternate;
+}
+.ep::before {
+  width:260px; height:260px; left:-80px; top:90px;
+  background:radial-gradient(circle,rgba(46,182,255,.18),transparent 68%);
+}
+.ep::after {
+  width:300px; height:300px; right:-90px; bottom:60px;
+  background:radial-gradient(circle,rgba(255,121,31,.14),transparent 70%);
+  animation-delay:-5s;
+}
+
+.ep-spark {
+  position:absolute; pointer-events:none; z-index:0;
+  border-radius:999px; opacity:.45; animation:sdDrift 9s ease-in-out infinite;
+}
+.ep-spark.s1 { left:50%; top:70px; width:8px; height:8px; background:#ffb21d; box-shadow:28px 24px 0 #27b86a, 68px -10px 0 #2389ff; }
+.ep-spark.s2 { right:14%; top:280px; width:7px; height:7px; background:#ff4d8d; box-shadow:-40px 36px 0 #7e45e8; animation-delay:-3s; }
+
+/* ── TOP BAR (Matching Student Dashboard Studio/AI Header) ── */
 .ep-top {
-  flex-shrink:0; height:58px; padding:0 20px;
-  background:linear-gradient(135deg,#6366f1 0%,#8b5cf6 55%,#ec4899 100%);
+  flex-shrink:0; height:60px; padding:0 22px;
+  background:linear-gradient(135deg,#0c173d 0%,#132b6b 52%,#0f4882 100%);
+  border-bottom:1px solid rgba(255,255,255,.14);
+  box-shadow:0 6px 24px rgba(7,18,53,.22);
   display:flex; align-items:center; justify-content:space-between; gap:12px;
   position:relative; overflow:hidden; z-index:10;
 }
-.ep-top::before { content:''; position:absolute; top:-50px; right:-50px; width:160px; height:160px; border-radius:50%; background:rgba(255,255,255,.08); pointer-events:none; }
-.ep-top-l { display:flex; align-items:center; gap:10px; position:relative; z-index:1; min-width:0; }
-.ep-top-ico { width:36px; height:36px; border-radius:10px; flex-shrink:0; background:rgba(255,255,255,.18); border:1.5px solid rgba(255,255,255,.25); display:flex; align-items:center; justify-content:center; }
-.ep-top-title { font-size:clamp(13px,2vw,17px); font-weight:800; color:#fff; letter-spacing:-.3px; }
-.ep-top-sub   { font-size:10.5px; color:rgba(255,255,255,.68); margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.ep-top-r { display:flex; align-items:center; gap:8px; position:relative; z-index:1; flex-shrink:0; }
+.ep-top::before {
+  content:''; position:absolute; top:-40px; right:200px;
+  width:160px; height:160px; border-radius:50%;
+  background:radial-gradient(circle,rgba(14,165,233,.28),transparent 70%);
+  pointer-events:none; animation:sdBreathe 6s ease-in-out infinite;
+}
+.ep-top::after {
+  content:''; position:absolute; left:-30px; bottom:-40px;
+  width:140px; height:140px; border-radius:50%;
+  background:radial-gradient(circle,rgba(255,178,29,.22),transparent 70%);
+  pointer-events:none;
+}
 
-.ep-timer { display:flex; align-items:center; gap:6px; padding:6px 14px; border-radius:11px; background:rgba(255,255,255,.16); border:1.5px solid rgba(255,255,255,.22); }
-.ep-timer.warn { background:rgba(239,68,68,.22); border-color:rgba(239,68,68,.4); animation:tpulse 1s ease-in-out infinite; }
-@keyframes tpulse { 0%,100%{opacity:1} 50%{opacity:.65} }
-.ep-timer-val { font-size:clamp(15px,2.5vw,21px); font-weight:800; color:#fff; letter-spacing:-1px; }
-.ep-timer.warn .ep-timer-val { color:#fca5a5; }
+.ep-top-l { display:flex; align-items:center; gap:12px; position:relative; z-index:1; min-width:0; }
+.ep-top-ico {
+  width:38px; height:38px; border-radius:12px; flex-shrink:0;
+  background:linear-gradient(145deg,rgba(255,255,255,.24),rgba(255,255,255,.08));
+  border:1.5px solid rgba(255,255,255,.28);
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 4px 12px rgba(0,0,0,.15);
+  animation:sdPop3d 4s ease-in-out infinite;
+}
+.ep-top-title { font-size:clamp(14px,2.1vw,17px); font-weight:800; color:#ffffff; letter-spacing:-.2px; }
+.ep-top-sub   {
+  display:inline-flex; align-items:center; gap:6px;
+  font-size:11px; font-weight:700; color:rgba(255,255,255,.75);
+  margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.ep-top-sub-chip {
+  padding:1px 7px; border-radius:999px;
+  background:rgba(35,137,255,.28); border:1px solid rgba(255,255,255,.24);
+  color:#7ee7b7; font-size:10px; font-weight:800;
+}
 
-.ep-icobtn { width:34px; height:34px; border-radius:10px; flex-shrink:0; background:rgba(255,255,255,.18); border:1.5px solid rgba(255,255,255,.2); display:flex; align-items:center; justify-content:center; cursor:pointer; color:#fff; transition:all .2s; }
-.ep-icobtn:hover { background:rgba(255,255,255,.28); }
+.ep-top-r { display:flex; align-items:center; gap:10px; position:relative; z-index:1; flex-shrink:0; }
+
+.ep-timer {
+  display:flex; align-items:center; gap:8px; padding:6px 14px;
+  border-radius:13px;
+  background:rgba(255,255,255,.14);
+  border:1.5px solid rgba(255,255,255,.25);
+  backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+  box-shadow:0 4px 14px rgba(0,0,0,.12);
+  transition:all .2s ease;
+}
+.ep-timer.warn {
+  background:linear-gradient(135deg,rgba(239,68,68,.32),rgba(220,38,38,.42));
+  border-color:rgba(254,202,202,.5);
+  animation:tpulse 1.1s ease-in-out infinite;
+  box-shadow:0 0 16px rgba(239,68,68,.4);
+}
+.ep-timer-val {
+  font-size:clamp(15px,2.4vw,20px); font-weight:900; color:#fff;
+  letter-spacing:-.5px; font-variant-numeric:tabular-nums;
+}
+.ep-timer.warn .ep-timer-val { color:#fee2e2; }
+
+.ep-icobtn {
+  width:36px; height:36px; border-radius:11px; flex-shrink:0;
+  background:rgba(255,255,255,.14);
+  border:1.5px solid rgba(255,255,255,.22);
+  backdrop-filter:blur(12px);
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer; color:#fff; transition:all .2s;
+  box-shadow:0 4px 12px rgba(0,0,0,.1);
+}
+.ep-icobtn:hover {
+  background:rgba(255,255,255,.26);
+  transform:translateY(-2px);
+  box-shadow:0 6px 16px rgba(0,0,0,.18);
+}
 
 /* ── BODY GRID ── */
 .ep-body {
-  flex:1; display:grid; grid-template-columns:1fr 280px;
-  gap:12px; padding:12px 18px 12px; min-height:0; overflow:hidden;
+  flex:1; display:grid; grid-template-columns:1fr 288px;
+  gap:14px; padding:14px 22px; min-height:0; overflow:hidden;
+  position:relative; z-index:1;
 }
 
-/* ── LEFT ── */
+/* ── LEFT: QUESTION SECTION ── */
 .ep-left { display:flex; flex-direction:column; min-height:0; overflow:hidden; }
 
 .ep-qcard {
   flex:1; display:flex; flex-direction:column;
-  background:var(--ep-surface); border-radius:18px;
-  border:1px solid var(--ep-border); box-shadow:var(--ep-shadow);
+  background:var(--ep-surface);
+  backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
+  border-radius:20px;
+  border:1px solid var(--ep-border);
+  box-shadow:var(--ep-shadow);
   overflow:hidden; min-height:0;
-  transition:background .3s,border-color .3s;
+  transition:background .3s,border-color .3s,box-shadow .3s;
+  position:relative;
+}
+.ep-qcard::before {
+  content:""; position:absolute; top:0; left:0; right:0; height:3px;
+  background:linear-gradient(90deg,#2389ff,#7b2cff 50%,#ffb21d);
+  z-index:3;
 }
 
-/* Q header */
-.ep-qhead { flex-shrink:0; padding:10px 16px; border-bottom:1px solid var(--ep-border); display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
-.epbadge  { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; padding:3px 9px; border-radius:20px; }
-.epbadge-q   { background:rgba(99,102,241,.1); color:#6366f1; }
-.epbadge-mcq { background:rgba(59,130,246,.1); color:#3b82f6; }
-.epbadge-sh  { background:rgba(245,158,11,.1); color:#d97706; }
-.epbadge-lg  { background:rgba(139,92,246,.1); color:#8b5cf6; }
-.epbadge-sp  { background:rgba(16,185,129,.1); color:#059669; }
-.epbadge-mk  { font-size:10.5px; font-weight:600; color:var(--ep-subtle); margin-left:auto; }
+/* Q Header */
+.ep-qhead {
+  flex-shrink:0; padding:12px 20px;
+  border-bottom:1px solid var(--ep-border);
+  background:linear-gradient(180deg,rgba(255,255,255,.4),transparent);
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+}
+[data-theme="dark"] .ep-qhead, .dark .ep-qhead {
+  background:linear-gradient(180deg,rgba(255,255,255,.04),transparent);
+}
 
-/* Q body */
-.ep-qbody { flex:1; overflow-y:auto; padding:14px 16px; min-height:0; }
-.ep-qbody::-webkit-scrollbar { width:3px; }
-.ep-qbody::-webkit-scrollbar-thumb { background:rgba(99,102,241,.18); border-radius:99px; }
+.epbadge {
+  font-size:10.5px; font-weight:800; text-transform:uppercase;
+  letter-spacing:.05em; padding:4px 11px; border-radius:999px;
+  display:inline-flex; align-items:center; gap:5px;
+  transition:all .18s ease;
+}
+.epbadge-q {
+  background:linear-gradient(135deg,rgba(37,99,235,.15),rgba(14,165,233,.15));
+  border:1px solid rgba(14,165,233,.25);
+  color:#0284c7;
+}
+[data-theme="dark"] .epbadge-q, .dark .epbadge-q { color:#38bdf8; border-color:rgba(56,189,248,.3); }
 
-.ep-qtext { font-size:clamp(13.5px,1.7vw,16px); font-weight:600; color:var(--ep-text); line-height:1.55; margin-bottom:14px; }
+.epbadge-mcq { background:rgba(35,137,255,.12); color:#0284c7; border:1px solid rgba(35,137,255,.2); }
+[data-theme="dark"] .epbadge-mcq, .dark .epbadge-mcq { color:#38bdf8; }
 
-/* MCQ */
-.ep-opt { display:flex; align-items:center; gap:10px; padding:10px 13px; border-radius:12px; border:2px solid var(--ep-opt-bdr); background:var(--ep-opt-bg); cursor:pointer; margin-bottom:7px; transition:all .16s cubic-bezier(.4,0,.2,1); }
-.ep-opt:hover { border-color:#c7d2fe; background:rgba(99,102,241,.06); }
-[data-theme="dark"] .ep-opt:hover { border-color:#818cf8; background:rgba(99,102,241,.10); }
-.ep-opt.sel   { border-color:#6366f1; background:rgba(99,102,241,.06); box-shadow:0 0 0 3px rgba(99,102,241,.09); }
-[data-theme="dark"] .ep-opt.sel { background:rgba(99,102,241,.12); }
-.ep-opt-radio { width:16px; height:16px; border-radius:50%; flex-shrink:0; border:2px solid var(--ep-border2); display:flex; align-items:center; justify-content:center; transition:all .16s; }
-.ep-opt.sel .ep-opt-radio { border-color:#6366f1; background:#6366f1; }
-.ep-opt-dot   { width:6px; height:6px; border-radius:50%; background:#fff; }
-.ep-opt-lbl   { font-size:13px; font-weight:500; color:var(--ep-text2); flex:1; line-height:1.4; cursor:pointer; }
-.ep-opt.sel .ep-opt-lbl { color:#4338ca; font-weight:600; }
-[data-theme="dark"] .ep-opt.sel .ep-opt-lbl { color:#a5b4fc; }
+.epbadge-sh  { background:rgba(255,121,31,.12); color:#ea580c; border:1px solid rgba(255,121,31,.2); }
+[data-theme="dark"] .epbadge-sh, .dark .epbadge-sh { color:#fb923c; }
 
-/* Textarea */
-.ep-ta { width:100%; border-radius:12px; border:2px solid var(--ep-border2); padding:11px 13px; font-size:13.5px; font-family:inherit; color:var(--ep-text); resize:none; outline:none; transition:border .2s,background .3s,color .3s; background:var(--ep-input-bg); line-height:1.6; }
-.ep-ta:focus { border-color:#6366f1; background:var(--ep-surface); box-shadow:0 0 0 3px rgba(99,102,241,.08); }
+.epbadge-lg  { background:rgba(126,69,232,.12); color:#7c3aed; border:1px solid rgba(126,69,232,.2); }
+[data-theme="dark"] .epbadge-lg, .dark .epbadge-lg { color:#a78bfa; }
 
-/* Speech */
-.ep-speech-area { display:flex; flex-direction:column; gap:10px; align-items:center; }
-.ep-speech-transcript { width:100%; border-radius:12px; border:2px solid var(--ep-border2); padding:11px 13px; font-size:13.5px; color:var(--ep-text); background:var(--ep-input-bg); min-height:90px; line-height:1.6; font-family:inherit; resize:none; outline:none; transition:background .3s,color .3s,border-color .3s; }
-.ep-speech-btn { display:flex; align-items:center; gap:8px; padding:10px 24px; border-radius:12px; border:none; cursor:pointer; font-family:inherit; font-size:13.5px; font-weight:700; color:#fff; transition:all .2s; }
-.ep-speech-btn.idle   { background:linear-gradient(135deg,#10b981,#0d9488); box-shadow:0 4px 12px rgba(16,185,129,.3); }
-.ep-speech-btn.active { background:linear-gradient(135deg,#ef4444,#dc2626); box-shadow:0 4px 12px rgba(239,68,68,.3); animation:sPulse .9s ease-in-out infinite; }
-.ep-speech-btn.idle:hover   { transform:translateY(-1px); box-shadow:0 6px 16px rgba(16,185,129,.4); }
-.ep-speech-btn.active:hover { transform:translateY(-1px); }
-@keyframes sPulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.02)} }
-.ep-speech-hint { font-size:11.5px; color:var(--ep-subtle); text-align:center; }
-.ep-speech-listening { display:flex; align-items:center; gap:6px; font-size:11.5px; color:#6366f1; font-weight:600; }
-.ep-speech-wave { display:flex; align-items:center; gap:2px; }
-.ep-speech-wave span { display:inline-block; width:3px; border-radius:3px; background:#6366f1; animation:wave 0.8s ease-in-out infinite; }
+.epbadge-sp  { background:rgba(39,184,106,.12); color:#16a34a; border:1px solid rgba(39,184,106,.2); }
+[data-theme="dark"] .epbadge-sp, .dark .epbadge-sp { color:#4ade80; }
+
+.epbadge-mk  {
+  font-size:11px; font-weight:800; color:var(--ep-muted);
+  margin-left:auto; display:inline-flex; align-items:center; gap:4px;
+  padding:3px 10px; border-radius:999px; background:var(--ep-surface2);
+  border:1px solid var(--ep-border);
+}
+
+/* Q Body (Independent Scroll) */
+.ep-qbody {
+  flex:1; overflow-y:auto; padding:20px; min-height:0;
+  display:flex; flex-direction:column;
+}
+.ep-qbody::-webkit-scrollbar { width:4px; }
+.ep-qbody::-webkit-scrollbar-thumb {
+  background:rgba(35,137,255,.25); border-radius:99px;
+}
+
+.ep-qtext {
+  font-size:clamp(15px,1.8vw,18px); font-weight:800;
+  color:var(--ep-text); line-height:1.6; margin-bottom:18px;
+  letter-spacing:-.1px;
+}
+
+/* MCQ Options */
+.ep-opt-grid { display:flex; flex-direction:column; gap:9px; }
+.ep-opt {
+  display:flex; align-items:center; gap:12px; padding:12px 16px;
+  border-radius:15px; border:2px solid var(--ep-opt-bdr);
+  background:var(--ep-opt-bg); cursor:pointer;
+  transition:all .2s cubic-bezier(.22,1,.36,1);
+  box-shadow:var(--ep-shadow-soft);
+  position:relative; overflow:hidden;
+}
+.ep-opt::before {
+  content:""; position:absolute; inset:0;
+  background:linear-gradient(90deg,rgba(35,137,255,.05),transparent);
+  opacity:0; transition:opacity .2s;
+}
+.ep-opt:hover {
+  border-color:#38bdf8;
+  transform:translateY(-2px);
+  box-shadow:0 8px 20px rgba(35,137,255,.14);
+}
+.ep-opt:hover::before { opacity:1; }
+
+.ep-opt.sel {
+  border-color:#2563eb;
+  background:linear-gradient(135deg,rgba(37,99,235,.08),rgba(14,165,233,.08));
+  box-shadow:0 0 0 3px rgba(37,99,235,.15), 0 8px 22px rgba(35,137,255,.18);
+  transform:translateY(-1px);
+}
+[data-theme="dark"] .ep-opt.sel, .dark .ep-opt.sel {
+  border-color:#38bdf8;
+  background:linear-gradient(135deg,rgba(56,189,248,.14),rgba(37,99,235,.14));
+  box-shadow:0 0 0 3px rgba(56,189,248,.2), 0 8px 22px rgba(0,0,0,.35);
+}
+
+.ep-opt-idx {
+  width:28px; height:28px; border-radius:10px; flex-shrink:0;
+  display:grid; place-items:center; font-size:12px; font-weight:800;
+  background:var(--ep-surface2); border:1px solid var(--ep-border2);
+  color:var(--ep-muted); transition:all .2s ease;
+}
+.ep-opt.sel .ep-opt-idx {
+  background:linear-gradient(135deg,#2563eb,#0ea5e9);
+  color:#fff; border-color:transparent;
+  box-shadow:0 3px 8px rgba(37,99,235,.35);
+}
+
+.ep-opt-lbl {
+  font-size:14px; font-weight:600; color:var(--ep-text2);
+  flex:1; line-height:1.45; cursor:pointer;
+}
+.ep-opt.sel .ep-opt-lbl {
+  color:var(--ep-text); font-weight:800;
+}
+
+.ep-opt-radio {
+  width:18px; height:18px; border-radius:50%; flex-shrink:0;
+  border:2px solid var(--ep-border2); display:flex;
+  align-items:center; justify-content:center; transition:all .2s;
+}
+.ep-opt.sel .ep-opt-radio {
+  border-color:#2563eb; background:#2563eb;
+  box-shadow:0 0 8px rgba(37,99,235,.4);
+}
+[data-theme="dark"] .ep-opt.sel .ep-opt-radio, .dark .ep-opt.sel .ep-opt-radio {
+  border-color:#38bdf8; background:#38bdf8;
+}
+.ep-opt-dot { width:7px; height:7px; border-radius:50%; background:#fff; }
+
+/* Textarea for Short & Long */
+.ep-ta {
+  width:100%; border-radius:15px; border:2px solid var(--ep-border2);
+  padding:14px 16px; font-size:14px; font-family:inherit;
+  color:var(--ep-text); resize:none; outline:none;
+  background:var(--ep-input-bg); line-height:1.65;
+  transition:border .2s,background .3s,box-shadow .2s;
+}
+.ep-ta:focus {
+  border-color:#2563eb; background:var(--ep-surface);
+  box-shadow:0 0 0 4px rgba(37,99,235,.15);
+}
+[data-theme="dark"] .ep-ta:focus, .dark .ep-ta:focus {
+  border-color:#38bdf8;
+  box-shadow:0 0 0 4px rgba(56,189,248,.2);
+}
+
+/* Speech Area */
+.ep-speech-area { display:flex; flex-direction:column; gap:12px; align-items:center; }
+.ep-speech-transcript {
+  width:100%; border-radius:15px; border:2px solid var(--ep-border2);
+  padding:14px 16px; font-size:14px; color:var(--ep-text);
+  background:var(--ep-input-bg); min-height:100px; line-height:1.65;
+  font-family:inherit; resize:none; outline:none;
+  transition:background .3s,color .3s,border-color .3s;
+}
+.ep-speech-btn {
+  display:inline-flex; align-items:center; gap:9px; padding:12px 28px;
+  border-radius:14px; border:none; cursor:pointer; font-family:inherit;
+  font-size:14px; font-weight:800; color:#fff; transition:all .2s;
+}
+.ep-speech-btn.idle {
+  background:linear-gradient(135deg,#10b981,#059669);
+  box-shadow:0 6px 18px rgba(16,185,129,.35);
+}
+.ep-speech-btn.idle:hover {
+  transform:translateY(-2px) scale(1.02);
+  box-shadow:0 10px 24px rgba(16,185,129,.45);
+}
+.ep-speech-btn.active {
+  background:linear-gradient(135deg,#ff6b4a,#ef4444);
+  box-shadow:0 6px 18px rgba(239,68,68,.4);
+  animation:tpulse 1s ease-in-out infinite;
+}
+.ep-speech-listening {
+  display:flex; align-items:center; gap:8px;
+  font-size:12.5px; color:#2563eb; font-weight:800;
+}
+[data-theme="dark"] .ep-speech-listening, .dark .ep-speech-listening { color:#38bdf8; }
+.ep-speech-wave { display:flex; align-items:center; gap:3px; }
+.ep-speech-wave span {
+  display:inline-block; width:3.5px; border-radius:4px;
+  background:#2563eb; animation:wave 0.8s ease-in-out infinite;
+}
+[data-theme="dark"] .ep-speech-wave span, .dark .ep-speech-wave span { background:#38bdf8; }
 .ep-speech-wave span:nth-child(1) { animation-delay:0s; }
 .ep-speech-wave span:nth-child(2) { animation-delay:0.15s; }
 .ep-speech-wave span:nth-child(3) { animation-delay:0.3s; }
 .ep-speech-wave span:nth-child(4) { animation-delay:0.45s; }
-@keyframes wave { 0%,100%{height:6px;opacity:.5} 50%{height:16px;opacity:1} }
 
-/* Q footer */
-.ep-qfoot { flex-shrink:0; padding:9px 16px; border-top:1px solid var(--ep-border); display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
-.ep-nav { display:flex; align-items:center; gap:5px; padding:7px 13px; border-radius:10px; border:1.5px solid var(--ep-border2); background:var(--ep-nav-bg); font-family:inherit; font-size:12px; font-weight:600; cursor:pointer; color:var(--ep-nav-text); transition:all .18s; }
-.ep-nav:hover:not(:disabled) { border-color:#6366f1; color:#6366f1; }
+.ep-speech-hint { font-size:12px; color:var(--ep-subtle); text-align:center; font-weight:600; }
+
+/* Q Footer */
+.ep-qfoot {
+  flex-shrink:0; padding:12px 20px;
+  border-top:1px solid var(--ep-border);
+  background:linear-gradient(180deg,transparent,rgba(255,255,255,.3));
+  display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;
+}
+[data-theme="dark"] .ep-qfoot, .dark .ep-qfoot {
+  background:linear-gradient(180deg,transparent,rgba(255,255,255,.04));
+}
+
+.ep-nav {
+  display:inline-flex; align-items:center; gap:6px; padding:9px 16px;
+  border-radius:13px; border:1.5px solid var(--ep-border2);
+  background:var(--ep-nav-bg); font-family:inherit; font-size:12.5px;
+  font-weight:700; cursor:pointer; color:var(--ep-nav-text);
+  box-shadow:var(--ep-shadow-soft); transition:all .2s;
+}
+.ep-nav:hover:not(:disabled) {
+  border-color:#2563eb; color:#2563eb; transform:translateY(-1px);
+}
+[data-theme="dark"] .ep-nav:hover:not(:disabled), .dark .ep-nav:hover:not(:disabled) {
+  border-color:#38bdf8; color:#38bdf8;
+}
 .ep-nav:disabled { opacity:.35; cursor:not-allowed; }
-.ep-foot-r { display:flex; gap:6px; flex-wrap:wrap; }
-.ep-rev { display:flex; align-items:center; gap:5px; padding:7px 12px; border-radius:10px; border:1.5px solid #f59e0b; background:rgba(245,158,11,.06); font-family:inherit; font-size:11.5px; font-weight:600; cursor:pointer; color:#d97706; transition:all .18s; }
-.ep-rev:hover { background:rgba(245,158,11,.11); }
-.ep-sav { display:flex; align-items:center; gap:5px; padding:7px 14px; border-radius:10px; border:none; background:linear-gradient(135deg,#6366f1,#8b5cf6); font-family:inherit; font-size:12px; font-weight:700; cursor:pointer; color:#fff; box-shadow:0 3px 9px rgba(99,102,241,.26); transition:all .18s; }
-.ep-sav:hover { transform:translateY(-1px); box-shadow:0 5px 13px rgba(99,102,241,.36); }
 
-/* ── RIGHT PANEL ── */
-.ep-right { display:flex; flex-direction:column; gap:8px; min-height:0; overflow:hidden; }
+.ep-foot-r { display:flex; gap:8px; flex-wrap:wrap; }
 
-.ep-rc { background:var(--ep-rc-bg); border-radius:14px; border:1px solid var(--ep-border); box-shadow:var(--ep-shadow); overflow:hidden; flex-shrink:0; transition:background .3s,border-color .3s; }
+.ep-rev {
+  display:inline-flex; align-items:center; gap:6px; padding:9px 16px;
+  border-radius:13px; border:1.5px solid rgba(255,121,31,.35);
+  background:linear-gradient(135deg,rgba(255,121,31,.08),rgba(255,178,29,.08));
+  font-family:inherit; font-size:12px; font-weight:800; cursor:pointer;
+  color:#ea580c; transition:all .2s; box-shadow:var(--ep-shadow-soft);
+}
+[data-theme="dark"] .ep-rev, .dark .ep-rev { color:#fb923c; border-color:rgba(251,146,60,.4); }
+.ep-rev:hover {
+  background:linear-gradient(135deg,rgba(255,121,31,.18),rgba(255,178,29,.18));
+  transform:translateY(-1px); box-shadow:0 6px 16px rgba(255,121,31,.2);
+}
 
-/* Proctoring */
-.ep-ph { padding:8px 12px; background:linear-gradient(135deg,rgba(99,102,241,.06),rgba(139,92,246,.04)); border-bottom:1px solid var(--ep-border); display:flex; align-items:center; justify-content:space-between; }
-[data-theme="dark"] .ep-ph { background:linear-gradient(135deg,rgba(99,102,241,.12),rgba(139,92,246,.08)); }
-.ep-pt { font-size:11.5px; font-weight:700; color:var(--ep-text); display:flex; align-items:center; gap:5px; }
-.ep-ps { display:flex; align-items:center; gap:4px; font-size:10px; font-weight:600; color:#059669; }
-.ep-pd { width:6px; height:6px; border-radius:50%; background:#22c55e; animation:pDot 1.5s ease-in-out infinite; }
-@keyframes pDot { 0%,100%{opacity:1} 50%{opacity:.3} }
-.ep-wc { height:90px; background:#0f172a; overflow:hidden; }
-.ep-pf { padding:4px 12px; font-size:9.5px; color:var(--ep-subtle); text-align:center; background:var(--ep-surface2); border-top:1px solid var(--ep-border); }
+.ep-sav {
+  display:inline-flex; align-items:center; gap:6px; padding:9px 18px;
+  border-radius:13px; border:none;
+  background:linear-gradient(135deg,#2563eb,#0ea5e9);
+  font-family:inherit; font-size:12.5px; font-weight:800; cursor:pointer;
+  color:#fff; box-shadow:0 6px 18px rgba(14,165,233,.32);
+  transition:all .2s;
+}
+.ep-sav:hover {
+  transform:translateY(-2px) scale(1.02);
+  box-shadow:0 10px 24px rgba(14,165,233,.45);
+}
 
-/* Palette */
+/* ── RIGHT PANEL (Desktop) ── */
+.ep-right { display:flex; flex-direction:column; gap:10px; min-height:0; overflow:hidden; }
+
+/* Camera Preview Card */
+.ep-rc {
+  background:var(--ep-rc-bg);
+  backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
+  border-radius:16px; border:1px solid var(--ep-border);
+  box-shadow:var(--ep-shadow); overflow:hidden; flex-shrink:0;
+  transition:background .3s,border-color .3s;
+}
+.ep-ph {
+  padding:8px 12px;
+  background:linear-gradient(135deg,rgba(35,137,255,.08),rgba(14,165,233,.04));
+  border-bottom:1px solid var(--ep-border);
+  display:flex; align-items:center; justify-content:space-between;
+}
+[data-theme="dark"] .ep-ph, .dark .ep-ph {
+  background:linear-gradient(135deg,rgba(56,189,248,.12),rgba(35,137,255,.06));
+}
+.ep-pt {
+  font-size:11.5px; font-weight:800; color:var(--ep-text);
+  display:flex; align-items:center; gap:6px;
+}
+.ep-ps {
+  display:flex; align-items:center; gap:4px; font-size:10px;
+  font-weight:700; color:#10b981;
+}
+.ep-pd {
+  width:6px; height:6px; border-radius:50%; background:#10b981;
+  animation:tpulse 1.4s ease-in-out infinite;
+}
+.ep-wc { height:84px; background:#080d1f; overflow:hidden; }
+.ep-pf {
+  padding:4px 12px; font-size:9.5px; font-weight:600;
+  color:var(--ep-subtle); text-align:center;
+  background:var(--ep-surface2); border-top:1px solid var(--ep-border);
+}
+
+/* Palette / Navigator Card */
 .ep-pal {
   flex:1; display:flex; flex-direction:column;
-  background:var(--ep-pal-bg); border-radius:14px; border:1px solid var(--ep-border);
+  background:var(--ep-pal-bg);
+  backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
+  border-radius:16px; border:1px solid var(--ep-border);
   box-shadow:var(--ep-shadow); overflow:hidden; min-height:0;
   transition:background .3s,border-color .3s;
 }
-.ep-palh   { flex-shrink:0; padding:9px 12px; border-bottom:1px solid var(--ep-border); font-size:12px; font-weight:700; color:var(--ep-text); }
-.ep-palp   { flex-shrink:0; padding:6px 12px; }
-.ep-palpr  { display:flex; justify-content:space-between; font-size:10px; color:var(--ep-muted); font-weight:500; margin-bottom:3px; }
-.ep-palpb  { height:4px; background:var(--ep-border); border-radius:4px; overflow:hidden; }
-.ep-palpf  { height:100%; border-radius:4px; background:linear-gradient(90deg,#6366f1,#8b5cf6); transition:width .5s; }
+.ep-palh {
+  flex-shrink:0; padding:10px 14px; border-bottom:1px solid var(--ep-border);
+  font-size:12.5px; font-weight:800; color:var(--ep-text);
+  display:flex; align-items:center; gap:6px;
+}
+.ep-palp { flex-shrink:0; padding:8px 14px; }
+.ep-palpr {
+  display:flex; justify-content:space-between; font-size:11px;
+  color:var(--ep-muted); font-weight:700; margin-bottom:5px;
+}
+.ep-palpb {
+  height:6px; background:rgba(35,137,255,.12);
+  border-radius:999px; overflow:hidden; position:relative;
+}
+.ep-palpf {
+  height:100%; border-radius:inherit;
+  background:linear-gradient(90deg,#2389ff,#6349ff 72%,#ffb21d);
+  transition:width .5s cubic-bezier(.22,1,.36,1);
+  position:relative;
+}
+.ep-palpf::after {
+  content:""; position:absolute; top:0; bottom:0; width:30px;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.6),transparent);
+  animation:sdProgressSweep 2.5s ease-in-out infinite;
+}
 
-.ep-palscr { flex:1; padding:6px 12px; min-height:0; overflow-y:auto; }
+.ep-palscr {
+  flex:1; padding:6px 12px; min-height:0; overflow-y:auto;
+}
 .ep-palscr::-webkit-scrollbar { width:3px; }
-.ep-palscr::-webkit-scrollbar-thumb { background:rgba(99,102,241,.18); border-radius:99px; }
-.ep-palgr { display:grid; grid-template-columns:repeat(6,1fr); gap:5px; }
+.ep-palscr::-webkit-scrollbar-thumb {
+  background:rgba(35,137,255,.2); border-radius:99px;
+}
+.ep-palgr { display:grid; grid-template-columns:repeat(6,1fr); gap:6px; }
 
-.ep-pb { width:100%; aspect-ratio:1; border-radius:7px; border:none; font-family:inherit; font-size:10.5px; font-weight:700; cursor:pointer; transition:all .15s; }
-.epb-un  { background:var(--ep-btn-un); color:var(--ep-btn-un-txt); }
-.epb-un:hover { background:var(--ep-border2); }
-.epb-ans { background:linear-gradient(135deg,#10b981,#059669); color:#fff; box-shadow:0 1px 5px rgba(16,185,129,.26); }
-.epb-rev { background:linear-gradient(135deg,#f59e0b,#d97706); color:#fff; box-shadow:0 1px 5px rgba(245,158,11,.26); }
-.epb-cur { background:linear-gradient(135deg,#6366f1,#8b5cf6); color:#fff; box-shadow:0 2px 7px rgba(99,102,241,.34); transform:scale(1.07); }
+.ep-pb {
+  width:100%; aspect-ratio:1; border-radius:9px; border:none;
+  font-family:inherit; font-size:11px; font-weight:800;
+  cursor:pointer; transition:all .18s; position:relative;
+}
+.epb-un {
+  background:var(--ep-btn-un); color:var(--ep-btn-un-txt);
+  border:1px solid var(--ep-border);
+}
+.epb-un:hover {
+  background:var(--ep-border2); transform:translateY(-1px);
+}
+.epb-ans {
+  background:linear-gradient(135deg,#27b86a,#14915d);
+  color:#fff; box-shadow:0 3px 8px rgba(39,184,106,.32);
+}
+.epb-rev {
+  background:linear-gradient(135deg,#ff791f,#ffb21d);
+  color:#fff; box-shadow:0 3px 8px rgba(255,121,31,.32);
+}
+.epb-cur {
+  background:linear-gradient(135deg,#2563eb,#0ea5e9);
+  color:#fff; box-shadow:0 4px 12px rgba(14,165,233,.45);
+  transform:scale(1.08); z-index:2;
+}
 
-.ep-palleg { flex-shrink:0; padding:5px 12px 8px; display:flex; flex-wrap:wrap; gap:5px; border-top:1px solid var(--ep-border); }
-.ep-leg    { display:flex; align-items:center; gap:3px; font-size:9.5px; color:var(--ep-muted); font-weight:500; }
+.ep-palleg {
+  flex-shrink:0; padding:6px 12px 8px; display:flex; flex-wrap:wrap;
+  gap:8px; border-top:1px solid var(--ep-border);
+  background:var(--ep-surface2);
+}
+.ep-leg { display:flex; align-items:center; gap:4px; font-size:10px; color:var(--ep-muted); font-weight:700; }
 .ep-legdot { width:8px; height:8px; border-radius:3px; flex-shrink:0; }
 
-/* Stats + submit */
-.ep-sub { flex-shrink:0; background:var(--ep-sub-bg); border-radius:14px; border:1px solid var(--ep-border); box-shadow:var(--ep-shadow); padding:10px 12px; display:flex; flex-direction:column; gap:6px; transition:background .3s,border-color .3s; }
-.ep-subgr { display:grid; grid-template-columns:repeat(4,1fr); gap:5px; }
-.ep-stm   { padding:6px; border-radius:9px; background:var(--ep-stm-bg); border:1px solid var(--ep-border); text-align:center; transition:background .3s,border-color .3s; }
-.ep-stmv  { font-size:15px; font-weight:800; color:var(--ep-text); line-height:1; }
-.ep-stml  { font-size:9px; color:var(--ep-subtle); margin-top:2px; font-weight:500; }
-.ep-stm.g .ep-stmv { color:#059669; }
-.ep-stm.a .ep-stmv { color:#d97706; }
-.ep-stm.i .ep-stmv { color:#6366f1; }
-.ep-subbtn { width:100%; padding:10px; border-radius:11px; border:none; background:linear-gradient(135deg,#ef4444,#dc2626); color:#fff; font-family:inherit; font-size:13px; font-weight:800; cursor:pointer; transition:all .2s; box-shadow:0 3px 12px rgba(239,68,68,.28); letter-spacing:.03em; }
-.ep-subbtn:hover { transform:translateY(-1px); box-shadow:0 6px 18px rgba(239,68,68,.4); }
+/* Stats & Submit Card */
+.ep-sub {
+  flex-shrink:0; background:var(--ep-sub-bg);
+  backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
+  border-radius:16px; border:1px solid var(--ep-border);
+  box-shadow:var(--ep-shadow); padding:12px; display:flex; flex-direction:column;
+  gap:8px; transition:background .3s,border-color .3s;
+}
+.ep-subgr { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
+.ep-stm {
+  padding:7px 4px; border-radius:10px; background:var(--ep-stm-bg);
+  border:1px solid var(--ep-border); text-align:center;
+  transition:all .2s;
+}
+.ep-stmv { font-size:15px; font-weight:900; color:var(--ep-text); line-height:1; }
+.ep-stml { font-size:9.5px; color:var(--ep-subtle); margin-top:3px; font-weight:700; }
+.ep-stm.g .ep-stmv { color:#16a34a; }
+[data-theme="dark"] .ep-stm.g .ep-stmv, .dark .ep-stm.g .ep-stmv { color:#4ade80; }
+.ep-stm.a .ep-stmv { color:#ea580c; }
+[data-theme="dark"] .ep-stm.a .ep-stmv, .dark .ep-stm.a .ep-stmv { color:#fb923c; }
+.ep-stm.i .ep-stmv { color:#2563eb; }
+[data-theme="dark"] .ep-stm.i .ep-stmv, .dark .ep-stm.i .ep-stmv { color:#38bdf8; }
 
-/* ── SYSTEM CHECK ── */
-.sc-shell { position:fixed; inset:0; background:var(--ep-bg); display:flex; align-items:center; justify-content:center; z-index:999; padding:20px; }
-.sc-card  { background:var(--ep-surface); border-radius:22px; padding:26px 30px; max-width:400px; width:100%; border:1px solid var(--ep-border); box-shadow:0 8px 40px rgba(0,0,0,.1); text-align:center; }
-[data-theme="dark"] .sc-card { box-shadow:0 8px 40px rgba(0,0,0,.4); }
-.sc-steps { display:flex; align-items:center; gap:5px; justify-content:center; margin-bottom:16px; }
-.sc-step  { height:4px; width:26px; border-radius:4px; background:var(--ep-border2); transition:background .3s; }
-.sc-step.d{ background:#6366f1; }
-.sc-step.c{ background:linear-gradient(90deg,#6366f1,#8b5cf6); }
-.sc-ico   { width:68px; height:68px; border-radius:20px; margin:0 auto 14px; display:flex; align-items:center; justify-content:center; }
-.sc-title { font-size:18px; font-weight:800; color:var(--ep-text); margin-bottom:6px; }
-.sc-desc  { font-size:13px; color:var(--ep-muted); line-height:1.6; margin-bottom:18px; }
-.sc-webcam{ border-radius:12px; overflow:hidden; border:2px solid var(--ep-border); margin-bottom:14px; aspect-ratio:16/9; background:#0f172a; }
-.sc-denied{ display:flex; align-items:center; justify-content:center; gap:6px; padding:9px 12px; border-radius:10px; background:rgba(239,68,68,.06); border:1px solid rgba(239,68,68,.14); color:#ef4444; font-size:12px; font-weight:600; margin-bottom:12px; }
-.sc-btn   { width:100%; padding:12px; border-radius:12px; border:none; font-family:inherit; font-size:13px; font-weight:700; cursor:pointer; transition:all .2s; }
-.sc-ind   { background:linear-gradient(135deg,#6366f1,#8b5cf6); color:#fff; box-shadow:0 4px 13px rgba(99,102,241,.3); }
-.sc-red   { background:linear-gradient(135deg,#ef4444,#dc2626); color:#fff; box-shadow:0 4px 13px rgba(239,68,68,.3); }
-.sc-btn:hover { transform:translateY(-1px); }
+.ep-subbtn {
+  width:100%; padding:11px; border-radius:13px; border:none;
+  background:linear-gradient(135deg,#ff6b4a,#ff9436);
+  color:#fff; font-family:inherit; font-size:13px; font-weight:900;
+  cursor:pointer; transition:all .2s cubic-bezier(.22,1,.36,1);
+  box-shadow:0 6px 18px rgba(255,107,74,.36); letter-spacing:.03em;
+}
+.ep-subbtn:hover {
+  transform:translateY(-2px) scale(1.015);
+  box-shadow:0 10px 24px rgba(255,107,74,.48);
+}
 
-/* ── LOADER ── */
-.ep-ldr  { position:fixed; inset:0; background:var(--ep-loader-bg); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; z-index:999; transition:background .3s; }
-.ep-ldr-ring { width:56px; height:56px; border-radius:16px; display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg,#6366f1,#8b5cf6); box-shadow:0 8px 24px rgba(99,102,241,.3); }
-.ep-ldr-text { font-size:13.5px; font-weight:700; color:var(--ep-text); font-family:'Plus Jakarta Sans',system-ui,sans-serif; }
-.ep-ldr-sub  { font-size:11.5px; color:var(--ep-subtle); font-family:'Plus Jakarta Sans',system-ui,sans-serif; }
-.ep-ldr-dots { display:flex; gap:5px; }
-.ep-ldr-dot  { width:6px; height:6px; border-radius:50%; background:#818cf8; }
+/* ── SYSTEM CHECK (Student Dashboard Palette) ── */
+.sc-shell {
+  position:fixed; inset:0; background:var(--ep-page);
+  display:flex; align-items:center; justify-content:center;
+  z-index:999; padding:20px;
+}
+.sc-card {
+  background:var(--ep-surface); border-radius:24px; padding:28px 32px;
+  max-width:410px; width:100%; border:1px solid var(--ep-border);
+  box-shadow:var(--ep-shadow); text-align:center;
+  backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
+}
+.sc-steps { display:flex; align-items:center; gap:6px; justify-content:center; margin-bottom:18px; }
+.sc-step  { height:5px; width:28px; border-radius:4px; background:var(--ep-border2); transition:background .3s; }
+.sc-step.d{ background:#2563eb; }
+.sc-step.c{ background:linear-gradient(90deg,#2563eb,#0ea5e9); }
+.sc-ico {
+  width:72px; height:72px; border-radius:22px; margin:0 auto 16px;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 10px 24px rgba(0,0,0,.15);
+  animation:sdPop3d 4s ease-in-out infinite;
+}
+.sc-title { font-size:19px; font-weight:900; color:var(--ep-text); margin-bottom:7px; }
+.sc-desc  { font-size:13px; color:var(--ep-muted); line-height:1.6; margin-bottom:20px; font-weight:600; }
+.sc-denied{
+  display:flex; align-items:center; justify-content:center; gap:6px;
+  padding:10px 14px; border-radius:12px;
+  background:rgba(239,68,68,.08); border:1px solid rgba(239,68,68,.18);
+  color:#ef4444; font-size:12.5px; font-weight:700; margin-bottom:14px;
+}
+.sc-btn {
+  width:100%; padding:13px; border-radius:13px; border:none;
+  font-family:inherit; font-size:13.5px; font-weight:800; cursor:pointer;
+  transition:all .2s;
+}
+.sc-ind {
+  background:linear-gradient(135deg,#2563eb,#0ea5e9); color:#fff;
+  box-shadow:0 6px 18px rgba(14,165,233,.35);
+}
+.sc-red {
+  background:linear-gradient(135deg,#ff6b4a,#ff9436); color:#fff;
+  box-shadow:0 6px 18px rgba(255,107,74,.36);
+}
+.sc-btn:hover { transform:translateY(-2px); }
 
-/* ── BAN OVERLAY ── */
-.ep-ban { position:absolute; inset:0; background:rgba(0,0,0,.92); backdrop-filter:blur(20px); z-index:200; display:flex; align-items:center; justify-content:center; padding:28px; }
+/* ── LOADER (Student Dashboard Palette) ── */
+.ep-ldr {
+  position:fixed; inset:0; background:var(--ep-loader-bg);
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:16px; z-index:999; transition:background .3s;
+}
+.ep-ldr-ring {
+  width:60px; height:60px; border-radius:18px; display:flex;
+  align-items:center; justify-content:center;
+  background:linear-gradient(135deg,#2563eb,#0ea5e9);
+  box-shadow:0 10px 28px rgba(14,165,233,.38);
+}
+.ep-ldr-text {
+  font-size:14px; font-weight:800; color:var(--ep-text);
+  font-family:'Plus Jakarta Sans',system-ui,sans-serif;
+}
+.ep-ldr-sub {
+  font-size:12px; color:var(--ep-subtle);
+  font-family:'Plus Jakarta Sans',system-ui,sans-serif; font-weight:600;
+}
+.ep-ldr-dots { display:flex; gap:6px; }
+.ep-ldr-dot { width:7px; height:7px; border-radius:50%; background:#38bdf8; }
 
-/* ── RESPONSIVE ── */
-@media (max-width:1200px) { .ep-body { grid-template-columns:1fr 260px; gap:10px; padding:10px 14px; } }
-@media (max-width:1024px) { .ep-body { grid-template-columns:1fr 240px; gap:9px; padding:9px 12px; } .ep-wc { height:75px; } }
-@media (max-width:900px)  { .ep-body { grid-template-columns:1fr; padding:10px 12px; } .ep-right { display:none; } }
-@media (max-width:640px)  {
-  .ep-top   { height:52px; padding:0 12px; }
+/* ── RESPONSIVE RULES ── */
+@media (max-width:1200px) {
+  .ep-body { grid-template-columns:1fr 270px; gap:12px; padding:12px 16px; }
+}
+@media (max-width:1024px) {
+  .ep-body { grid-template-columns:1fr 250px; gap:10px; padding:10px 14px; }
+  .ep-wc { height:75px; }
+}
+@media (max-width:900px) {
+  .ep-body { grid-template-columns:1fr; padding:10px 12px; }
+  .ep-right { display:none; }
+}
+@media (max-width:640px) {
+  .ep-top   { height:54px; padding:0 14px; }
   .ep-body  { padding:8px 10px; }
-  .ep-qhead { padding:8px 12px; }
-  .ep-qbody { padding:11px 12px; }
-  .ep-qfoot { padding:7px 12px; }
-  .ep-qtext { font-size:13.5px; margin-bottom:11px; }
+  .ep-qhead { padding:10px 14px; }
+  .ep-qbody { padding:14px; }
+  .ep-qfoot { padding:8px 14px; }
+  .ep-qtext { font-size:14px; margin-bottom:12px; }
   .ep-top-sub { display:none; }
   .ep-top-ico { display:none; }
-  .ep-nav,.ep-rev,.ep-sav { padding:6px 10px; font-size:11px; }
-  .ep-opt { padding:8px 10px; }
+  .ep-nav, .ep-rev, .ep-sav { padding:7px 12px; font-size:11.5px; }
+  .ep-opt { padding:10px 12px; }
 }
-@media (max-width:380px) { .ep-foot-r { flex-direction:column; width:100%; } .ep-rev,.ep-sav { justify-content:center; } }
+@media (max-width:400px) {
+  .ep-foot-r { flex-direction:column; width:100%; }
+  .ep-rev, .ep-sav { justify-content:center; }
+}
 `;
 
 /* ─── Webcam ─── */
@@ -294,7 +751,7 @@ const Webcam = ({ stream }: { stream: MediaStream | null }) => {
   useEffect(() => { if (r.current && stream) r.current.srcObject = stream; }, [stream]);
   return stream
     ? <video ref={r} autoPlay playsInline muted style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }}/>
-    : <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100%", color:"#475569", fontSize:10 }}>Connecting…</div>;
+    : <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100%", color:"#64748b", fontSize:11, fontWeight:700 }}>Connecting camera…</div>;
 };
 
 /* ─── Loader ─── */
@@ -302,16 +759,17 @@ const Loader = () => (
   <div className="ep-ldr">
     <style>{S}</style>
     <motion.div className="ep-ldr-ring"
-      animate={{ rotate:[0,180,360], borderRadius:["20%","50%","20%"] }}
-      transition={{ duration:2.4, repeat:Infinity, ease:"easeInOut" }}>
-      <Shield size={24} color="#fff" style={{ position:"relative", zIndex:1 }}/>
+      animate={{ rotate:[0,180,360], borderRadius:["24%","50%","24%"] }}
+      transition={{ duration:2.2, repeat:Infinity, ease:"easeInOut" }}>
+      <Shield size={26} color="#fff" style={{ position:"relative", zIndex:1 }}/>
     </motion.div>
     <p className="ep-ldr-text">Initialising Secure Exam Environment</p>
-    <p className="ep-ldr-sub">Please wait — do not close this window</p>
+    <p className="ep-ldr-sub">Please wait — preparing your assessment</p>
     <div className="ep-ldr-dots">
       {[0,1,2].map(i => (
         <motion.div key={i} className="ep-ldr-dot"
-          animate={{ opacity:[.3,1,.3] }} transition={{ duration:1.2, repeat:Infinity, delay:i*.2 }}/>
+          animate={{ opacity:[.25,1,.25], scale:[.8,1.2,.8] }}
+          transition={{ duration:1.2, repeat:Infinity, delay:i*.2 }}/>
       ))}
     </div>
   </div>
@@ -322,33 +780,9 @@ const SystemCheck = ({ onComplete }: { onComplete: () => void }) => {
   const [step, setStep]    = useState<"welcome"|"ready">("welcome");
   const [loading, setLoad] = useState(false);
 
-  /*
-  const reqMic = async () => {
-    setLoad(true);
-    try {
-      const s = await navigator.mediaDevices.getUserMedia({ audio:true });
-      s.getTracks().forEach(t => t.stop()); setMicP("granted");
-      setTimeout(() => { setLoad(false); setStep("webcam"); }, 1200);
-    } catch { setMicP("denied"); setLoad(false); }
-  };
-
-  const reqCam = async () => {
-    setLoad(true);
-    try {
-      const s = await navigator.mediaDevices.getUserMedia({ video:true });
-      setCamP("granted"); setStream(s);
-      if (vidRef.current) vidRef.current.srcObject = s;
-      setTimeout(() => { setLoad(false); setStep("ready"); }, 1200);
-    } catch { setCamP("denied"); setLoad(false); }
-  };
-
-  useEffect(() => { if (stream && vidRef.current) vidRef.current.srcObject = stream; }, [stream]);
-  */
   const skipProctoringCheck = () => {
-    // Proctoring permission checks are disabled because they were producing
-    // strike warnings during normal exam usage.
     setLoad(true);
-    setTimeout(() => { setLoad(false); setStep("ready"); }, 700);
+    setTimeout(() => { setLoad(false); setStep("ready"); }, 600);
   };
   if (loading) return <Loader/>;
 
@@ -356,8 +790,24 @@ const SystemCheck = ({ onComplete }: { onComplete: () => void }) => {
   const si = allSteps.indexOf(step);
 
   const cfg: Record<string, any> = {
-    welcome: { bg:"linear-gradient(135deg,#6366f1,#8b5cf6)", icon:<Shield size={28} color="#fff"/>, title:"Exam Ready", desc:"You may begin the final assessment. Camera monitoring is not required.", btn:"Continue", act:skipProctoringCheck, red:false },
-    ready:   { bg:"linear-gradient(135deg,#10b981,#059669)", icon:<Check size={28} color="#fff"/>, title:"Ready to Start", desc:"You may now begin the final assessment.", btn:"Start Exam", act:onComplete, red:true },
+    welcome: {
+      bg:"linear-gradient(135deg,#2563eb,#0ea5e9)",
+      icon:<Shield size={28} color="#fff"/>,
+      title:"Exam Ready",
+      desc:"You are entering the final assessment. Your responses will be saved securely as you progress.",
+      btn:"Continue",
+      act:skipProctoringCheck,
+      red:false
+    },
+    ready: {
+      bg:"linear-gradient(135deg,#10b981,#059669)",
+      icon:<Check size={28} color="#fff"/>,
+      title:"Ready to Begin",
+      desc:"Everything is set. You may now commence your assessment.",
+      btn:"Start Exam",
+      act:onComplete,
+      red:true
+    },
   };
   const c = cfg[step];
 
@@ -365,20 +815,19 @@ const SystemCheck = ({ onComplete }: { onComplete: () => void }) => {
     <div className="sc-shell">
       <style>{S}</style>
       <AnimatePresence mode="wait">
-        <motion.div key={step} initial={{opacity:0,scale:.96}} animate={{opacity:1,scale:1}} exit={{opacity:0,scale:.96}} transition={{duration:.22}} className="sc-card">
+        <motion.div key={step}
+          initial={{ opacity:0, scale:.94, y:12 }}
+          animate={{ opacity:1, scale:1, y:0 }}
+          exit={{ opacity:0, scale:.94, y:-12 }}
+          transition={{ duration:.24, ease:[0.22, 1, 0.36, 1] }}
+          className="sc-card">
           <div className="sc-steps">
             {allSteps.map((s,i) => <div key={s} className={`sc-step${i<si?" d":i===si?" c":""}`}/>)}
           </div>
           <div className="sc-ico" style={{background:c.bg}}>{c.icon}</div>
           <h2 className="sc-title">{c.title}</h2>
           <p className="sc-desc">{c.desc}</p>
-          {/* Proctoring webcam preview disabled.
-          {step==="webcam" && (
-            <div className="sc-webcam">
-              <video ref={vidRef} autoPlay playsInline muted style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
-            </div>
-          )} */}
-          {c.denied && <div className="sc-denied"><AlertTriangle size={14}/>Permission denied — check browser settings.</div>}
+          {c.denied && <div className="sc-denied"><AlertTriangle size={15}/>Permission denied — check browser settings.</div>}
           {step!=="ready" && !c.denied && <button className={`sc-btn ${c.red?"sc-red":"sc-ind"}`} onClick={c.act}>{c.btn}</button>}
           {step==="ready"              && <button className="sc-btn sc-red"                       onClick={onComplete}>{c.btn}</button>}
         </motion.div>
@@ -387,12 +836,12 @@ const SystemCheck = ({ onComplete }: { onComplete: () => void }) => {
   );
 };
 
-/* ─── Question type icon ─── */
+/* ─── Question Type Icon ─── */
 const QIcon = ({ type }: { type: string }) => {
-  if (type==="MCQ")    return <HelpCircle size={14} style={{color:"#3b82f6"}}/>;
-  if (type==="SHORT")  return <PencilRuler size={14} style={{color:"#d97706"}}/>;
-  if (type==="LONG")   return <BrainCircuit size={14} style={{color:"#8b5cf6"}}/>;
-  if (type==="SPEECH") return <Mic size={14} style={{color:"#059669"}}/>;
+  if (type==="MCQ")    return <HelpCircle size={15} style={{color:"#0284c7"}}/>;
+  if (type==="SHORT")  return <PencilRuler size={15} style={{color:"#ea580c"}}/>;
+  if (type==="LONG")   return <BrainCircuit size={15} style={{color:"#7c3aed"}}/>;
+  if (type==="SPEECH") return <Mic size={15} style={{color:"#16a34a"}}/>;
   return null;
 };
 
@@ -406,18 +855,13 @@ const MainExamPage = () => {
   const [sysOk,     setSysOk]     = useState(false);
   const [questions]               = useState<Question[]>(() => [...mockExamQuestions].sort(() => Math.random()-.5));
   const [idx,       setIdx]       = useState(0);
+  const [direction, setDirection] = useState(1);
   const [answers,   setAnswers]   = useState<Record<number, string|number>>({});
   const [statuses,  setStatuses]  = useState<Record<number, "answered"|"review">>({});
   const [timeLeft,  setTimeLeft]  = useState(INIT_TIME);
   const [submitted, setSubmitted] = useState(false);
   const [camStream, setCamStream] = useState<MediaStream|null>(null);
   const mediaRef                  = useRef<MediaStream|null>(null);
-  /*
-  const [alert,     setAlert]     = useState<string|null>(null);
-  const [cooldown,  setCooldown]  = useState(false);
-  const [isBanned,  setIsBanned]  = useState(false);
-  const [strikes,   setStrikes]   = useState(0);
-  */
 
   // Speech recognition — native Web Speech API
   const [listening,  setListening]  = useState(false);
@@ -449,8 +893,7 @@ const MainExamPage = () => {
     if (!SpeechRecognition) return;
     const r = new SpeechRecognition();
     r.continuous    = false;
-    r.interimResults= true;   // show partial results while speaking
-    r.lang          = "en-US";
+    r.interimResults= true;
 
     r.onresult = (e: any) => {
       let interim = "";
@@ -460,7 +903,6 @@ const MainExamPage = () => {
         if (e.results[i].isFinal) final += t;
         else interim += t;
       }
-      // Show interim while speaking
       setSpokenText(final || interim);
       if (final) {
         handleAnswer(questions[idx].id, final);
@@ -477,14 +919,13 @@ const MainExamPage = () => {
     r.onend = () => setListening(false);
 
     recRef.current = r;
-  }, []); // only once
+  }, []);
 
-  // Re-init recognition for each question so we capture the right qId
+  // Start speech listening
   const startListen = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) return;
 
-    // Stop any existing session
     if (recRef.current) {
       try { recRef.current.stop(); } catch {}
     }
@@ -529,7 +970,7 @@ const MainExamPage = () => {
     setListening(false);
   };
 
-  /* webcam preview after system check: video only, no proctoring */
+  /* webcam preview after system check */
   useEffect(() => {
     if (sysOk && !submitted) {
       navigator.mediaDevices.getUserMedia({ video:true })
@@ -557,29 +998,25 @@ const MainExamPage = () => {
     setTimeout(() => setLoading(false), 2200);
   };
 
-  /*
-  const handleMotion = () => {
-    if (alert || cooldown) return;
-    setAlert("Potential misconduct detected: Unusual movement. A warning has been logged.");
-  };
-
-  const dismissAlert = () => {
-    const s = strikes + 1; setStrikes(s);
-    setAlert(null);
-    if (s >= 3) { setIsBanned(true); return; }
-    setCooldown(true); setTimeout(() => setCooldown(false), 30_000);
-  };
-  */
-
   const handleAnswer = (qId: number, val: string|number) => {
     setAnswers(p  => ({ ...p,  [qId]: val }));
     setStatuses(p => ({ ...p,  [qId]: "answered" }));
   };
 
-  const goTo    = (i: number) => { if (i>=0 && i<questions.length) { setIdx(i); setSpokenText(""); } };
+  const goTo = (i: number) => {
+    if (i >= 0 && i < questions.length) {
+      setDirection(i > idx ? 1 : -1);
+      setIdx(i);
+      setSpokenText("");
+    }
+  };
+
   const markRev = () => {
     setStatuses(p => ({ ...p, [questions[idx].id]: "review" }));
-    if (idx < questions.length-1) goTo(idx+1);
+    if (idx < questions.length - 1) {
+      setDirection(1);
+      goTo(idx + 1);
+    }
   };
 
   const fmt = (s: number) =>
@@ -595,24 +1032,48 @@ const MainExamPage = () => {
   const reviewed = Object.values(statuses).filter(v => v==="review").length;
   const timeWarn = timeLeft < 300;
 
-  const typeLabel: Record<string,string> = { MCQ:"Multiple Choice", SHORT:"Short Answer", LONG:"Essay", SPEECH:"Speech" };
+  const typeLabel: Record<string,string> = { MCQ:"Multiple Choice", SHORT:"Short Answer", LONG:"Essay Question", SPEECH:"Voice Assessment" };
   const typeBadge: Record<string,string> = { MCQ:"epbadge-mcq", SHORT:"epbadge-sh", LONG:"epbadge-lg", SPEECH:"epbadge-sp" };
 
-  /* Current answer value for speech question */
   const currentSpokenVal = spokenText || String(answers[q.id]||"");
 
-  /* ── Palette (shared sidebar + drawer) ── */
+  /* Animation variants for question transition */
+  const questionSlideVariants = {
+    enter: (dir: number) => ({
+      opacity: 0,
+      x: dir > 0 ? 30 : -30,
+      filter: "blur(3px)",
+    }),
+    center: {
+      opacity: 1,
+      x: 0,
+      filter: "blur(0px)",
+      transition: { duration: 0.26, ease: [0.22, 1, 0.36, 1] }
+    },
+    exit: (dir: number) => ({
+      opacity: 0,
+      x: dir > 0 ? -30 : 30,
+      filter: "blur(3px)",
+      transition: { duration: 0.2, ease: [0.22, 1, 0.36, 1] }
+    }),
+  };
+
+  /* ── Palette (shared desktop sidebar + mobile drawer) ── */
   const Palette = ({ compact = false }: { compact?: boolean }) => (
     <>
-      <div className="ep-palh">Question Navigator</div>
+      <div className="ep-palh">
+        <LayoutGrid size={15} style={{color:"#2563eb"}}/>
+        <span>Question Navigator</span>
+      </div>
       <div className="ep-palp">
         <div className="ep-palpr">
-          <span>Progress</span>
-          <span style={{color:"#6366f1",fontWeight:700}}>{answered}/{questions.length}</span>
+          <span>Overall Progress</span>
+          <span style={{color:"#2563eb",fontWeight:800}}>{answered}/{questions.length}</span>
         </div>
-        <div className="ep-palpb"><div className="ep-palpf" style={{width:`${(answered/questions.length)*100}%`}}/></div>
+        <div className="ep-palpb">
+          <div className="ep-palpf" style={{width:`${(answered/questions.length)*100}%`}}/>
+        </div>
       </div>
-      {/* Scroll only when >30 questions */}
       <div className="ep-palscr">
         <div className="ep-palgr">
           {questions.map((qs,i) => {
@@ -621,7 +1082,8 @@ const MainExamPage = () => {
             const cls = cur?"epb-cur":st==="answered"?"epb-ans":st==="review"?"epb-rev":"epb-un";
             return (
               <motion.button key={qs.id}
-                whileHover={{ scale: cur ? 1.07 : 1.05 }}
+                whileHover={{ scale: cur ? 1.09 : 1.06, y: -1 }}
+                whileTap={{ scale: 0.95 }}
                 onClick={() => goTo(i)}
                 className={`ep-pb ${cls}`}>
                 {i+1}
@@ -632,13 +1094,14 @@ const MainExamPage = () => {
       </div>
       <div className="ep-palleg">
         {[
-          {bg:"linear-gradient(135deg,#6366f1,#8b5cf6)", l:"Current"},
-          {bg:"linear-gradient(135deg,#10b981,#059669)", l:"Done"},
-          {bg:"linear-gradient(135deg,#f59e0b,#d97706)", l:"Review"},
-          {bg:"#f1f5f9",                                 l:"Not done"},
+          {bg:"linear-gradient(135deg,#2563eb,#0ea5e9)", l:"Current"},
+          {bg:"linear-gradient(135deg,#27b86a,#14915d)", l:"Done"},
+          {bg:"linear-gradient(135deg,#ff791f,#ffb21d)", l:"Review"},
+          {bg:"var(--ep-btn-un)",                         l:"Not done"},
         ].map(x => (
           <div key={x.l} className="ep-leg">
-            <div className="ep-legdot" style={{background:x.bg}}/>{x.l}
+            <div className="ep-legdot" style={{background:x.bg}}/>
+            <span>{x.l}</span>
           </div>
         ))}
       </div>
@@ -649,192 +1112,218 @@ const MainExamPage = () => {
     <>
       <style>{S}</style>
       <div className="ep">
-        {/* Proctoring motion detector disabled. */}
-        {/* {camStream && <MotionDetector stream={camStream} onMotion={handleMotion}/>} */}
-
-        {/* ── PROCTORING ALERT ── */}
-        {/* Proctoring alert / strike dialog disabled.
-        <AlertDialog open={!!alert}>
-          <AlertDialogContent className="rounded-2xl max-w-sm p-6">
-            <AlertDialogHeader style={{alignItems:"center",textAlign:"center",gap:10}}>
-              <div style={{width:46,height:46,borderRadius:13,background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.14)",display:"flex",alignItems:"center",justifyContent:"center"}}>
-                <AlertTriangle size={21} color="#ef4444"/>
-              </div>
-              <AlertDialogTitle className="text-base font-semibold">Proctoring Alert</AlertDialogTitle>
-              <AlertDialogDescription style={{lineHeight:1.6}}>
-                {alert} Strike <strong style={{color:"#f59e0b"}}>{strikes+1}/3</strong> recorded.
-                {strikes+1>=3 && " You will be banned from the exam."}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter style={{marginTop:14}}>
-              <AlertDialogAction onClick={dismissAlert}
-                style={{width:"100%",borderRadius:11,background:"linear-gradient(135deg,#f59e0b,#d97706)",color:"#fff",fontWeight:700}}>
-                Understood
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-        */}
+        {/* Floating background sparks */}
+        <div className="ep-spark s1"/>
+        <div className="ep-spark s2"/>
 
         {/* ── TOP BAR ── */}
         <div className="ep-top">
           <div className="ep-top-l">
-            <div className="ep-top-ico"><BookOpen size={16} color="#fff"/></div>
+            <motion.div className="ep-top-ico" whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }}>
+              <BookOpen size={18} color="#fff"/>
+            </motion.div>
             <div>
-              <div className="ep-top-title">Final Assessment</div>
-              <div className="ep-top-sub">Q{idx+1}/{questions.length} · Exam mode</div>
+              <div className="ep-top-title">GradeUp Final Assessment</div>
+              <div className="ep-top-sub">
+                <span>Question {idx+1} of {questions.length}</span>
+                <span className="ep-top-sub-chip">Secure Mode</span>
+              </div>
             </div>
           </div>
           <div className="ep-top-r">
-            {/* Strike indicator */}
-            {/* Strike indicator disabled.
-            {strikes > 0 && (
-              <div style={{display:"flex",alignItems:"center",gap:4,padding:"4px 10px",borderRadius:20,background:"rgba(239,68,68,.2)",border:"1px solid rgba(239,68,68,.3)"}}>
-                <AlertTriangle size={12} color="#fca5a5"/>
-                <span style={{fontSize:11,fontWeight:700,color:"#fca5a5"}}>{strikes}/3 strikes</span>
-              </div>
-            )}
-            */}
             <div className={`ep-timer${timeWarn?" warn":""}`}>
-              <TimerIcon size={14} color={timeWarn?"#fca5a5":"rgba(255,255,255,.8)"}/>
+              <TimerIcon size={16} color={timeWarn?"#fca5a5":"rgba(255,255,255,.9)"}/>
               <span className="ep-timer-val">{fmt(timeLeft)}</span>
             </div>
-            <button className="ep-icobtn" onClick={() => setTheme(theme==="dark"?"light":"dark")}>
-              {theme==="dark" ? <Sun size={14}/> : <Moon size={14}/>}
-            </button>
+            <motion.button
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.92, rotate: 180 }}
+              className="ep-icobtn"
+              onClick={() => setTheme(theme==="dark"?"light":"dark")}
+              title="Toggle Dark/Light Mode">
+              {theme==="dark" ? <Sun size={15}/> : <Moon size={15}/>}
+            </motion.button>
           </div>
         </div>
 
-        {/* ── BODY ── */}
+        {/* ── MAIN BODY ── */}
         <div className="ep-body">
 
-          {/* ── LEFT: question ── */}
+          {/* ── LEFT: QUESTION CARD ── */}
           <div className="ep-left">
             <div className="ep-qcard">
 
-              {/* Q header */}
+              {/* Question Header */}
               <div className="ep-qhead">
                 <QIcon type={q.type}/>
-                <span className="epbadge epbadge-q">Q {idx+1}</span>
+                <span className="epbadge epbadge-q">Question {idx+1}</span>
                 <span className={`epbadge ${typeBadge[q.type]||"epbadge-mcq"}`}>{typeLabel[q.type]||q.type}</span>
-                <span className="epbadge-mk">2 marks</span>
+                <span className="epbadge-mk">
+                  <Sparkles size={11} style={{color:"#ffb21d"}}/>
+                  2 Marks
+                </span>
               </div>
 
-              {/* Q body — internal scroll only */}
+              {/* Question Body with Directional Slide Transition */}
               <div className="ep-qbody">
-                <AnimatePresence mode="wait">
-                  <motion.div key={q.id} initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} exit={{opacity:0,y:-10}} transition={{duration:.2}}>
+                <AnimatePresence mode="wait" custom={direction}>
+                  <motion.div
+                    key={q.id}
+                    custom={direction}
+                    variants={questionSlideVariants}
+                    initial="enter"
+                    animate="center"
+                    exit="exit"
+                    style={{ display:"flex", flexDirection:"column", flex:1 }}>
+
                     <p className="ep-qtext">{q.question}</p>
 
-                    {/* MCQ */}
+                    {/* MCQ Options with Staggered Fade-In */}
                     {q.type==="MCQ" && q.options && (
-                      <div>
-                        {q.options.map((opt,i) => (
-                          <div key={i} className={`ep-opt${String(answers[q.id])===String(i)?" sel":""}`}
-                            onClick={() => handleAnswer(q.id, i)}>
-                            <div className="ep-opt-radio">
-                              {String(answers[q.id])===String(i) && <div className="ep-opt-dot"/>}
-                            </div>
-                            <label className="ep-opt-lbl">{opt}</label>
-                          </div>
-                        ))}
+                      <div className="ep-opt-grid">
+                        {q.options.map((opt,i) => {
+                          const isSel = String(answers[q.id]) === String(i);
+                          return (
+                            <motion.div
+                              key={i}
+                              initial={{ opacity:0, y:8 }}
+                              animate={{ opacity:1, y:0 }}
+                              transition={{ duration:0.2, delay:i*0.04 }}
+                              whileTap={{ scale: 0.985 }}
+                              className={`ep-opt${isSel ? " sel" : ""}`}
+                              onClick={() => handleAnswer(q.id, i)}>
+                              <div className="ep-opt-idx">{String.fromCharCode(65 + i)}</div>
+                              <label className="ep-opt-lbl">{opt}</label>
+                              <div className="ep-opt-radio">
+                                {isSel && (
+                                  <motion.div
+                                    initial={{ scale:0 }}
+                                    animate={{ scale:1 }}
+                                    transition={{ type:"spring", stiffness:350, damping:20 }}
+                                    className="ep-opt-dot"
+                                  />
+                                )}
+                              </div>
+                            </motion.div>
+                          );
+                        })}
                       </div>
                     )}
 
-                    {/* Speech */}
+                    {/* Speech Option */}
                     {q.type==="SPEECH" && (
                       <div className="ep-speech-area">
                         <textarea
                           className="ep-speech-transcript"
                           readOnly
                           rows={4}
-                          style={{width:"100%",resize:"none"}}
                           value={currentSpokenVal}
-                          placeholder="Your spoken answer will appear here as you speak…"
+                          placeholder="Your spoken words will appear here in real-time as you speak…"
                         />
                         {speechSupported ? (
                           <>
                             <button
                               className={`ep-speech-btn ${listening?"active":"idle"}`}
-                              onClick={listening ? stopListen : startListen}
-                            >
-                              {listening ? <><MicOff size={16}/>Stop Speaking</> : <><Mic size={16}/>Start Speaking</>}
+                              onClick={listening ? stopListen : startListen}>
+                              {listening ? <><MicOff size={17}/>Stop Recording</> : <><Mic size={17}/>Start Speaking</>}
                             </button>
                             {listening && (
                               <div className="ep-speech-listening">
                                 <div className="ep-speech-wave">
                                   <span/><span/><span/><span/>
                                 </div>
-                                Listening… speak clearly now
+                                Listening now… please speak clearly into your mic
                               </div>
                             )}
                             {!listening && currentSpokenVal && (
-                              <p className="ep-speech-hint">✓ Answer recorded. Click Start Speaking to re-record.</p>
+                              <p className="ep-speech-hint">✓ Speech recorded. Click "Start Speaking" if you wish to re-record.</p>
                             )}
                           </>
                         ) : (
-                          <div style={{padding:"10px 14px",borderRadius:12,background:"rgba(239,68,68,.06)",border:"1px solid rgba(239,68,68,.14)",fontSize:12.5,color:"#ef4444",textAlign:"center"}}>
-                            <AlertTriangle size={14} style={{marginBottom:4}}/>
-                            <div>Speech recognition is not supported in this browser.</div>
-                            <div style={{color:"#94a3b8",marginTop:4}}>Please use Chrome or Edge for speech questions.</div>
+                          <div style={{
+                            padding:"12px 16px", borderRadius:14,
+                            background:"rgba(239,68,68,.08)", border:"1px solid rgba(239,68,68,.2)",
+                            fontSize:13, color:"#ef4444", textAlign:"center", fontWeight:600
+                          }}>
+                            <AlertTriangle size={16} style={{marginBottom:4}}/>
+                            <div>Speech recognition is not available in this browser environment.</div>
+                            <div style={{color:"var(--ep-muted)",marginTop:4,fontSize:11.5}}>Please use Google Chrome or Microsoft Edge for voice questions.</div>
                           </div>
                         )}
                       </div>
                     )}
 
-                    {/* Short */}
+                    {/* Short Answer */}
                     {q.type==="SHORT" && (
-                      <textarea className="ep-ta" rows={4} style={{width:"100%"}}
-                        placeholder="Type your concise answer here…"
+                      <textarea
+                        className="ep-ta"
+                        rows={4}
+                        placeholder="Type your concise, precise response here…"
                         value={String(answers[q.id]||"")}
-                        onChange={e => handleAnswer(q.id, e.target.value)}/>
+                        onChange={e => handleAnswer(q.id, e.target.value)}
+                      />
                     )}
 
-                    {/* Long */}
+                    {/* Long Essay */}
                     {q.type==="LONG" && (
-                      <textarea className="ep-ta" rows={7} style={{width:"100%"}}
-                        placeholder="Type your detailed answer here…"
+                      <textarea
+                        className="ep-ta"
+                        rows={7}
+                        placeholder="Write your comprehensive, detailed explanation here…"
                         value={String(answers[q.id]||"")}
-                        onChange={e => handleAnswer(q.id, e.target.value)}/>
+                        onChange={e => handleAnswer(q.id, e.target.value)}
+                      />
                     )}
+
                   </motion.div>
                 </AnimatePresence>
               </div>
 
-              {/* Q footer */}
+              {/* Question Footer Controls */}
               <div className="ep-qfoot">
-                <button className="ep-nav" onClick={() => goTo(idx-1)} disabled={idx===0}>
-                  <ChevronLeft size={13}/>Previous
+                <button
+                  className="ep-nav"
+                  onClick={() => goTo(idx-1)}
+                  disabled={idx===0}>
+                  <ChevronLeft size={15}/>Previous
                 </button>
                 <div className="ep-foot-r">
                   <button className="ep-rev" onClick={markRev}>
-                    <Star size={11}/>Mark for Review
+                    <Star size={13}/>Mark for Review
                   </button>
-                  <button className="ep-sav" onClick={() => idx<questions.length-1 ? goTo(idx+1) : undefined}>
-                    Save &amp; Next<ChevronRight size={12}/>
+                  <button
+                    className="ep-sav"
+                    onClick={() => idx<questions.length-1 ? goTo(idx+1) : undefined}>
+                    Save &amp; Next<ChevronRight size={14}/>
                   </button>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* ── RIGHT: desktop/laptop only ── */}
+          {/* ── RIGHT PANEL (Desktop / Laptop) ── */}
           <div className="ep-right">
 
-            {/* Camera preview only. No motion detector, audio monitor, or strike logic. */}
+            {/* Camera Preview */}
             <div className="ep-rc">
               <div className="ep-ph">
-                <div className="ep-pt"><Shield size={12} style={{color:"#6366f1"}}/>Camera Preview</div>
-                <div className="ep-ps"><div className="ep-pd"/>Video Only</div>
+                <div className="ep-pt">
+                  <Shield size={13} style={{color:"#2563eb"}}/>
+                  <span>Camera Preview</span>
+                </div>
+                <div className="ep-ps">
+                  <div className="ep-pd"/>
+                  <span>Live Feed</span>
+                </div>
               </div>
               <div className="ep-wc"><Webcam stream={camStream}/></div>
-              <div className="ep-pf">Camera view only - no proctoring</div>
+              <div className="ep-pf">Camera preview active · Video only</div>
             </div>
 
-            {/* Palette — up to 30 shown, scrolls above 30 */}
+            {/* Question Palette */}
             <div className="ep-pal"><Palette/></div>
 
-            {/* Stats + submit */}
+            {/* Stats + Submit */}
             <div className="ep-sub">
               <div className="ep-subgr">
                 <div className="ep-stm g"><div className="ep-stmv">{answered}</div><div className="ep-stml">Answered</div></div>
@@ -847,57 +1336,66 @@ const MainExamPage = () => {
           </div>
         </div>
 
-        {/* ── MOBILE / TABLET: FABs ── */}
+        {/* ── MOBILE / TABLET FLOATING DRAWER & CAMERA ── */}
         {!isDesktop && (
           <>
-            {/* Palette + submit drawer */}
+            {/* Palette Drawer Button */}
             <div style={{position:"fixed",bottom:20,right:20,zIndex:60}}>
               <Drawer>
                 <DrawerTrigger asChild>
-                  <button style={{
-                    width:50,height:50,borderRadius:"50%",
-                    background:"linear-gradient(135deg,#6366f1,#8b5cf6)",
-                    border:"none",cursor:"pointer",
-                    display:"flex",alignItems:"center",justifyContent:"center",
-                    color:"#fff",boxShadow:"0 5px 16px rgba(99,102,241,.38)",
-                  }}>
-                    <LayoutGrid size={19}/>
-                  </button>
+                  <motion.button
+                    whileHover={{ scale:1.08 }}
+                    whileTap={{ scale:0.92 }}
+                    style={{
+                      width:52,height:52,borderRadius:"50%",
+                      background:"linear-gradient(135deg,#2563eb,#0ea5e9)",
+                      border:"none",cursor:"pointer",
+                      display:"flex",alignItems:"center",justifyContent:"center",
+                      color:"#fff",boxShadow:"0 8px 24px rgba(14,165,233,.45)",
+                    }}>
+                    <LayoutGrid size={21}/>
+                  </motion.button>
                 </DrawerTrigger>
-                <DrawerContent>
+                <DrawerContent style={{ background:"var(--ep-surface)", color:"var(--ep-text)", borderColor:"var(--ep-border)" }}>
                   <div style={{maxWidth:480,margin:"0 auto",width:"100%",fontFamily:"Plus Jakarta Sans,system-ui,sans-serif"}}>
                     <DrawerHeader>
-                      <DrawerTitle style={{fontWeight:800,fontSize:14}}>Question Navigator</DrawerTitle>
+                      <DrawerTitle style={{fontWeight:800,fontSize:15,color:"var(--ep-text)"}}>Question Navigator</DrawerTitle>
                     </DrawerHeader>
                     <div style={{padding:"0 16px 8px"}}>
-                      {/* Mini stats */}
+                      {/* Mini Stats (Theme-aware) */}
                       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:7,marginBottom:12}}>
                         {[
-                          {v:answered,l:"Answered",c:"#059669"},
-                          {v:reviewed,l:"Review",c:"#d97706"},
-                          {v:questions.length-answered-reviewed,l:"Left",c:"#374151"},
-                          {v:questions.length,l:"Total",c:"#6366f1"},
+                          {v:answered,l:"Answered",c:"#16a34a"},
+                          {v:reviewed,l:"Review",c:"#ea580c"},
+                          {v:questions.length-answered-reviewed,l:"Left",c:"var(--ep-text2)"},
+                          {v:questions.length,l:"Total",c:"#2563eb"},
                         ].map(s => (
-                          <div key={s.l} style={{background:"#f8fafc",borderRadius:11,padding:"7px 9px",textAlign:"center",border:"1px solid #f1f5f9"}}>
-                            <div style={{fontSize:17,fontWeight:800,color:s.c,lineHeight:1}}>{s.v}</div>
-                            <div style={{fontSize:9.5,color:"#94a3b8",marginTop:2,fontWeight:500}}>{s.l}</div>
+                          <div key={s.l} style={{
+                            background:"var(--ep-stm-bg)",borderRadius:12,padding:"8px 6px",
+                            textAlign:"center",border:"1px solid var(--ep-border)"
+                          }}>
+                            <div style={{fontSize:17,fontWeight:900,color:s.c,lineHeight:1}}>{s.v}</div>
+                            <div style={{fontSize:10,color:"var(--ep-subtle)",marginTop:3,fontWeight:700}}>{s.l}</div>
                           </div>
                         ))}
                       </div>
-                      {/* Palette */}
-                      <div style={{background:"#fff",borderRadius:14,border:"1px solid #f1f5f9",overflow:"hidden",maxHeight:"40vh",display:"flex",flexDirection:"column"}}>
+                      {/* Palette Card */}
+                      <div style={{
+                        background:"var(--ep-surface2)",borderRadius:16,
+                        border:"1px solid var(--ep-border)",overflow:"hidden",
+                        maxHeight:"42vh",display:"flex",flexDirection:"column"
+                      }}>
                         <Palette compact/>
                       </div>
                     </div>
                     <DrawerFooter>
-                      <button onClick={handleSubmit} style={{
-                        width:"100%",padding:12,borderRadius:11,border:"none",
-                        background:"linear-gradient(135deg,#ef4444,#dc2626)",color:"#fff",
-                        fontSize:13.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",
-                        boxShadow:"0 4px 13px rgba(239,68,68,.3)",
-                      }}>SUBMIT EXAM</button>
+                      <button onClick={handleSubmit} className="ep-subbtn" style={{padding:12}}>SUBMIT EXAM</button>
                       <DrawerClose asChild>
-                        <button style={{width:"100%",padding:10,borderRadius:11,border:"1.5px solid #e2e8f0",background:"#fff",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",color:"#64748b",marginTop:5}}>Close</button>
+                        <button style={{
+                          width:"100%",padding:10,borderRadius:12,border:"1.5px solid var(--ep-border2)",
+                          background:"var(--ep-surface)",fontSize:13,fontWeight:700,cursor:"pointer",
+                          fontFamily:"inherit",color:"var(--ep-muted)",marginTop:5
+                        }}>Close</button>
                       </DrawerClose>
                     </DrawerFooter>
                   </div>
@@ -905,43 +1403,26 @@ const MainExamPage = () => {
               </Drawer>
             </div>
 
-            {/* Draggable mini camera preview. No proctoring. */}
+            {/* Draggable Mini Camera Preview */}
             <motion.div drag dragMomentum={false}
               style={{
-                position:"fixed",top:64,right:12,zIndex:50,cursor:"grab",
-                width:130,background:"#fff",borderRadius:12,overflow:"hidden",
-                boxShadow:"0 5px 20px rgba(0,0,0,.14)",border:"2px solid rgba(99,102,241,.18)",
+                position:"fixed",top:68,right:12,zIndex:50,cursor:"grab",
+                width:130,background:"var(--ep-surface)",borderRadius:14,overflow:"hidden",
+                boxShadow:"0 8px 24px rgba(0,0,0,.2)",border:"2px solid rgba(35,137,255,.3)",
+                backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",
               }}>
-              <div style={{padding:"4px 8px",display:"flex",alignItems:"center",gap:4,background:"linear-gradient(135deg,rgba(99,102,241,.07),rgba(139,92,246,.04))"}}>
-                <GripVertical size={11} style={{color:"#94a3b8"}}/>
-                <span style={{fontSize:9.5,fontWeight:700,color:"#374151"}}>Camera</span>
-                <span style={{marginLeft:"auto",fontSize:9,fontWeight:700,color:"#10b981"}}>Video</span>
+              <div style={{
+                padding:"5px 8px",display:"flex",alignItems:"center",gap:4,
+                background:"linear-gradient(135deg,rgba(35,137,255,.14),rgba(14,165,233,.08))"
+              }}>
+                <GripVertical size={12} style={{color:"var(--ep-subtle)"}}/>
+                <span style={{fontSize:10,fontWeight:800,color:"var(--ep-text)"}}>Camera</span>
+                <span style={{marginLeft:"auto",fontSize:9.5,fontWeight:800,color:"#10b981"}}>Live</span>
               </div>
-              <div style={{height:70,background:"#0f172a"}}><Webcam stream={camStream}/></div>
+              <div style={{height:70,background:"#080d1f"}}><Webcam stream={camStream}/></div>
             </motion.div>
           </>
         )}
-
-        {/* ── BAN OVERLAY ── */}
-        {/* Ban overlay disabled with proctoring strikes.
-        {isBanned && (
-          <div className="ep-ban">
-            <motion.div initial={{scale:.85,opacity:0}} animate={{scale:1,opacity:1}} transition={{type:"spring",delay:.1}}
-              style={{textAlign:"center",maxWidth:300}}>
-              <motion.div animate={{scale:[1,1.05,1]}} transition={{duration:2,repeat:Infinity}}
-                style={{width:64,height:64,borderRadius:18,background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.2)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}>
-                <Skull size={32} color="#ef4444"/>
-              </motion.div>
-              <h2 style={{fontSize:20,fontWeight:800,color:"#fff",marginBottom:7}}>Access Suspended</h2>
-              <p style={{fontSize:12.5,color:"#94a3b8",lineHeight:1.6,marginBottom:20}}>You have reached the maximum policy violations (3/3). Access to this exam has been permanently terminated.</p>
-              <button onClick={() => window.location.reload()}
-                style={{width:"100%",padding:11,borderRadius:11,background:"linear-gradient(135deg,#ef4444,#dc2626)",color:"#fff",border:"none",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
-                Leave Exam
-              </button>
-            </motion.div>
-          </div>
-        )}
-        */}
 
       </div>
     </>

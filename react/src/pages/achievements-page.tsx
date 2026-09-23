@@ -14,7 +14,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getStudentAchievements } from '../lib/gradeupApi';
 // Loader
 const AchievementsLoader = () => (
-    <div className="flex items-center justify-center min-h-screen bg-gray-100 dark:bg-gray-900">
+    <div className="flex items-center justify-center min-h-screen bg-[#f8fafc] dark:bg-[#080d1f]">
         <motion.div
             animate={{ rotate: 360 }}
             transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
@@ -24,9 +24,9 @@ const AchievementsLoader = () => (
 );
 
 const tierColors = {
-    bronze: { bg: 'bg-yellow-800/20 dark:bg-yellow-900/30', border: 'border-yellow-700/50', shadow: 'shadow-yellow-700/20', text: 'text-yellow-700 dark:text-yellow-600' },
-    silver: { bg: 'bg-gray-400/20 dark:bg-gray-500/30', border: 'border-gray-400/50', shadow: 'shadow-gray-400/20', text: 'text-gray-500 dark:text-gray-300' },
-    gold: { bg: 'bg-yellow-400/20 dark:bg-yellow-500/30', border: 'border-yellow-400/50', shadow: 'shadow-yellow-500/30', text: 'text-yellow-400' },
+    bronze: { bg: 'bg-yellow-800/20 dark:bg-amber-950/25', border: 'border-yellow-700/50 dark:border-amber-700/40', shadow: 'shadow-yellow-700/20', text: 'text-yellow-700 dark:text-yellow-500' },
+    silver: { bg: 'bg-gray-400/20 dark:bg-[#171f3a]/70', border: 'border-gray-400/50 dark:border-white/15', shadow: 'shadow-gray-400/20', text: 'text-gray-500 dark:text-gray-300' },
+    gold: { bg: 'bg-yellow-400/20 dark:bg-yellow-500/20', border: 'border-yellow-400/50 dark:border-yellow-400/40', shadow: 'shadow-yellow-500/30', text: 'text-yellow-500 dark:text-yellow-400' },
 };
 
 // Achievement Card Component
@@ -44,7 +44,7 @@ const AchievementCard = ({ achievement, index, onClick }: { achievement: Achieve
                 "h-full text-center p-6 relative overflow-hidden transition-transform duration-300 ease-in-out transform hover:-translate-y-2",
                 achievement.unlocked
                     ? `${colors.bg} ${colors.border} shadow-lg ${colors.shadow} cursor-pointer`
-                    : 'bg-gray-200/50 dark:bg-gray-800/50 border-dashed border-gray-400/50 cursor-not-allowed'
+                    : 'bg-gray-200/50 dark:bg-[#171f3a]/60 border-dashed border-gray-400/50 dark:border-white/10 cursor-not-allowed'
             )}>
                 {achievement.unlocked && (
                      <motion.div className="absolute -top-10 -right-10 w-24 h-24 text-yellow-400/10"
@@ -155,7 +155,7 @@ const AchievementsPage = () => {
     }
 
     return (
-        <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors duration-300">
+        <div className="min-h-screen bg-gray-50 dark:bg-[#080d1f] text-gray-900 dark:text-[#f6f7ff] transition-colors duration-300 relative overflow-x-hidden">
            <Navigation 
                         currentRole={currentRole} 
                         onRoleChange={handleRoleChange}
@@ -164,9 +164,9 @@ const AchievementsPage = () => {
                 {selectedAchievement && <AchievementDetailModal achievement={selectedAchievement} onClose={() => setSelectedAchievement(null)} />}
             </AnimatePresence>
 
-            <div className="fixed inset-0 -z-0 h-full w-full bg-white bg-[linear-gradient(to_right,#8080800a_1px,transparent_1px),linear-gradient(to_bottom,#8080800a_1px,transparent_1px)] bg-[size:14px_24px] dark:bg-black"></div>
+            <div className="fixed inset-0 -z-0 h-full w-full pointer-events-none bg-white bg-[linear-gradient(to_right,#8080800a_1px,transparent_1px),linear-gradient(to_bottom,#8080800a_1px,transparent_1px)] bg-[size:14px_24px] dark:bg-transparent dark:bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] dark:from-[#171f3a]/30 dark:via-[#080d1f] dark:to-[#080d1f]"></div>
 
-            <header className="sticky top-0 z-10 p-4 bg-white/50 dark:bg-black/50 backdrop-blur-lg border-b border-gray-200 dark:border-gray-800">
+            <header className="sticky top-0 z-10 p-4 bg-white/70 dark:bg-[#10172d]/80 backdrop-blur-lg border-b border-gray-200 dark:border-white/10">
                 <div className="container mx-auto flex items-center justify-between">
                     {/* <Button variant="ghost" onClick={() => setLocation('/dashboard')}>
                         <ArrowLeft className="mr-2 h-4 w-4" />
@@ -175,7 +175,7 @@ const AchievementsPage = () => {
                     <h1 className="text-2xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-yellow-500 to-orange-500">
                         Your Achievements
                     </h1>
-                    <Button variant="outline" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
+                    <Button variant="outline" size="icon" className="border-gray-200 dark:border-white/10 dark:bg-[#171f3a]/60 dark:hover:bg-[#171f3a]" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
                         <Sun className="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
                         <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
                         <span className="sr-only">Toggle theme</span>
@@ -194,10 +194,10 @@ const AchievementsPage = () => {
                     <p className="text-6xl font-extrabold my-2">
                         <span className="bg-clip-text text-transparent bg-gradient-to-r from-green-400 to-blue-500">{unlockedCount}</span>
                         <span className="text-4xl mx-2 text-gray-400">/</span>
-                        <span className="text-gray-500">{totalCount}</span>
+                        <span className="text-gray-500 dark:text-gray-400">{totalCount}</span>
                     </p>
                     <p className="text-xl text-gray-600 dark:text-gray-300">achievements</p>
-                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 mt-4 max-w-md mx-auto">
+                    <div className="w-full bg-gray-200 dark:bg-[#171f3a] rounded-full h-2.5 mt-4 max-w-md mx-auto">
                         <motion.div
                             className="bg-gradient-to-r from-green-400 to-blue-500 h-2.5 rounded-full"
                             initial={{ width: 0 }}

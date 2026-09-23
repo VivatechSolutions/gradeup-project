@@ -127,6 +127,28 @@ interface AppState {
   activeId: string;
 }
 
+const T = {
+  bg: "#f3f6ff",
+  panel: "#ffffff",
+  panel2: "#f7f9ff",
+  border: "rgba(148,163,184,.2)",
+  text: "#111827",
+  sub: "#475569",
+  muted: "#64748b",
+  accent: "#4f46e5",
+  accent2: "#7c3aed",
+  accentSoft: "rgba(79,70,229,.10)",
+  tutor: "#f59e0b",
+  full: "#2563eb",
+  check: "#10b981",
+  radius: "12px",
+  radiusLg: "18px",
+  shadow: "0 16px 40px rgba(15, 23, 42, 0.12)",
+  shadowSm: "0 8px 24px rgba(15, 23, 42, 0.08)",
+  font: "'Plus Jakarta Sans', 'Segoe UI', sans-serif",
+  mono: "'JetBrains Mono', 'SFMono-Regular', monospace",
+} as const;
+
 // ─────────────────────────────────────────────────────────────
 // SUBJECTS & MODES CONFIG
 // SUBJECTS & STARTERS CONFIG
@@ -1384,6 +1406,7 @@ export default function HomeworkHelper() {
     [availableUnits, active?.unitId]
   );
   const subj = getSubjectConfig(active?.subject);
+  const modeConf = MODES[active?.mode ?? "guided"];
   const hasRequiredContext = Boolean(active?.subjectGroupKey && active?.unitId);
 
   // ── Persist ───────────────────────────────────────────────
@@ -1392,7 +1415,8 @@ export default function HomeworkHelper() {
   }, [appState]);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    if (!endRef.current || typeof endRef.current.scrollIntoView !== "function") return;
+    endRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [active?.messages, loading]);
 
   useEffect(() => {

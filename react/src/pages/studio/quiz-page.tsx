@@ -367,11 +367,14 @@ const CSS = `
 /* ── LOADER ── */
 .qp-loader { position:fixed; inset:0; background:#fff; z-index:999; display:flex; align-items:center; justify-content:center; font-family:'Plus Jakarta Sans',system-ui,sans-serif; }
 .dark .qp-loader { background:#0f172a; }
+.dark .qp-loader { background:#080d1f; }
 
 /* Dark mode */
 .dark .qp {
   background:#0f172a;
   color:#e2e8f0;
+  background: radial-gradient(circle at 14% 9%,rgba(126,87,255,.14),transparent 26%), radial-gradient(circle at 88% 14%,rgba(255,171,64,.16),transparent 25%), linear-gradient(180deg,#080d1f,#10172d);
+  color:#f6f7ff;
 }
 .dark .qp-card,
 .dark .qp-q-card,
@@ -382,6 +385,10 @@ const CSS = `
   background:#1e293b;
   border-color:rgba(255,255,255,.1);
   box-shadow:0 2px 14px rgba(0,0,0,.35);
+  background: rgba(23,31,58,.92);
+  backdrop-filter: blur(14px);
+  border-color:rgba(255,255,255,.12);
+  box-shadow:0 4px 20px rgba(0,0,0,.35);
 }
 .dark .qp-card:hover {
   border-color:rgba(129,140,248,.45);
@@ -420,6 +427,7 @@ const CSS = `
 .dark .qp-result-count-pill,
 .dark .qp-topic-card {
   background:#111827;
+  background:rgba(16,23,45,.8);
   border-color:rgba(255,255,255,.1);
   color:#cbd5e1;
 }
@@ -449,6 +457,7 @@ const CSS = `
 .dark .qp-pick-btn,
 .dark .qp-nav-btn {
   background:#111827;
+  background:rgba(16,23,45,.8);
   border-color:rgba(255,255,255,.12);
   color:#cbd5e1;
 }
@@ -462,6 +471,7 @@ const CSS = `
 }
 .dark .qp-wizard {
   background:#0f172a;
+  background:#080d1f;
 }
 .dark .qp-wizard-nav,
 .dark .qp-wizard-footer,
@@ -470,6 +480,7 @@ const CSS = `
 .dark .qp-pal-head,
 .dark .qp-pal-leg {
   background:#111827;
+  background:rgba(16,23,45,.75);
   border-color:rgba(255,255,255,.08);
 }
 .dark .qp-step-dot,
@@ -477,6 +488,7 @@ const CSS = `
 .dark .qp-pb-un,
 .dark .qp-opt-letter {
   background:#334155;
+  background:rgba(35,47,84,.8);
   color:#cbd5e1;
 }
 .dark .qp-pb-un:hover {
@@ -502,9 +514,11 @@ const CSS = `
 }
 .dark .qp-quiz-body {
   background:#0f172a;
+  background:#080d1f;
 }
 .dark .qp-opt {
   background:#111827;
+  background:rgba(16,23,45,.8);
   border-color:rgba(255,255,255,.1);
 }
 .dark .qp-opt:hover {
@@ -529,6 +543,7 @@ const CSS = `
 }
 .dark .qp-stat {
   background:#111827;
+  background:rgba(16,23,45,.8);
   border-color:rgba(255,255,255,.08);
 }
 .dark .qp-mark-btn,
@@ -1901,6 +1916,7 @@ const QuizPage = ({ params }: { params?: { id?: string } }) => {
     <div
       className={qpClassName}
       style={{ background: isDark ? "#0f172a" : "#f8fafc", minHeight: "100vh" }}
+      style={{ background: isDark ? "#080d1f" : "#f8fafc", minHeight: "100vh" }}
     >
       <style>{CSS}</style>
       {/* Quiz header — dashboard hero gradient */}
@@ -2018,6 +2034,7 @@ const QuizPage = ({ params }: { params?: { id?: string } }) => {
                         color: isDark ? "#f8fafc" : "#0f172a",
                         outline: "none",
                         background: isDark ? "#0f172a" : "#fff",
+                        background: isDark ? "rgba(14,20,40,.85)" : "#fff",
                       }}
                     />
                   </div>

@@ -27,22 +27,22 @@ const CSS = `
   --border-dark: rgba(0,0,0,.1);
 }
 
-.dark {
+.dark, [data-theme="dark"] {
   /* Dark theme variables */
-  --slate-50: #0f172a; --slate-100: #182235; --slate-200: #2f3d55;
+  --slate-50: #080d1f; --slate-100: #10172d; --slate-200: #171f3a;
   --slate-400: #94a3b8; --slate-500: #cbd5e1; --slate-700: #e2e8f0; --slate-900: #f8fafc;
   --sat-bg:rgba(14,165,233,.13); --sun-bg:rgba(239,68,68,.13);
   --holiday-bg:linear-gradient(135deg,rgba(245,158,11,.18),rgba(236,72,153,.16));
 
-  --surface-ground: #080f1f;
-  --surface-raised: #111827;
-  --surface-overlay: #162033;
-  --surface-muted: #1f2a3d;
-  --text-primary: #f8fafc;
-  --text-secondary: #cbd5e1;
-  --text-tertiary: #94a3b8;
-  --border-light: rgba(226,232,240,.1);
-  --border-mid: rgba(226,232,240,.16);
+  --surface-ground: #080d1f;
+  --surface-raised: rgba(23,31,58,0.92);
+  --surface-overlay: rgba(31,42,76,0.72);
+  --surface-muted: rgba(16,23,45,0.7);
+  --text-primary: #f6f7ff;
+  --text-secondary: #b5bfd8;
+  --text-tertiary: #7f8aa7;
+  --border-light: rgba(255,255,255,.08);
+  --border-mid: rgba(255,255,255,.14);
   --border-dark: rgba(226,232,240,.22);
 }
 
