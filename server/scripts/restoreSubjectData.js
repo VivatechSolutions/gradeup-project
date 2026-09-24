@@ -1,7 +1,9 @@
 require("dotenv").config();
 
 const axios = require("axios");
+const fs = require("fs");
 const mongoose = require("mongoose");
+const path = require("path");
 const readline = require("readline/promises");
 const { stdin: input, stdout: output } = require("process");
 
@@ -39,6 +41,9 @@ function normalizeMode(value) {
   const mode = String(value || "").trim().toLowerCase();
   if (["create", "create-new", "new"].includes(mode)) return "create";
   if (["update", "update-existing", "existing"].includes(mode)) return "update";
+  if (["enriched-only", "enrich-only", "enriched", "enrich"].includes(mode)) {
+    return "enriched-only";
+  }
   return null;
 }
 
@@ -104,7 +109,8 @@ async function fetchPythonPayload(aiUrl, pythonDocumentId) {
 
 function getReaderIndex(structuredData, enrichedData) {
   const unit = structuredData?.units?.[0] || structuredData || {};
-  const enrichedUnit = enrichedData?.units?.[0] || enrichedData || {};
+  const enrichedUnit =
+    enrichedData?.units?.[0] || enrichedData?.chapters?.[0] || enrichedData || {};
   const sections = Array.isArray(unit.sections)
     ? unit.sections
         .map((section) => section?.title || section?.section_title)
@@ -114,7 +120,11 @@ function getReaderIndex(structuredData, enrichedData) {
   return {
     sections,
     avatarSections: (Array.isArray(enrichedUnit.sections) ? enrichedUnit.sections : [])
-      .filter((section) => Array.isArray(section?.enrichment?.avatar_lesson?.phases))
+      .filter((section) =>
+        Array.isArray(
+          (section?.enrichment || section?.section_enrichment)?.avatar_lesson?.phases,
+        ),
+      )
       .map((section, index) => ({
         sectionId: section.id || section.section_id || null,
         sectionTitle: section.section_title || section.title,
@@ -125,6 +135,53 @@ function getReaderIndex(structuredData, enrichedData) {
     hasGlossary: Boolean(unit?.glossary?.sub_items?.length),
     hasSummary: Boolean(unit?.summary?.content?.length),
   };
+}
+
+function normalizeLocalEnrichedData(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error("Enriched JSON must contain a JSON object");
+  }
+
+  const sourceUnits = Array.isArray(raw.units)
+    ? raw.units
+    : Array.isArray(raw.chapters)
+      ? raw.chapters
+      : null;
+
+  if (!sourceUnits?.length) {
+    throw new Error("Enriched JSON must contain a non-empty units or chapters array");
+  }
+
+  const normalizedUnits = sourceUnits.map((unit) => ({
+    ...unit,
+    sections: Array.isArray(unit?.sections)
+      ? unit.sections.map((section) => {
+          if (!section?.section_enrichment || section.enrichment) return section;
+          const { section_enrichment: sectionEnrichment, ...rest } = section;
+          return { ...rest, enrichment: sectionEnrichment };
+        })
+      : unit?.sections,
+  }));
+
+  const { chapters: _chapters, ...rest } = raw;
+  return appendImageUrlsLast({ ...rest, units: normalizedUnits });
+}
+
+function readEnrichedFile(fileName) {
+  const resolvedPath = path.resolve(fileName || "enriched.json");
+  let raw;
+
+  try {
+    raw = fs.readFileSync(resolvedPath, "utf8");
+  } catch (error) {
+    throw new Error(`Unable to read enriched JSON file ${resolvedPath}: ${error.message}`);
+  }
+
+  try {
+    return { resolvedPath, data: normalizeLocalEnrichedData(JSON.parse(raw)) };
+  } catch (error) {
+    throw new Error(`Invalid enriched JSON file ${resolvedPath}: ${error.message}`);
+  }
 }
 
 function countSections(structuredData) {
@@ -305,6 +362,109 @@ async function runUpdateMode({ rl, apply, pythonDocumentId, payload }) {
   console.log(JSON.stringify(updated, null, 2));
 }
 
+async function runEnrichedOnlyMode({ rl, apply }) {
+  const fileName = getArg("enriched-file") || getArg("file") || "enriched.json";
+  const { resolvedPath, data: enrichedData } = readEnrichedFile(fileName);
+  const unitId = getArg("unit-id") || getArg("mongo-id");
+  const documentId =
+    getArg("document-id") || getArg("python-document-id") || enrichedData.document_id;
+
+  let unit;
+  if (unitId) {
+    if (!mongoose.Types.ObjectId.isValid(unitId)) {
+      throw new Error(`Invalid MongoDB SubjectUnit ObjectId: ${unitId}`);
+    }
+    unit = await SubjectUnit.findById(unitId);
+  } else {
+    const resolvedDocumentId = await askMissing(
+      documentId,
+      "Existing SubjectUnit document_id: ",
+      rl,
+    );
+    const matches = await SubjectUnit.find({
+      $or: [
+        { documentId: resolvedDocumentId },
+        { sourceDocumentId: resolvedDocumentId },
+      ],
+    }).limit(2);
+
+    if (matches.length > 1) {
+      throw new Error(
+        `More than one SubjectUnit matches ${resolvedDocumentId}. Pass --unit-id explicitly.`,
+      );
+    }
+    [unit] = matches;
+  }
+
+  if (!unit) {
+    throw new Error(
+      unitId
+        ? `SubjectUnit not found: ${unitId}`
+        : `SubjectUnit not found for document_id: ${documentId}`,
+    );
+  }
+
+  const enrichedDocumentId = cleanText(enrichedData.document_id);
+  const targetDocumentIds = [unit.documentId, unit.sourceDocumentId]
+    .map(cleanText)
+    .filter(Boolean);
+  if (
+    enrichedDocumentId &&
+    !targetDocumentIds.includes(enrichedDocumentId) &&
+    !hasFlag("allow-document-id-mismatch")
+  ) {
+    throw new Error(
+      `The enriched file document_id (${enrichedDocumentId}) does not match the target ` +
+        `SubjectUnit (${targetDocumentIds.join(", ")}). Pass ` +
+        "--allow-document-id-mismatch only if this is intentional.",
+    );
+  }
+
+  const nextReaderIndex = getReaderIndex(unit.structuredData, enrichedData);
+  printSummary("Enriched-only update preview", {
+    file: resolvedPath,
+    id: unit._id,
+    documentId: unit.documentId,
+    sourceDocumentId: unit.sourceDocumentId,
+    board: unit.board,
+    standard: unit.standard,
+    subject: unit.subject,
+    unitTitle: unit.unitTitle,
+    enrichedDocumentId: enrichedDocumentId || null,
+    enrichedUnits: enrichedData.units.length,
+    enrichedSections: enrichedData.units.reduce(
+      (total, enrichedUnit) =>
+        total + (Array.isArray(enrichedUnit?.sections) ? enrichedUnit.sections.length : 0),
+      0,
+    ),
+    avatarSections: nextReaderIndex.avatarSections.length,
+    structuredDataWillBeChanged: false,
+    debateTopicsWillBeChanged: false,
+  });
+
+  if (!apply) {
+    console.log("\nDry run only. Re-run with --apply to update MongoDB.");
+    return;
+  }
+
+  const updated = await SubjectUnit.findByIdAndUpdate(
+    unit._id,
+    {
+      $set: {
+        enrichedData,
+        "readerIndex.avatarSections": nextReaderIndex.avatarSections,
+        "contentFlags.hasEnrichedData": true,
+      },
+    },
+    { new: true },
+  ).select(
+    "_id documentId sourceDocumentId unitTitle contentFlags readerIndex.avatarSections updatedAt",
+  );
+
+  console.log("\nEnriched data stored successfully:");
+  console.log(JSON.stringify(updated, null, 2));
+}
+
 async function runCreateMode({ rl, apply, pythonDocumentId, payload }) {
   const board = cleanText(await askMissing(getArg("board"), "Board: ", rl));
   const standard = cleanText(
@@ -479,37 +639,45 @@ async function runCreateMode({ rl, apply, pythonDocumentId, payload }) {
 
 async function main() {
   const mongoUri = process.env.MONGODB_URI;
-  const aiUrl = normalizeBaseUrl(process.env.AI_URL);
 
   if (!mongoUri) {
     throw new Error("MONGODB_URI is required in .env");
-  }
-  if (!aiUrl) {
-    throw new Error("AI_URL is required in .env");
   }
 
   const rl = readline.createInterface({ input, output });
   try {
     const promptedMode = getArg("mode") ||
-      await rl.question("Mode - update existing or create new? (update/create): ");
+      await rl.question(
+        "Mode - update existing, create new, or enriched only? (update/create/enriched-only): ",
+      );
     const mode = normalizeMode(promptedMode);
-    const pythonDocumentId = await askMissing(
-      getArg("document-id") || getArg("python-document-id"),
-      "Python document_id: ",
-      rl,
-    );
     const apply =
       hasFlag("apply") ||
       parseYes(await rl.question("Apply changes to MongoDB? (y/N): "));
 
     if (!mode) {
-      throw new Error("Mode must be update or create");
-    }
-    if (!pythonDocumentId) {
-      throw new Error("Python document_id is required");
+      throw new Error("Mode must be update, create, or enriched-only");
     }
 
     await mongoose.connect(mongoUri);
+
+    if (mode === "enriched-only") {
+      await runEnrichedOnlyMode({ rl, apply });
+      return;
+    }
+
+    const aiUrl = normalizeBaseUrl(process.env.AI_URL);
+    if (!aiUrl) {
+      throw new Error("AI_URL is required in .env");
+    }
+    const pythonDocumentId = await askMissing(
+      getArg("document-id") || getArg("python-document-id"),
+      "Python document_id: ",
+      rl,
+    );
+    if (!pythonDocumentId) {
+      throw new Error("Python document_id is required");
+    }
 
     const payload = await fetchPythonPayload(aiUrl, pythonDocumentId);
 

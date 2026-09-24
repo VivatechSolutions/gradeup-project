@@ -18,16 +18,17 @@ Storage: english_test_data/ directory
 import os
 import json
 import hashlib
-import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone, timedelta
 
-import requests
-from langfuse_utils import traced_post
+from dotenv import load_dotenv
+
+import avatar_llm
 from langfuse_utils import with_student_context
 from logger import get_logger
 
+load_dotenv()
 logger = get_logger(__name__)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -35,8 +36,9 @@ logger = get_logger(__name__)
 ENGLISH_TEST_DATA_DIR = Path("english_test_data")
 QUESTION_REFRESH_DAYS = 15
 PASS_THRESHOLD = 80  # percentage
-TEST_MODEL = "gpt-4o-mini"
-TEST_FALLBACK_MODEL = "gpt-4o"
+# Never OpenAI: that key has no credits. avatar_llm routes gemini-* to Google direct.
+TEST_MODEL = os.getenv("ENGLISH_TEST_MODEL", "gemini-3.6-flash")
+TEST_FALLBACK_MODEL = os.getenv("ENGLISH_TEST_FALLBACK_MODEL", "meta-llama/llama-4-scout")
 TEST_TIMEOUT = 120
 
 LEVELS = ["basic", "intermediate", "super_intermediate", "advanced"]
@@ -165,56 +167,32 @@ class EnglishTestEngine:
 
     # ── LLM Helpers ───────────────────────────────────────────────────────────
 
+    def _complete(self, messages: List[Dict], temperature: float, *,
+                  force_json: bool, trace_name: str) -> Optional[str]:
+        """One completion through avatar_llm. None on any failure."""
+        result = avatar_llm.chat(
+            TEST_MODEL,
+            messages=messages,
+            max_tokens=4096,
+            temperature=temperature,
+            force_json=force_json,
+            timeout=TEST_TIMEOUT,
+            fallback_model=TEST_FALLBACK_MODEL,
+            trace_name=trace_name,
+        )
+        if not result.ok:
+            logger.error(f"[EnglishTestEngine] LLM call failed ({TEST_MODEL}): {(result.error or '')[:300]}")
+            return None
+        return result.text
+
     def _call_llm(self, messages: List[Dict], temperature: float = 0.9) -> str:
-        """Call OpenAI LLM."""
-        api_key = os.environ.get("OPENAI_API_KEY_TEXT") or os.environ.get("OPENAI_API_KEY")
-        if not api_key:
-            return ""
+        """A prose assessor turn; "" when the model is unavailable."""
+        return self._complete(messages, temperature, force_json=False, trace_name="english-test-turn") or ""
 
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": TEST_MODEL,
-            "messages": messages,
-            "max_completion_tokens": 4096,
-            "temperature": temperature,
-        }
-
-        try:
-            resp = traced_post("english-test-turn",
-                "https://api.openai.com/v1/chat/completions",
-                headers=headers, json=payload, timeout=TEST_TIMEOUT,
-            )
-            if not resp.ok:
-                payload["model"] = TEST_FALLBACK_MODEL
-                resp = traced_post("english-test-turn",
-                    "https://api.openai.com/v1/chat/completions",
-                    headers=headers, json=payload, timeout=TEST_TIMEOUT,
-                )
-            if resp.ok:
-                return resp.json()["choices"][0]["message"]["content"].strip()
-        except Exception as e:
-            logger.error(f"[EnglishTestEngine] LLM error: {e}")
-        return ""
-
-    def _parse_json_from_llm(self, raw: str) -> Optional[Any]:
-        """Parse JSON from LLM output, handling markdown fences."""
-        cleaned = re.sub(r'^```[a-z]*\n?', '', raw.strip())
-        cleaned = re.sub(r'\n?```$', '', cleaned).strip()
-        try:
-            return json.loads(cleaned)
-        except Exception:
-            pass
-        # Salvage: find largest valid JSON
-        for end in range(len(cleaned), 0, -1):
-            if cleaned[end - 1] in ('}', ']'):
-                try:
-                    return json.loads(cleaned[:end])
-                except Exception:
-                    continue
-        return None
+    def _call_llm_json(self, messages: List[Dict], temperature: float = 0.9) -> Optional[Dict]:
+        """A JSON-mode completion parsed to a dict, or None. Every caller asks for an object."""
+        raw = self._complete(messages, temperature, force_json=True, trace_name="english-test-json")
+        return avatar_llm.parse_json(raw)
 
     # ── Question Generation ───────────────────────────────────────────────────
 
@@ -297,8 +275,7 @@ Return ONLY a valid JSON object.
 
 Return ONLY valid JSON. No markdown fences, no commentary. Do NOT include a speaking section."""
 
-        raw = self._call_llm([{"role": "user", "content": prompt}])
-        questions = self._parse_json_from_llm(raw)
+        questions = self._call_llm_json([{"role": "user", "content": prompt}])
 
         if not questions:
             logger.error(f"[EnglishTestEngine] Failed to generate questions for {level}")
@@ -697,11 +674,10 @@ Return ONLY valid JSON:
     ]
 }}"""
 
-        raw = self._call_llm(
+        result = self._call_llm_json(
             [{"role": "user", "content": prompt}],
             temperature=0.2
         )
-        result = self._parse_json_from_llm(raw)
 
         if result:
             return result
@@ -945,11 +921,10 @@ Return ONLY valid JSON:
     "areas_for_improvement": ["Tense consistency", "More complex sentences"]
 }}"""
 
-        raw = self._call_llm(
+        score = self._call_llm_json(
             [{"role": "user", "content": score_prompt}],
             temperature=0.2
         )
-        score = self._parse_json_from_llm(raw)
 
         if not score:
             score = {

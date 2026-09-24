@@ -274,34 +274,88 @@ def build_image_query(student_msg: str, topic: str = "") -> str:
     return (topic or "").strip()
 
 
-def image_search(query: str, top_k: int = None) -> List[Dict[str, Any]]:
-    """Image search for the CHAT (never inserted into the deck).
+# Pre-gate implementation, kept for reference. It returned RAW SearXNG results: only an
+# SVG/icon-CDN filter stood between the web and the student, so a stock photo with
+# "www.STEAMPoweredFamily.com" printed across it, a museum photo of a Chicago building
+# and a cafe's coffee all came back for "acids and bases" -- and an image whose host
+# refused the S3 re-host was shipped with its hotlink-blocked origin URL.
+#
+# def image_search(query: str, top_k: int = None) -> List[Dict[str, Any]]:
+#     """Image search for the CHAT (never inserted into the deck).
+#
+#     Returns [ {"url", "title", "source"} ]. [] on failure / no query. SVG icons and
+#     known icon-CDN results are filtered out so only real photos/diagrams come back.
+#     """
+#     top_k = top_k or IMAGE_SEARCH_TOP_K
+#     if not query.strip():
+#         return []
+#
+#     # Over-fetch so we still have enough after filtering out icon/SVG noise.
+#     results = _searxng(query, top_k * 3, categories="images")
+#     images: List[Dict[str, Any]] = []
+#     for r in results:
+#         # SearXNG images expose the full-size image under img_src (thumbnail_src for the thumb).
+#         url = r.get("img_src") or r.get("url")
+#         if not _is_usable_image(url):
+#             continue
+#         # Re-host on S3 (if configured) so the chat gets a stable URL. Only done for the
+#         # images we actually keep, to limit API calls. Falls back to the source URL.
+#         hosted = _upload_to_s3(url)
+#         images.append({
+#             "url": hosted or url,
+#             "origin_url": url,
+#             "hosted": bool(hosted),
+#             "title": r.get("title") or "",
+#             "source": r.get("source") or r.get("url") or "",
+#         })
+#         if len(images) >= top_k:
+#             break
+#     return images
 
-    Returns [ {"url", "title", "source"} ]. [] on failure / no query. SVG icons and
-    known icon-CDN results are filtered out so only real photos/diagrams come back.
+
+def image_search(query: str, top_k: int = None, *,
+                 unit_title: str = "", section_title: str = "", subject: str = "",
+                 class_number: str = "", board: str = "", unit_number: int = 0,
+                 teaching_text: str = "",
+                 extra_queries: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    """Clean, watermark-free images for the CHAT (never inserted into the deck).
+
+    Goes through the avatar lessons' picture gates (avatar_visuals.find_visuals):
+    host block list, pixel check, and a VISION review that rejects watermarks,
+    website names/URLs printed on the image, coaching-site branding, decorative
+    posters and off-topic pictures. The vision check is the one that matters -- no
+    URL rule can see text printed inside a photo.
+
+    Pass the curriculum context: the gate judges "on topic" against it, which is
+    what rejects a picture that merely matches the query's words (an art-museum
+    photo for "acids and bases"). Without it the gate judges against the query alone.
+
+    ``extra_queries`` are searched alongside ``query`` in one pass (see
+    ppt_review.llm_image_queries): several concrete subjects compete for the same
+    vision budget, instead of one generic query failing outright.
+
+    Returns [ {"url", "origin_url", "hosted", "title", "shows", "source"} ], every
+    url re-hosted on S3. [] when nothing clears -- a picture is always optional.
     """
-    top_k = top_k or IMAGE_SEARCH_TOP_K
-    if not query.strip():
+    if not (query or "").strip():
         return []
-
-    # Over-fetch so we still have enough after filtering out icon/SVG noise.
-    results = _searxng(query, top_k * 3, categories="images")
-    images: List[Dict[str, Any]] = []
-    for r in results:
-        # SearXNG images expose the full-size image under img_src (thumbnail_src for the thumb).
-        url = r.get("img_src") or r.get("url")
-        if not _is_usable_image(url):
-            continue
-        # Re-host on S3 (if configured) so the chat gets a stable URL. Only done for the
-        # images we actually keep, to limit API calls. Falls back to the source URL.
-        hosted = _upload_to_s3(url)
-        images.append({
-            "url": hosted or url,
-            "origin_url": url,
-            "hosted": bool(hosted),
-            "title": r.get("title") or "",
-            "source": r.get("source") or r.get("url") or "",
-        })
-        if len(images) >= top_k:
-            break
-    return images
+    try:
+        from avatar_visuals import find_visuals
+        found = find_visuals(
+            query, count=top_k or IMAGE_SEARCH_TOP_K,
+            teaching_text=teaching_text, section_title=section_title,
+            unit_title=unit_title, board=board, class_number=class_number,
+            subject=subject, unit_number=unit_number,
+            extra_queries=extra_queries,
+        )
+    except Exception as e:
+        logger.error(f"[ppt_websearch] gated image search failed: {e}")
+        return []
+    return [{
+        "url": v["image_url"],
+        "origin_url": v.get("origin_url", ""),
+        "hosted": True,
+        "title": v.get("title") or v.get("shows") or "",
+        "shows": v.get("shows", ""),
+        "source": v.get("page_url") or v.get("source_name") or "",
+    } for v in found]

@@ -1,7 +1,7 @@
 import React from "react";
 import { SlideData, TaskState } from "../types";
 import { PlaceholderImage } from "../PlaceholderImage";
-import { Sparkles, ArrowRight, Check, BookOpen, BarChart3, Lightbulb, Settings } from "lucide-react";
+import { Sparkles, ArrowRight, Check, BookOpen } from "lucide-react";
 import { motion } from "framer-motion";
 
 interface HookSlideProps {
@@ -92,11 +92,6 @@ export const HookSlide: React.FC<HookSlideProps> = ({
               </>
             )}
           </motion.button>
-          <div className="hidden xl:block rotate-[-8deg] pb-1 text-xs font-extrabold text-slate-500 dark:text-sky-200/80">
-            <div>Small</div>
-            <div>steps</div>
-            <div className="text-base">Big progress!</div>
-          </div>
         </div>
       </div>
 
@@ -114,25 +109,6 @@ export const HookSlide: React.FC<HookSlideProps> = ({
             aspectRatio="16/9"
             className="relative shadow-none border-0 max-h-[270px]"
           />
-          <div className="absolute right-4 top-6 hidden xl:flex flex-col gap-2 w-40">
-            {[
-              { label: "Learn", icon: BookOpen, className: "from-red-400 to-rose-500 text-white dark:from-fuchsia-500 dark:to-rose-500" },
-              { label: "Understand", icon: Lightbulb, className: "from-lime-300 to-green-300 text-[#071b4d] dark:from-emerald-300 dark:to-cyan-300" },
-              { label: "Apply", icon: Settings, className: "from-amber-300 to-yellow-400 text-[#071b4d] dark:from-amber-300 dark:to-orange-400" },
-              { label: "Grow", icon: BarChart3, className: "from-cyan-300 to-teal-300 text-[#071b4d] dark:from-sky-300 dark:to-violet-300" },
-            ].map((item) => {
-              const Icon = item.icon;
-              return (
-                <div
-                  key={item.label}
-                  className={`flex items-center gap-2 rounded-2xl bg-gradient-to-r ${item.className} px-3.5 py-2 font-extrabold text-sm shadow-lg shadow-orange-300/20`}
-                >
-                  <Icon className="w-5 h-5" />
-                  <span>{item.label}</span>
-                </div>
-              );
-            })}
-          </div>
         </div>
       </div>
     </div>

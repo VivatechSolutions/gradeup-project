@@ -64,9 +64,17 @@ def parse_decision(msg: str) -> Optional[str]:
 _DEFAULT = {"intent": "answer", "source": "rag", "reason": "default"}
 
 # ── keyword heuristics (fallback when the LLM is unavailable) ──────────────────
+# _IMAGE_RX = re.compile(
+#     r"\b(image|images|img|imgs|picture|pic|photo|photos|diagram|illustration|visual|"
+#     r"figure|graphic|drawing|infographic)\b", re.I)
+# Plurals and the common typos too. This is the fallback when the LLM classifier is
+# down (Gemini 503s, 2026-09-24), and it matched "picture" but not "pictures",
+# "pic" but not "pics", and nothing at all for "imges" - so "show me pictures for
+# this slide" and "can you get the imges" went down the answer path 3 times in 5.
+# ima?ge?s? covers image(s), imge(s), img(s), imag; \b keeps "imagine" out.
 _IMAGE_RX = re.compile(
-    r"\b(image|images|img|imgs|picture|pic|photo|photos|diagram|illustration|visual|"
-    r"figure|graphic|drawing|infographic)\b", re.I)
+    r"\b(ima?ge?s?|imgaes|imagse|pictures?|pics?|photos?|photographs?|diagrams?|"
+    r"illustrations?|visuals?|figures?|graphics?|drawings?|infographics?)\b", re.I)
 _EDIT_RX = re.compile(
     r"\b(edit|change|rewrite|rephrase|reword|fix|update|replace|remove|delete|"
     r"shorten|expand|restructure|reformat|make (?:it|this|the)|bold|bigger|"

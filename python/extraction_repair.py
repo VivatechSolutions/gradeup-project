@@ -253,16 +253,28 @@ def _find_misnumbered(sections: List[Dict[str, Any]], failure, source_md: str):
     return None
 
 
-def _find_section(sections: List[Dict[str, Any]], section_id: str, title: str):
-    """Locate a section by id, else by title, anywhere in the tree."""
-    want_id = (section_id or "").strip()
-    want_title = re.sub(r"[^a-z0-9]+", "", (title or "").lower())
-    from extraction_audit import iter_sections
-    for _depth, sec in iter_sections(sections):
-        if want_id and str(sec.get("id") or "").strip() == want_id:
-            return sec
-        if want_title and re.sub(r"[^a-z0-9]+", "",
-                                 str(sec.get("title") or "").lower()) == want_title:
+def _empty_target(units: List[Dict[str, Any]], failure) -> Optional[Dict[str, Any]]:
+    """The section an EMPTY_SECTION failure names, if it is still in the tree.
+
+    Found by identity, not by id or title. An English unit prints "Glossary"
+    once per reading and its sections carry no ids, so the old id-or-title
+    lookup filled the FIRST Glossary - already full - every pass while the
+    empty one stayed empty, and the gate rejected the unit. When the audit's
+    object is gone, only a section with the same id and title that is STILL
+    empty will do: overwriting a full one is how content gets lost.
+    """
+    from extraction_audit import _is_empty, _norm_key
+    nodes = [sec for unit in units if isinstance(unit, dict)
+             for _d, sec in _iter(unit.get("sections") or [])]
+    ref = getattr(failure, "section_ref", None)
+    if ref is not None and any(sec is ref for sec in nodes):
+        return ref
+    want_id = (failure.section_id or "").strip()
+    want_title = _norm_key(failure.title)
+    for sec in nodes:
+        if (str(sec.get("id") or "").strip() == want_id
+                and _norm_key(str(sec.get("title") or "")) == want_title
+                and _is_empty(sec)):
             return sec
     return None
 
@@ -501,14 +513,26 @@ def repair_from_audit(
 
     target_unit = units[0]
     for failure in llm_failures[:max_llm_repairs]:
+        existing = None
+        if failure.kind == EMPTY_SECTION:
+            existing = _empty_target(units, failure)
+            if existing is None:
+                logger.info(f"[Repair] empty {failure.title[:40]!r} is no longer in the "
+                            f"extraction - nothing to fill")
+                continue
+            span = source_md[failure.span_start:failure.span_end].strip()
+            if ase._content_is_headings_only(span):
+                # The book prints a line under this heading and nothing more
+                # ("Read the following sentences."). There is nothing for the
+                # model to structure, and a paraphrase of one line would never
+                # match what the audit checks for.
+                existing["content"] = span
+                counts["deterministic"] += 1
+                continue
         section = targeted_extract(source_md, failure, api_key, model)
         if not section:
             counts["failed"] += 1
             continue
-        existing = None
-        if failure.kind == EMPTY_SECTION:
-            existing = _find_section(target_unit.get("sections") or [],
-                                     failure.section_id, failure.title)
         if existing is not None:
             existing["content"] = section["content"]
             if section.get("sub_items"):

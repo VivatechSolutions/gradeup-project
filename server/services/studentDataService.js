@@ -77,6 +77,31 @@ function buildSubjectGroupKey(unit) {
   return unit.subjectGroupKey || [unit.board, unit.standard, unit.subject].filter(Boolean).join("::");
 }
 
+function getIndexedSectionTopics(unit) {
+  const indexedSections = unit.readerIndex?.avatarSections?.length
+    ? unit.readerIndex.avatarSections
+    : (unit.readerIndex?.sections || []).map((sectionTitle, index) => ({
+        sectionTitle,
+        order: index + 1,
+      }));
+
+  return indexedSections
+    .map((section, index) => {
+      const sectionTitle = normalize(section.sectionTitle);
+      if (!sectionTitle) return null;
+      const sectionNumber = section.order ?? index + 1;
+      return {
+        id: section.sectionId || `${unit._id}:${sectionNumber}`,
+        sectionId: section.sectionId || null,
+        sectionNumber: String(sectionNumber),
+        sectionTitle,
+        sectionType: "section",
+        label: `${sectionNumber} ${sectionTitle}`.trim(),
+      };
+    })
+    .filter(Boolean);
+}
+
 async function listStudentSubjects(userId) {
   const profile = await getStudentProfile(userId);
   const { unitQuery, board, classNumber } = studentContentFilter(profile);
@@ -151,6 +176,7 @@ async function listStudentSubjects(userId) {
       unitLabel: unit.unitLabel,
       chapterName: unit.chapterName || null,
       readerIndex: unit.readerIndex || null,
+      sectionTopics: getIndexedSectionTopics(unit),
     });
   });
   return Array.from(groups.values());

@@ -130,38 +130,6 @@ interface Book {
   imageCandidates?: string[];
 }
 
-const MOCK_INERTIA_SUBJECT_BOOK: Book = {
-  id: "sci-inertia-mock",
-  title: "Science - Motion and Inertia",
-  subject: "Science",
-  subjectFilterLabel: "Science",
-  board: "State Board",
-  standard: "10",
-  term: "Term 1",
-  part: null,
-  unitCount: 1,
-  color: "#10b981",
-  coverImageUrl: null,
-  imageCandidates: [],
-  chapters: [
-    {
-      id: "mock-inertia-section-1-2",
-      title: "INERTIA",
-      section_id: "1.2",
-      section_title: "INERTIA",
-      unitTitle: "Force and Motion",
-      unit: 1,
-      subject: "Science",
-      board: "State Board",
-      standard: "10",
-      content:
-        "This local mock subject uses the backend enrichment JSON for the Inertia interactive lesson.",
-      enhancedContent:
-        "This local mock subject uses the backend enrichment JSON for the Inertia interactive lesson.",
-    },
-  ],
-};
-
 interface TeachingSegment {
   segment_id: string;
   type: "teaching";
@@ -4859,18 +4827,44 @@ const BookContentWindowRewamp = () => {
       color: palette[index % palette.length],
       coverImageUrl: subjectGroup.coverImageUrl || null,
       imageCandidates: subjectGroup.imageCandidates || [],
-      chapters: (subjectGroup.units || []).map((unit, unitIndex) => ({
-        id: unit.id,
-        title: unit.unitTitle || unit.unitLabel || `Unit ${unitIndex + 1}`,
-        board: unit.board || subjectGroup.board || null,
-        standard: unit.standard || subjectGroup.standard || null,
-        subject: unit.subject || subjectGroup.subject || null,
-        part: unit.part || subjectGroup.part || undefined,
-        term: unit.term || subjectGroup.term || undefined,
-        content: `${unit.unitTitle || unit.unitLabel || `Unit ${unitIndex + 1}`} content is available for reading.`,
-        enhancedContent: `${unit.unitTitle || unit.unitLabel || `Unit ${unitIndex + 1}`} content is available for reading.`,
-        unit: unit.unitNumber || unitIndex + 1,
-      })),
+      chapters: (subjectGroup.units || []).map((unit, unitIndex) => {
+        const indexedSections = unit.readerIndex?.avatarSections?.length
+          ? unit.readerIndex.avatarSections
+          : (unit.readerIndex?.sections || []).map((sectionTitle, sectionIndex) => ({
+              sectionTitle,
+              order: sectionIndex + 1,
+            }));
+        const sectionTopics = unit.sectionTopics?.length
+          ? unit.sectionTopics
+          : indexedSections.map((section, sectionIndex) => ({
+              id: section.sectionId || `${unit.id}:${section.order ?? sectionIndex + 1}`,
+              sectionId: section.sectionId || null,
+              sectionNumber: String(section.order ?? sectionIndex + 1),
+              sectionTitle: section.sectionTitle,
+              sectionType: "section",
+              label: `${section.order ?? sectionIndex + 1} ${section.sectionTitle}`.trim(),
+            }));
+        return {
+          id: unit.id,
+          title: unit.unitTitle || unit.unitLabel || `Unit ${unitIndex + 1}`,
+          board: unit.board || subjectGroup.board || null,
+          standard: unit.standard || subjectGroup.standard || null,
+          subject: unit.subject || subjectGroup.subject || null,
+          part: unit.part || subjectGroup.part || undefined,
+          term: unit.term || subjectGroup.term || undefined,
+          content: `${unit.unitTitle || unit.unitLabel || `Unit ${unitIndex + 1}`} content is available for reading.`,
+          enhancedContent: `${unit.unitTitle || unit.unitLabel || `Unit ${unitIndex + 1}`} content is available for reading.`,
+          sectionTopics: sectionTopics.map((topic: any) => ({
+            id: String(topic.id || `${unit.id}:${topic.sectionTitle || topic.label}`),
+            label: topic.label || topic.sectionTitle,
+            title: topic.sectionTitle || topic.title || topic.label,
+            number: topic.sectionNumber || topic.number || null,
+            anchor: topic.anchor || makeAnchorId(unit.id, topic.sectionNumber || topic.sectionTitle || topic.label),
+            sectionType: topic.sectionType || "section",
+          })),
+          unit: unit.unitNumber || unitIndex + 1,
+        };
+      }),
     };
   };
 
@@ -4940,15 +4934,11 @@ const BookContentWindowRewamp = () => {
           const remoteBooks = data.map((subjectGroup, index) =>
             mapRemoteSubjectToBook(subjectGroup, index),
           );
-          setLibraryBooks(
-            remoteBooks.some((book) => book.id === MOCK_INERTIA_SUBJECT_BOOK.id)
-              ? remoteBooks
-              : [MOCK_INERTIA_SUBJECT_BOOK, ...remoteBooks],
-          );
+          setLibraryBooks(remoteBooks);
         }
       } catch (error) {
         if (!ignore) {
-          setLibraryBooks([MOCK_INERTIA_SUBJECT_BOOK]);
+          setLibraryBooks([]);
           pushToast({
             title: "Library unavailable",
             description:
@@ -7450,8 +7440,6 @@ const BookContentWindowRewamp = () => {
           <h2 className="lib-section-heading">Subjects</h2>
           <div className="lib-subject-filter-row">
             {subjects.map((subject, index) => {
-              const subjectKey = subject.toLowerCase().split(" - ")[0].trim();
-              const subjectArt = BOOK_SUBJECT_ART[subjectKey];
               const subjectBackgrounds = [
                 "linear-gradient(135deg,#ffcf5a,#ff7b54)",
                 "linear-gradient(135deg,#6ee7f2,#2389ff)",
@@ -7466,18 +7454,7 @@ const BookContentWindowRewamp = () => {
                 style={{ "--subject-bg": subjectBackgrounds[index % subjectBackgrounds.length] } as React.CSSProperties}
                 onClick={() => setActiveFilter(subject)}
               >
-                <div className="lib-subject-name">{subject}</div>
-                <div className="lib-subject-visual">
-                  {subjectArt ? (
-                    <img src={subjectArt} alt="" className="lib-subject-art" aria-hidden />
-                  ) : (
-                    <BookOpen size={54} strokeWidth={1.5} aria-hidden />
-                  )}
-                </div>
-                <div className="lib-subject-footer">
-                  <span>{activeFilter === subject ? "Showing these books" : "View books"}</span>
-                  <span className="lib-subject-arrow" aria-hidden="true">→</span>
-                </div>
+                <span className="lib-subject-name">{subject}</span>
               </button>
               );
             })}
@@ -8160,29 +8137,29 @@ const libStyles = `
   background:rgba(99,102,241,.18); border-color:#6366f1; color:#a5b4fc;
 }
 .lib-subject-filter-row {
-  display:grid;
-  grid-template-columns:repeat(5,minmax(0,1fr));
+  display:flex;
+  flex-wrap:wrap;
   gap:10px;
   margin-bottom:24px;
   position:relative;
 }
 @keyframes libSubjectIn { from { opacity:0; transform:translateY(14px) scale(.97); } to { opacity:1; transform:none; } }
 .lib-subject-card {
-  min-height:190px;
-  padding:14px 12px;
+  min-height:0;
+  padding:9px 16px;
   border:0;
-  border-radius:18px;
+  border-radius:24px;
   background:var(--subject-bg);
   color:#071235;
-  font:800 16px/1.2 'Plus Jakarta Sans',system-ui,sans-serif;
-  text-align:left;
+  font:800 13px/1.2 'Plus Jakarta Sans',system-ui,sans-serif;
+  text-align:center;
   cursor:pointer;
-  display:flex;
-  flex-direction:column;
-  gap:10px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
   overflow:hidden;
   position:relative;
-  box-shadow:0 10px 22px rgba(38,57,116,.12);
+  box-shadow:0 4px 12px rgba(38,57,116,.12);
   transition:transform .2s,box-shadow .2s;
   animation:libSubjectIn .45s cubic-bezier(.34,1.56,.64,1) both;
 }
@@ -8194,25 +8171,12 @@ const libStyles = `
 .lib-subject-card::before { content:''; position:absolute; top:-50%; left:-35%; width:34%; height:220%; background:linear-gradient(90deg,transparent,rgba(255,255,255,.42),transparent); transform:rotate(18deg); opacity:0; transition:opacity .2s; }
 .lib-subject-card:hover::before { opacity:1; animation:libSubjectShine 1.2s ease both; }
 @keyframes libSubjectShine { from { transform:translateX(-120%) rotate(18deg); } to { transform:translateX(360%) rotate(18deg); } }
-.lib-subject-card:hover { transform:translateY(-5px) rotate(-.45deg); box-shadow:0 18px 30px rgba(38,57,116,.18); }
+.lib-subject-card:hover { transform:translateY(-2px); box-shadow:0 8px 18px rgba(38,57,116,.18); }
 .lib-subject-card.active { outline:3px solid rgba(99,102,241,.35); outline-offset:2px; }
-.lib-subject-name { font-size:16px; line-height:1.2; min-height:20px; position:relative; z-index:2; }
-.lib-subject-visual { position:relative; z-index:1; min-height:112px; border-radius:18px; display:grid; place-items:center; background:linear-gradient(145deg,rgba(255,255,255,.78),rgba(255,255,255,.28)); box-shadow:inset 0 -8px 0 rgba(0,0,0,.05); overflow:hidden; }
-.lib-subject-visual::before { content:''; position:absolute; inset:auto -20px -36px auto; width:92px; height:92px; border-radius:50%; background:rgba(255,255,255,.28); }
-.lib-subject-art { width:110px; height:100px; object-fit:contain; filter:drop-shadow(0 13px 14px rgba(0,0,0,.15)); }
-.lib-subject-art { animation:libSubjectFloat 4.6s ease-in-out infinite; }
+.lib-subject-name { position:relative; z-index:2; white-space:nowrap; }
 .lib-cover-subject-art { width:72px; height:72px; object-fit:contain; filter:drop-shadow(0 12px 12px rgba(0,0,0,.2)); animation:libSubjectFloat 4.6s ease-in-out infinite; }
 @keyframes libSubjectFloat { 0%,100% { transform:translateY(0) rotate(-2deg); } 50% { transform:translateY(-8px) rotate(3deg); } }
-.lib-subject-card:nth-child(4) { transform:translateY(10px); }
-.lib-subject-card:nth-child(4):hover { transform:translateY(5px) rotate(-.45deg); }
-.lib-subject-footer { position:relative; z-index:1; margin-top:auto; padding:8px 10px; border-radius:12px; background:rgba(255,255,255,.38); font-size:10px; display:flex; align-items:center; justify-content:space-between; gap:6px; }
-.lib-subject-arrow { font-size:16px; line-height:1; transition:transform .2s; }
-.lib-subject-card:hover .lib-subject-arrow { transform:translateX(3px); }
 .lib-book-card:hover .lib-cover-subject-art { transform:translateY(-5px) rotate(4deg) scale(1.08); }
-.lib-subject-card { min-height:190px; padding:14px 12px; border-radius:16px; gap:10px; }
-.lib-subject-visual { min-height:104px; border-radius:15px; }
-.lib-subject-art { width:96px; height:86px; }
-.lib-subject-footer { padding:7px; border-radius:11px; font-size:9px; }
 
 /* ═══════════════════════════ BOOK GRID ═══════════════════════════ */
 .lib-grid {
@@ -8354,7 +8318,6 @@ const libStyles = `
 /* ═══════════════════════════ RESPONSIVE ═══════════════════════════ */
 @media (max-width:1024px) {
   .lib-stats-row { grid-template-columns:repeat(2,1fr); }
-  .lib-subject-filter-row { grid-template-columns:repeat(3,minmax(0,1fr)); }
 }
 @media (max-width:768px) {
   .lib-root       { padding:16px; }
@@ -8363,10 +8326,8 @@ const libStyles = `
   .lib-hero-right { width:100%; flex-wrap:wrap; }
   .lib-stats-row  { grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:18px; }
   .lib-grid       { grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:12px; }
-  .lib-subject-filter-row { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
-  .lib-subject-card:nth-child(4) { transform:none; }
-  .lib-subject-card { min-height:174px; }
-  .lib-subject-art { width:82px; height:74px; }
+  .lib-subject-filter-row { gap:8px; }
+  .lib-subject-card { padding:8px 13px; }
   .lib-cover      { height:130px; }
   .lib-cover-symbol { font-size:40px; }
   .toc-grid       { grid-template-columns:1fr; }
@@ -8374,9 +8335,7 @@ const libStyles = `
 @media (max-width:480px) {
   .lib-stats-row  { grid-template-columns:repeat(2,1fr); }
   .lib-grid       { grid-template-columns:1fr 1fr; }
-  .lib-subject-filter-row { grid-template-columns:1fr; gap:10px; }
-  .lib-subject-card { min-height:166px; }
-  .lib-subject-art { width:74px; height:67px; }
+  .lib-subject-filter-row { gap:8px; }
   .lib-hero-right { gap:10px; }
 }
 

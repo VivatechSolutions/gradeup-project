@@ -19,6 +19,8 @@ call carries a request_id and is idempotent via ppt_session.ppt_idempotency.
 """
 
 import copy
+import hashlib
+import json
 import math
 import os
 import re
@@ -26,6 +28,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
+import requests
 from fastapi import HTTPException
 
 from logger import get_logger
@@ -55,6 +58,50 @@ ALLOWED_FONTS = {
 
 def _uid(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
+
+
+# ── request_id reuse guard ──────────────────────────────────────────────────────
+# Idempotency replays the stored response for a repeated request_id. On its own
+# that turns a client bug -- one id reused for a DIFFERENT request -- into a
+# silent wrong answer: an image search came back as the cached "add more points"
+# edit, because both calls sent request_id "suggest-001". So each stored response
+# carries a fingerprint of the fields that decide the answer; a genuine retry
+# (same body) still replays, a reused id with a new body gets a 409.
+
+_START_KEYS = ("student_id", "board", "class_number", "chapter", "title",
+               "subject", "term", "deck_ref")
+_SUGGEST_KEYS = ("slide_index", "query", "slide_id", "deck_ref", "slide_snapshot")
+_DECIDE_KEYS = ("decision", "proposal_id")
+_FINGERPRINT_FIELD = "_request_fingerprint"
+
+
+def _request_fingerprint(payload: Dict[str, Any], keys) -> str:
+    material = json.dumps({key: payload.get(key) for key in keys},
+                          sort_keys=True, default=str)
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def _replay(scope: str, request_id: str, fingerprint: str):
+    """The stored response for this request_id, or None. 409 if the id was
+    already used for a different request. Rows stored before fingerprints
+    existed carry none and replay as before."""
+    cached = get_idempotent_response(scope, request_id)
+    if not cached:
+        return None
+    stored = cached.pop(_FINGERPRINT_FIELD, None)
+    if stored and stored != fingerprint:
+        raise HTTPException(
+            409,
+            "request_id was already used for a different request -- "
+            "send a new request_id for each new request",
+        )
+    return cached
+
+
+def _remember(scope: str, request_id: str, fingerprint: str,
+              response: Dict[str, Any]) -> None:
+    save_idempotent_response(scope, request_id,
+                             {**response, _FINGERPRINT_FIELD: fingerprint})
 
 
 def _color(value: Any, fallback: str) -> str:
@@ -232,6 +279,85 @@ def _initial_slides(
     return slides
 
 
+def _register_gradeup_deck(
+    session: Dict[str, Any],
+    start_response: Dict[str, Any],
+) -> None:
+    """Hand the new deck to Node, which owns presentation storage.
+
+    The editor page loads a deck with GET /api/v1/seminar/decks/<deck_id> against
+    Node -- so a deck that exists only in Python's SQLite renders as "Presentation
+    not found". Registration is what makes edit_url openable, which is why a failure
+    here fails the whole start call: a session whose deck Node never stored is dead.
+    A retry with the same request_id replays the cached response and re-registers.
+    """
+    node_base = os.environ.get(
+        "GRADEUP_NODE_API_BASE_URL",
+        "",
+    ).rstrip("/")
+    internal_key = os.environ.get(
+        "GRADEUP_INTERNAL_API_KEY",
+        "",
+    )
+
+    if not node_base.startswith(("http://", "https://")):
+        raise HTTPException(
+            503,
+            "GRADEUP_NODE_API_BASE_URL is not configured",
+        )
+
+    if not internal_key:
+        raise HTTPException(
+            503,
+            "GRADEUP_INTERNAL_API_KEY is not configured",
+        )
+
+    payload = {
+        "student_id": session["student_id"],
+        "deck": start_response,
+        "context": {
+            "board": session.get("board"),
+            "class_number": session.get("class_number"),
+            "chapter": session.get("unit"),
+            "subject": session.get("subject"),
+            "term": session.get("term"),
+        },
+    }
+
+    try:
+        result = requests.post(
+            f"{node_base}/internal/presentations/register",
+            json=payload,
+            headers={
+                "x-gradeup-internal-key": internal_key,
+            },
+            timeout=30,
+        )
+    except requests.RequestException as exc:
+        logger.error(
+            f"[gradeup:register] Node request failed: {exc}"
+        )
+        raise HTTPException(
+            503,
+            "Presentation storage is temporarily unavailable",
+        ) from exc
+
+    if not result.ok:
+        logger.error(
+            "[gradeup:register] Node rejected registration "
+            f"status={result.status_code} body={result.text[:1000]}"
+        )
+        raise HTTPException(
+            502,
+            "Presentation could not be registered",
+        )
+
+    logger.info(
+        f"[gradeup:register] deck={session['deck_id']} "
+        f"student={session['student_id']}"
+    )
+
+
 def start_gradeup_session(payload: Dict[str, Any]) -> Dict[str, Any]:
     student_id = str(payload.get("student_id") or "")
     request_id = str(payload.get("request_id") or "")
@@ -240,9 +366,28 @@ def start_gradeup_session(payload: Dict[str, Any]) -> Dict[str, Any]:
         raise HTTPException(422, "request_id is required for GradeUp slides")
 
     scope = f"gradeup:start:{student_id}"
-    cached = get_idempotent_response(scope, request_id)
+    # cached = get_idempotent_response(scope, request_id)
+    fingerprint = _request_fingerprint(payload, _START_KEYS)
+    cached = _replay(scope, request_id, fingerprint)
 
+    # if cached:
+    #     return cached
+    # A retry re-registers the deck with Node: the first attempt may have saved this
+    # response and THEN failed to register, so replaying it alone would hand back an
+    # edit_url whose deck Node still does not have.
     if cached:
+        session = find_session_by_deck_ref(
+            cached["deck_ref"],
+            student_id,
+        )
+
+        if not session:
+            raise HTTPException(
+                404,
+                "Cached GradeUp deck session was not found",
+            )
+
+        _register_gradeup_deck(session, cached)
         return cached
 
     existing_ref = payload.get("deck_ref")
@@ -254,7 +399,8 @@ def start_gradeup_session(payload: Dict[str, Any]) -> Dict[str, Any]:
             raise HTTPException(404, "GradeUp deck session was not found")
 
         response = _start_response(session)
-        save_idempotent_response(scope, request_id, response)
+        _remember(scope, request_id, fingerprint, response)
+        _register_gradeup_deck(session, response)
         return response
 
     # Fail fast on missing config before spending an LLM call on the theme.
@@ -353,7 +499,8 @@ def start_gradeup_session(payload: Dict[str, Any]) -> Dict[str, Any]:
     create_session_record(session)
 
     response = _start_response(session)
-    save_idempotent_response(scope, request_id, response)
+    _remember(scope, request_id, fingerprint, response)
+    _register_gradeup_deck(session, response)
 
     logger.info(
         f"[gradeup:start] session={session_id} deck={deck_id} "
@@ -721,7 +868,12 @@ def suggest_gradeup(
     if not query:
         raise HTTPException(422, "query is required")
 
-    if payload.get("deck_ref") != session.get("deck_ref"):
+    # deck_ref and slide_id are OPTIONAL assertions: session_id already identifies the
+    # session and the snapshot carries its own id, so an omitted field means "no claim"
+    # and only a WRONG one is an error. Sending them is still worth it -- it catches a
+    # client that has drifted onto a different deck or slide than it thinks.
+    # if payload.get("deck_ref") != session.get("deck_ref"):
+    if payload.get("deck_ref") and payload["deck_ref"] != session.get("deck_ref"):
         raise HTTPException(409, "deck_ref does not match this session")
 
     slide = payload.get("slide_snapshot")
@@ -729,11 +881,14 @@ def suggest_gradeup(
     if not isinstance(slide, dict):
         raise HTTPException(422, "slide_snapshot is required")
 
-    if payload.get("slide_id") != slide.get("id"):
+    # if payload.get("slide_id") != slide.get("id"):
+    if payload.get("slide_id") and payload["slide_id"] != slide.get("id"):
         raise HTTPException(422, "slide_id does not match slide_snapshot")
 
     scope = f"gradeup:suggest:{session['session_id']}"
-    cached = get_idempotent_response(scope, request_id)
+    # cached = get_idempotent_response(scope, request_id)
+    fingerprint = _request_fingerprint(payload, _SUGGEST_KEYS)
+    cached = _replay(scope, request_id, fingerprint)
 
     if cached:
         return cached
@@ -750,19 +905,53 @@ def suggest_gradeup(
     legacy_snapshot = _legacy_snapshot(slide)
 
     if intent == "image":
-        from ppt.ppt_review import llm_image_query
+        from ppt.ppt_review import llm_image_queries, llm_image_query
         from ppt.ppt_websearch import image_search
 
-        image_query = llm_image_query(
+        # image_query = llm_image_query(
+        #     query,
+        #     legacy_snapshot.get("title", ""),
+        #     legacy_snapshot.get("body", ""),
+        #     session.get("unit_title", ""),
+        # )
+        # Several concrete subjects searched in one pass; the single-query writer
+        # is only the fallback. One generic query ("acid base reaction experiment")
+        # returned zero clean pictures.
+        image_queries = llm_image_queries(
             query,
             legacy_snapshot.get("title", ""),
             legacy_snapshot.get("body", ""),
             session.get("unit_title", ""),
-        )
+        ) or [llm_image_query(
+            query,
+            legacy_snapshot.get("title", ""),
+            legacy_snapshot.get("body", ""),
+            session.get("unit_title", ""),
+        )]
+        image_queries = [q for q in image_queries if q] or [
+            legacy_snapshot.get("title") or session.get("unit_title") or query]
+        image_query = image_queries[0]
 
+        # images = [
+        #     image
+        #     for image in image_search(image_query)
+        #     if str(image.get("url") or "").startswith("https://")
+        # ][:10]
+        # Gated search (watermark / on-topic vision check). The curriculum context is
+        # what lets the gate reject a picture that only matches the query's words.
         images = [
             image
-            for image in image_search(image_query)
+            for image in image_search(
+                image_query,
+                unit_title=session.get("unit_title") or "",
+                section_title=legacy_snapshot.get("title", ""),
+                subject=session.get("subject") or "",
+                class_number=session.get("class_number") or "",
+                board=session.get("board") or "",
+                unit_number=session.get("unit") or 0,
+                teaching_text=legacy_snapshot.get("body", ""),
+                extra_queries=image_queries[1:],
+            )
             if str(image.get("url") or "").startswith("https://")
         ][:10]
 
@@ -773,15 +962,22 @@ def suggest_gradeup(
             "intent": "image",
             "source": "web",
             "ai_feedback": (
-                f'Here are images for "{image_query}". '
+                f"Here are {len(images)} picture(s) for this slide "
+                f"(searched: {', '.join(image_queries)}). "
                 "Select one to add it to this slide."
+                if images else
+                f"I couldn't find a clean, watermark-free picture "
+                f"(searched: {', '.join(image_queries)}). "
+                "Try naming the exact thing you want to show, like a piece of "
+                "apparatus or a labelled diagram."
             ),
             "image_query": image_query,
+            "image_queries": image_queries,
             "images": images,
             "suggestions": [],
         }
 
-        save_idempotent_response(scope, request_id, response)
+        _remember(scope, request_id, fingerprint, response)
         return response
 
     if intent == "guide":
@@ -802,7 +998,7 @@ def suggest_gradeup(
             "suggestions": [],
         }
 
-        save_idempotent_response(scope, request_id, response)
+        _remember(scope, request_id, fingerprint, response)
         return response
 
     other_slides = [
@@ -850,7 +1046,7 @@ def suggest_gradeup(
             "images": [],
         }
 
-        save_idempotent_response(scope, request_id, response)
+        _remember(scope, request_id, fingerprint, response)
         return response
 
     operations = _native_operations(
@@ -871,7 +1067,7 @@ def suggest_gradeup(
             "images": [],
         }
 
-        save_idempotent_response(scope, request_id, response)
+        _remember(scope, request_id, fingerprint, response)
         return response
 
     proposal_id = _uid("proposal")
@@ -898,7 +1094,7 @@ def suggest_gradeup(
     }
 
     update_session_record(session)
-    save_idempotent_response(scope, request_id, response)
+    _remember(scope, request_id, fingerprint, response)
 
     logger.info(
         f"[gradeup:suggest] session={session['session_id']} "
@@ -923,7 +1119,9 @@ def decide_gradeup(
         )
 
     scope = f"gradeup:decide:{session['session_id']}"
-    cached = get_idempotent_response(scope, request_id)
+    # cached = get_idempotent_response(scope, request_id)
+    fingerprint = _request_fingerprint(payload, _DECIDE_KEYS)
+    cached = _replay(scope, request_id, fingerprint)
 
     if cached:
         return cached
@@ -960,7 +1158,7 @@ def decide_gradeup(
         ),
     }
 
-    save_idempotent_response(scope, request_id, response)
+    _remember(scope, request_id, fingerprint, response)
 
     logger.info(
         f"[gradeup:decide] session={session['session_id']} "

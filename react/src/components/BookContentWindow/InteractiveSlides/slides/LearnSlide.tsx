@@ -33,17 +33,18 @@ export const LearnSlide: React.FC<LearnSlideProps> = ({
 
       {hasMainImage && !hasComparison && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
-          <div className="lg:col-span-6">
+          <div className="min-w-0 lg:col-span-6">
             <PlaceholderImage
               src={slide.images?.main}
               category="general-science"
               alt={slide.images?.caption || slide.title}
               aspectRatio="4/3"
               badge={slide.images?.caption ? "Backend visual" : undefined}
-              className="h-full min-h-[230px]"
+              className="w-full max-w-full min-h-[230px] bg-white dark:bg-white/5"
+              imageClassName="object-contain"
             />
           </div>
-          <div className="lg:col-span-6 flex flex-col justify-center gap-3">
+          <div className="min-w-0 lg:col-span-6 flex flex-col justify-center gap-3">
             <div className="space-y-2 text-sm md:text-base font-medium text-slate-700 dark:text-slate-200 leading-relaxed">
               {slide.description && <p>{slide.description}</p>}
               {slide.content && <p className="text-slate-600 dark:text-slate-300">{slide.content}</p>}
@@ -156,7 +157,7 @@ export const LearnSlide: React.FC<LearnSlideProps> = ({
         </div>
       )}
 
-      {!hasComparison && (
+      {!hasComparison && slide.task.type !== "narration" && (
         <div className="pt-1">
           {slide.takeaway?.text && (
             <div className="mb-3 rounded-2xl border border-blue-200/90 bg-blue-50/80 p-4 shadow-sm dark:border-blue-800/50 dark:bg-blue-950/30">

@@ -3609,7 +3609,7 @@ def sort_sections_by_source(
 
     headings = iter_source_headings(source_md)
     by_number: Dict[str, int] = {}
-    by_title: Dict[str, int] = {}
+    by_title: Dict[str, List[int]] = {}
     for start, _end, text in headings:
         m = re.match(r'^(' + _SECNUM + r')\s*(.*)$', text)
         if m:
@@ -3618,7 +3618,7 @@ def sort_sections_by_source(
         else:
             key = re.sub(r"[^a-z0-9]+", "", text.lower())
         if key:
-            by_title.setdefault(key, start)
+            by_title.setdefault(key, []).append(start)
 
     norm_src = re.sub(r"\s+", " ", source_md).lower()
 
@@ -3633,8 +3633,19 @@ def sort_sections_by_source(
             return by_number[m2.group(1)]
         key = re.sub(r"[^a-z0-9]+", "",
                      re.sub(r'^\s*' + _SECNUM + r'\s*', '', title).lower())
-        if key and key in by_title:
-            return by_title[key]
+        copies = by_title.get(key) if key else None
+        if copies and len(copies) == 1:
+            return copies[0]
+        if copies:
+            # A title printed more than once (a Glossary per reading, an
+            # Activity per section) is the copy its own text sits under.
+            # Taking the first copy for all of them pulled the poem's and the
+            # play's Glossary up into the prose, and the audit, reading
+            # positions the same way, called that order correct.
+            pos = _locate_text(str(sec.get("content") or ""), source_md)
+            if pos is None:
+                return None          # nothing to go on: stay with the section before it
+            return max((s for s in copies if s <= pos), default=pos)
         probe = re.sub(r"\s+", " ", str(sec.get("content") or "")).strip().lower()[:80]
         if len(probe) > 30:
             found = norm_src.find(probe)

@@ -24,16 +24,20 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
 
-import requests
-from langfuse_utils import traced_post
+from dotenv import load_dotenv
+
+import avatar_llm
 from logger import get_logger
 
+load_dotenv()
 logger = get_logger(__name__)
 
 ROOM_DATA_DIR = Path("debate_data") / "rooms"
-MULTI_DEBATE_MODEL = "gpt-4o-mini"
-MULTI_DEBATE_FALLBACK = "gpt-4o"
+# Never OpenAI: that key has no credits. avatar_llm routes gemini-* to Google direct.
+MULTI_DEBATE_MODEL = os.getenv("MULTI_DEBATE_MODEL", "gemini-3.6-flash")
+MULTI_DEBATE_FALLBACK = os.getenv("MULTI_DEBATE_FALLBACK_MODEL", "meta-llama/llama-4-scout")
 MULTI_DEBATE_TIMEOUT = 90
+MULTI_DEBATE_UNAVAILABLE_TEXT = "Something went wrong. Please try again."
 MIN_PARTICIPANTS = 2
 MAX_PARTICIPANTS = 8
 AI_STUDENT_ID = "__ai_student__"
@@ -85,58 +89,33 @@ class MultiDebateEngine:
         seed = f"room_{datetime.now().isoformat()}_{time.time()}"
         return hashlib.md5(seed.encode()).hexdigest()[:12]
 
+    def _complete(self, messages: List[Dict], temperature: float, *,
+                  force_json: bool, trace_name: str) -> Optional[str]:
+        """One completion through avatar_llm. None on any failure."""
+        result = avatar_llm.chat(
+            MULTI_DEBATE_MODEL,
+            messages=messages,
+            max_tokens=2048,
+            temperature=temperature,
+            force_json=force_json,
+            timeout=MULTI_DEBATE_TIMEOUT,
+            fallback_model=MULTI_DEBATE_FALLBACK,
+            trace_name=trace_name,
+        )
+        if not result.ok:
+            logger.error(f"[MultiDebate] LLM call failed ({MULTI_DEBATE_MODEL}): {(result.error or '')[:300]}")
+            return None
+        return result.text
+
     def _call_llm(self, messages: List[Dict], temperature: float = 0.7) -> str:
-        api_key = os.environ.get("OPENAI_API_KEY_TEXT") or os.environ.get("OPENAI_API_KEY")
-        if not api_key:
-            return "AI is not configured."
+        """A prose moderator/AI-student turn; the canned apology when the model is unavailable."""
+        text = self._complete(messages, temperature, force_json=False, trace_name="multi-debate-turn")
+        return text or MULTI_DEBATE_UNAVAILABLE_TEXT
 
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": MULTI_DEBATE_MODEL,
-            "messages": messages,
-            "max_completion_tokens": 2048,
-            "temperature": temperature,
-        }
-
-        try:
-            resp = traced_post("multi-debate-turn",
-                "https://api.openai.com/v1/chat/completions",
-                headers=headers, json=payload, timeout=MULTI_DEBATE_TIMEOUT,
-            )
-            if not resp.ok:
-                payload["model"] = MULTI_DEBATE_FALLBACK
-                resp = traced_post("multi-debate-turn",
-                    "https://api.openai.com/v1/chat/completions",
-                    headers=headers, json=payload, timeout=MULTI_DEBATE_TIMEOUT,
-                )
-            if resp.ok:
-                return resp.json()["choices"][0]["message"]["content"].strip()
-        except Exception as e:
-            logger.error(f"[MultiDebate] Error: {e}")
-        return "Something went wrong. Please try again."
-
-    def _call_llm_json(self, messages: List[Dict], temperature: float = 0.3) -> Optional[Any]:
-        raw = self._call_llm(messages, temperature)
-        try:
-            if raw.startswith("```"):
-                raw = raw.split("```")[1]
-                if raw.startswith("json"):
-                    raw = raw[4:]
-            # Try array first, then object
-            start_arr = raw.find("[")
-            end_arr = raw.rfind("]")
-            start_obj = raw.find("{")
-            end_obj = raw.rfind("}")
-            if start_arr != -1 and end_arr != -1 and (start_obj == -1 or start_arr < start_obj):
-                return json.loads(raw[start_arr:end_arr + 1])
-            if start_obj != -1 and end_obj != -1:
-                return json.loads(raw[start_obj:end_obj + 1])
-        except Exception:
-            pass
-        return None
+    def _call_llm_json(self, messages: List[Dict], temperature: float = 0.3) -> Optional[Dict]:
+        """A JSON-mode completion parsed to a dict, or None. Every caller asks for an object."""
+        raw = self._complete(messages, temperature, force_json=True, trace_name="multi-debate-json")
+        return avatar_llm.parse_json(raw)
 
     def _check_content_safety(self, text: str) -> Dict[str, Any]:
         text_lower = text.lower()
@@ -351,11 +330,16 @@ Generate an opening message that:
 1. Welcomes everyone
 2. Announces the topic clearly
 3. Lists both teams with their members (use 🔵 and 🔴 emojis)
-4. Gives a brief overview of the topic (2-3 sentences from the briefing above)
+4. Explains the topic in detail (4-5 sentences from the briefing above): what it means, the key
+   textbook ideas behind it, one everyday example, and what each side could argue
 5. Explains rules: stay on topic, support with evidence, engage with opposing team
 6. Invites Blue Team to present their opening argument first
 
-Keep it under 10 sentences. Be encouraging."""
+Write for school students aged 12-15: simple, everyday words, most sentences 15 words or fewer.
+Pick the common word over the textbook word; if you use a textbook term, say what it means in plain
+words right after it. Only use facts from the briefing; name a person only to quote their exact
+words from it, in quotation marks.
+Keep it under 14 short sentences. Be encouraging."""
 
         ai_opening = self._call_llm([{"role": "user", "content": opening_prompt}])
 
@@ -503,11 +487,14 @@ You are on {team_label}.
 
 ## YOUR BEHAVIOUR — AVERAGE STUDENT
 - You are a C+ / B- grade student. You are NOT an expert.
-- Use SIMPLE, everyday language. Avoid fancy academic jargon.
-- Make decent but not perfect arguments — sometimes your points are incomplete.
+- Use SIMPLE, everyday words. Most sentences 15 words or fewer. Avoid fancy academic jargon;
+  if you use a textbook term, say what it means in your own words.
 - Show uncertainty naturally: "I think...", "I'm not sure but...", "Maybe..."
-- Occasionally miss minor details or have small factual gaps (this is realistic).
-- Keep responses SHORT — 2-3 sentences max, like a real student would speak.
+- Explain your point properly: say what you think, WHY (a fact from the textbook context, in
+  your own words), and give one everyday example. 3-5 short sentences.
+- Get the facts right — the other students learn from what you say. Only use facts from the
+  textbook context. Name a person (e.g. Gandhiji) ONLY to quote their exact words from the
+  context, in quotation marks — never put your own idea in their mouth.
 - Respond naturally to what other students said — agree, disagree, or add a point.
 - Do NOT dominate. Do NOT lecture. Do NOT sound like a teacher or AI.
 - Show NO partiality — argue for your team's position but don't be aggressive.
@@ -599,8 +586,9 @@ You are on {team_label}.
 
         # ── Add turn instruction ──────────────────────────────────────────
         turn_instruction = (
-            "Now it's your turn to speak. Respond as a student would — "
-            "short (2-3 sentences), natural, and relevant to what was just discussed. "
+            "Now it's your turn to speak. Respond as a student would, in simple words — "
+            "3-5 short sentences, relevant to what was just discussed: make your point, "
+            "explain why with a fact from the topic, and give an everyday example. "
             "Support your team's position."
         )
         llm_messages.append({"role": "user", "content": turn_instruction})
@@ -704,10 +692,12 @@ Topic: "{room['topic']}"
 Recent conversation:
 {conversation_summary[:3000]}
 
-Give a light, constructive feedback (4-6 sentences) that:
+Give a light, constructive feedback (6-8 short sentences) that:
 1. Comments on both teams' overall performance
 2. Highlights any strong arguments made
 3. Notes the overall quality of the debate
+4. Explains the main ideas of the topic that came up, and one important point nobody mentioned
+Use simple, everyday words a school student understands.
 Be encouraging and positive. Do NOT give scores."""
 
         session_feedback = self._call_llm([{"role": "user", "content": feedback_prompt}])
@@ -781,6 +771,8 @@ Score each criterion:
 - team_collaboration (0-10): Supporting teammates, building on team arguments
 
 {'IMPORTANT: Deduct 5 points from total for EACH off-topic warning.' if participant.get('warning_count', 0) > 0 else ''}
+
+Write overall_feedback, strengths and improvements in simple words a school student understands.
 
 Return JSON:
 {{"reasoning": 20, "textbook_knowledge": 18, "argumentation": 22, "communication": 19, "engagement": 8, "team_collaboration": 7, "total_score": 94, "overall_feedback": "...", "strengths": ["..."], "improvements": ["..."], "off_topic_count": {participant.get('warning_count', 0)}}}"""

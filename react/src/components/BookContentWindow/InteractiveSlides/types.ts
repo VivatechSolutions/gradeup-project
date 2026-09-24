@@ -65,6 +65,7 @@ export interface SlideData {
   audio?: VoiceAudio;
   questionAudio?: VoiceAudio;
   suggestedQuestions?: string[];
+  segments?: SlideData[];
   resolutions?: Record<string, SlideResolution>;
   slideNumber: number;
   type: SlideType;
@@ -99,7 +100,7 @@ export interface SlideData {
     type?: "tip" | "info" | "warning";
   };
   task: {
-    type: "button-click" | "select-option" | "submit-answer" | "record-or-type" | "confirm-activity";
+    type: "narration" | "button-click" | "select-option" | "submit-answer" | "record-or-type" | "confirm-activity";
     buttonLabel?: string;
     completedButtonLabel?: string;
     requiredAnswersCount?: number;

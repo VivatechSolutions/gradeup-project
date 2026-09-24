@@ -51,7 +51,7 @@ export const MysterySlide: React.FC<MysterySlideProps> = ({
   };
 
   return (
-    <div className="flex flex-col text-left space-y-6 max-w-4xl">
+    <div className="flex min-w-0 max-w-5xl flex-col space-y-5 text-left">
       <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-50 dark:bg-blue-950/60 border border-blue-200/80 dark:border-blue-800/60 text-blue-700 dark:text-blue-300 text-xs font-black tracking-wider uppercase w-fit">
         <Search className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
         <span>{slide.badge.label}</span>
@@ -67,14 +67,15 @@ export const MysterySlide: React.FC<MysterySlideProps> = ({
         </p>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch pt-2">
-        <div className="lg:col-span-7">
+      <div className="grid min-w-0 grid-cols-1 gap-5 pt-2 lg:grid-cols-12 lg:items-start">
+        <div className="min-w-0 lg:col-span-7">
           <PlaceholderImage
             src={slide.images?.main}
             category="cricket-ball"
             alt="Cricket bat striking a ball"
             aspectRatio="16/9"
-            className="h-full min-h-[220px] shadow-lg border-2 border-slate-200/90 dark:border-white/10"
+            className="w-full max-w-full shadow-lg border-2 border-slate-200/90 dark:border-white/10 bg-white dark:bg-white/5"
+            imageClassName="object-contain"
           />
           {slide.images?.caption && (
             <p className="mt-2 rounded-xl bg-slate-50/80 px-3 py-2 text-xs font-bold leading-relaxed text-slate-600 dark:bg-white/5 dark:text-slate-300">
@@ -83,7 +84,7 @@ export const MysterySlide: React.FC<MysterySlideProps> = ({
           )}
         </div>
 
-        <div className="lg:col-span-5 p-5 rounded-2xl bg-gradient-to-br from-blue-50/70 to-sky-50/40 dark:from-blue-950/30 dark:to-sky-950/20 border border-blue-200/80 dark:border-blue-800/40 shadow-sm flex flex-col justify-between">
+        <div className="min-w-0 lg:col-span-5 p-5 rounded-2xl bg-gradient-to-br from-blue-50/70 to-sky-50/40 dark:from-blue-950/30 dark:to-sky-950/20 border border-blue-200/80 dark:border-blue-800/40 shadow-sm flex flex-col justify-between">
           <div>
             <h4 className="text-xs font-black uppercase tracking-wider text-blue-800 dark:text-blue-300 mb-3 flex items-center gap-1.5">
               <HelpCircle className="w-4 h-4 text-blue-600 dark:text-blue-400" />

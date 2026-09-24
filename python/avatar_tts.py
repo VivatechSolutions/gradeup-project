@@ -105,6 +105,7 @@ import os
 import threading
 import re
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -209,10 +210,36 @@ _MEDIA_TYPES = {"mp3": "audio/mpeg", "wav": "audio/wav",
                 "flac": "audio/flac", "ogg": "audio/ogg"}
 
 
+# Per-thread override of TTS_BACKEND, so one caller can force a backend without
+# changing it for every other route in the process. Narration runs in the
+# thread that builds the lesson, so setting it in a job's worker thread covers
+# every synthesize() that job makes. /enrichment/process uses it to run local.
+_backend_override = threading.local()
+
+
+@contextmanager
+def backend_override(name: str):
+    """Force 'local' or 'remote' for synthesis in the current thread only."""
+    if name not in ("remote", "local"):
+        raise ValueError(f"backend_override: expected 'remote' or 'local', got {name!r}")
+    previous = getattr(_backend_override, "name", None)
+    _backend_override.name = name
+    try:
+        yield
+    finally:
+        _backend_override.name = previous
+
+
+def _configured_backend() -> str:
+    """AVATAR_TTS_BACKEND, unless this thread is inside backend_override()."""
+    return getattr(_backend_override, "name", None) or TTS_BACKEND
+
+
 def backend() -> str:
     """'remote' or 'local' - the backend the next synthesis will use."""
-    if TTS_BACKEND in ("remote", "local"):
-        return TTS_BACKEND
+    configured = _configured_backend()
+    if configured in ("remote", "local"):
+        return configured
     return "remote" if TTS_SERVICE_URL else "local"
 
 
@@ -668,7 +695,7 @@ def is_available() -> Tuple[bool, str]:
     if backend() == "remote":
         if _remote_probe():
             return True, ""
-        if TTS_BACKEND == "remote":
+        if _configured_backend() == "remote":
             return False, _remote_error            # forced remote, no fallback
         # auto: fall through to local
     if _load() is None:
@@ -755,7 +782,7 @@ def synthesize(text: str, voice: str, speed: Optional[float] = None,
             audio = _remote_synthesize(text, voice, speed, output_format())
             if audio:
                 return audio
-        if TTS_BACKEND == "remote" or _REMOTE_AVAILABLE:
+        if _configured_backend() == "remote" or _REMOTE_AVAILABLE:
             # Forced remote, OR the service is still healthy and rejected just
             # this input (a 400 - typically a voice it does not offer, e.g. a
             # Hindi voice against the English-only hosted list). Falling back

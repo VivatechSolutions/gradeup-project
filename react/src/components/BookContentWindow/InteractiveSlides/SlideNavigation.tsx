@@ -1,11 +1,10 @@
 import React from "react";
-import { ArrowLeft, ArrowRight, Lock } from "lucide-react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
 
 interface SlideNavigationProps {
   currentIndex: number;
   totalSlides: number;
-  isTaskCompleted: boolean;
   onPrevious: () => void;
   onNext: () => void;
   isNavigating?: boolean;
@@ -14,7 +13,6 @@ interface SlideNavigationProps {
 export const SlideNavigation: React.FC<SlideNavigationProps> = ({
   currentIndex,
   totalSlides,
-  isTaskCompleted,
   onPrevious,
   onNext,
   isNavigating = false,
@@ -40,23 +38,15 @@ export const SlideNavigation: React.FC<SlideNavigationProps> = ({
       </motion.button>
 
       <motion.button
-        whileHover={isTaskCompleted ? { scale: 1.08, x: 2 } : {}}
-        whileTap={isTaskCompleted ? { scale: 0.94 } : {}}
+        whileHover={{ scale: 1.08, x: 2 }}
+        whileTap={{ scale: 0.94 }}
         onClick={onNext}
-        disabled={!isTaskCompleted || isNavigating}
-        className={`pointer-events-auto relative inline-flex h-11 w-11 sm:h-12 sm:w-12 md:h-14 md:w-14 items-center justify-center rounded-full border text-sm md:text-base font-extrabold tracking-wide transition-all shadow-xl ${
-          isTaskCompleted
-            ? "border-amber-100/70 bg-gradient-to-br from-orange-500 via-orange-400 to-amber-400 hover:from-orange-600 hover:to-amber-500 text-white shadow-orange-400/35 cursor-pointer dark:from-amber-300 dark:via-orange-500 dark:to-fuchsia-500 dark:text-white dark:shadow-[0_0_34px_rgba(249,115,22,.55),inset_0_1px_0_rgba(255,255,255,.24)]"
-            : "bg-slate-400/70 text-white/75 border border-white/40 cursor-not-allowed shadow-slate-900/10 dark:bg-[#0f1b3d]/92 dark:text-cyan-50/70 dark:border-cyan-200/28 dark:shadow-[inset_0_1px_0_rgba(255,255,255,.08)]"
-        }`}
-        title={isTaskCompleted ? "Proceed to next slide" : "Locked: complete task to proceed"}
+        disabled={isNavigating}
+        className="pointer-events-auto relative inline-flex h-11 w-11 sm:h-12 sm:w-12 md:h-14 md:w-14 items-center justify-center rounded-full border border-amber-100/70 bg-gradient-to-br from-orange-500 via-orange-400 to-amber-400 text-white shadow-xl shadow-orange-400/35 transition-all hover:from-orange-600 hover:to-amber-500 disabled:cursor-wait disabled:opacity-60 dark:from-amber-300 dark:via-orange-500 dark:to-fuchsia-500 dark:shadow-[0_0_34px_rgba(249,115,22,.55),inset_0_1px_0_rgba(255,255,255,.24)]"
+        title="Proceed to next slide"
       >
-        {isTaskCompleted ? (
-          <ArrowRight className="w-5 h-5 sm:w-6 sm:h-6 stroke-[2.8]" />
-        ) : (
-          <Lock className="w-4 h-4 sm:w-5 sm:h-5 text-white/70 dark:text-amber-300/85" />
-        )}
-        <span className="sr-only">{isTaskCompleted ? (isLastSlide ? "Finish Lesson" : "Next") : "Next locked"}</span>
+        <ArrowRight className="w-5 h-5 sm:w-6 sm:h-6 stroke-[2.8]" />
+        <span className="sr-only">{isLastSlide ? "Finish Lesson" : "Next"}</span>
       </motion.button>
     </nav>
   );

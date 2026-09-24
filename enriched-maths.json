@@ -1,0 +1,1449 @@
+{
+  "document_id": "CBSE_10_Maths_gradeup-subject-upload-1790151771347-n2n41qwno4d",
+  "enrichment_style": "avatar_classroom_teaching",
+  "subject": "Maths",
+  "board": "CBSE",
+  "class_number": "10",
+  "chapters": [
+    {
+      "unit_number": 1,
+      "title": "REAL NUMBERS",
+      "subject": "Maths",
+      "sections": [
+        {
+          "section_number": "",
+          "section_title": "Introduction",
+          "content": "In Class IX, you began your exploration of the world of real numbers and encountered irrational numbers. We continue our discussion on real numbers in this chapter. We begin with very important properties of positive integers in Sections 1.2, namely the Euclid’s division algorithm and the Fundamental Theorem of Arithmetic.\n\nEuclid’s division algorithm, as the name suggests, has to do with divisibility of integers. Stated simply, it says any positive integer $a$ can be divided by another positive integer $b$ in such a way that it leaves a remainder $r$ that is smaller than $b$. Many of you probably recognise this as the usual long division process. Although this result is quite easy to state and understand, it has many applications related to the divisibility properties of integers. We touch upon a few of them, and use it mainly to compute the HCF of two positive integers.\n\nThe Fundamental Theorem of Arithmetic, on the other hand, has to do something with multiplication of positive integers. You already know that every composite number can be expressed as a product of primes in a unique way—this important fact is the Fundamental Theorem of Arithmetic. Again, while it is a result that is easy to state and understand, it has some very deep and significant applications in the field of mathematics. We use the Fundamental Theorem of Arithmetic for two main applications. First, we use it to prove the irrationality of many of the numbers you studied in Class IX, such as $\\sqrt{2}$, $\\sqrt{3}$ and $\\sqrt{5}$. Second, we apply this theorem to explore when exactly the decimal expansion of a rational number, say $\\frac{p}{q} (q \\neq 0)$, is terminating and when it is non-terminating repeating. We do so by looking at the prime factorisation of the denominator $q$ of $\\frac{p}{q}$. You will see that the prime factorisation of $q$ will completely reveal the nature of the decimal expansion of $\\frac{p}{q}$.\n\nSo let us begin our exploration.",
+          "type": "section",
+          "section_enrichment": {
+            "concept_overview": "This section introduces the foundational properties of positive integers in Real Numbers: Euclid's Division Algorithm, which formalizes division and remainder rules, and the Fundamental Theorem of Arithmetic, which explains unique prime factorization and its applications.",
+            "faqs": [
+              {
+                "question": "What is Euclid's division algorithm used for in this chapter?",
+                "answer": "It is mainly used to compute the Highest Common Factor (HCF) of two positive integers and to study divisibility properties."
+              },
+              {
+                "question": "What does the Fundamental Theorem of Arithmetic state?",
+                "answer": "It states that every composite number can be expressed as a product of prime numbers in a unique way."
+              },
+              {
+                "question": "How does prime factorization help with decimal expansions?",
+                "answer": "By analyzing the prime factors of the denominator q in a rational number p/q, you can predict whether the decimal expansion terminates or repeats without doing long division."
+              }
+            ],
+            "practice_questions": [
+              {
+                "question": "What are the two main topics covered in this introduction to positive integers?"
+              },
+              {
+                "question": "According to Euclid's division algorithm, how does the remainder 'r' compare to the divisor 'b'?"
+              },
+              {
+                "question": "Which irrational numbers from Class IX will we prove to be irrational using the Fundamental Theorem of Arithmetic?"
+              }
+            ],
+            "doubt_context": {
+              "related_sections": [
+                "Euclid’s Division Lemma",
+                "The Fundamental Theorem of Arithmetic",
+                "Revisiting Irrational Numbers",
+                "Revisiting Rational Numbers and Their Decimal Expansions"
+              ],
+              "board": "CBSE",
+              "class_number": "10",
+              "subject": "Maths",
+              "unit_number": 1,
+              "section_title": "Introduction",
+              "max_rag_chunks": 5,
+              "fallback_to_broader_context": true
+            },
+            "avatar_lesson": {
+              "version": 3,
+              "pattern": "mathematics",
+              "phase_order": [
+                "hook",
+                "explanation",
+                "real_world",
+                "explore",
+                "mystery",
+                "explain_back"
+              ],
+              "phases": [
+                {
+                  "phase": "hook",
+                  "order": 1,
+                  "style": "mission_prediction",
+                  "title": "Packing Apples",
+                  "scenario": "You have 17 apples that you want to pack into bags of 5 apples each.",
+                  "question": "How many leftover apples will remain unpacked after filling as many full bags as possible?",
+                  "options": {
+                    "A": "2 apples",
+                    "B": "3 apples",
+                    "C": "5 apples",
+                    "D": "0 apples"
+                  },
+                  "answer": "A",
+                  "option_explanations": {
+                    "A": "Yeah, you got the right answer! 3 full bags take 15 apples, leaving exactly 2 apples remaining.",
+                    "B": "Not quite! 3 is the number of full bags you can fill, not the leftover count.",
+                    "C": "Not quite! You cannot have 5 leftovers because 5 apples make another complete bag.",
+                    "D": "Not quite! 17 cannot be split into groups of 5 with zero remaining since 17 is not a multiple of 5."
+                  },
+                  "resolutions": {
+                    "A": {
+                      "segment_id": "hook_res_A",
+                      "type": "teaching",
+                      "emotion": "enthusiastic",
+                      "text": "You predicted 2 apples! That leftover is precisely the remainder $r$ when 17 is divided by 5.",
+                      "audio": {
+                        "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_res_A_cab50e44_male.mp3",
+                        "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_res_A_01cd8d85_female.mp3"
+                      }
+                    },
+                    "B": {
+                      "segment_id": "hook_res_B",
+                      "type": "teaching",
+                      "emotion": "encouraging",
+                      "text": "You predicted 3 apples! Notice that 3 is the number of full bags, while the leftover remainder is 2.",
+                      "audio": {
+                        "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_res_B_25c53bc6_male.mp3",
+                        "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_res_B_f8273bdc_female.mp3"
+                      }
+                    },
+                    "C": {
+                      "segment_id": "hook_res_C",
+                      "type": "teaching",
+                      "emotion": "thoughtful",
+                      "text": "You predicted 5 apples! But if you had 5 left over, you could fill one more bag, leaving 2.",
+                      "audio": {
+                        "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_res_C_f7062122_male.mp3",
+                        "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_res_C_46dc021b_female.mp3"
+                      }
+                    },
+                    "D": {
+                      "segment_id": "hook_res_D",
+                      "type": "teaching",
+                      "emotion": "thoughtful",
+                      "text": "You predicted 0 apples! Since 17 is not divisible by 5, there must be a leftover remainder of 2.",
+                      "audio": {
+                        "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_res_D_47c7086c_male.mp3",
+                        "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_res_D_af2b1781_female.mp3"
+                      }
+                    }
+                  },
+                  "intro": {
+                    "segment_id": "hook_intro",
+                    "type": "teaching",
+                    "emotion": "curious",
+                    "text": "Let's start with a quick packing challenge! If you pack 17 apples into bags of 5, how many apples remain unpacked?",
+                    "audio": {
+                      "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_intro_d45c160e_male.mp3",
+                      "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_intro_6eb9154c_female.mp3"
+                    }
+                  },
+                  "bridge": {
+                    "segment_id": "hook_bridge",
+                    "type": "teaching",
+                    "emotion": "confident",
+                    "text": "You've just seen a real-world case of today's topic—now let's line that up with the mathematics and study it properly.",
+                    "audio": {
+                      "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_bridge_38f880d9_male.mp3",
+                      "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_bridge_6ee2b7d1_female.mp3"
+                    }
+                  },
+                  "visual": {
+                    "image_url": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/cbse/10/maths/unit-1/introduction_hook_0c6af5aa46.jpg",
+                    "prompt": "a wooden kitchen counter with 17 red apples lined up in a neat row beside empty canvas bags A calm, ordinary moment before the outcome: nothing in the picture shows or hints at what happens next.",
+                    "model": "gemini-3.1-flash-image",
+                    "kind": "generated_3d",
+                    "width": 1280,
+                    "height": 714
+                  },
+                  "options_visual": {
+                    "image_url": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/cbse/10/maths/unit-1/introduction_hook_options_fc7a6a9fc1.jpg",
+                    "prompt": "Setting shared by all four panels: a wooden kitchen counter with 17 red apples lined up in a neat row beside empty canvas bags. Top-left panel: three canvas bags each filled with 5 red apples, with 2 loose red apples sitting on the side. Top-right panel: three empty canvas bags sitting next to 3 red apples on the counter. Bottom-left panel: two canvas bags filled with apples, with 5 loose red apples sitting on the side. Bottom-right panel: four canvas bags filled with apples with no loose apples left on the counter.",
+                    "model": "gemini-3.1-flash-image",
+                    "kind": "generated_3d",
+                    "layout": "option_grid",
+                    "panels": {
+                      "A": "top-left",
+                      "B": "top-right",
+                      "C": "bottom-left",
+                      "D": "bottom-right"
+                    },
+                    "option_scenes": {
+                      "A": "three canvas bags each filled with 5 red apples, with 2 loose red apples sitting on the side",
+                      "B": "three empty canvas bags sitting next to 3 red apples on the counter",
+                      "C": "two canvas bags filled with apples, with 5 loose red apples sitting on the side",
+                      "D": "four canvas bags filled with apples with no loose apples left on the counter"
+                    },
+                    "width": 1024,
+                    "height": 1024
+                  }
+                },
+                {
+                  "phase": "explanation",
+                  "order": 2,
+                  "teaching_style": "visual_analogy",
+                  "total_duration_estimate": "3 minutes",
+                  "segments": [
+                    {
+                      "segment_id": "seg_001",
+                      "type": "teaching",
+                      "text": "Welcome back to the world of real numbers! In Class 9, you explored irrational numbers. Now, we are going to dive deeper into two powerful properties of positive integers: division and multiplication.",
+                      "emotion": "enthusiastic",
+                      "audio": {
+                        "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_001_fe4f4bd3_male.mp3",
+                        "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_001_ef8e3049_female.mp3"
+                      }
+                    },
+                    {
+                      "segment_id": "seg_002",
+                      "type": "teaching",
+                      "text": "First, let's look at division through Euclid's division algorithm. It simply says that if you divide a positive integer 'a' by another positive integer 'b', you get a remainder 'r' that is always smaller than 'b'. Let me show you [https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/cbse/10/maths/unit-1/introduction_explain_1_a1cea1c8ad.jpg]. Look at how dividing objects into equal groups always leaves a remainder smaller than the size of one group! You might recognize this as the long division you already know, and we will use it mainly to find the Highest Common Factor, or HCF, of two numbers.",
+                      "emotion": "curious",
+                      "visual": {
+                        "image_url": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/cbse/10/maths/unit-1/introduction_explain_1_a1cea1c8ad.jpg",
+                        "prompt": "a wooden table with 17 red apples divided into three equal groups of 5 apples each, leaving 2 loose apples on the side",
+                        "model": "gemini-3.1-flash-image",
+                        "kind": "generated_3d",
+                        "width": 1280,
+                        "height": 714,
+                        "inline": true,
+                        "char_offset": 230,
+                        "planned_because": "the teaching writer placed it here"
+                      },
+                      "audio": {
+                        "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_002_d10cdce2_male.mp3",
+                        "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_002_6e97ea74_female.mp3"
+                      }
+                    },
+                    {
+                      "segment_id": "seg_003",
+                      "type": "teaching",
+                      "text": "Next, let's talk about multiplication and the Fundamental Theorem of Arithmetic. This theorem states that every composite number can be written as a product of prime numbers in a completely unique way. Let me show you [https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/cbse/10/maths/unit-1/introduction_explain_2_6e6bacef0c.jpg]. Notice how breaking a number down into its prime building blocks gives a single, unique result no matter how you start!",
+                      "emotion": "thoughtful",
+                      "visual": {
+                        "image_url": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/cbse/10/maths/unit-1/introduction_explain_2_6e6bacef0c.jpg",
+                        "prompt": "a bright classroom chalkboard displaying the number 12 branching down into prime factors 2, 2, and 3 drawn in colorful chalk",
+                        "model": "gemini-3.1-flash-image",
+                        "kind": "generated_3d",
+                        "width": 1280,
+                        "height": 714,
+                        "inline": true,
+                        "char_offset": 218,
+                        "planned_because": "the teaching writer placed it here"
+                      },
+                      "audio": {
+                        "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_003_8cb2b1c1_male.mp3",
+                        "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_003_d77cae65_female.mp3"
+                      }
+                    },
+                    {
+                      "segment_id": "seg_004",
+                      "type": "teaching",
+                      "text": "We will use this multiplication theorem for two huge tasks. First, to prove that numbers like the square root of 2, 3, and 5 are irrational. Second, by looking at the prime factors of the denominator 'q' in a fraction p/q, we can easily tell if its decimal form terminates or repeats forever.",
+                      "emotion": "encouraging",
+                      "audio": {
+                        "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_004_b95cc500_male.mp3",
+                        "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_004_9e1d9c33_female.mp3"
+                      }
+                    },
+                    {
+                      "segment_id": "seg_005",
+                      "type": "teaching",
+                      "role": "hook_answer",
+                      "text": "Now, let's return to our starting question! When you pack 17 apples into bags of 5, you fill 3 full bags using 15 apples. That leaves 2 apples leftover. Since 2 is smaller than the bag size of 5, the correct option is A!",
+                      "emotion": "confident",
+                      "audio": {
+                        "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_005_60afbec8_male.mp3",
+                        "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_005_50315e0c_female.mp3"
+                      }
+                    }
+                  ],
+                  "closing_segment_id": "seg_005",
+                  "pictured_segment_ids": [
+                    "seg_002",
+                    "seg_003"
+                  ]
+                },
+                {
+                  "phase": "real_world",
+                  "order": 3,
+                  "question": "How do banks and computers use prime factors to keep passwords safe?",
+                  "ask": {
+                    "segment_id": "rw_ask",
+                    "type": "teaching",
+                    "emotion": "curious",
+                    "text": "Now let's connect the topic with a real-world example! Have you ever wondered why prime factorisation matters outside the classroom?",
+                    "audio": {
+                      "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/rw_ask_99a6d184_male.mp3",
+                      "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/rw_ask_83f26e9b_female.mp3"
+                    }
+                  },
+                  "reveal": {
+                    "segment_id": "rw_reveal",
+                    "type": "teaching",
+                    "emotion": "inspiring",
+                    "text": "The Fundamental Theorem of Arithmetic guarantees that every number breaks down into a unique set of prime factors! Modern digital security creates huge codes by multiplying two massive prime numbers together, knowing it is nearly impossible to reverse the process without the exact prime factorisation.",
+                    "audio": {
+                      "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/rw_reveal_30a4674d_male.mp3",
+                      "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/rw_reveal_7a6e5d62_female.mp3"
+                    }
+                  },
+                  "why_it_matters": "Unique prime factorisation forms the foundational backbone of modern encryption and data security.",
+                  "visual": {
+                    "image_url": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/cbse/10/maths/unit-1/introduction_real_world_8e9e1e18f8.jpg",
+                    "prompt": "a glowing digital padlock surrounded by abstract glowing floating numbers on a dark tech background",
+                    "model": "gemini-3.1-flash-image",
+                    "kind": "generated_3d",
+                    "width": 1280,
+                    "height": 714
+                  }
+                },
+                {
+                  "phase": "explore",
+                  "order": 4,
+                  "kind": "try_it_yourself",
+                  "title": "Finding the Remainder",
+                  "source": "generated",
+                  "intro": {
+                    "segment_id": "explore_intro",
+                    "type": "teaching",
+                    "emotion": "enthusiastic",
+                    "text": "Now that we've introduced division and factors, let's try a quick calculation together!",
+                    "audio": {
+                      "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/explore_intro_0bbf9af8_male.mp3",
+                      "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/explore_intro_969175f3_female.mp3"
+                    }
+                  },
+                  "materials": [],
+                  "steps": [
+                    "Take the positive integer a = 25.",
+                    "Divide a by the positive integer b = 6.",
+                    "Find the remainder r that satisfies r < 6."
+                  ],
+                  "interaction": {
+                    "type": "numeric",
+                    "prompt": "What is the remainder r when 25 is divided by 6?",
+                    "answer": 1.0,
+                    "tolerance": 0.0,
+                    "feedback_correct": "Great job! 25 = 6 × 4 + 1, so the remainder is 1.",
+                    "feedback_incorrect": "Not quite. Multiply 6 by 4 to get 24, then subtract 24 from 25."
+                  },
+                  "wrap_up": {
+                    "segment_id": "explore_wrap",
+                    "type": "teaching",
+                    "emotion": "encouraging",
+                    "text": "Fantastic work! You've successfully worked with remainders, the core idea behind Euclid's division algorithm.",
+                    "audio": {
+                      "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/explore_wrap_1e965ed2_male.mp3",
+                      "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/explore_wrap_26fae3da_female.mp3"
+                    }
+                  },
+                  "challenge": {
+                    "prompt": "If a positive integer n leaves a remainder of 3 when divided by 5, what is the remainder when (n + 2) is divided by 5?",
+                    "interaction": {
+                      "type": "numeric",
+                      "prompt": "Enter the remainder for (n + 2) divided by 5:",
+                      "answer": 0.0,
+                      "tolerance": 0.0,
+                      "feedback_correct": "Spot on! Adding 2 to a remainder of 3 gives 5, which divides completely with remainder 0.",
+                      "feedback_incorrect": "Think about it: adding 2 to the remainder 3 gives 3 + 2 = 5."
+                    }
+                  }
+                },
+                {
+                  "phase": "mystery",
+                  "order": 5,
+                  "show": 1,
+                  "intro": {
+                    "segment_id": "mystery_intro",
+                    "type": "teaching",
+                    "emotion": "playful",
+                    "text": "Now, can you spot the division rule in the wild?",
+                    "audio": {
+                      "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/mystery_intro_b0af65f2_male.mp3",
+                      "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/mystery_intro_8fd76f43_female.mp3"
+                    }
+                  },
+                  "outro": {
+                    "segment_id": "mystery_outro",
+                    "type": "teaching",
+                    "emotion": "warm",
+                    "text": "Observing patterns like remainders in real objects helps us master real numbers!",
+                    "audio": {
+                      "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/mystery_outro_5c4d6ec4_male.mp3",
+                      "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/mystery_outro_7093e3cd_female.mp3"
+                    }
+                  },
+                  "pool": [
+                    {
+                      "mystery_id": "m01",
+                      "title": "The Bakery Tray",
+                      "question": "A baker arranges 23 muffins into boxes that hold 4 muffins each. What equation expresses this using the division algorithm format a = bq + r?",
+                      "ask": {
+                        "segment_id": "m01_ask",
+                        "type": "teaching",
+                        "emotion": "curious",
+                        "text": "Look closely at this picture. A baker arranges 23 muffins into boxes that hold 4 muffins each. What equation expresses this using the division algorithm format a = bq + r?",
+                        "audio": {
+                          "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/m01_ask_8ee4288c_male.mp3",
+                          "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/m01_ask_50459185_female.mp3"
+                        }
+                      },
+                      "options": {
+                        "A": "23 = 4 × 5 + 3",
+                        "B": "23 = 4 × 4 + 7",
+                        "C": "23 = 5 × 4 + 3"
+                      },
+                      "answer": "A",
+                      "option_explanations": {
+                        "A": "Yeah, you got the right answer! 4 × 5 = 20, and the remainder 3 is strictly less than the divisor 4.",
+                        "B": "Not quite! The remainder 7 is larger than the divisor 4, so you can fill another box.",
+                        "C": "Not quite! Here the divisor and quotient are swapped from the problem statement where b = 4."
+                      },
+                      "reveal": {
+                        "segment_id": "m01_reveal",
+                        "type": "teaching",
+                        "emotion": "confident",
+                        "text": "The baker fills 5 boxes of 4 muffins each, leaving 3 extra muffins! Here r = 3, which is smaller than b = 4.",
+                        "audio": {
+                          "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/m01_reveal_ae0a82cd_male.mp3",
+                          "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/m01_reveal_994d92f0_female.mp3"
+                        }
+                      },
+                      "visual": {
+                        "image_url": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/cbse/10/maths/unit-1/introduction_mystery_e636d30076.jpg",
+                        "prompt": "a bakery shelf holding 23 freshly baked muffins arranged in rows of 4 on a tray with a few remaining extra muffins",
+                        "model": "gemini-3.1-flash-image",
+                        "kind": "generated_3d",
+                        "width": 1280,
+                        "height": 714
+                      }
+                    }
+                  ]
+                },
+                {
+                  "phase": "explain_back",
+                  "order": 6,
+                  "prompt": "Explain the main two tools of Real Numbers—Euclid's Division Algorithm and the Fundamental Theorem of Arithmetic—in your own words, as if to a friend who missed class.",
+                  "ask": {
+                    "segment_id": "explain_ask",
+                    "type": "teaching",
+                    "emotion": "encouraging",
+                    "text": "Now it's your turn! How would you explain today's two big concepts to a friend?",
+                    "audio": {
+                      "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/explain_ask_ce3e6bc0_male.mp3",
+                      "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/explain_ask_464475c8_female.mp3"
+                    }
+                  },
+                  "closing": {
+                    "segment_id": "explain_close",
+                    "type": "teaching",
+                    "emotion": "warm",
+                    "text": "You did a marvelous job breaking that down! You're fully ready to dive deeper into real numbers.",
+                    "audio": {
+                      "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/explain_close_9bb826f4_male.mp3",
+                      "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/explain_close_c1b02601_female.mp3"
+                    }
+                  },
+                  "key_points": [
+                    "Euclid's division algorithm relates dividend, divisor, quotient, and remainder where r < b.",
+                    "The Fundamental Theorem of Arithmetic states every composite number has a unique prime factorisation.",
+                    "Euclid's algorithm is used to find HCF, while prime factorisation helps prove irrationality and decimal properties."
+                  ],
+                  "model_explanation": "Euclid's division algorithm is just long division written as a = bq + r, where the remainder r is always smaller than the divisor b. It helps us find the HCF of numbers. The Fundamental Theorem of Arithmetic says that any composite number can be broken down into a unique product of prime numbers. We use these ideas to prove numbers like root 2 are irrational and to check if decimals terminate!",
+                  "guidance": "A good explanation states the definition in plain words, shows the procedure on a tiny example of the student's own, names the key property (order, count, the empty case) and the common mistake to avoid."
+                }
+              ],
+              "built_at": "2026-09-23T08:25:51.768386+00:00",
+              "models": {
+                "plan": "gemini-3.6-flash",
+                "teach": "gemini-3.6-flash",
+                "images": "gemini-3.1-flash-image"
+              },
+              "section_title": "Introduction",
+              "section_kind": "section"
+            }
+          }
+        },
+        {
+          "section_number": "1.2",
+          "section_title": "The Fundamental Theorem of Arithmetic",
+          "content": "In your earlier classes, you have seen that any natural number can be written as a product of its prime factors. For instance, $2 = 2$, $4 = 2 \\times 2$, $253 = 11 \\times 23$, and so on. Now, let us try and look at natural numbers from the other direction. That is, can any natural number be obtained by multiplying prime numbers? Let us see.\n\nTake any collection of prime numbers, say 2, 3, 7, 11 and 23. If we multiply some or all of these numbers, allowing them to repeat as many times as we wish, we can produce a large collection of positive integers (In fact, infinitely many). Let us list a few :\n\n$$7 \\times 11 \\times 23 = 1771$$\n\n$$3 \\times 7 \\times 11 \\times 23 = 5313$$\n\n$$2 \\times 3 \\times 7 \\times 11 \\times 23 = 10626$$\n\n$$2^3 \\times 3 \\times 7^3 = 8232$$\n\n$$2^2 \\times 3 \\times 7 \\times 11 \\times 23 = 21252$$\n\nand so on.\n\nNow, let us suppose your collection of primes includes all the possible primes. What is your guess about the size of this collection? Does it contain only a finite number of integers, or infinitely many? In fact, there are infinitely many primes. So, if we combine all these primes in all possible ways, we will get an infinite\n\ncollection of numbers, all the primes and all possible products of primes. The question is – can we produce all the composite numbers this way? What do you think? Do you think that there may be a composite number which is not the product of powers of primes? Before we answer this, let us factorise positive integers, that is, do the opposite of what we have done so far.\n\nWe are going to use the factor tree with which you are all familiar. Let us take some large number, say, 32760, and factorise it as shown.\n![img-1.jpeg](https://gradeup-books-images.s3.us-east-1.amazonaws.com/structured-content/cbse/10/maths/unit-1/img-1.jpeg)\n\nSo we have factorised 32760 as $2 \\times 2 \\times 2 \\times 3 \\times 3 \\times 5 \\times 7 \\times 13$ as a product of primes, i.e., $32760 = 2^3 \\times 3^2 \\times 5 \\times 7 \\times 13$ as a product of powers of primes. Let us try another number, say, 123456789. This can be written as $3^2 \\times 3803 \\times 3607$. Of course, you have to check that 3803 and 3607 are primes! (Try it out for several other natural numbers yourself.) This leads us to a conjecture that every composite number can be written as the product of powers of primes. In fact, this statement is true, and is called the **Fundamental Theorem of Arithmetic** because of its basic crucial importance to the study of integers. Let us now formally state this theorem.",
+          "type": "section",
+          "section_enrichment": {
+            "concept_overview": "The Fundamental Theorem of Arithmetic states that every composite number can be broken down into a unique product of prime numbers, regardless of the order in which they are written. This unique breakdown allows us to easily compute the Highest Common Factor (HCF) and Least Common Multiple (LCM) of positive integers.",
+            "faqs": [
+              {
+                "question": "What is the Fundamental Theorem of Arithmetic?",
+                "answer": "It states that every composite number can be uniquely expressed as a product of prime numbers, regardless of the order of factors."
+              },
+              {
+                "question": "Does HCF × LCM = Product of numbers work for three numbers?",
+                "answer": "No, the relationship HCF(a, b) × LCM(a, b) = a × b holds true only for two positive integers, not for three or more."
+              },
+              {
+                "question": "Who proved the Fundamental Theorem of Arithmetic?",
+                "answer": "While Euclid recorded a version of it in Euclid's Elements, Carl Friedrich Gauss gave the first correct proof in his work Disquisitiones Arithmeticae."
+              }
+            ],
+            "practice_questions": [
+              {
+                "question": "Find the HCF and LCM of 96 and 404 using prime factorisation."
+              },
+              {
+                "question": "Check whether $6^n$ can end with the digit 0 for any natural number $n$."
+              },
+              {
+                "question": "Find the HCF and LCM of 6, 72, and 120 using the prime factorisation method."
+              }
+            ],
+            "doubt_context": {
+              "related_sections": [
+                "The Fundamental Theorem of Arithmetic",
+                "Prime Factorisation Method",
+                "HCF and LCM Properties"
+              ],
+              "board": "CBSE",
+              "class_number": "10",
+              "subject": "Maths",
+              "unit_number": 1,
+              "section_title": "The Fundamental Theorem of Arithmetic",
+              "max_rag_chunks": 5,
+              "fallback_to_broader_context": true
+            },
+            "avatar_lesson": {
+              "version": 3,
+              "pattern": "mathematics",
+              "phase_order": [
+                "hook",
+                "explanation",
+                "real_world",
+                "explore",
+                "mystery",
+                "explain_back"
+              ],
+              "phases": [
+                {
+                  "phase": "hook",
+                  "order": 1,
+                  "style": "mission_prediction",
+                  "title": "Building Numbers with Primes",
+                  "scenario": "Imagine you are building a number using prime factor blocks: three blocks of 2 and two blocks of 3. If you multiply them all together, what single composite number do you construct?",
+                  "question": "What is the result of multiplying three 2s and two 3s together (2³ × 3²)?",
+                  "options": {
+                    "A": "72",
+                    "B": "36",
+                    "C": "12",
+                    "D": "108"
+                  },
+                  "answer": "A",
+                  "option_explanations": {
+                    "A": "Yeah, you got the right answer! Multiplying three 2s gives 8, and multiplying two 3s gives 9. Then 8 × 9 = 72.",
+                    "B": "Not quite! That would be two 2s and two 3s (2² × 3² = 4 × 9 = 36), missing one factor of 2.",
+                    "C": "Not quite! That comes from multiplying just one 2 and one 3 twice, or adding exponents incorrectly.",
+                    "D": "Not quite! That would be two 2s and three 3s (2² × 3³ = 4 × 27 = 108), swapping the count of 2s and 3s."
+                  },
+                  "resolutions": {
+                    "A": {
+                      "segment_id": "hook_res_A",
+                      "type": "teaching",
+                      "emotion": "enthusiastic",
+                      "text": "You predicted 72! Spot on—every combination of prime factors builds one unique composite number.",
+                      "audio": {
+                        "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_res_A_467b0be4_male.mp3",
+                        "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_res_A_d0e7a45a_female.mp3"
+                      }
+                    },
+                    "B": {
+                      "segment_id": "hook_res_B",
+                      "type": "teaching",
+                      "emotion": "encouraging",
+                      "text": "You predicted 36. Don't worry, forgetting one exponent factor is a classic slip!",
+                      "audio": {
+                        "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_res_B_161435ec_male.mp3",
+                        "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_res_B_977d28c4_female.mp3"
+                      }
+                    },
+                    "C": {
+                      "segment_id": "hook_res_C",
+                      "type": "teaching",
+                      "emotion": "thoughtful",
+                      "text": "You predicted 12. Remember, we multiply the factors together rather than adding them!",
+                      "audio": {
+                        "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_res_C_27fee3bd_male.mp3",
+                        "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_res_C_e97fd5f7_female.mp3"
+                      }
+                    },
+                    "D": {
+                      "segment_id": "hook_res_D",
+                      "type": "teaching",
+                      "emotion": "encouraging",
+                      "text": "You predicted 108. Swapping the prime powers is easy to do, but order of exponents changes the product!",
+                      "audio": {
+                        "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_res_D_80a08728_male.mp3",
+                        "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_res_D_f1046132_female.mp3"
+                      }
+                    }
+                  },
+                  "intro": {
+                    "segment_id": "hook_intro",
+                    "type": "teaching",
+                    "emotion": "curious",
+                    "text": "Let's start with a prediction! If we multiply three 2s and two 3s together, what composite number do we build?",
+                    "audio": {
+                      "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_intro_908d2b47_male.mp3",
+                      "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_intro_9a96d50a_female.mp3"
+                    }
+                  },
+                  "bridge": {
+                    "segment_id": "hook_bridge",
+                    "type": "teaching",
+                    "emotion": "confident",
+                    "text": "You've just built a number from prime ingredients—now let's explore the Fundamental Theorem of Arithmetic and see why this factorisation is unique!",
+                    "audio": {
+                      "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_bridge_646971cd_male.mp3",
+                      "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_bridge_68d3dd47_female.mp3"
+                    }
+                  },
+                  "visual": {
+                    "image_url": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/cbse/10/maths/unit-1/the_fundamental_theorem_of_ari_hook_504d1dc4a9.jpg",
+                    "prompt": "A student standing at a wooden desk with prime number wooden blocks labelled 2 and 3 laid out in front of them, seen from the side. A calm, ordinary moment before the outcome: nothing in the picture shows or hints at what happens next.",
+                    "model": "gemini-3.1-flash-image",
+                    "kind": "generated_3d",
+                    "width": 1280,
+                    "height": 714
+                  },
+                  "options_visual": {
+                    "image_url": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/cbse/10/maths/unit-1/the_fundamental_theorem_of_ari_hook_opti_0f6e6b7f48.jpg",
+                    "prompt": "Setting shared by all four panels: A student standing at a wooden desk with prime number wooden blocks labelled 2 and 3 laid out in front of them, seen from the side. Top-left panel: The student placing three blocks labelled 2 and two blocks labelled 3 together, forming a combined block reading 72. Top-right panel: The student placing two blocks labelled 2 and two blocks labelled 3 together, forming a combined block reading 36. Bottom-left panel: The student placing one block labelled 2 and one block labelled 3 together, forming a block reading 12. Bottom-right panel: The student placing two blocks labelled 2 and three blocks labelled 3 together, forming a block reading 108.",
+                    "model": "gemini-3.1-flash-image",
+                    "kind": "generated_3d",
+                    "layout": "option_grid",
+                    "panels": {
+                      "A": "top-left",
+                      "B": "top-right",
+                      "C": "bottom-left",
+                      "D": "bottom-right"
+                    },
+                    "option_scenes": {
+                      "A": "The student placing three blocks labelled 2 and two blocks labelled 3 together, forming a combined block reading 72.",
+                      "B": "The student placing two blocks labelled 2 and two blocks labelled 3 together, forming a combined block reading 36.",
+                      "C": "The student placing one block labelled 2 and one block labelled 3 together, forming a block reading 12.",
+                      "D": "The student placing two blocks labelled 2 and three blocks labelled 3 together, forming a block reading 108."
+                    },
+                    "width": 1024,
+                    "height": 1024
+                  }
+                },
+                {
+                  "phase": "explanation",
+                  "order": 2,
+                  "teaching_style": "visual_analogy",
+                  "total_duration_estimate": "5 minutes",
+                  "segments": [
+                    {
+                      "segment_id": "seg_001",
+                      "type": "teaching",
+                      "text": "Welcome! We already know how to break numbers down into prime factors, like writing twenty-five as five times five. But what happens if we look at it from the other direction and build composite numbers by multiplying prime numbers together?",
+                      "emotion": "enthusiastic",
+                      "audio": {
+                        "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_001_723a2e65_male.mp3",
+                        "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_001_d56b4d74_female.mp3"
+                      }
+                    },
+                    {
+                      "segment_id": "seg_002",
+                      "type": "teaching",
+                      "text": "If we collect prime numbers and multiply them in different combinations, we can generate every single composite number! Let's see how a large number like 32,760 breaks down. [https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/cbse/10/maths/unit-1/the_fundamental_theorem_of_ari_explain_1_332348e903.jpg] Look at how this factor tree breaks 32,760 down into two cubed times three squared times five times seven times thirteen. This gives us the Fundamental Theorem of Arithmetic: every composite number has a completely unique set of prime factors! Euclid first recorded an early version of this, and Carl Friedrich Gauss later gave the first complete proof.",
+                      "emotion": "curious",
+                      "visual": {
+                        "image_url": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/cbse/10/maths/unit-1/the_fundamental_theorem_of_ari_explain_1_332348e903.jpg",
+                        "prompt": "a chalkboard displaying a step-by-step factor tree branching down from the number 32760 into prime factors at the bottom",
+                        "model": "gemini-3.1-flash-image",
+                        "kind": "generated_3d",
+                        "width": 1280,
+                        "height": 714,
+                        "inline": true,
+                        "char_offset": 174,
+                        "planned_because": "the teaching writer placed it here"
+                      },
+                      "audio": {
+                        "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_002_13b53758_male.mp3",
+                        "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_002_ed9daa8f_female.mp3"
+                      }
+                    },
+                    {
+                      "segment_id": "seg_003",
+                      "type": "teaching",
+                      "text": "This uniqueness is super powerful! For example, take the expression four to the power of n. Could this ever end in the digit zero? For a number to end in zero, its prime factors must include five. But four to the power of n is just two raised to two n, meaning two is its only prime factor. By our uniqueness rule, five can never appear, so four to the power of n will never end in zero!",
+                      "emotion": "thoughtful",
+                      "audio": {
+                        "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_003_a317ad34_male.mp3",
+                        "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_003_7beb99b0_female.mp3"
+                      }
+                    },
+                    {
+                      "segment_id": "seg_004",
+                      "type": "teaching",
+                      "text": "We can also use prime factorisation to quickly find the HCF and LCM of numbers. [https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/cbse/10/maths/unit-1/the_fundamental_theorem_of_ari_explain_2_08bd6d0b8c.jpg] Look at how we arrange these prime powers. The HCF is the product of the smallest power of each common prime factor, while the LCM takes the greatest power of every prime factor involved! Plus, for any two positive integers, multiplying their HCF and LCM gives the exact same result as multiplying the two numbers together.",
+                      "emotion": "encouraging",
+                      "visual": {
+                        "image_url": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/cbse/10/maths/unit-1/the_fundamental_theorem_of_ari_explain_2_08bd6d0b8c.jpg",
+                        "prompt": "a wooden tabletop with prime number blocks arranged in groups showing the common smallest powers and all greatest powers",
+                        "model": "gemini-3.1-flash-image",
+                        "kind": "generated_3d",
+                        "width": 1280,
+                        "height": 714,
+                        "inline": true,
+                        "char_offset": 80,
+                        "planned_because": "the teaching writer placed it here"
+                      },
+                      "audio": {
+                        "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_004_3602fba2_male.mp3",
+                        "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_004_19b87118_female.mp3"
+                      }
+                    },
+                    {
+                      "segment_id": "seg_005",
+                      "type": "teaching",
+                      "text": "Keep in mind one important detail! This neat formula where HCF times LCM equals the product of the numbers only works for two numbers. It does not work when you have three numbers, like six, seventy-two, and one hundred twenty!",
+                      "emotion": "warm",
+                      "audio": {
+                        "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_005_9adcbf50_male.mp3",
+                        "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_005_cfec9943_female.mp3"
+                      }
+                    },
+                    {
+                      "segment_id": "seg_006",
+                      "type": "teaching",
+                      "role": "hook_answer",
+                      "text": "Now, let's return to our starting question! We wanted to find the composite number built from three blocks of two and two blocks of three. Calculating two cubed gives eight, and three squared gives nine. Multiplying eight by nine gives seventy-two, making option A the correct answer!",
+                      "emotion": "confident",
+                      "audio": {
+                        "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_006_9841fc22_male.mp3",
+                        "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_006_525f70c6_female.mp3"
+                      }
+                    }
+                  ],
+                  "closing_segment_id": "seg_006",
+                  "pictured_segment_ids": [
+                    "seg_002",
+                    "seg_004"
+                  ]
+                },
+                {
+                  "phase": "real_world",
+                  "order": 3,
+                  "question": "How do bus schedules use prime factorisation to predict when two buses will arrive at a stop together?",
+                  "ask": {
+                    "segment_id": "rw_ask",
+                    "type": "teaching",
+                    "emotion": "curious",
+                    "text": "Imagine one city bus arrives every 6 minutes and another every 20 minutes. Tap to see how prime factors reveal when they meet!",
+                    "audio": {
+                      "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/rw_ask_f7e1ceea_male.mp3",
+                      "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/rw_ask_54d6d03c_female.mp3"
+                    }
+                  },
+                  "reveal": {
+                    "segment_id": "rw_reveal",
+                    "type": "teaching",
+                    "emotion": "inspiring",
+                    "text": "By breaking 6 into 2 × 3 and 20 into 2² × 5, we take the highest powers of all prime factors: 2² × 3 × 5 = 60. So both buses arrive together every 60 minutes!",
+                    "audio": {
+                      "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/rw_reveal_80740a70_male.mp3",
+                      "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/rw_reveal_fcb86f66_female.mp3"
+                    }
+                  },
+                  "why_it_matters": "Finding the Least Common Multiple (LCM) through prime factorisation helps solve real-world timing and cycle problems efficiently.",
+                  "visual": {
+                    "image_url": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/cbse/10/maths/unit-1/the_fundamental_theorem_of_ari_real_worl_ef12b082fd.jpg",
+                    "prompt": "Two colourful city buses side by side at a modern bus stop sign with a digital clock displaying 60 minutes overhead, seen from the front.",
+                    "model": "gemini-3.1-flash-image",
+                    "kind": "generated_3d",
+                    "width": 1280,
+                    "height": 714
+                  }
+                },
+                {
+                  "phase": "explore",
+                  "order": 4,
+                  "kind": "try_it_yourself",
+                  "title": "Finding HCF and LCM",
+                  "source": "textbook:Example 3",
+                  "intro": {
+                    "segment_id": "explore_intro",
+                    "type": "teaching",
+                    "emotion": "encouraging",
+                    "text": "Now let's put prime factorisation into action! Let's find the Highest Common Factor of 96 and 404.",
+                    "audio": {
+                      "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/explore_intro_8e8437d7_male.mp3",
+                      "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/explore_intro_40ca0aaf_female.mp3"
+                    }
+                  },
+                  "materials": [],
+                  "steps": [
+                    "Find the prime factorisation of 96: 2⁵ × 3.",
+                    "Find the prime factorisation of 404: 2² × 101.",
+                    "Identify the common prime factors.",
+                    "Multiply the smallest power of each common prime factor to calculate the HCF."
+                  ],
+                  "interaction": {
+                    "type": "numeric",
+                    "prompt": "What is the HCF of 96 and 404?",
+                    "answer": 4.0,
+                    "tolerance": 0.0,
+                    "feedback_correct": "Spot on! The only common prime factor is 2, and its smallest power is 2², which equals 4.",
+                    "feedback_incorrect": "Not quite. Look at the common prime factor 2: its powers are 2⁵ in 96 and 2² in 404. Take the smallest power, 2²!"
+                  },
+                  "wrap_up": {
+                    "segment_id": "explore_wrap",
+                    "type": "teaching",
+                    "emotion": "warm",
+                    "text": "Great work! You used prime factorisation to find the HCF and then quickly deduced the LCM using the formula!",
+                    "audio": {
+                      "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/explore_wrap_60bb2dae_male.mp3",
+                      "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/explore_wrap_230af7d0_female.mp3"
+                    }
+                  },
+                  "challenge": {
+                    "prompt": "Now use the rule HCF(a, b) × LCM(a, b) = a × b to find the LCM of 96 and 404. What is (96 × 404) ÷ 4?",
+                    "interaction": {
+                      "type": "numeric",
+                      "prompt": "Calculate LCM(96, 404):",
+                      "answer": 9696.0,
+                      "tolerance": 0.0,
+                      "feedback_correct": "Outstanding! (96 × 404) / 4 = 38784 / 4 = 9696.",
+                      "feedback_incorrect": "Try dividing 38784 (which is 96 × 404) by the HCF 4."
+                    }
+                  }
+                },
+                {
+                  "phase": "mystery",
+                  "order": 5,
+                  "show": 1,
+                  "intro": {
+                    "segment_id": "mystery_intro",
+                    "type": "teaching",
+                    "emotion": "curious",
+                    "text": "Can you spot the fundamental property of arithmetic hidden in this mystery question?",
+                    "audio": {
+                      "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/mystery_intro_a39dc7b4_male.mp3",
+                      "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/mystery_intro_adfbfe38_female.mp3"
+                    }
+                  },
+                  "outro": {
+                    "segment_id": "mystery_outro",
+                    "type": "teaching",
+                    "emotion": "confident",
+                    "text": "Uniqueness is key! Because 5 is not in the prime factorisation of 4, no power of 4 can ever end in zero.",
+                    "audio": {
+                      "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/mystery_outro_e34a0ef5_male.mp3",
+                      "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/mystery_outro_0dd467df_female.mp3"
+                    }
+                  },
+                  "pool": [
+                    {
+                      "mystery_id": "m01",
+                      "title": "The Ending Zero Mystery",
+                      "question": "Can 4ⁿ ever end with the digit 0 for any natural number n? Why or why not?",
+                      "ask": {
+                        "segment_id": "m01_ask",
+                        "type": "teaching",
+                        "emotion": "curious",
+                        "text": "Look closely at this picture. Can 4ⁿ ever end with the digit 0 for any natural number n? Why or why not?",
+                        "audio": {
+                          "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/m01_ask_4b4a6133_male.mp3",
+                          "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/m01_ask_296f4ee7_female.mp3"
+                        }
+                      },
+                      "options": {
+                        "A": "No, because its prime factorisation only has 2s, and a prime factor of 5 is required to end in 0.",
+                        "B": "Yes, because as n gets large enough, 4ⁿ will eventually end in 0.",
+                        "C": "No, because 4 is an even number, and numbers ending in 0 must be odd."
+                      },
+                      "answer": "A",
+                      "option_explanations": {
+                        "A": "Yeah, you got the right answer! For a number to end in 0, it must be divisible by 10, meaning its prime factorisation must contain both 2 and 5. Since 4ⁿ = (2²)ⁿ = 2²ⁿ, the only prime factor is 2.",
+                        "B": "Incorrect! By the uniqueness part of the Fundamental Theorem of Arithmetic, no new prime factor like 5 can ever appear in 4ⁿ no matter how large n gets.",
+                        "C": "Incorrect! Numbers ending in 0 (like 10, 20, 30) are actually even, not odd."
+                      },
+                      "reveal": {
+                        "segment_id": "m01_reveal",
+                        "type": "teaching",
+                        "emotion": "thoughtful",
+                        "text": "Because 4ⁿ contains only the prime factor 2, and the uniqueness theorem guarantees no other prime factors exist, it can never contain 5 and thus can never end in 0!",
+                        "audio": {
+                          "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/m01_reveal_21255a64_male.mp3",
+                          "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/m01_reveal_5f0a0713_female.mp3"
+                        }
+                      },
+                      "visual": {
+                        "image_url": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/cbse/10/maths/unit-1/the_fundamental_theorem_of_ari_mystery_a43bb64418.jpg",
+                        "prompt": "A digital display on a chalkboard showing powers of 4: 4¹ = 4, 4² = 16, 4³ = 64, 4⁴ = 256, with a large question mark beside 4ⁿ.",
+                        "model": "gemini-3.1-flash-image",
+                        "kind": "generated_3d",
+                        "width": 1280,
+                        "height": 714
+                      }
+                    }
+                  ]
+                },
+                {
+                  "phase": "explain_back",
+                  "order": 6,
+                  "prompt": "Explain the Fundamental Theorem of Arithmetic in your own words, as if to a friend who missed the class.",
+                  "ask": {
+                    "segment_id": "explain_ask",
+                    "type": "teaching",
+                    "emotion": "encouraging",
+                    "text": "Now it's your turn! How would you explain the Fundamental Theorem of Arithmetic and how to use it for HCF and LCM to a friend?",
+                    "audio": {
+                      "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/explain_ask_9a5d1aad_male.mp3",
+                      "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/explain_ask_108c73d7_female.mp3"
+                    }
+                  },
+                  "closing": {
+                    "segment_id": "explain_close",
+                    "type": "teaching",
+                    "emotion": "warm",
+                    "text": "You've mastered the backbone of number theory today. Fantastic effort!",
+                    "audio": {
+                      "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/explain_close_956ccbaf_male.mp3",
+                      "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/explain_close_00f6b72c_female.mp3"
+                    }
+                  },
+                  "key_points": [
+                    "Every composite number can be uniquely factored into a product of primes, regardless of order.",
+                    "HCF is the product of the smallest powers of each common prime factor.",
+                    "LCM is the product of the greatest powers of all prime factors involved.",
+                    "For two numbers a and b, HCF(a,b) × LCM(a,b) = a × b."
+                  ],
+                  "model_explanation": "The Fundamental Theorem of Arithmetic states that every composite number can be broken down into a unique product of prime numbers, ignoring the order of factors. To find the HCF of two numbers, we multiply the smallest powers of their common prime factors. To find the LCM, we multiply the highest powers of all prime factors involved. Also, for any two numbers, their product equals the product of their HCF and LCM!",
+                  "guidance": "A good explanation states the definition in plain words, shows the procedure on a tiny example of the student's own, names the key property (order, count, the empty case) and the common mistake to avoid."
+                }
+              ],
+              "built_at": "2026-09-23T08:30:30.942928+00:00",
+              "models": {
+                "plan": "gemini-3.6-flash",
+                "teach": "gemini-3.6-flash",
+                "images": "gemini-3.1-flash-image"
+              },
+              "section_title": "The Fundamental Theorem of Arithmetic",
+              "section_kind": "section"
+            }
+          }
+        },
+        {
+          "section_number": "1.3",
+          "section_title": "Revisiting Irrational Numbers",
+          "content": "In Class IX, you were introduced to irrational numbers and many of their properties. You studied about their existence and how the rationals and the irrationals together made up the real numbers. You even studied how to locate irrationals on the number line. However, we did not prove that they were irrationals. In this section, we will prove that $\\sqrt{2}, \\sqrt{3}, \\sqrt{5}$ and, in general, $\\sqrt{p}$ is irrational, where $p$ is a prime. One of the theorems, we use in our proof, is the Fundamental Theorem of Arithmetic.\n\nRecall, a number 's' is called *irrational* if it cannot be written in the form $\\frac{p}{q}$, where $p$ and $q$ are integers and $q \\neq 0$. Some examples of irrational numbers, with which you are already familiar, are :\n\n$$\\sqrt{2}, \\sqrt{3}, \\sqrt{15}, \\pi, -\\frac{\\sqrt{2}}{\\sqrt{3}}, 0.10110111011110 \\dots, \\text{etc.}$$\n\nBefore we prove that $\\sqrt{2}$ is irrational, we need the following theorem, whose proof is based on the Fundamental Theorem of Arithmetic.",
+          "type": "section",
+          "section_enrichment": {
+            "concept_overview": "This lesson explains how to prove that square roots of prime numbers are irrational using proof by contradiction and the Fundamental Theorem of Arithmetic.",
+            "faqs": [
+              {
+                "question": "What is proof by contradiction?",
+                "answer": "It is a mathematical proof method where you assume the opposite of what you want to prove, show that it leads to an impossible situation or contradiction, and conclude that your original statement must be true."
+              },
+              {
+                "question": "What does it mean for two numbers to be coprime?",
+                "answer": "Two numbers are coprime if their only common positive factor is 1."
+              },
+              {
+                "question": "Does Theorem 1.2 work if p is not a prime number?",
+                "answer": "No, p must be a prime number. For example, 4 divides 6 squared (36), but 4 does not divide 6."
+              }
+            ],
+            "practice_questions": [
+              {
+                "question": "Prove that the square root of 5 is an irrational number."
+              },
+              {
+                "question": "Show that 2 + square root of 3 is irrational."
+              },
+              {
+                "question": "If p is a prime number, is square root of p always irrational?"
+              }
+            ],
+            "doubt_context": {
+              "related_sections": [
+                "The Fundamental Theorem of Arithmetic",
+                "Irrational Numbers and Real Numbers in Class IX"
+              ],
+              "board": "CBSE",
+              "class_number": "10",
+              "subject": "Maths",
+              "unit_number": 1,
+              "section_title": "Revisiting Irrational Numbers",
+              "max_rag_chunks": 5,
+              "fallback_to_broader_context": true
+            },
+            "avatar_lesson": {
+              "version": 3,
+              "pattern": "mathematics",
+              "phase_order": [
+                "hook",
+                "explanation",
+                "real_world",
+                "explore",
+                "mystery",
+                "explain_back"
+              ],
+              "phases": [
+                {
+                  "phase": "hook",
+                  "order": 1,
+                  "style": "mission_prediction",
+                  "title": "Prime Factors and Squares",
+                  "scenario": "A student takes a positive integer 'a'. When 'a' is squared to get a², they find that the prime number 5 divides a² evenly.",
+                  "question": "Does 5 also divide the original integer 'a'?",
+                  "options": {
+                    "A": "Yes, 5 must divide 'a'",
+                    "B": "No, 5 never divides 'a'",
+                    "C": "Only if 'a' is an even number",
+                    "D": "Only if 'a' is greater than 100"
+                  },
+                  "answer": "A",
+                  "option_explanations": {
+                    "A": "Yeah, you got the right answer! If a prime divides a², it must divide 'a' because all prime factors of a² come directly from 'a'.",
+                    "B": "That's not correct. Since 5 is prime, any prime factor appearing in a² must already be a prime factor of 'a'.",
+                    "C": "That's not correct. Whether 'a' is even or odd doesn't change the fact that 5 is a prime factor.",
+                    "D": "That's not correct. The size of 'a' does not affect this fundamental prime property."
+                  },
+                  "resolutions": {
+                    "A": {
+                      "segment_id": "hook_res_A",
+                      "type": "teaching",
+                      "emotion": "enthusiastic",
+                      "text": "You predicted correctly! Since 5 is a prime number, if it divides a squared integer, it must divide the integer itself.",
+                      "audio": {
+                        "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_res_A_ef4452f7_male.mp3",
+                        "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_res_A_58ca265f_female.mp3"
+                      }
+                    },
+                    "B": {
+                      "segment_id": "hook_res_B",
+                      "type": "teaching",
+                      "emotion": "encouraging",
+                      "text": "You predicted 'no', but because 5 is a prime number, it actually must divide 'a' as well!",
+                      "audio": {
+                        "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_res_B_8c654a6a_male.mp3",
+                        "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_res_B_97e64820_female.mp3"
+                      }
+                    },
+                    "C": {
+                      "segment_id": "hook_res_C",
+                      "type": "teaching",
+                      "emotion": "thoughtful",
+                      "text": "You predicted it depends on being even, but prime divisibility works regardless of whether 'a' is even or odd.",
+                      "audio": {
+                        "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_res_C_e161fa35_male.mp3",
+                        "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_res_C_35ae0564_female.mp3"
+                      }
+                    },
+                    "D": {
+                      "segment_id": "hook_res_D",
+                      "type": "teaching",
+                      "emotion": "warm",
+                      "text": "You predicted it depends on size, but this property holds for any positive integer 'a', big or small.",
+                      "audio": {
+                        "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_res_D_0429b49f_male.mp3",
+                        "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_res_D_51676f6d_female.mp3"
+                      }
+                    }
+                  },
+                  "intro": {
+                    "segment_id": "hook_intro",
+                    "type": "teaching",
+                    "emotion": "curious",
+                    "text": "Let's test our intuition! If a prime number like 5 divides a squared integer a², does 5 also have to divide 'a' itself?",
+                    "audio": {
+                      "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_intro_63583de3_male.mp3",
+                      "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_intro_f8ac4b37_female.mp3"
+                    }
+                  },
+                  "bridge": {
+                    "segment_id": "hook_bridge",
+                    "type": "teaching",
+                    "emotion": "confident",
+                    "text": "You've just seen a core property of prime numbers—now let's use it to prove why numbers like √2 are irrational!",
+                    "audio": {
+                      "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_bridge_d41c218a_male.mp3",
+                      "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/hook_bridge_39d57a34_female.mp3"
+                    }
+                  },
+                  "visual": {
+                    "image_url": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/cbse/10/maths/unit-1/revisiting_irrational_numbers_hook_a3f508c001.jpg",
+                    "prompt": "A student sitting at a wooden desk with a notebook, writing down numbers and prime factors, viewed from the side in a brightly lit classroom. A calm, ordinary moment before the outcome: nothing in the picture shows or hints at what happens next.",
+                    "model": "gemini-3.1-flash-image",
+                    "kind": "generated_3d",
+                    "width": 1280,
+                    "height": 714
+                  },
+                  "options_visual": {
+                    "image_url": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/cbse/10/maths/unit-1/revisiting_irrational_numbers_hook_optio_9ba860cadb.jpg",
+                    "prompt": "Setting shared by all four panels: A student sitting at a wooden desk with a notebook, writing down numbers and prime factors, viewed from the side in a brightly lit classroom. Top-left panel: The student pointing happily at a notebook page showing 5 dividing both 25 and 5. Top-right panel: The student shaking their head looking at a notebook page with a cross over the number 5. Bottom-left panel: The student looking at even numbers written on a chalkboard. Bottom-right panel: The student looking at large three-digit numbers written on a whiteboard.",
+                    "model": "gemini-3.1-flash-image",
+                    "kind": "generated_3d",
+                    "layout": "option_grid",
+                    "panels": {
+                      "A": "top-left",
+                      "B": "top-right",
+                      "C": "bottom-left",
+                      "D": "bottom-right"
+                    },
+                    "option_scenes": {
+                      "A": "The student pointing happily at a notebook page showing 5 dividing both 25 and 5.",
+                      "B": "The student shaking their head looking at a notebook page with a cross over the number 5.",
+                      "C": "The student looking at even numbers written on a chalkboard.",
+                      "D": "The student looking at large three-digit numbers written on a whiteboard."
+                    },
+                    "width": 1024,
+                    "height": 1024
+                  }
+                },
+                {
+                  "phase": "explanation",
+                  "order": 2,
+                  "teaching_style": "visual_analogy",
+                  "total_duration_estimate": "4 minutes",
+                  "segments": [
+                    {
+                      "segment_id": "seg_001",
+                      "type": "teaching",
+                      "text": "Welcome back! Today, we are going to learn how to prove that numbers like the square root of 2 or square root of 3 are actually irrational.",
+                      "emotion": "enthusiastic",
+                      "audio": {
+                        "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_001_f6a269e9_male.mp3",
+                        "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_001_54c851d6_female.mp3"
+                      }
+                    },
+                    {
+                      "segment_id": "seg_002",
+                      "type": "teaching",
+                      "text": "Remember, an irrational number is one that cannot be written as a fraction a over b, where a and b are integers. To prove a number is irrational, we use a clever technique called proof by contradiction. Let me show you [https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/cbse/10/maths/unit-1/revisiting_irrational_numbers_explain_1_d2f3306e5b.jpg]. We start by assuming the exact opposite—that the number IS rational!",
+                      "emotion": "curious",
+                      "visual": {
+                        "image_url": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/cbse/10/maths/unit-1/revisiting_irrational_numbers_explain_1_d2f3306e5b.jpg",
+                        "prompt": "a student sitting at a wooden desk with a notebook open, holding a pencil, looking thoughtfully at a written fraction on the paper",
+                        "model": "gemini-3.1-flash-image",
+                        "kind": "generated_3d",
+                        "width": 1280,
+                        "height": 714,
+                        "inline": true,
+                        "char_offset": 219,
+                        "planned_because": "the teaching writer placed it here"
+                      },
+                      "audio": {
+                        "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_002_67011a9a_male.mp3",
+                        "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_002_5b47dd9c_female.mp3"
+                      }
+                    },
+                    {
+                      "segment_id": "seg_003",
+                      "type": "teaching",
+                      "text": "Before we prove square root of 2 is irrational, we need an important rule. If a prime number p divides a squared, then p MUST also divide a. This rule comes directly from the Fundamental Theorem of Arithmetic because prime factors are unique.",
+                      "emotion": "thoughtful",
+                      "audio": {
+                        "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_003_41aba52e_male.mp3",
+                        "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_003_2865a66e_female.mp3"
+                      }
+                    },
+                    {
+                      "segment_id": "seg_004",
+                      "type": "teaching",
+                      "text": "Now, let me show you how we use this to test square root of 2 [https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/cbse/10/maths/unit-1/revisiting_irrational_numbers_explain_2_960e9b9bdc.jpg]. If square root of 2 were a over b, where a and b share no common factors, then squaring both sides gives 2 times b squared equals a squared. This means 2 divides a squared, so 2 must divide a!",
+                      "emotion": "encouraging",
+                      "visual": {
+                        "image_url": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/cbse/10/maths/unit-1/revisiting_irrational_numbers_explain_2_960e9b9bdc.jpg",
+                        "prompt": "a classroom blackboard with mathematical equations neatly written in white chalk showing square root of 2 equals a over b",
+                        "model": "gemini-3.1-flash-image",
+                        "kind": "generated_3d",
+                        "width": 1280,
+                        "height": 714,
+                        "inline": true,
+                        "char_offset": 62,
+                        "planned_because": "the teaching writer placed it here"
+                      },
+                      "audio": {
+                        "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_004_1d268c8a_male.mp3",
+                        "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_004_1df473ab_female.mp3"
+                      }
+                    },
+                    {
+                      "segment_id": "seg_005",
+                      "type": "teaching",
+                      "text": "If 2 divides a, we can write a as 2 times c. Substituting this back gives b squared equals 2 times c squared, which means 2 ALSO divides b! But wait, we said a and b had no common factors, and now both are divisible by 2. That is a contradiction, which proves our starting assumption was wrong, so square root of 2 must be irrational!",
+                      "emotion": "surprised",
+                      "audio": {
+                        "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_005_aa036b74_male.mp3",
+                        "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_005_5c5f192d_female.mp3"
+                      }
+                    },
+                    {
+                      "segment_id": "seg_006",
+                      "type": "teaching",
+                      "text": "We can use this exact same method for numbers like 5 minus square root of 3 or 3 times square root of 2. By rearranging the equation to isolate the irrational root on one side, we get a rational number equal to an irrational one, which is impossible!",
+                      "emotion": "warm",
+                      "audio": {
+                        "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_006_1616e94f_male.mp3",
+                        "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_006_da6ac300_female.mp3"
+                      }
+                    },
+                    {
+                      "segment_id": "seg_007",
+                      "type": "teaching",
+                      "role": "hook_answer",
+                      "text": "Back to our opening question! Since 5 is a prime number, if 5 divides a squared, then by Theorem 1.2, 5 MUST also divide the original integer a. So the correct option is A!",
+                      "emotion": "confident",
+                      "audio": {
+                        "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_007_19283338_male.mp3",
+                        "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/seg_007_a0cf0501_female.mp3"
+                      }
+                    }
+                  ],
+                  "closing_segment_id": "seg_007",
+                  "pictured_segment_ids": [
+                    "seg_002",
+                    "seg_004"
+                  ]
+                },
+                {
+                  "phase": "real_world",
+                  "order": 3,
+                  "question": "Where do we use irrational numbers like √2 in real life?",
+                  "ask": {
+                    "segment_id": "rw_ask",
+                    "type": "teaching",
+                    "emotion": "curious",
+                    "text": "Have you ever wondered where irrational numbers like √2 appear in real objects around us? Tap to see!",
+                    "audio": {
+                      "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/rw_ask_c63d311e_male.mp3",
+                      "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/rw_ask_a0586137_female.mp3"
+                    }
+                  },
+                  "reveal": {
+                    "segment_id": "rw_reveal",
+                    "type": "teaching",
+                    "emotion": "inspiring",
+                    "text": "When you measure the diagonal of a perfect 1 meter by 1 meter square frame, its exact length is √2 meters! Since √2 is irrational, it can never be written as an exact simple fraction.",
+                    "audio": {
+                      "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/rw_reveal_e80e96f9_male.mp3",
+                      "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/rw_reveal_35fc6629_female.mp3"
+                    }
+                  },
+                  "why_it_matters": "Understanding irrational numbers helps us work with exact geometric measurements that cannot be represented as simple fractions.",
+                  "visual": {
+                    "image_url": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/cbse/10/maths/unit-1/revisiting_irrational_numbers_real_world_3ff0e1b422.jpg",
+                    "prompt": "A person holding a tape measure diagonally across a square wooden picture frame resting on a workbench.",
+                    "model": "gemini-3.1-flash-image",
+                    "kind": "generated_3d",
+                    "width": 1280,
+                    "height": 714
+                  }
+                },
+                {
+                  "phase": "explore",
+                  "order": 4,
+                  "kind": "try_it_yourself",
+                  "title": "Rearranging Contradiction Steps",
+                  "source": "generated",
+                  "intro": {
+                    "segment_id": "explore_intro",
+                    "type": "teaching",
+                    "emotion": "enthusiastic",
+                    "text": "Let's test your understanding of how we prove a number is irrational by contradiction!",
+                    "audio": {
+                      "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/explore_intro_434c7781_male.mp3",
+                      "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/explore_intro_412d40e1_female.mp3"
+                    }
+                  },
+                  "materials": [],
+                  "steps": [
+                    "Assume 5 - √3 is rational, so 5 - √3 = a/b for coprime integers a and b.",
+                    "Rearrange the equation to isolate √3.",
+                    "Identify if the resulting expression (5b - a)/b is rational or irrational.",
+                    "State the contradiction with the known fact that √3 is irrational."
+                  ],
+                  "interaction": {
+                    "type": "choice",
+                    "prompt": "When rearranging 5 - √3 = a/b, what does √3 equal?",
+                    "options": [
+                      {
+                        "id": "A",
+                        "label": "(5b - a) / b",
+                        "feedback": "Correct! Subtracting a/b from 5 gives (5b - a)/b."
+                      },
+                      {
+                        "id": "B",
+                        "label": "(a - 5b) / b",
+                        "feedback": "Incorrect, check your signs when moving terms across the equals sign."
+                      },
+                      {
+                        "id": "C",
+                        "label": "5 - b/a",
+                        "feedback": "Incorrect, remember a/b is a fraction, not b/a."
+                      }
+                    ],
+                    "answer": "A"
+                  },
+                  "wrap_up": {
+                    "segment_id": "explore_wrap",
+                    "type": "teaching",
+                    "emotion": "encouraging",
+                    "text": "Great job! Rearranging equations to find a contradiction is the key step in these proofs.",
+                    "audio": {
+                      "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/explore_wrap_73bc4138_male.mp3",
+                      "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/explore_wrap_4b9ea6a0_female.mp3"
+                    }
+                  },
+                  "challenge": {
+                    "prompt": "If 3√2 = a/b where a and b are integers, what is √2 equal to?",
+                    "interaction": {
+                      "type": "choice",
+                      "prompt": "Select the correct expression for √2:",
+                      "options": [
+                        {
+                          "id": "A",
+                          "label": "a / (3b)",
+                          "feedback": "Correct! Dividing both sides by 3 gives a/(3b)."
+                        },
+                        {
+                          "id": "B",
+                          "label": "3a / b",
+                          "feedback": "Incorrect, you need to divide by 3, not multiply."
+                        },
+                        {
+                          "id": "C",
+                          "label": "(a - 3) / b",
+                          "feedback": "Incorrect, 3 is multiplied by √2, so you must divide."
+                        }
+                      ],
+                      "answer": "A"
+                    }
+                  }
+                },
+                {
+                  "phase": "mystery",
+                  "order": 5,
+                  "show": 1,
+                  "intro": {
+                    "segment_id": "mystery_intro",
+                    "type": "teaching",
+                    "emotion": "thoughtful",
+                    "text": "Let's see if you can spot the flaw in a mathematical claim!",
+                    "audio": {
+                      "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/mystery_intro_e48f3894_male.mp3",
+                      "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/mystery_intro_5897788c_female.mp3"
+                    }
+                  },
+                  "outro": {
+                    "segment_id": "mystery_outro",
+                    "type": "teaching",
+                    "emotion": "confident",
+                    "text": "Spotting where an assumption breaks down is what makes proof by contradiction so powerful!",
+                    "audio": {
+                      "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/mystery_outro_6efb2476_male.mp3",
+                      "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/mystery_outro_dea3fe0a_female.mp3"
+                    }
+                  },
+                  "pool": [
+                    {
+                      "mystery_id": "m01",
+                      "title": "The Coprime Confusion",
+                      "question": "A student writes 3b² = a² and concludes that both 'a' and 'b' are divisible by 3. Why does this create a contradiction if a/b was assumed to be in simplest form?",
+                      "ask": {
+                        "segment_id": "m01_ask",
+                        "type": "teaching",
+                        "emotion": "curious",
+                        "text": "Look closely at this picture. A student writes 3b² = a² and concludes that both 'a' and 'b' are divisible by 3. Why does this create a contradiction if a/b was assumed to be in simplest form?",
+                        "audio": {
+                          "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/m01_ask_a162cd47_male.mp3",
+                          "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/m01_ask_5b000fda_female.mp3"
+                        }
+                      },
+                      "options": {
+                        "A": "Because coprime integers 'a' and 'b' cannot share any common factor other than 1.",
+                        "B": "Because 3 is not a prime number.",
+                        "C": "Because 'a' and 'b' must both be odd numbers."
+                      },
+                      "answer": "A",
+                      "option_explanations": {
+                        "A": "Yeah, you got the right answer! If 'a' and 'b' share 3 as a common factor, they were not coprime, contradicting our original assumption.",
+                        "B": "Incorrect, 3 is indeed a prime number.",
+                        "C": "Incorrect, being odd or even is not the core contradiction here."
+                      },
+                      "reveal": {
+                        "segment_id": "m01_reveal",
+                        "type": "teaching",
+                        "emotion": "enthusiastic",
+                        "text": "Since 'a' and 'b' were assumed to be coprime, finding that 3 divides both of them creates a contradiction, proving √3 cannot be rational!",
+                        "audio": {
+                          "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/m01_reveal_32b78d92_male.mp3",
+                          "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/m01_reveal_91ca8be4_female.mp3"
+                        }
+                      },
+                      "visual": {
+                        "image_url": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-visuals/cbse/10/maths/unit-1/revisiting_irrational_numbers_mystery_8f778e9ffa.jpg",
+                        "prompt": "A classroom blackboard with the equation 3b² = a² written neatly, with a red question mark circled next to the numbers 3, a, and b.",
+                        "model": "gemini-3.1-flash-image",
+                        "kind": "generated_3d",
+                        "width": 1280,
+                        "height": 714
+                      }
+                    }
+                  ]
+                },
+                {
+                  "phase": "explain_back",
+                  "order": 6,
+                  "prompt": "Explain how to prove that √2 is irrational in your own words, as if to a friend who missed class.",
+                  "ask": {
+                    "segment_id": "explain_ask",
+                    "type": "teaching",
+                    "emotion": "encouraging",
+                    "text": "Now it's your turn! Can you explain how we prove √2 is irrational using proof by contradiction?",
+                    "audio": {
+                      "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/explain_ask_55dde40c_male.mp3",
+                      "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/explain_ask_c80f0e30_female.mp3"
+                    }
+                  },
+                  "closing": {
+                    "segment_id": "explain_close",
+                    "type": "teaching",
+                    "emotion": "inspiring",
+                    "text": "Fantastic explanation! You've mastered proving irrationality using the Fundamental Theorem of Arithmetic.",
+                    "audio": {
+                      "male": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/explain_close_ad184d69_male.mp3",
+                      "female": "https://gradeup-books-images.s3.us-east-1.amazonaws.com/avatar-audio/cbse/10/maths/unit-1/explain_close_13dc7828_female.mp3"
+                    }
+                  },
+                  "key_points": [
+                    "Assume √2 is rational and write it as a/b where a and b are coprime integers.",
+                    "Square both sides to get 2b² = a², showing that 2 divides a², so 2 divides a.",
+                    "Substitute a = 2c to show 2b² = 4c², meaning b² = 2c², so 2 divides b.",
+                    "Conclude that 2 divides both a and b, contradicting that a and b are coprime."
+                  ],
+                  "model_explanation": "To prove √2 is irrational, we assume the opposite: that √2 is rational and equals a/b, where a and b are coprime integers. Squaring both sides gives 2b² = a², which means 2 divides a², so 2 must divide a. We can write a = 2c. Substituting this back gives b² = 2c², meaning 2 also divides b. This contradicts our assumption that a and b have no common factors other than 1. Thus, √2 must be irrational.",
+                  "guidance": "A good explanation states the definition in plain words, shows the procedure on a tiny example of the student's own, names the key property (order, count, the empty case) and the common mistake to avoid."
+                }
+              ],
+              "built_at": "2026-09-23T08:35:41.958438+00:00",
+              "models": {
+                "plan": "gemini-3.6-flash",
+                "teach": "gemini-3.6-flash",
+                "images": "gemini-3.1-flash-image"
+              },
+              "section_title": "Revisiting Irrational Numbers",
+              "section_kind": "section"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

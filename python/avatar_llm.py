@@ -224,7 +224,15 @@ _DEFAULT_TEMPERATURE = {
 # Models whose OpenRouter providers do not all honour response_format. Asking
 # for it is a hard 400 on those, so the instruction goes in the prompt instead
 # - every avatar system prompt already ends with "Return STRICT JSON".
-_JSON_MODE_UNSUPPORTED: Tuple[str, ...] = ()
+# _JSON_MODE_UNSUPPORTED: Tuple[str, ...] = ()
+# llama-4-scout (2026-09-24): with response_format set, OpenRouter answers 404 "No
+# endpoints found ... removed during routing: Filter by Parameters" - no host of it
+# supports JSON mode any more. Without it the same request is a 200 with valid JSON.
+# Scout is the FALLBACK of nearly every engine (seminar, quiz, debate, homework,
+# exam, question bank, English, PPT review), so a Gemini 503 had no working fallback
+# anywhere: the PPT intent router fell to its keyword default and sent image
+# requests down the answer path.
+_JSON_MODE_UNSUPPORTED: Tuple[str, ...] = ("meta-llama/llama-4-scout",)
 
 
 def supports_json_mode(model: str) -> bool:

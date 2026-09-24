@@ -145,6 +145,130 @@ def extract_toc_units_from_markdown(markdown: str) -> List[Dict[str, Any]]:
     return units
 
 
+# TOC SANITY GUARDS — shared by both verification paths
+
+
+def stamp_unit_from_markdown(markdown: str) -> Optional[int]:
+    """The unit/chapter number the PDF's own printer stamp declares, if any.
+
+    PDFs carry indd printer stamps that encode the exact unit/chapter number.
+    Two formats:
+      Format A (Geography/Science): "11_Geography_Unit_1_EM.indd" -> unit 1
+      Format B (Mathematics):       "1-SET LANGUAGE.indd 2"       -> chapter 1
+    """
+    m = re.search(r'\d+_[A-Za-z]+_Unit_(\d+)_EM\.indd', markdown[:3000], re.IGNORECASE)
+    if m:
+        return int(m.group(1))
+    m = re.search(r'(?:^|\n)(\d+)-[A-Z][A-Z ]+\.indd\s+\d', markdown[:3000], re.MULTILINE)
+    if m:
+        return int(m.group(1))
+    return None
+
+
+def apply_toc_sanity_guards(
+    markdown: str,
+    toc_units: List[Dict[str, Any]],
+    extracted_units: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
+    """Drop TOC entries that are not really units of THIS upload.
+
+    `extract_toc_units_from_markdown` reads any numbered list near the top of
+    the markdown. In a single-unit upload that is routinely body text — the
+    five physiographic divisions of India, printed "1. The Himalayas ... 5. The
+    Islands" in the opening pages, became a five-unit TOC and cost the document
+    20 of the 25 unit-coverage points (score stuck at 80.0 while word coverage
+    climbed 86% -> 99%).
+
+    Three checks, all of which lived inline in run_verification_agent and so
+    never ran on the graph path that actually decides storage:
+      1. titles that read like body sentences, overridden by the stamp or by
+         the single extracted unit;
+      2. a multi-unit TOC contradicted by the stamp / by there being at most
+         one real unit header in the body;
+      3. TOC entries with no body content in this PDF at all.
+    """
+    if not toc_units:
+        return toc_units
+
+    extracted_units = extracted_units or []
+    stamp_unit = stamp_unit_from_markdown(markdown)
+
+    def _unit_num(u: Dict[str, Any]) -> Optional[int]:
+        return u.get("unit_number") or u.get("chapter_number")
+
+    # ── 1. body-text title quality (subject-independent) ─────────────────────
+    # Real TOC titles are concise proper nouns. Exercise/body sentences contain
+    # stop-words like "of", "the", "all", "in", "a", "an" or are lowercase.
+    if len(toc_units) > 1:
+        stop_re = re.compile(r'\b(of|the|in|a|an|all|from|for|by|to|at|on)\b', re.IGNORECASE)
+        body_like = sum(
+            1 for u in toc_units
+            if (len(u["title"]) > 50                  # very long = body text
+                or u["title"][:1].islower()           # lowercase start
+                or stop_re.search(u["title"]))        # stop-word = body sentence
+        )
+        if body_like / len(toc_units) >= 0.5:
+            override = stamp_unit or (
+                _unit_num(extracted_units[0]) if len(extracted_units) == 1 else None
+            )
+            if override:
+                logger.warning(
+                    f"[VerifyAgent] TOC list {sorted(u['number'] for u in toc_units)} "
+                    f"looks like body-text sentences "
+                    f"(stop-word ratio={body_like / len(toc_units):.0%}) — "
+                    f"overriding TOC with chapter/unit {override}")
+                toc_units = [{"number": override,
+                              "title": f"Chapter/Unit {override}", "type": "unit"}]
+
+    # ── 2. stamp contradicts a multi-unit TOC ────────────────────────────────
+    if stamp_unit is not None and len(toc_units) > 1:
+        real_unit_headers = set(int(m) for m in re.findall(
+            r'(?:^|\n)#{1,3}\s*[Uu]nit\s*[-\u2013]?\s*(\d+)', markdown))
+        toc_set = {u["number"] for u in toc_units}
+        if stamp_unit not in toc_set or len(real_unit_headers) <= 1:
+            logger.warning(
+                f"[VerifyAgent] TOC list {sorted(toc_set)} appears to be a "
+                f"body-content list (stamp=Chapter/Unit {stamp_unit}, "
+                f"real unit headers={real_unit_headers or {stamp_unit}}) — "
+                f"overriding TOC with stamp")
+            toc_units = [{"number": stamp_unit,
+                          "title": f"Chapter/Unit {stamp_unit}", "type": "unit"}]
+
+    # ── 3. content-presence filter ───────────────────────────────────────────
+    # A single-unit PDF often carries the full textbook TOC (listing all
+    # 5 units) on its cover page. Filter out TOC entries for units that have
+    # NO actual body content in the uploaded markdown, so the verifier does
+    # not flag units 2-5 as "missing" when only unit 1 was uploaded.
+    if len(toc_units) > 1:
+        with_content = []
+        for tu in toc_units:
+            tu_md = extract_unit_markdown(markdown, tu["number"])
+            if tu_md and len(tu_md) >= 200:
+                with_content.append(tu)
+            else:
+                logger.info(f"[VerifyAgent] TOC unit {tu['number']} has no body content "
+                            f"in this PDF — removing from expected set (single-unit upload?)")
+        if with_content:
+            toc_units = with_content
+
+    return toc_units
+
+
+def expected_units_from_markdown(
+    markdown: str,
+    extracted_units: Optional[List[Dict[str, Any]]] = None,
+) -> List[int]:
+    """The unit numbers this upload is genuinely expected to contain.
+
+    Parse + guards, in one call, so every caller judges coverage the same way.
+    Returns [] when there is no trustworthy TOC — callers treat that as
+    "no TOC to compare against", not as "nothing was found".
+    """
+    toc_units = apply_toc_sanity_guards(
+        markdown, extract_toc_units_from_markdown(markdown), extracted_units)
+    return [u["number"] for u in toc_units]
+
+
 # UNIT CONTENT EXTRACTOR
 
 def extract_unit_markdown(markdown: str, unit_number: int) -> str:
@@ -1572,93 +1696,9 @@ def run_verification_agent(
         if original_toc_len > len(toc_units):
             logger.info(f"[VerifyAgent] Split-unit mode: filtering TOC to expected units {expected_units}")
 
-    # ── Stamp-based sanity check ─────────────────────────────────────────────
-    # PDFs carry indd printer stamps that encode the exact unit/chapter number.
-    # Two formats:
-    #   Format A (Geography/Science): "11_Geography_Unit_1_EM.indd" → unit 1
-    #   Format B (Mathematics):       "1-SET LANGUAGE.indd 2"       → chapter 1
-    # If the TOC parser returned multiple units but the stamp shows only one,
-    # the TOC result is a false positive from a body-content numbered list.
-    _stamp_unit = None
-
-    # Format A: explicit Unit_N stamp
-    _indd_unit_m = re.search(
-        r'\d+_[A-Za-z]+_Unit_(\d+)_EM\.indd',
-        markdown[:3000], re.IGNORECASE
-    )
-    if _indd_unit_m:
-        _stamp_unit = int(_indd_unit_m.group(1))
-
-    # Format B: chapter stamp  "N-CHAPTER TITLE.indd ..."
-    if _stamp_unit is None:
-        _ch_stamp_m = re.search(
-            r'(?:^|\n)(\d+)-[A-Z][A-Z ]+\.indd\s+\d',
-            markdown[:3000], re.MULTILINE
-        )
-        if _ch_stamp_m:
-            _stamp_unit = int(_ch_stamp_m.group(1))
-
-    # Body-text title quality check (subject-independent):
-    # Real TOC titles are concise proper nouns. Exercise/body sentences contain
-    # stop-words like "of", "the", "all", "in", "a", "an" or are lowercase.
-    if toc_units and len(toc_units) > 1:
-        _stop_re = re.compile(r'\b(of|the|in|a|an|all|from|for|by|to|at|on)\b', re.IGNORECASE)
-        _body_like_count = sum(
-            1 for u in toc_units
-            if (len(u["title"]) > 50 or               # very long = body text
-                u["title"][:1].islower() or            # lowercase start
-                _stop_re.search(u["title"]))           # stop-word = body sentence
-        )
-        _body_like_ratio = _body_like_count / len(toc_units)
-        if _body_like_ratio >= 0.5:
-            # More than half the "TOC titles" look like body sentences
-            # → this is not a real TOC, it's a numbered list in body text
-            _real_sec_m = re.findall(r'(?:^|\n)#+\s*\d+\.\d+', markdown, re.MULTILINE)
-            def __unit_num_inner(u): return u.get("unit_number") or u.get("chapter_number")
-            _override_num = _stamp_unit or (
-                __unit_num_inner(extracted_units[0]) if len(extracted_units) == 1 else None
-            )
-            if _override_num:
-                toc_set = {u["number"] for u in toc_units}
-                logger.warning(f"[VerifyAgent] TOC list {sorted(toc_set)} looks like body-text "
-                      f"sentences (stop-word ratio={_body_like_ratio:.0%}) — "
-                      f"overriding TOC with chapter/unit {_override_num}")
-                toc_units = [{"number": _override_num,
-                              "title": f"Chapter/Unit {_override_num}",
-                              "type": "unit"}]
-
-    if _stamp_unit is not None and len(toc_units) > 1:
-        real_unit_headers = set(int(m) for m in re.findall(
-            r'(?:^|\n)#{1,3}\s*[Uu]nit\s*[-–]?\s*(\d+)', markdown
-        ))
-        toc_set = {u["number"] for u in toc_units}
-        # If stamp unit is missing from TOC, or TOC has multiple numbers but
-        # body only has one real unit/chapter header → TOC is wrong, override
-        if _stamp_unit not in toc_set or len(real_unit_headers) <= 1:
-            logger.warning(f"[VerifyAgent] TOC list {sorted(toc_set)} appears to be a "
-                  f"body-content list (stamp=Chapter/Unit {_stamp_unit}, "
-                  f"real unit headers={real_unit_headers or {_stamp_unit}}) — "
-                  f"overriding TOC with stamp")
-            toc_units = [{"number": _stamp_unit,
-                          "title": f"Chapter/Unit {_stamp_unit}",
-                          "type": "unit"}]
-
-    # ── Content-presence filter ───────────────────────────────────────────────
-    # A single-unit PDF often carries the full textbook TOC (listing all
-    # 5 units) on its cover page. Filter out TOC entries for units that have
-    # NO actual body content in the uploaded markdown, so the verifier does
-    # not flag units 2-5 as "missing" when only unit 1 was uploaded.
-    if len(toc_units) > 1:
-        toc_units_with_content = []
-        for tu in toc_units:
-            tu_md = extract_unit_markdown(markdown, tu["number"])
-            if tu_md and len(tu_md) >= 200:
-                toc_units_with_content.append(tu)
-            else:
-                logger.info(f"[VerifyAgent] TOC unit {tu['number']} has no body content "
-                      f"in this PDF — removing from expected set (single-unit upload?)")
-        if toc_units_with_content:
-            toc_units = toc_units_with_content
+    # The guards live in apply_toc_sanity_guards so the graph path — the one
+    # that decides storage — applies exactly the same ones.
+    toc_units = apply_toc_sanity_guards(markdown, toc_units, extracted_units)
 
     expected = {u["number"] for u in toc_units}
 

@@ -63,6 +63,8 @@ import io
 import json
 import os
 import re
+import time
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from typing import Tuple, Any, Dict, List, Optional
 from urllib.parse import urlparse
 
@@ -195,6 +197,10 @@ _BLOCKED_STOCK = (
     "robertharding", "naturepl", "mindenpictures", "photoshelter", "smugmug",
     "fineartamerica", "pixels.com", "zazzle", "redbubble", "etsystatic",
     "dreamstime", "stockphotosecrets", "vecteezy", "freepik",
+    # Unsplash+ premium: its previews carry tiled "Unsplash+" watermarks by design
+    # (5 of 5 rejected by the vision gate on 2026-09-24). Free images.unsplash.com
+    # stays trusted -- only the premium host is blocked, before paying a vision call.
+    "plus.unsplash.com",
 )
 
 # Watermark / preview tells that show up in the URL path or the result title.
@@ -1105,13 +1111,19 @@ def _download(url: str) -> Optional[bytes]:
     return None
 
 
-def _normalize_image(raw: bytes) -> Optional[Dict[str, Any]]:
+def _normalize_image(raw: bytes, max_ratio: float = 3.5,
+                     min_ratio: float = 0.28) -> Optional[Dict[str, Any]]:
     """Decode, sanity-check and re-encode an image to clean JPEG.
 
     Rejects anything too small to teach from, absurdly elongated (banners and
     sliced sprites), or near-uniform (placeholder / 'image unavailable' tiles).
     Re-encoding is what makes the stored copy clean: it drops EXIF, colour
     profiles and any other metadata riding along with the original file.
+
+    ``max_ratio`` / ``min_ratio`` bound width/height. The defaults are the lesson
+    rule; the slide picker widens them because scales and spectra are strips by
+    nature - Commons' clean pH scale chart is 1280x359 (3.57) and was rejected
+    here as a "banner" before the vision gate ever saw it.
     """
     try:
         from PIL import Image, ImageStat
@@ -1132,7 +1144,8 @@ def _normalize_image(raw: bytes) -> Optional[Dict[str, Any]]:
         return None
 
     ratio = width / float(height or 1)
-    if ratio > 3.5 or ratio < 0.28:
+    # if ratio > 3.5 or ratio < 0.28:
+    if ratio > max_ratio or ratio < min_ratio:
         logger.debug(f"[visuals] extreme aspect ratio ({ratio:.2f})")
         return None
 
@@ -1359,7 +1372,9 @@ def _gate_topic(section_title: str, unit_title: str, subject: str,
 
 def _vision_review(image_bytes: bytes, topic: str, teaching_text: str = "",
                    class_number: str = "", subject: str = "",
-                   must_show: str = "") -> Optional[Dict]:
+                   must_show: str = "",
+                   system_prompt: str = _VISION_REVIEW_PROMPT,
+                   max_tokens: int = 900) -> Optional[Dict]:
     """Run the vision gate. Returns the parsed verdict, or None if it errored.
 
     ``must_show`` is a scene the picture has to actually depict. The hook of
@@ -1388,7 +1403,9 @@ def _vision_review(image_bytes: bytes, topic: str, teaching_text: str = "",
         prompt += f"WHAT THE AVATAR IS SAYING AROUND THIS POINT:\n{teaching_text[:900]}\n"
     prompt += "\nJudge the image against the rules, then return the JSON."
 
-    return _parse_json(_call_vision(prompt, image_bytes))
+    # return _parse_json(_call_vision(prompt, image_bytes))
+    return _parse_json(_call_vision(prompt, image_bytes,
+                                    system_prompt=system_prompt, max_tokens=max_tokens))
 
 
 # ==============================================================================
@@ -1424,10 +1441,20 @@ def _candidate_pool(query: str, section_title: str = "",
     if section_title and section_title.lower() not in query.lower() and not prefer_illustration:
         variants.append(section_title)
 
+    # The variants are independent searches, so fetch them together (they measured
+    # ~2.3s each, run one after another). Results are consumed below in the SAME
+    # variant order as before, so ranking and de-duplication are unchanged.
+    # for depth, variant in enumerate(variants):
+    #     for cand in gather_candidates(variant, prefer_illustration=prefer_illustration, stage=stage):
+    with ThreadPoolExecutor(max_workers=len(variants)) as ex:
+        per_variant = list(ex.map(
+            lambda v: gather_candidates(v, prefer_illustration=prefer_illustration, stage=stage),
+            variants))
+
     pool: List[Dict[str, Any]] = []
     seen: set = set()
-    for depth, variant in enumerate(variants):
-        for cand in gather_candidates(variant, prefer_illustration=prefer_illustration, stage=stage):
+    for depth, found in enumerate(per_variant):
+        for cand in found:
             key = _dedupe_key(cand["image_url"])
             if key in seen:
                 continue
@@ -1523,6 +1550,443 @@ def find_visual(query: str,
 
     logger.info(f"[visuals] nothing clean found for '{query}' after {total_attempted} check(s)")
     return None
+
+
+# Several pictures for a chooser (the PPT copilot's image picker), as opposed to
+# find_visual's one-per-slot. Every knob is an env var; defaults measured 2026-09-24.
+PICKER_COUNT = int(os.getenv("VISUALS_PICKER_COUNT", "6"))
+# Vision calls per picker request - the only step that costs money.
+PICKER_MAX_CHECKS = int(os.getenv("VISUALS_PICKER_MAX_CHECKS", "14"))
+# Candidates downloaded + pixel-checked (free) to find PICKER_MAX_CHECKS worth judging;
+# about a third of web images fail to download or fail the pixel gate.
+PICKER_PREFETCH = int(os.getenv("VISUALS_PICKER_PREFETCH", "28"))
+# Wall-clock caps per phase. A result not back by its deadline is dropped, so one
+# slow host or one slow model call cannot hold the student's reply hostage (a single
+# vision call was measured at 15.4s while the other 13 averaged ~5s).
+PICKER_SEARCH_DEADLINE = float(os.getenv("VISUALS_PICKER_SEARCH_DEADLINE", "12"))
+PICKER_DOWNLOAD_DEADLINE = float(os.getenv("VISUALS_PICKER_DOWNLOAD_DEADLINE", "6"))
+PICKER_VISION_DEADLINE = float(os.getenv("VISUALS_PICKER_VISION_DEADLINE", "15"))
+PICKER_STORE_DEADLINE = float(os.getenv("VISUALS_PICKER_STORE_DEADLINE", "15"))
+
+
+# Gemini vision latency is heavy-tailed and sporadic: a median of ~4s, but single
+# calls of 16s and 32s, with no rate limiting and no fallback involved (measured
+# 2026-09-24, concurrency 1/4/8/14). A deadline alone just drops those checks - 6 of
+# 14 in one pH-chart request, plus the only winner's mark check. So a check that
+# has not answered by PICKER_HEDGE_AFTER is asked again and the first answer wins:
+# the textbook tail-latency fix, costing a second call only for the slow ~10%.
+PICKER_HEDGE_AFTER = float(os.getenv("VISUALS_PICKER_HEDGE_AFTER", "6"))
+
+
+def _first_answer(fn, item: Any, hedge_after: float, deadline: float) -> Any:
+    """``fn(item)``, re-issued once if it has not answered (or answered None) by
+    ``hedge_after`` seconds. The first non-None result wins; None if nothing
+    answers within ``deadline`` seconds."""
+    start = time.monotonic()
+    ex = ThreadPoolExecutor(max_workers=2)
+    futures = [ex.submit(fn, item)]
+    try:
+        while True:
+            for fut in futures:
+                if fut.done() and fut.exception() is None and fut.result() is not None:
+                    return fut.result()
+            elapsed = time.monotonic() - start
+            if elapsed >= deadline:
+                return None
+            hedged = len(futures) > 1
+            if hedged and all(f.done() for f in futures):
+                return None                      # both came back empty
+            if not hedged and (elapsed >= hedge_after or futures[0].done()):
+                futures.append(ex.submit(fn, item))
+                continue
+            until = deadline if hedged else hedge_after
+            wait([f for f in futures if not f.done()],
+                 timeout=max(0.0, until - elapsed), return_when=FIRST_COMPLETED)
+    finally:
+        ex.shutdown(wait=False, cancel_futures=True)
+
+
+def _parallel(fn, items: List[Any], deadline: float,
+              hedge_after: Optional[float] = None,
+              enough: Optional[int] = None) -> List[Any]:
+    """``fn`` over ``items`` concurrently. Results come back in ITEM order; an item
+    that raised, or was not finished by ``deadline`` seconds, yields None.
+
+    With ``hedge_after``, each item is re-asked once if it is slow (see
+    _first_answer), so a single slow model call no longer costs its item.
+
+    With ``enough``, stop as soon as that many items have a non-None result: the
+    picker downloads 28 candidates to find 14 worth judging, and waiting for the
+    slowest of 28 hosts put the download phase at its full deadline on every run.
+
+    Stragglers are abandoned, not awaited: their threads finish in the background
+    and the result is discarded, which is the point of a deadline.
+    """
+    if not items:
+        return []
+    if hedge_after:
+        task, outer = (lambda it: _first_answer(fn, it, hedge_after, deadline)), deadline + 1.0
+    else:
+        task, outer = fn, deadline
+    ex = ThreadPoolExecutor(max_workers=len(items))
+    futures = [ex.submit(task, item) for item in items]
+    # done, _ = wait(futures, timeout=outer)
+    if enough:
+        end = time.monotonic() + outer
+        pending, good = set(futures), 0
+        while pending and good < enough:
+            left = end - time.monotonic()
+            if left <= 0:
+                break
+            finished, pending = wait(pending, timeout=left, return_when=FIRST_COMPLETED)
+            good += sum(1 for f in finished
+                        if f.exception() is None and f.result() is not None)
+        done = {f for f in futures if f.done()}
+    else:
+        done, _ = wait(futures, timeout=outer)
+    ex.shutdown(wait=False, cancel_futures=True)
+    out: List[Any] = []
+    for fut in futures:
+        if fut in done and fut.exception() is None:
+            out.append(fut.result())
+        else:
+            out.append(None)
+    return out
+
+
+# Second pass on the picker's WINNERS only. The main review is one long prompt with a
+# dozen rules, at low image detail and temperature 0.6 - and it proved non-deterministic
+# on small marks: a .gov pH chart with a URL printed in its corner was rejected for that
+# URL on three runs and accepted on the fourth. For a student-facing picker "no mark on
+# any picture" is the requirement, so the pictures about to be shown get one focused
+# question, at full detail and temperature 0.
+_MARK_CHECK_PROMPT = """You check pictures before they are shown to school students. Look at the WHOLE image, including every edge and corner, at full size.
+
+Answer ONE question: is anything printed on or over this image that is NOT part of the picture's own content?
+
+That INCLUDES, wherever it appears and however small or faint:
+- a watermark: tiled, diagonal or translucent text or logos
+- a website name, URL, domain, email address or social-media handle
+- a logo or brand name of a company, website, school, coaching institute, channel or app
+- a copyright line, photographer or artist credit, "source:" line, or stock-agency stamp
+- a "sample", "preview" or "do not copy" overlay
+
+It does NOT include text that belongs to the content itself: labels naming the parts of a
+diagram, axis labels and numbers on a chart, a diagram's own title, words on a real
+object in a photo (a printed bottle label, a sign in the scene).
+
+When unsure whether something small in a corner is a credit or a mark, answer true.
+
+Return STRICT JSON and nothing else:
+{"has_mark": true or false, "mark": "what it is and where, or empty"}
+"""
+PICKER_MARK_DEADLINE = float(os.getenv("VISUALS_PICKER_MARK_DEADLINE", "15"))
+# Extra first-pass winners checked for marks, so a mark found still leaves `count`.
+PICKER_MARK_SPARE = int(os.getenv("VISUALS_PICKER_MARK_SPARE", "3"))
+
+
+def _mark_free(image_bytes: bytes) -> bool:
+    """True only when the focused mark check positively says the image is clean.
+
+    Fails CLOSED: an error, a timeout or an unparseable answer counts as marked.
+    Dropping a clean picture costs one choice in the picker; showing a marked one
+    is the exact thing this check exists to prevent.
+    """
+    return _mark_verdict(image_bytes) is True
+
+
+def _mark_verdict(image_bytes: bytes) -> Optional[bool]:
+    """The mark check's answer: True = clean, False = marked, None = no answer.
+
+    None (an error or an unparseable reply) is kept distinct from "marked" so a
+    hedged caller can re-ask; _mark_free collapses it to marked.
+    """
+    result = avatar_llm.chat(
+        VISION_MODEL, _MARK_CHECK_PROMPT, "Check this image for marks.",
+        images=[image_bytes],
+        # max_tokens=200,
+        # Headroom for Gemini's hidden reasoning, which counts against the cap: a
+        # verdict cut off mid-JSON reads as "no answer", and this check fails closed.
+        max_tokens=1200,
+        temperature=0,
+        force_json=True,
+        image_detail="high",
+        timeout=VISION_TIMEOUT,
+        fallback_model=VISION_FALLBACK_MODEL,
+        trace_name="check-image-marks",
+    )
+    verdict = _parse_json(result.text) if result.ok else None
+    if not isinstance(verdict, dict) or "has_mark" not in verdict:
+        logger.info("[visuals] mark check gave no verdict")
+        return None
+    if verdict.get("has_mark"):
+        logger.info(f"[visuals] mark check: {str(verdict.get('mark') or 'mark found')[:160]}")
+        return False
+    return True
+
+
+# Slides are wide, and scales, spectra and timelines are strips (pH scale chart: 3.57).
+PICKER_MAX_ASPECT = float(os.getenv("VISUALS_PICKER_MAX_ASPECT", "5.0"))
+
+# The picker's first-pass prompt: the lesson gate's REJECT/ACCEPT rules word for word,
+# but a verdict-only answer. The lesson prompt also has the model write a 4-6 sentence
+# spoken script, a question and its answer for every picture it accepts - output the
+# picker discards, and output is what made checks miss their deadline (5 of 14 did, on
+# a pH-chart request). Built by splitting the lesson prompt so the rules never drift
+# apart; if the split marker ever disappears, the full lesson prompt is used as is.
+_PICKER_SPLIT = "If you ACCEPT, also write the teaching lines."
+_PICKER_INTRO_OLD = ("You are helping a school teaching avatar choose a picture to show a "
+                     "student mid-lesson, and then writing what the avatar SAYS while it is "
+                     "on screen.")
+_PICKER_INTRO_NEW = ("You are choosing pictures that a school student can put on a "
+                     "presentation slide about the TOPIC given.")
+if _PICKER_SPLIT in _VISION_REVIEW_PROMPT:
+    _PICKER_REVIEW_PROMPT = (
+        _VISION_REVIEW_PROMPT.split(_PICKER_SPLIT)[0].replace(_PICKER_INTRO_OLD, _PICKER_INTRO_NEW)
+        + "Return STRICT JSON and nothing else:\n"
+          "{\n"
+          '  "usable": true,\n'
+          '  "has_watermark": false,\n'
+          '  "is_on_topic": true,\n'
+          '  "reject_reason": "",\n'
+          '  "shows": "one plain sentence describing what the picture shows"\n'
+          "}\n"
+    )
+    # _PICKER_REVIEW_MAX_TOKENS = 250
+    # NOT the visible answer's size: on Gemini the hidden reasoning counts against
+    # max_tokens too. At 250, 9 of 12 replies were cut off mid-JSON ('{   "usable":')
+    # and parsed as no verdict; at 1200, 12 of 12 parsed. A cap is a ceiling, so the
+    # short verdict still comes back just as fast.
+    _PICKER_REVIEW_MAX_TOKENS = 1200
+else:
+    _PICKER_REVIEW_PROMPT = _VISION_REVIEW_PROMPT
+    _PICKER_REVIEW_MAX_TOKENS = 900
+
+# Budget spread: at most this many vision checks per UNTRUSTED host while other
+# candidates remain. One Flickr account's Twitter network graphs took 7 of 14 checks
+# for "pH scale color chart". Trusted hosts (Wikimedia, NASA, ...) are not capped -
+# they are where clean school pictures actually come from.
+PICKER_PER_HOST = int(os.getenv("VISUALS_PICKER_PER_HOST", "3"))
+
+
+def _spread(items: List[Tuple[Dict[str, Any], Dict[str, Any]]],
+            limit: int) -> List[Tuple[Dict[str, Any], Dict[str, Any]]]:
+    """Up to ``limit`` (cand, normalized) pairs in rank order, capping each untrusted
+    host at PICKER_PER_HOST; capped ones only fill slots nothing else wanted."""
+    picked, spill, per_host = [], [], {}
+    for cand, norm in items:
+        if not _is_trusted(cand["image_url"], cand.get("page_url", "")):
+            host = _host_of(cand["image_url"])
+            if per_host.get(host, 0) >= PICKER_PER_HOST:
+                spill.append((cand, norm))
+                continue
+            per_host[host] = per_host.get(host, 0) + 1
+        picked.append((cand, norm))
+        if len(picked) >= limit:
+            return picked
+    return picked + spill[:limit - len(picked)]
+
+
+def _download_and_check(cand: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Download + pixel gate for one candidate: the normalised image, or None. Free."""
+    raw = _download(cand["image_url"])
+    # return _normalize_image(raw) if raw else None
+    return (_normalize_image(raw, max_ratio=PICKER_MAX_ASPECT,
+                             min_ratio=1.0 / PICKER_MAX_ASPECT) if raw else None)
+
+
+def find_visuals(query: str,
+                 *,
+                 count: Optional[int] = None,
+                 teaching_text: str = "",
+                 section_title: str = "",
+                 unit_title: str = "",
+                 board: str = "",
+                 class_number: str = "",
+                 subject: str = "",
+                 unit_number: int = 0,
+                 max_checks: Optional[int] = None,
+                 extra_queries: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    """Several clean, watermark-free pictures for one topic - a CHOOSER, not a slot.
+
+    ``extra_queries`` are searched alongside ``query`` and merged into the same
+    ranking, so several distinct subjects compete for one check budget. One
+    generic query ("acid base reaction experiment") returned only decorative stock
+    and university-level structures - 14 of 14 rejected.
+
+    find_visual() fills one lesson slot and stops at the first picture that
+    clears the gates. A chat that lets the student pick needs several. This runs
+    the SAME gates - the host block list (in gather_candidates), the pixel check
+    and the vision review that rejects watermarks, printed website URLs,
+    coaching-site branding, decorative posters and off-topic images - as one
+    parallel pipeline:
+
+      1. every source stage searched at once and merged into one ranking, so a
+         Commons diagram competes with web hits instead of waiting behind them;
+      2. the top PICKER_PREFETCH candidates downloaded + pixel-checked in
+         parallel (free);
+      3. ONE parallel vision round on the best ``max_checks`` survivors;
+      4. the winners, in rank order, uploaded to S3 in parallel.
+
+    Built because the PPT copilot handed students raw web-search results: a
+    stock photo with "www.STEAMPoweredFamily.com" printed across it, a museum
+    photo of a Chicago building and a cafe's coffee for "acids and bases".
+
+    Every returned picture is re-encoded and hosted on S3; one that cannot be
+    hosted is dropped, as in find_visual, since origin hosts hotlink-block.
+    Returns [] when nothing clears - callers must treat pictures as optional.
+
+    Returns a list of:
+        {"image_url", "origin_url", "page_url", "source_name", "title", "shows",
+         "license", "attribution", "width", "height", "query"}
+    """
+    if not is_enabled():
+        return []
+    query = (query or "").strip()
+    if not query:
+        return []
+
+    count = count or PICKER_COUNT
+    budget = max_checks or PICKER_MAX_CHECKS
+    # The gate judges against the SLIDE's topic, not the search query. The query is
+    # only how we search; the question is whether a picture teaches the slide. Passing
+    # the query (as find_visual does for a one-picture lesson slot) made the gate
+    # literal: for "litmus paper color change" it rejected a titration setup, a
+    # universal-indicator chart and a pH meter - all good pictures for a slide on the
+    # chemical properties of acids and bases - and returned nothing at all.
+    # topic = _gate_topic(section_title, unit_title, subject, query)
+    topic = _gate_topic(section_title, unit_title, subject, "") or query
+
+    phase_at = [("start", time.monotonic())]      # per-phase timings for the summary log
+
+    # 1. Every (query, stage) search at once. rank_score is the same formula in every
+    #    stage (relevance + source-tier bonus + variant depth), so pools merge cleanly.
+    # pools = _parallel(lambda st: _candidate_pool(query, section_title, stage=st),
+    #                   SOURCE_STAGES, PICKER_SEARCH_DEADLINE)
+    queries = [query] + [q.strip() for q in (extra_queries or [])
+                         if q and q.strip() and q.strip().lower() != query.lower()]
+    # Only the first query adds the section title as a variant; the rest would just
+    # repeat that identical search.
+    jobs = [(q, section_title if i == 0 else "", st)
+            for i, q in enumerate(queries) for st in SOURCE_STAGES]
+    pools = _parallel(lambda j: _candidate_pool(j[0], j[1], stage=j[2]),
+                      jobs, PICKER_SEARCH_DEADLINE)
+    # Rank within each query (its stages merged), then TAKE TURNS across queries.
+    # A rank_score is relative to its own query, so one global sort would let the
+    # query with the loosest matches crowd the others out of the budget - and the
+    # student asked for a choice, which means pictures of different things.
+    per_query: Dict[str, List[Dict[str, Any]]] = {q: [] for q in queries}
+    for (q, _section, _stage), pool in zip(jobs, pools):
+        per_query[q].extend(pool or [])
+    for q in queries:
+        per_query[q].sort(key=lambda c: -c.get("rank_score", 0.0))
+
+    ranked: List[Dict[str, Any]] = []
+    seen_urls: set = set()
+    cursors = {q: 0 for q in queries}
+    while any(cursors[q] < len(per_query[q]) for q in queries):
+        for q in queries:
+            lst = per_query[q]
+            while cursors[q] < len(lst):
+                cand = lst[cursors[q]]
+                cursors[q] += 1
+                key = _dedupe_key(cand["image_url"])
+                if key not in seen_urls:
+                    seen_urls.add(key)
+                    ranked.append(cand)
+                    break
+    if not ranked:
+        logger.info(f"[visuals] picker: no clean candidates for '{query}'")
+        return []
+
+    phase_at.append(("search", time.monotonic()))
+
+    # 2. Download + pixel gate, free, in parallel.
+    prefetch = ranked[:PICKER_PREFETCH]
+    # normalized = _parallel(_download_and_check, prefetch, PICKER_DOWNLOAD_DEADLINE)
+    # Stop once there are enough to judge (+4 so _spread still has room to diversify).
+    normalized = _parallel(_download_and_check, prefetch, PICKER_DOWNLOAD_DEADLINE,
+                           enough=budget + 4)
+    # survivors = [(c, n) for c, n in zip(prefetch, normalized) if n][:budget]
+    survivors = _spread([(c, n) for c, n in zip(prefetch, normalized) if n], budget)
+
+    phase_at.append(("download", time.monotonic()))
+
+    # 3. One vision round, verdict-only prompt.
+    verdicts = _parallel(
+        lambda cn: _vision_review(cn[1]["bytes"], topic=topic, teaching_text=teaching_text,
+                                  class_number=class_number, subject=subject,
+                                  system_prompt=_PICKER_REVIEW_PROMPT,
+                                  max_tokens=_PICKER_REVIEW_MAX_TOKENS),
+        survivors, PICKER_VISION_DEADLINE, hedge_after=PICKER_HEDGE_AFTER)
+
+    winners: List[Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]] = []
+    seen_pixels: set = set()        # the same picture re-hosted under two URLs
+    for (cand, norm), verdict in zip(survivors, verdicts):     # rank order kept
+        if not verdict:
+            # Timed out OR an unreadable reply - the old "no verdict in time" wording hid
+            # that 9 of 14 were really replies cut off by the token cap.
+            logger.info(f"[visuals] picker: no usable verdict (timed out or unreadable reply) "
+                        f"- skipping {cand['image_url'][:70]}")
+            continue
+        if not verdict.get("usable") or verdict.get("has_watermark") or not verdict.get("is_on_topic", True):
+            logger.info(f"[visuals] rejected {cand['image_url'][:70]} - "
+                        f"{verdict.get('reject_reason') or 'failed vision gate'}")
+            continue
+        digest = hashlib.sha1(norm["bytes"]).hexdigest()
+        if digest in seen_pixels:
+            continue
+        seen_pixels.add(digest)
+        winners.append((cand, norm, verdict))
+        if len(winners) >= count + PICKER_MARK_SPARE:
+            break
+
+    phase_at.append(("vision", time.monotonic()))
+
+    # 4. Focused mark check on the winners, full detail, temperature 0. _parallel
+    #    yields None for a check that timed out, so a late verdict drops the picture
+    #    too: fail closed, like _mark_free itself.
+    # marked_free = _parallel(lambda w: _mark_free(w[1]["bytes"]), winners, PICKER_MARK_DEADLINE)
+    # winners = [w for w, ok in zip(winners, marked_free) if ok][:count]
+    # Hedged on _mark_verdict (None = no answer, so it can be re-asked); only an
+    # explicit True keeps a picture - no answer in time still means dropped.
+    marked_free = _parallel(lambda w: _mark_verdict(w[1]["bytes"]), winners,
+                            PICKER_MARK_DEADLINE, hedge_after=PICKER_HEDGE_AFTER)
+    winners = [w for w, ok in zip(winners, marked_free) if ok is True][:count]
+
+    phase_at.append(("marks", time.monotonic()))
+
+    # 5. Upload the winners together.
+    urls = _parallel(
+        lambda w: _store(w[1], w[0], query, board, class_number, subject, unit_number),
+        winners, PICKER_STORE_DEADLINE)
+
+    accepted: List[Dict[str, Any]] = []
+    for (cand, norm, verdict), s3_url in zip(winners, urls):
+        if not s3_url:
+            logger.warning(f"[visuals] picker: S3 upload failed - dropping {cand['image_url'][:70]}")
+            continue
+        accepted.append({
+            "image_url": s3_url,
+            "origin_url": cand["image_url"],
+            "page_url": cand.get("page_url", ""),
+            "source_name": cand.get("source_name", ""),
+            "title": cand.get("title", ""),
+            "shows": (verdict.get("shows") or "").strip(),
+            "license": cand.get("license", ""),
+            "attribution": cand.get("attribution", ""),
+            "width": norm["width"],
+            "height": norm["height"],
+            "query": query,
+        })
+
+    phase_at.append(("upload", time.monotonic()))
+    timings = " ".join(f"{name}={t - prev:.1f}s"
+                       for (_, prev), (name, t) in zip(phase_at, phase_at[1:]))
+    logger.info(f"[visuals] picker '{query}' (+{len(queries) - 1} more): {len(accepted)} clean "
+                f"picture(s) from {len(ranked)} candidate(s), {len(survivors)} vision check(s) "
+                f"| {timings} total={phase_at[-1][1] - phase_at[0][1]:.1f}s")
+    return accepted
 
 
 def _judge_candidates(candidates: List[Dict[str, Any]], *, query: str, tries: int, skip: set,

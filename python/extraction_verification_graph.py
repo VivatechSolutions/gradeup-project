@@ -94,7 +94,7 @@ try:
     from verification_pipeline import (
         check_unit_completeness,
         extract_unit_markdown,
-        extract_toc_units_from_markdown,
+        expected_units_from_markdown,
     )
     VERIFY_PIPELINE_AVAILABLE = True
 except ImportError:
@@ -450,6 +450,13 @@ def verify_unit_node(state: VerificationState) -> Dict[str, Any]:
 # NODE 2: Schema Integrity Validator
 
 
+def _units_of(structured: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """The unit dicts, whichever key this document uses."""
+    if not isinstance(structured, dict):
+        return []
+    return structured.get("chapters") or structured.get("units") or []
+
+
 def schema_validator_node(state: VerificationState) -> Dict[str, Any]:
     """
     Node 2 — Run the full schema integrity validator on all units (post-fix).
@@ -460,11 +467,14 @@ def schema_validator_node(state: VerificationState) -> Dict[str, Any]:
     logger.info(f"SCHEMA INTEGRITY VALIDATOR — Pass {state['pass_number'] + 1}")
     logger.info(f"{'='*60}")
 
-    # Extract expected TOC units for unit coverage scoring
+    # Expected TOC units for unit coverage scoring. Guarded: a numbered list in
+    # the body ("1. The Himalayas ... 5. The Islands") is not a 5-unit TOC, and
+    # scoring a single-unit upload against one caps the score at 80.
     toc_expected: Optional[List[int]] = None
     if VERIFY_PIPELINE_AVAILABLE:
-        toc_units = extract_toc_units_from_markdown(state["content_md"])
-        toc_expected = [u["number"] for u in toc_units] if toc_units else None
+        nums = expected_units_from_markdown(
+            state["content_md"], _units_of(state["structured_data"]))
+        toc_expected = nums or None
 
     schema_report = run_schema_validator(
         structured_data=state["structured_data"],
@@ -607,8 +617,10 @@ def save_and_report_node(state: VerificationState) -> Dict[str, Any]:
         try:
             toc_expected: Optional[List[int]] = None
             if VERIFY_PIPELINE_AVAILABLE:
-                toc_units = extract_toc_units_from_markdown(state.get("content_md", "") or "")
-                toc_expected = [u["number"] for u in toc_units] if toc_units else None
+                nums = expected_units_from_markdown(
+                    state.get("content_md", "") or "",
+                    _units_of(state["structured_data"]))
+                toc_expected = nums or None
             refreshed = run_schema_validator(
                 structured_data=state["structured_data"],
                 content_md=state.get("content_md", "") or "",

@@ -1094,55 +1094,6 @@ def enrich_section_content(request: SectionEnrichRequest):
         raise HTTPException(status_code=500, detail=f"Enrichment error: {str(exc)}")
 
 
-@app.post("/enrichment/process")
-def process_enrichment_payload(payload: dict):
-    """
-    Receives {"message": {<structured.json content>}} in the body and returns the enrichment.json.
-    """
-    import tempfile
-    import json
-    from pathlib import Path
-    from enrichment_pipeline import enrich_document
-    from fastapi import HTTPException
-    
-    # Extract the structured data from the "message" key
-    structured_data = payload.get("message")
-    if not structured_data:
-        # Fallback in case they send it at the root level anyway
-        structured_data = payload
-
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        doc_dir = Path(tmp_dir) / "temp_doc"
-        doc_dir.mkdir(parents=True, exist_ok=True)
-        
-        structured_path = doc_dir / "structured.json"
-        enriched_path = doc_dir / "enriched.json"
-        
-        with open(structured_path, "w", encoding="utf-8") as f:
-            json.dump(structured_data, f)
-            
-        try:
-            success = enrich_document(
-                structured_json_path=structured_path,
-                output_path=enriched_path,
-                include_sections=True,
-                include_web=True,
-                fast_mode=True
-            )
-            if not success:
-                raise Exception("enrich_document returned False")
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Enrichment pipeline error: {str(e)}")
-            
-        if not enriched_path.exists():
-            raise HTTPException(status_code=500, detail="Enrichment failed to produce output.")
-            
-        with open(enriched_path, "r", encoding="utf-8") as f:
-            enriched_data = json.load(f)
-            
-        return enriched_data
-
-
 @app.post("/enrich/{document_id}")
 def enrich_document(document_id: str, request: EnrichRequest = EnrichRequest()):
     """Enrich an already-extracted document."""
@@ -3349,7 +3300,7 @@ class PPTConnectRequest(BaseModel):
 class PPTSessionEndRequest(BaseModel):
     """End a PPT co-pilot session and get the skill summary."""
     session_id: str = Field(..., min_length=32, max_length=64)
-    tool: Literal["gslides", "gradeup"] = "gslides"
+    tool: Literal["gslides", "gradeup"] = "gradeup"
     request_id: Optional[str] = Field(None, min_length=1, max_length=128)
 
 
@@ -3398,7 +3349,7 @@ class PPTSuggestRequest(BaseModel):
     image_index: Optional[int] = Field(None, ge=1, le=10)
 
     # Owned GradeUp editor fields supplied by Node.
-    tool: Literal["gslides", "gradeup"] = "gslides"
+    tool: Literal["gslides", "gradeup"] = "gradeup"
     deck_ref: Optional[str] = Field(None, max_length=200)
     slide_id: Optional[str] = Field(None, max_length=128)
     base_revision: Optional[int] = Field(None, ge=0)
@@ -3420,7 +3371,7 @@ class PPTDecideRequest(BaseModel):
     """Resume a paused PPT agent run (gslides) or resolve a pending proposal (gradeup)."""
     session_id: str = Field(..., min_length=32, max_length=64)
     decision: Literal["approve", "reject", "skip"]
-    tool: Literal["gslides", "gradeup"] = "gslides"
+    tool: Literal["gslides", "gradeup"] = "gradeup"
     proposal_id: Optional[str] = Field(None, max_length=128)
     request_id: Optional[str] = Field(None, min_length=1, max_length=128)
     base_revision: Optional[int] = Field(None, ge=0)
@@ -3446,7 +3397,15 @@ class AvatarStartRequest(BaseModel):
     unit_number: int
     unit_name: str = ""
     section_title: str
-    segments: Optional[List[dict]] = None  # Segments provided directly in request body
+    # The section's enrichment object - the one holding avatar_lesson (hook,
+    # explanation, real_world, explore, mystery, explain_back). The whole
+    # section or the whole enriched document also works; the section is then
+    # picked by unit_number + section_title. Send it unstripped: the hook,
+    # explore and mystery answers are marked server-side from it.
+    enrichment: Optional[Dict[str, Any]] = None
+    # Legacy: explanation segments only - the session gets no hook or other
+    # phases. Ignored when `enrichment` is sent.
+    segments: Optional[List[dict]] = None
     # Term-split state books only; omit for CBSE/NCERT.
     term: Optional[str] = None
 
@@ -3649,9 +3608,14 @@ def avatar_start(request: AvatarStartRequest):
     """
     Start an avatar teaching session for a specific section.
 
-    Segments can be provided directly in the request body via the `segments` field.
-    If `segments` is provided, local enrichment data is NOT fetched — the session is
-    built entirely from the request body segments.
+    Send the section's `enrichment` in the body (prod has no local files). A
+    stored six-phase lesson in it comes back as `avatar_lesson` - phases in play
+    order, answers removed, the explanation's segments inside it (there is no
+    separate `avatar_explanation` then) - and the session starts on the hook;
+    the /avatar/phase/* calls drive it from there. The legacy `segments` field
+    still works but carries the explanation only, so that session has no hook
+    or other phases and returns `avatar_explanation`. With neither field the
+    local enriched.json files are searched.
 
     Returns session_id, all segments, an empty session history, and every doubt-popup
     question for the lesson in `suggested_questions_by_segment` ({segment_id: 3
@@ -3663,7 +3627,9 @@ def avatar_start(request: AvatarStartRequest):
     except ImportError:
         raise HTTPException(500, "Avatar engine module not available. Ensure avatar_engine.py is present.")
 
-    if request.segments is not None and len(request.segments) == 0:
+    if request.enrichment is not None and not request.enrichment:
+        raise HTTPException(400, "'enrichment' cannot be empty when provided.")
+    if request.enrichment is None and request.segments is not None and len(request.segments) == 0:
         raise HTTPException(400, "'segments' list cannot be empty when provided.")
 
     engine = get_avatar_engine()
@@ -3678,6 +3644,7 @@ def avatar_start(request: AvatarStartRequest):
         section_title=request.section_title,
         segments=request.segments,
         term=request.term,
+        enrichment=request.enrichment,
     )
 
     if result.get("error"):
@@ -3734,6 +3701,14 @@ def avatar_raise_hand(request: AvatarRaiseHandRequest):
     vision model looking at the actual image — `answered_from_visual: true`
     and `visual_context` say so and what the avatar is pointing at. There is
     no separate "ask about the picture" endpoint.
+
+    Works in every phase of a six-phase lesson: `segment_id` may be any line
+    the phase speaks (`hook_intro`, `rw_ask`, `explore_intro`, `m01_ask`,
+    `explain_ask`, ...), a `mystery_id`, or the phase name itself. The answer
+    uses that phase's own picture (the hook's option grid, the mystery
+    picture, ...) and never gives away the answer to a question the student
+    has not answered yet. Without `segment_id` the phase the session is in is
+    used. `resume_phase` says which phase to carry on with.
     """
     try:
         from avatar_engine import get_avatar_engine
@@ -3907,6 +3882,160 @@ def _avatar_job_run(job_id: str, request: AvatarSectionEnrichRequest,
     else:
         _avatar_job_update(job_id, status="done", finished_at=_job_time.time(),
                            result=result)
+
+
+# ── /enrichment/process: structured.json in, enrichment.json out ────────────
+# A unit is tens of minutes of work (every section: plan, script, pictures,
+# two voices of narration), so it always runs as a job. Its own pool, so a
+# queue of units from the dashboard cannot starve the avatar previews above.
+_ENRICHMENT_JOB_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="enrichment-job")
+
+
+def _enrichment_process_job_run(job_id: str, document_id: str, structured_data: Dict[str, Any],
+                                metadata: Dict[str, str], with_visuals: bool,
+                                with_audio: bool, voices: List[str]) -> None:
+    import json
+    import avatar_tts
+    from avatar_lesson_builder import build_document_lessons
+
+    _avatar_job_update(job_id, status="running", started_at=_job_time.time())
+
+    def _progress(report: Dict[str, Any]) -> None:
+        _avatar_job_update(job_id, progress={k: report.get(k) for k in
+                                             ("total", "done", "built", "skipped", "failed", "current")})
+
+    try:
+        # A temp folder, not outputs/<document_id>: the post may be one unit of
+        # a stored document, and must not replace that document's structured.json.
+        # Narration runs on local Kokoro for this endpoint only; the rest of the
+        # process keeps AVATAR_TTS_BACKEND (the hosted service).
+        with tempfile.TemporaryDirectory() as tmp_dir, avatar_tts.backend_override("local"):
+            doc_dir = Path(tmp_dir)
+            (doc_dir / "structured.json").write_text(json.dumps(structured_data), encoding="utf-8")
+            (doc_dir / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
+            report = build_document_lessons(
+                document_id, doc_dir=doc_dir, with_visuals=with_visuals,
+                with_audio=with_audio, voices=voices, progress_cb=_progress,
+            )
+            enriched_path = doc_dir / "enriched.json"
+            enriched = json.loads(enriched_path.read_text(encoding="utf-8")) if enriched_path.exists() else None
+    except Exception as exc:  # noqa: BLE001 - a job must never die silently
+        logger.exception(f"enrichment job {job_id} ({document_id}) crashed: {exc}")
+        _avatar_job_update(job_id, status="failed", finished_at=_job_time.time(),
+                           error={"status_code": 500, "detail": str(exc)})
+        return
+
+    report.pop("enriched_path", None)   # a temp path, gone already
+    if report.get("error"):
+        _avatar_job_update(job_id, status="failed", finished_at=_job_time.time(), report=report,
+                           error={"status_code": 422, "detail": report["error"]})
+    elif not report.get("built") or not enriched:
+        # Every section failed: say so, rather than hand back an empty document.
+        _avatar_job_update(job_id, status="failed", finished_at=_job_time.time(), report=report,
+                           error={"status_code": 502,
+                                  "detail": f"No lesson was built for any of {report.get('total', 0)} "
+                                            f"section(s) - see report.sections[].reason and the API log"})
+    else:
+        _avatar_job_update(job_id, status="done", finished_at=_job_time.time(),
+                           report=report, result=enriched)
+
+
+@app.post("/enrichment/process")
+def process_enrichment_payload(payload: dict):
+    """
+    Build the enrichment.json for a posted structured.json, as a background job.
+
+    The same build as the upload pipeline and `/avatar/lesson/build`: the
+    six-phase avatar lesson for every eligible section, planned and written on
+    Gemini (`AVATAR_LESSON_MODEL`), with pictures and Kokoro narration. The
+    narration is always LOCAL Kokoro (ONNX, WAV files) here, whatever
+    `AVATAR_TTS_BACKEND` says - the hosted TTS service is not used.
+
+    Accepted shapes (all equivalent):
+      - {"message": {<structured.json>}}
+      - {<structured.json>}                      units at the root
+      - the dashboard's unit record, bare or under "message":
+        {"documentId", "board", "standard", "subject",
+         "structuredData": {<structured.json>}, ...}
+
+    Optional top-level fields: `with_visuals` (true), `with_audio` (true),
+    `voices` (["male", "female"]).
+
+    Answers 202 with a `job_id` and `status_url` at once. Poll
+    `GET /enrichment/process/jobs/{job_id}`: `status` is queued / running /
+    done / failed, `progress` counts sections as they finish, `result` is the
+    enrichment.json once done, and `report` lists each section (built or failed,
+    and why). A job where no section got a lesson ends `failed`, not `done`.
+    Jobs are kept for an hour after they finish. Nothing is written to
+    `outputs/<document_id>`; pictures and audio go to S3 under the record's
+    board / class / subject.
+    """
+    body = payload.get("message") or payload
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=422, detail="Body must be a JSON object.")
+    structured_data = body.get("structuredData") or body
+    if not isinstance(structured_data, dict):
+        raise HTTPException(status_code=422, detail="structuredData must be a JSON object.")
+
+    # Without this, a wrapper the code does not know (the dashboard record
+    # used to be one) enriched zero units and came back 200 with "units": [].
+    if not (structured_data.get("units") or structured_data.get("chapters")):
+        raise HTTPException(
+            status_code=422,
+            detail="No units found. Send structured.json (with a 'units' list) "
+                   "directly, under 'message', or under 'structuredData'.",
+        )
+
+    voices = payload.get("voices") or ["male", "female"]
+    voices = [v for v in voices if v in ("male", "female")] if isinstance(voices, list) else []
+    with_audio = bool(payload.get("with_audio", True))
+    if with_audio and not voices:
+        raise HTTPException(status_code=400, detail="voices must contain 'male' and/or 'female'")
+
+    document_id = str(body.get("documentId") or structured_data.get("document_id") or "temp_doc")
+    metadata = {
+        "board": str(body.get("board") or structured_data.get("board") or ""),
+        "class_number": str(body.get("standard") or body.get("class_number")
+                            or structured_data.get("class_number") or ""),
+        "subject": str(body.get("subject") or structured_data.get("subject") or ""),
+    }
+
+    _avatar_job_prune()
+    job_id = _job_uuid.uuid4().hex
+    units = structured_data.get("units") or structured_data.get("chapters") or []
+    with _AVATAR_JOBS_LOCK:
+        _AVATAR_JOBS[job_id] = {
+            "job_id": job_id, "kind": "enrichment_process", "status": "queued",
+            "document_id": document_id,
+            "unit_numbers": [u.get("unit_number") or u.get("chapter_number")
+                             for u in units if isinstance(u, dict)],
+            "created_at": _job_time.time(), "started_at": None, "finished_at": None,
+            "progress": None, "report": None, "result": None, "error": None,
+        }
+    _ENRICHMENT_JOB_POOL.submit(_enrichment_process_job_run, job_id, document_id, structured_data,
+                                metadata, bool(payload.get("with_visuals", True)), with_audio, voices)
+    logger.info(f"/enrichment/process: job {job_id} queued for {document_id} "
+                f"({len(units)} unit(s), subject={metadata['subject'] or '?'})")
+    return JSONResponse(status_code=202, content={
+        "success": True, "job_id": job_id, "status": "queued",
+        "status_url": f"/enrichment/process/jobs/{job_id}",
+        "document_id": document_id,
+    })
+
+
+@app.get("/enrichment/process/jobs/{job_id}")
+def enrichment_process_job_status(job_id: str):
+    """Progress of a `/enrichment/process` job; `result` is the enrichment.json once `done`."""
+    with _AVATAR_JOBS_LOCK:
+        job = _AVATAR_JOBS.get(job_id)
+        if job is None or job.get("kind") != "enrichment_process":
+            raise HTTPException(404, f"No enrichment job '{job_id}' (unknown or older than 1 hour)")
+        snapshot = dict(job)
+
+    elapsed_from = snapshot["started_at"] or snapshot["created_at"]
+    elapsed_to = snapshot["finished_at"] or _job_time.time()
+    snapshot["elapsed_seconds"] = round(elapsed_to - elapsed_from, 1)
+    return snapshot
 
 
 def _validate_avatar_section(section: dict) -> tuple[str, str]:
@@ -5315,6 +5444,29 @@ def _ppt_require_session(session_id: str) -> dict:
     return session
 
 
+def _ppt_is_gradeup(session: dict, requested_tool: str = "") -> bool:
+    """True when this session belongs to the self-hosted GradeUp editor.
+
+    The SESSION decides, not the request field, and it decides BOTH ways — the
+    request's `tool` is consulted only when the session says nothing.
+
+    A deck belongs to exactly one backend from the moment it is created, so the
+    body can never move it: a GradeUp session reaching the Google branch returned
+    {"status": "needs_connection"} with an OAuth link for a deck Google never had,
+    and now that `tool` defaults to "gradeup" everywhere, the mirror-image mistake
+    (a gslides session routed into the GradeUp adapter because the client omitted
+    the field) is the one being guarded against.
+    """
+    deck_ref = str(session.get("deck_ref") or "")
+
+    if deck_ref.startswith("gradeup:") or session.get("tool") == "gradeup":
+        return True
+    if deck_ref.startswith("gslides:") or session.get("tool") == "gslides":
+        return False
+
+    return requested_tool == "gradeup"
+
+
 def _ppt_needs_connection_response(student_id: str) -> dict:
     """Body telling the frontend the student must connect Google via Scalekit first."""
     from ppt.ppt_scalekit import get_authorization_link
@@ -5584,6 +5736,14 @@ def ppt_session_reset_theme(request: PPTResetThemeRequest):
     session = _ppt_require_session(request.session_id)
     if session.get("ended_at"):
         raise HTTPException(400, "Session already ended — cannot reset theme.")
+
+    # Google Slides only: apply_theme_to_deck writes through the Slides API.
+    if _ppt_is_gradeup(session):
+        raise HTTPException(
+            400,
+            "This is a GradeUp editor session — Node owns the deck, so a theme change "
+            "is applied there, not through /ppt/session/reset-theme.",
+        )
 
     ctx, needs = _ppt_auth_context(session["student_id"])
     if needs:
@@ -6029,6 +6189,15 @@ def ppt_edit(request: PPTEditRequest):
     if session.get("ended_at"):
         raise HTTPException(400, "Session already ended")
 
+    # Google Slides only: there is no agent registered for the "gradeup:" deck_ref
+    # prefix, so this would otherwise die inside _ppt_agent with an opaque 500.
+    if _ppt_is_gradeup(session):
+        raise HTTPException(
+            400,
+            "This is a GradeUp editor session — use POST /ppt/suggest with the slide "
+            "snapshot instead of /ppt/edit.",
+        )
+
     ctx, needs = _ppt_auth_context(session["student_id"])
     if needs:
         return needs
@@ -6071,7 +6240,8 @@ def ppt_suggest(request: PPTSuggestRequest):
 
     # GradeUp editor: Node sends the live slide snapshot; the adapter routes the message
     # and returns native editor operations (applied by Node after approval).
-    if request.tool == "gradeup":
+    # if request.tool == "gradeup":
+    if _ppt_is_gradeup(session, request.tool):
         from ppt.gradeup_editor import suggest_gradeup
 
         return suggest_gradeup(session, request.model_dump())
@@ -6166,32 +6336,88 @@ def _ppt_suggest_turn(session: dict, request: PPTSuggestRequest, query: str) -> 
             logger.error(f"[ppt_suggest] slide read for image query failed: {e}")
 
         unit_title = session.get("unit_title") or ""
-        # Prefer an LLM query grounded in the slide content; fall back to the heuristic.
-        llm_q = ""
-        try:
-            from ppt.ppt_review import llm_image_query
-            llm_q = llm_image_query(query, slide_title, slide_text, unit_title)
-        except Exception as e:
-            logger.error(f"[ppt_suggest] llm_image_query failed: {e}")
+        # # Prefer an LLM query grounded in the slide content; fall back to the heuristic.
+        # llm_q = ""
+        # try:
+        #     from ppt.ppt_review import llm_image_query
+        #     llm_q = llm_image_query(query, slide_title, slide_text, unit_title)
+        # except Exception as e:
+        #     logger.error(f"[ppt_suggest] llm_image_query failed: {e}")
+#
+        # # Try progressively simpler queries so a flaky/empty result still yields images:
+        # # the LLM query → a heuristic subject → the chapter topic. First non-empty wins.
+        # images, img_query = [], (llm_q or "")
+        # try:
+        #     from ppt.ppt_websearch import image_search, build_image_query, is_enabled
+        #     if is_enabled():
+        #         candidates = [llm_q, build_image_query(query, slide_title or unit_title),
+        #                       slide_title, unit_title]
+        #         seen = set()
+        #         for cand in candidates:
+        #             cand = (cand or "").strip()
+        #             if not cand or cand.lower() in seen:
+        #                 continue
+        #             seen.add(cand.lower())
+        #             # images = image_search(cand)
+        #             # Gated search: the curriculum context lets the vision gate reject
+        #             # watermarked and off-topic pictures, not just icon/SVG noise.
+        #             images = image_search(
+        #                 cand,
+        #                 unit_title=unit_title,
+        #                 section_title=slide_title,
+        #                 subject=session.get("subject") or "",
+        #                 class_number=session.get("class_number") or "",
+        #                 board=session.get("board") or "",
+        #                 unit_number=session.get("unit") or 0,
+        #                 teaching_text=slide_text,
+        #             )
+        #             if images:
+        #                 img_query = cand
+        #                 break
+        # except Exception as e:
+        #     logger.error(f"[ppt_suggest] image search failed: {e}")
 
-        # Try progressively simpler queries so a flaky/empty result still yields images:
-        # the LLM query → a heuristic subject → the chapter topic. First non-empty wins.
-        images, img_query = [], (llm_q or "")
+        # Several concrete subjects in ONE gated pass (ppt_review.llm_image_queries).
+        # The loop above searched up to four queries one after another; each gated
+        # search costs up to 14 vision checks, so that could have been 56 per request.
+        img_queries = []
+        try:
+            from ppt.ppt_review import llm_image_queries
+            img_queries = llm_image_queries(query, slide_title, slide_text, unit_title)
+        except Exception as e:
+            logger.error(f"[ppt_suggest] llm_image_queries failed: {e}")
+        if not img_queries:
+            try:
+                from ppt.ppt_review import llm_image_query
+                img_queries = [llm_image_query(query, slide_title, slide_text, unit_title)]
+            except Exception as e:
+                logger.error(f"[ppt_suggest] llm_image_query failed: {e}")
+
+        images, img_query = [], ""
         try:
             from ppt.ppt_websearch import image_search, build_image_query, is_enabled
             if is_enabled():
-                candidates = [llm_q, build_image_query(query, slide_title or unit_title),
-                              slide_title, unit_title]
-                seen = set()
-                for cand in candidates:
+                # The old fallbacks ride along as extra queries instead of extra rounds.
+                pool, seen = [], set()
+                for cand in img_queries + [build_image_query(query, slide_title or unit_title),
+                                           unit_title]:
                     cand = (cand or "").strip()
-                    if not cand or cand.lower() in seen:
-                        continue
-                    seen.add(cand.lower())
-                    images = image_search(cand)
-                    if images:
-                        img_query = cand
-                        break
+                    if cand and cand.lower() not in seen:
+                        seen.add(cand.lower())
+                        pool.append(cand)
+                if pool:
+                    img_query = pool[0]
+                    images = image_search(
+                        pool[0],
+                        unit_title=unit_title,
+                        section_title=slide_title,
+                        subject=session.get("subject") or "",
+                        class_number=session.get("class_number") or "",
+                        board=session.get("board") or "",
+                        unit_number=session.get("unit") or 0,
+                        teaching_text=slide_text,
+                        extra_queries=pool[1:4],
+                    )
         except Exception as e:
             logger.error(f"[ppt_suggest] image search failed: {e}")
         # Number the results so the student can answer with a number and the client never
@@ -6316,7 +6542,8 @@ def ppt_decide(request: PPTDecideRequest):
         raise HTTPException(400, "Session already ended")
 
     # GradeUp editor: resolve the pending proposal; Node executes the operations.
-    if request.tool == "gradeup":
+    # if request.tool == "gradeup":
+    if _ppt_is_gradeup(session, request.tool):
         from ppt.gradeup_editor import decide_gradeup
 
         return decide_gradeup(session, request.model_dump())

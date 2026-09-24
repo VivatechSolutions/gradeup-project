@@ -380,24 +380,70 @@ def _load_section_enrichment(board: str, class_number: str, subject: str,
         except Exception:
             continue
 
-        content_key = "chapters" if "chapters" in data else "units"
-        for unit in data.get(content_key, []):
-            if unit.get("unit_number") != unit_number:
-                continue
-            for sec in unit.get("sections", []):
-                sec_title = sec.get("section_title", "")
-                if sec_title.lower() == section_title.lower():
-                    # Maths sections keep their avatar material under
-                    # section_enrichment; everything else under enrichment.
-                    enrichment = sec.get("enrichment") or sec.get("section_enrichment") or {}
-                    return {
-                        "unit_title": unit.get("title", ""),
-                        "section_title": sec_title,
-                        "enrichment": enrichment,
-                        "document_id": data.get("document_id", doc_dir.name),
-                    }
+        found = _find_section(data, unit_number, section_title,
+                              default_document_id=doc_dir.name)
+        if found:
+            return found
 
     return None
+
+
+def _find_section(data: Dict, unit_number: int, section_title: str,
+                  default_document_id: str = "") -> Optional[Dict]:
+    """Section ``section_title`` of unit ``unit_number`` in an enriched document."""
+    content_key = "chapters" if "chapters" in data else "units"
+    for unit in data.get(content_key) or []:
+        if unit.get("unit_number") != unit_number:
+            continue
+        for sec in unit.get("sections") or []:
+            sec_title = sec.get("section_title") or sec.get("title") or ""
+            if sec_title.lower() == section_title.lower():
+                # Maths sections keep their avatar material under
+                # section_enrichment; everything else under enrichment.
+                enrichment = sec.get("enrichment") or sec.get("section_enrichment") or {}
+                return {
+                    "unit_title": unit.get("title", ""),
+                    "section_title": sec_title,
+                    "enrichment": enrichment,
+                    "document_id": data.get("document_id", default_document_id),
+                }
+    return None
+
+
+def _section_from_body(body: Dict, unit_number: int, section_title: str,
+                       unit_name: str = "") -> Optional[Dict]:
+    """The enrichment a client sent to /avatar/start, shaped like _load_section_enrichment's result.
+
+    Prod has no enriched.json on disk, so the client sends the material itself.
+    Accepted: the section's ``enrichment`` object (the usual case), the whole
+    section, or the whole enriched document - the section is then picked by
+    unit number and title.
+    """
+    if not isinstance(body, dict):
+        return None
+    if "units" in body or "chapters" in body:
+        return _find_section(body, unit_number, section_title)
+    if "enrichment" in body or "section_enrichment" in body:
+        body = body.get("enrichment") or body.get("section_enrichment") or {}
+    if not isinstance(body, dict):
+        return None
+    return {
+        "unit_title": unit_name,
+        "section_title": section_title,
+        "enrichment": body,
+        "document_id": "",
+    }
+
+
+def _phase_entry_id(ph: Optional[Dict]) -> Optional[str]:
+    """segment_id of the first line a lesson phase speaks (hook_intro, seg_001, rw_ask, ...)."""
+    if not ph:
+        return None
+    if ph.get("phase") == "explanation":
+        nodes = ph.get("segments") or []
+    else:
+        nodes = list(lesson_patterns.iter_spoken_nodes({"phases": [ph]}))
+    return next((n.get("segment_id") for n in nodes if n.get("segment_id")), None)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -428,11 +474,21 @@ class AvatarEngine:
         if concept_overview:
             parts.append(f"=== CONCEPT OVERVIEW ===\n{concept_overview}")
 
+        lesson = session.get("avatar_lesson") or {}
+        state = session.get("phase_state") or {}
+        # Until the hook is answered its answer stays out of the context - the
+        # explanation's hook_answer segment included - or a doubt raised at the
+        # hook question gets the answer read back to the student.
+        hook_open = bool(lesson) and "hook" not in state
+        position = self._lesson_position(session, current_segment_id)
+
         # 2. Collect ALL segment texts as knowledge base
         segments = session.get("avatar_explanation", {}).get("segments", [])
         knowledge_lines = []
         current_text = ""
         for seg in segments:
+            if hook_open and seg.get("role") == "hook_answer":
+                continue
             seg_id = seg.get("segment_id", "")
             if seg.get("type") == "flashcard":
                 card_title = seg.get("card_title", "")
@@ -460,21 +516,52 @@ class AvatarEngine:
         if knowledge_lines:
             parts.append(f"=== TEACHING SEGMENTS (Knowledge Base) ===\n" + "\n".join(knowledge_lines))
 
-        # A seven-phase lesson asked a hook question before teaching and will
-        # show a real-world example after it; a doubt raised in either phase
-        # is about those, so they are part of what the answer can draw on.
-        lesson = session.get("avatar_lesson") or {}
+        # The lesson's other phases: a doubt can be raised in any of them, so
+        # what each one shows is part of what the answer can draw on. Answer
+        # keys join only once the student has answered.
         hook = lesson_patterns.phase(lesson, "hook")
         if hook:
             opts = "; ".join(f"{k}. {v}" for k, v in (hook.get("options") or {}).items())
-            parts.append(f"=== HOOK QUESTION (asked before the lesson) ===\n"
-                         f"{hook.get('scenario', '')} {hook.get('question', '')}\n"
-                         f"Options: {opts}\nCorrect: {hook.get('answer')} — "
-                         f"{(hook.get('option_explanations') or {}).get(hook.get('answer'), '')}")
+            block = (f"=== HOOK QUESTION (asked before the lesson) ===\n"
+                     f"{hook.get('scenario', '')} {hook.get('question', '')}\nOptions: {opts}")
+            if not hook_open:
+                block += (f"\nCorrect: {hook.get('answer')} — "
+                          f"{(hook.get('option_explanations') or {}).get(hook.get('answer'), '')}")
+            parts.append(block)
         real_world = lesson_patterns.phase(lesson, "real_world")
         if real_world:
             parts.append(f"=== REAL-WORLD EXAMPLE ===\n{real_world.get('question', '')}\n"
                          f"{(real_world.get('reveal') or {}).get('text', '')}")
+        explore = lesson_patterns.phase(lesson, "explore")
+        if explore:
+            lines = [explore.get("title", "")] + [f"- {s}" for s in explore.get("steps") or []]
+            done = state.get("explore") or {}
+            for part, interaction in (("interaction", explore.get("interaction")),
+                                      ("challenge", (explore.get("challenge") or {}).get("interaction"))):
+                if not isinstance(interaction, dict) or not interaction.get("prompt"):
+                    continue
+                line = f"{'Challenge' if part == 'challenge' else 'Question'}: {interaction['prompt']}"
+                opts = [f"{o.get('id')}. {o.get('label', '')}" for o in interaction.get("options") or []]
+                if opts:
+                    line += f" Options: {'; '.join(opts)}"
+                if part in done:
+                    key = interaction.get("answer", interaction.get("model_answer"))
+                    if key is not None:
+                        line += f" (answer: {key})"
+                lines.append(line)
+            parts.append("=== ACTIVITY (after the real-world example) ===\n" + "\n".join(lines))
+        mystery = lesson_patterns.phase(lesson, "mystery")
+        answered = ((state.get("mystery") or {}).get("answers")) or {}
+        for item in (mystery or {}).get("mysteries") or (mystery or {}).get("pool") or []:
+            opts = "; ".join(f"{k}. {v}" for k, v in (item.get("options") or {}).items())
+            block = f"=== MYSTERY PICTURE QUESTION ===\n{item.get('question', '')}\nOptions: {opts}"
+            if item.get("mystery_id") in answered:
+                block += (f"\nCorrect: {item.get('answer')} — "
+                          f"{(item.get('option_explanations') or {}).get(item.get('answer'), '')}")
+            parts.append(block)
+        explain_back = lesson_patterns.phase(lesson, "explain_back")
+        if explain_back and explain_back.get("prompt"):
+            parts.append(f"=== EXPLAIN-BACK TASK (last) ===\n{explain_back['prompt']}")
         # English: the poem as sung, and the grammar part after the story.
         sing = lesson_patterns.phase(lesson, "sing_along")
         if sing:
@@ -489,7 +576,13 @@ class AvatarEngine:
                 lines += [f"[{s.get('segment_id')}] {s.get('text', '')}" for s in topic.get("segments") or []]
             parts.append("=== GRAMMAR PART (after the story) ===\n" + "\n".join(lines))
 
-        if current_text:
+        if position:
+            lines = [f"Phase: {position['phase'].replace('_', ' ')}"]
+            node = position.get("node") or {}
+            if node.get("text"):
+                lines.append(f"[{node.get('segment_id')}] {node['text']}")
+            parts.append("=== WHERE THE STUDENT IS (raised their hand here) ===\n" + "\n".join(lines))
+        elif current_text:
             parts.append(f"=== CURRENT SEGMENT (Student paused here) ===\n[{current_segment_id}] {current_text}")
 
         return "\n\n".join(parts) if parts else "General topic context."
@@ -749,6 +842,13 @@ class AvatarEngine:
             current_idx = next((i for i, s in enumerate(segments)
                                 if s.get("segment_id") == segment_id), None)
             taught = segments if current_idx is None else segments[:current_idx + 1]
+            # A phase before the explanation (the hook) has been taught nothing
+            # yet - and the last segment's questions answer the hook.
+            position = self._lesson_position(session, segment_id)
+            if current_idx is None and position:
+                order = [p.get("phase") for p in session["avatar_lesson"].get("phases") or []]
+                if "explanation" in order and order.index(position["phase"]) < order.index("explanation"):
+                    taught = []
             for seg in reversed(taught):
                 if len(questions) >= count:
                     break
@@ -765,25 +865,31 @@ class AvatarEngine:
                       unit_number: int, unit_name: str = "",
                       section_title: str = "",
                       segments: Optional[List[Dict]] = None,
-                      term: Optional[Any] = None) -> Dict:
+                      term: Optional[Any] = None,
+                      enrichment: Optional[Dict] = None) -> Dict:
         """Start a new avatar teaching session.
 
-        If ``segments`` is provided (from the request body), the local enrichment
-        file is NOT fetched. The session is built directly from the supplied segments.
-        Otherwise, enrichment data is loaded from the local file system as before.
+        Where the section's material comes from, first match wins:
+        ``enrichment`` from the request body (carries the six-phase lesson - see
+        _section_from_body for the accepted shapes); bare ``segments`` from the
+        request body (explanation only - no hook or other phases); otherwise the
+        local enriched.json files.
         """
 
-        if segments is not None:
+        if enrichment is not None:
+            # ── Enrichment supplied in the request body ───────────────────────
+            enrichment_data = _section_from_body(enrichment, unit_number,
+                                                 section_title, unit_name)
+            if not enrichment_data:
+                return {"error": f"Section '{section_title}' of unit {unit_number} not found in the supplied enrichment"}
+        elif segments is not None:
             # ── Segments supplied directly from the request body ──────────────
-            avatar_explanation = {"segments": segments}
-            enrichment = {"avatar_explanation": avatar_explanation}
             enrichment_data = {
                 "unit_title": unit_name,
                 "section_title": section_title,
-                "enrichment": enrichment,
+                "enrichment": {"avatar_explanation": {"segments": segments}},
                 "document_id": "",
             }
-            dc = {}
         else:
             # ── Load enrichment data from local file system (legacy path) ─────
             enrichment_data = _load_section_enrichment(
@@ -795,12 +901,9 @@ class AvatarEngine:
             if not enrichment_data:
                 return {"error": f"Enrichment data not found for section '{section_title}' in unit {unit_number}"}
 
-            enrichment = enrichment_data["enrichment"]
-            avatar_explanation = enrichment.get("avatar_explanation", {})
-            segments = avatar_explanation.get("segments", [])
-
-            # Strip legacy RAG metadata from doubt_context
-            dc = enrichment.get("doubt_context", {})
+        enrichment = enrichment_data["enrichment"]
+        avatar_explanation = enrichment.get("avatar_explanation", {})
+        segments = avatar_explanation.get("segments", [])
 
         # 2. Create session
         session_id = f"avatar_{uuid.uuid4().hex[:12]}"
@@ -863,9 +966,10 @@ class AvatarEngine:
         }
         if lesson:
             session["avatar_lesson"] = lesson
-            session["avatar_session_history"]["progress"]["phase"] = "hook"
-            session["avatar_session_history"]["progress"]["phase_index"] = 0
             session["phase_state"] = {}
+            # The lesson opens on its first phase (the hook), not the explanation.
+            first = next((p.get("phase") for p in lesson.get("phases") or []), "hook")
+            self._set_phase(session, first)
 
         # 3. Pre-generate a doubt-popup question set for every segment now, so
         #    raising a hand mid-lesson needs no extra call.
@@ -882,14 +986,17 @@ class AvatarEngine:
             "message": "Avatar teaching session started",
             "student": session["student"],
             "topic": session["topic"],
-            "avatar_explanation": avatar_explanation,
-            "suggested_questions_by_segment": by_segment,
-            "avatar_session_history": session["avatar_session_history"],
         }
         if lesson:
             # The phases in play order, minus the marking keys the client
             # must not see mid-lesson (hook answer, mystery answers, explore keys).
+            # The explanation's segments are inside it, so no separate
+            # avatar_explanation - the client plays the phases from the top.
             response["avatar_lesson"] = self._client_lesson(lesson)
+        else:
+            response["avatar_explanation"] = avatar_explanation
+        response["suggested_questions_by_segment"] = by_segment
+        response["avatar_session_history"] = session["avatar_session_history"]
         return response
 
     # ── Raise Hand (Doubt Clearing + Auto Flashcard) ──────────────────────────
@@ -930,10 +1037,20 @@ class AvatarEngine:
 
         # 3. Generate clarification via LLM
         section_title = topic.get("section_title", "")
+        position = self._lesson_position(session, paused_at)
+        pending = self._unanswered_question(session, position)
         user_prompt = (
             f"SECTION: {section_title}\n"
             f"STUDENT DOUBT: {student_doubt}\n\n"
             f"TEXTBOOK CONTEXT:\n{segment_context}\n\n"
+        )
+        if pending:
+            user_prompt += (
+                f"THE STUDENT HAS NOT ANSWERED THIS YET: {pending}\n"
+                f"Help with what they asked, but do NOT say, hint at or confirm which answer "
+                f"is correct - they are about to answer it themselves.\n\n"
+            )
+        user_prompt += (
             f"Generate clarification segments with emotions to help the student understand. "
             f"Return in the JSON format specified."
         )
@@ -968,7 +1085,8 @@ class AvatarEngine:
 
         # 4. Find resume point
         # Segments live on avatar_explanation, not on topic — reading them from
-        # topic left resume_from_segment_id permanently null.
+        # topic left resume_from_segment_id permanently null. A doubt inside
+        # another phase resumes that phase where it was (no segment to jump to).
         resume_segment_id = None
         segments = session.get("avatar_explanation", {}).get("segments", [])
         for i, seg in enumerate(segments):
@@ -1031,6 +1149,8 @@ class AvatarEngine:
             "auto_flashcard": None,
             "suggested_questions": follow_ups,
             "resume_from_segment_id": resume_segment_id,
+            **({"resume_phase": position["phase"] if position else "explanation"}
+               if session.get("avatar_lesson") else {}),
             "avatar_session_history": {
                 "progress": progress,
                 "doubts_raised": history["doubts_raised"],
@@ -1292,6 +1412,15 @@ class AvatarEngine:
             segment_id = session.get("avatar_session_history", {}) \
                                 .get("progress", {}).get("current_segment_id")
 
+        # Another phase of the lesson shows its own picture (or none) - never
+        # fall back to an explanation picture the student is not looking at.
+        position = self._lesson_position(session, segment_id)
+        if position:
+            visual = self._phase_visual(session, position)
+            if not visual:
+                return None, None
+            return position.get("node") or {"segment_id": segment_id}, visual
+
         for seg in segments:
             if seg.get("segment_id") == segment_id and seg.get("visual"):
                 return seg, seg["visual"]
@@ -1306,9 +1435,20 @@ class AvatarEngine:
                 break
         return (last, last["visual"]) if last else (None, None)
 
-    def _visual_lesson_context(self, session: Dict, segment: Optional[Dict]) -> str:
+    def _visual_lesson_context(self, session: Dict, segment: Optional[Dict],
+                               position: Optional[Dict] = None) -> str:
         """Lesson text around a picture, for grounding an answer about it."""
         parts = []
+        if position:
+            # First, so the picture model's context cut never drops it.
+            pending = self._unanswered_question(session, position)
+            if pending:
+                parts.append("The student has NOT answered the question on screen yet - do not "
+                             "say, hint at or confirm which option is correct.")
+            asked = (position.get("item") or {}) if position["phase"] == "mystery" else position["data"]
+            if asked.get("question") and isinstance(asked.get("options"), dict):
+                opts = "; ".join(f"{k}. {v}" for k, v in asked["options"].items())
+                parts.append(f"Question on screen: {asked['question']} Options: {opts}")
         overview = session.get("enrichment", {}).get("concept_overview", "")
         if overview:
             parts.append(overview)
@@ -1329,6 +1469,7 @@ class AvatarEngine:
         segment, visual = self._segment_visual(session, segment_id)
         if not visual:
             return None, None
+        position = self._lesson_position(session, (segment or {}).get("segment_id") or segment_id)
 
         try:
             import avatar_visuals
@@ -1340,7 +1481,7 @@ class AvatarEngine:
         answer = avatar_visuals.explain_visual(
             visual["image_url"], student_doubt,
             shows=visual.get("shows", ""),
-            lesson_context=self._visual_lesson_context(session, segment),
+            lesson_context=self._visual_lesson_context(session, segment, position),
             class_number=str(topic.get("class_number") or ""),
             subject=topic.get("subject", ""),
         )
@@ -1464,6 +1605,97 @@ Return EXACTLY this JSON:
         # grammar) a science lesson does not.
         order = [p.get("phase") for p in (session.get("avatar_lesson") or {}).get("phases") or []]
         progress["phase_index"] = order.index(name) if name in order else len(order)
+        # Keep the segment pointer inside the phase, so a raise-hand that names
+        # no segment is answered for the phase the student is actually in.
+        entry = _phase_entry_id(lesson_patterns.phase(session.get("avatar_lesson"), name))
+        if entry:
+            progress["current_segment_id"] = entry
+
+    @staticmethod
+    def _lesson_position(session: Dict, segment_id: Optional[str]) -> Optional[Dict]:
+        """Where ``segment_id`` sits in the lesson, outside the explanation.
+
+        ``segment_id`` is a phase's spoken line (hook_intro, rw_ask, m01_ask, ...),
+        a mystery_id, or a phase name ("hook", "mystery", ...). Returns
+        ``{"phase", "data", "node", "item"}`` - ``item`` is the mystery on screen -
+        or None for an explanation segment, an unknown id or a session without
+        a lesson; those take the explanation-segment path.
+        """
+        if not segment_id:
+            return None
+        for ph in (session.get("avatar_lesson") or {}).get("phases") or []:
+            name = ph.get("phase")
+            if name == "explanation":
+                continue
+            items = (ph.get("mysteries") or ph.get("pool") or []) if name == "mystery" else []
+            node, item = None, None
+            if segment_id != name:
+                item = next((it for it in items if it.get("mystery_id") == segment_id), None)
+                if item is None:
+                    node = next((n for n in lesson_patterns.iter_spoken_nodes({"phases": [ph]})
+                                 if n.get("segment_id") == segment_id), None)
+                    if node is None:
+                        continue
+                    item = next((it for it in items
+                                 if node is it.get("ask") or node is it.get("reveal")), None)
+            return {"phase": name, "data": ph, "node": node,
+                    "item": item or (items[0] if items else None)}
+        return None
+
+    @staticmethod
+    def _unanswered_question(session: Dict, position: Optional[Dict]) -> str:
+        """The question the student is still answering at ``position``, or ''.
+
+        A doubt raised there must not give the answer away.
+        """
+        if not position:
+            return ""
+        state = session.get("phase_state") or {}
+        name, ph = position["phase"], position["data"]
+        if name == "hook" and "hook" not in state:
+            return ph.get("question", "")
+        if name == "mystery":
+            item = position.get("item") or {}
+            answered = (state.get("mystery") or {}).get("answers") or {}
+            if item and item.get("mystery_id") not in answered:
+                return item.get("question", "")
+        if name == "explore":
+            done = state.get("explore") or {}
+            if ph.get("interaction") and "interaction" not in done:
+                return ph["interaction"].get("prompt", "")
+            challenge = (ph.get("challenge") or {}).get("interaction")
+            if challenge and "challenge" not in done:
+                return challenge.get("prompt", "")
+        return ""
+
+    @staticmethod
+    def _phase_visual(session: Dict, position: Dict) -> Optional[Dict]:
+        """The picture on screen in a lesson phase, or None.
+
+        What it shows is spelled out where that is safe - never for a mystery,
+        whose picture IS the question.
+        """
+        ph, name = position["data"], position["phase"]
+        if name == "mystery":
+            visual = (position.get("item") or {}).get("visual")
+            if isinstance(visual, dict) and visual.get("image_url"):
+                return {**visual, "shows": ""}
+            return None
+        if name == "hook" and (ph.get("options_visual") or {}).get("image_url"):
+            # The badged 2x2 grid is what the student looks at while choosing.
+            grid = ph["options_visual"]
+            panels = grid.get("panels") or {}
+            scenes = grid.get("option_scenes") or {}
+            shows = "Four panels, one per answer option - " + "; ".join(
+                f"{panels.get(k, k)} ({k}): {scenes.get(k) or text}"
+                for k, text in (ph.get("options") or {}).items())
+            return {**grid, "shows": shows}
+        if name == "real_world" and "real_world" not in (session.get("phase_state") or {}):
+            return None     # its picture comes with the reveal
+        visual = ph.get("visual")
+        if isinstance(visual, dict) and visual.get("image_url"):
+            return {**visual, "shows": visual.get("shows") or visual.get("prompt", "")}
+        return None
 
     @staticmethod
     def _next_phase(session: Dict, after: str) -> Optional[str]:
@@ -1998,6 +2230,23 @@ Return EXACTLY this JSON:
 
             # Find resume segment
             paused_at = latest_doubt["paused_at_segment_id"]
+
+            # A doubt raised inside another phase: the student carries on with
+            # that phase where they were - no explanation segment to jump to.
+            position = self._lesson_position(session, paused_at)
+            if position:
+                latest_doubt["resumed_at_segment_id"] = paused_at
+                progress["status"] = "in_progress"
+                progress["current_segment_id"] = paused_at
+                self.store.save(session)
+                return {
+                    "action": "resumed",
+                    "resume_phase": position["phase"],
+                    "resumed_from_segment_id": paused_at,
+                    "remaining_segments": [],
+                    "avatar_session_history": {"progress": progress},
+                }
+
             segments = session.get("avatar_explanation", {}).get("segments", [])
 
             resume_idx = 0

@@ -16,6 +16,7 @@ interface PlaceholderImageProps {
     | "general-science";
   aspectRatio?: "16/9" | "4/3" | "1/1" | "21/9" | "auto";
   className?: string;
+  imageClassName?: string;
   badge?: string;
 }
 
@@ -25,6 +26,7 @@ export const PlaceholderImage: React.FC<PlaceholderImageProps> = ({
   category = "general-science",
   aspectRatio = "16/9",
   className = "",
+  imageClassName = "object-cover",
   badge,
 }) => {
   const [imgError, setImgError] = useState(false);
@@ -40,7 +42,7 @@ export const PlaceholderImage: React.FC<PlaceholderImageProps> = ({
           src={src}
           alt={alt}
           onError={() => setImgError(true)}
-          className="w-full h-full object-cover object-center transition-transform duration-300 group-hover:scale-[1.02]"
+          className={`w-full h-full object-center transition-transform duration-300 group-hover:scale-[1.02] ${imageClassName}`}
         />
         {badge && (
           <span className="absolute top-3 left-3 px-2.5 py-1 rounded-full text-xs font-bold tracking-wide uppercase bg-slate-900/70 text-white backdrop-blur-md shadow-sm">

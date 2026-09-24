@@ -16,20 +16,25 @@ import os
 import json
 import hashlib
 import time
-import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
 
-import requests
-from langfuse_utils import traced_post
+from dotenv import load_dotenv
+
+import avatar_llm
 from langfuse_utils import with_student_context
 from logger import get_logger
 
+load_dotenv()
 logger = get_logger(__name__)
 
 HOMEWORK_DATA_DIR = Path("homework_data")
 HOMEWORK_MAX_POINTS = 100  # Points per homework assignment
+# Never OpenAI: that key has no credits. avatar_llm routes gemini-* to Google
+# direct; both defaults read images, so photo uploads use the same model.
+HOMEWORK_MODEL = os.getenv("HOMEWORK_MODEL", "gemini-3.6-flash")
+HOMEWORK_FALLBACK_MODEL = os.getenv("HOMEWORK_FALLBACK_MODEL", "meta-llama/llama-4-scout")
 
 
 class HomeworkEngine:
@@ -42,6 +47,30 @@ class HomeworkEngine:
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
     # ── Internal Helpers ──────────────────────────────────────────────────────
+
+    def _llm_json(self, messages: List[Dict[str, Any]], *, temperature: float,
+                  max_tokens: int, timeout: int, trace_name: str) -> Optional[Dict[str, Any]]:
+        """One JSON-mode completion through avatar_llm, parsed to a dict. None on any failure.
+
+        ``messages`` goes out verbatim, so a user turn may carry image_url parts.
+        """
+        result = avatar_llm.chat(
+            HOMEWORK_MODEL,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            force_json=True,
+            timeout=timeout,
+            fallback_model=HOMEWORK_FALLBACK_MODEL,
+            trace_name=trace_name,
+        )
+        if not result.ok:
+            logger.warning(f"[HomeworkEngine] {trace_name} failed ({HOMEWORK_MODEL}): {(result.error or '')[:300]}")
+            return None
+        parsed = avatar_llm.parse_json(result.text)
+        if parsed is None:
+            logger.warning(f"[HomeworkEngine] {trace_name} returned unparseable JSON ({len(result.text)} chars)")
+        return parsed
 
     def _homework_path(self, candidate_id: str, homework_id: str) -> Path:
         safe_id = candidate_id.strip().lower().replace(" ", "_")
@@ -168,10 +197,6 @@ class HomeworkEngine:
         unit_number: int,
     ) -> List[Dict[str, Any]]:
         """Generate homework questions using LLM focused on weak areas."""
-        api_key = os.environ.get("OPENAI_API_KEY_TEXT") or os.environ.get("OPENAI_API_KEY")
-        if not api_key:
-            return self._fallback_homework(subject, unit_number, num_questions)
-
         # Build weak sections description
         sections_desc = ""
         for sec in weak_sections[:8]:
@@ -206,56 +231,35 @@ Generate exactly {num_questions} homework questions that:
 3. Include clear instructions for each question
 4. Are based on the textbook content provided
 
-Format as JSON array:
-[
-  {{
-    "question": "Explain why the cylindrical equal area projection distorts shapes near the poles. Use a real-world example.",
-    "type": "conceptual",
-    "section_title": "Cylindrical Equal Area Projection",
-    "expected_answer": "The projection preserves area by adjusting parallel spacing using sin(latitude), but this forces horizontal stretching at high latitudes since all parallels equal the equator's length. Example: On this projection, Antarctica appears as a thin strip...",
-    "marks": 5,
-    "difficulty": "{difficulty}",
-    "hints": ["Think about what happens to parallels near the poles", "Consider the trade-off between area and shape"]
-  }}
-]
+Format as a JSON object whose "questions" key holds the list:
+{{
+  "questions": [
+    {{
+      "question": "Explain why the cylindrical equal area projection distorts shapes near the poles. Use a real-world example.",
+      "type": "conceptual",
+      "section_title": "Cylindrical Equal Area Projection",
+      "expected_answer": "The projection preserves area by adjusting parallel spacing using sin(latitude), but this forces horizontal stretching at high latitudes since all parallels equal the equator's length. Example: On this projection, Antarctica appears as a thin strip...",
+      "marks": 5,
+      "difficulty": "{difficulty}",
+      "hints": ["Think about what happens to parallels near the poles", "Consider the trade-off between area and shape"]
+    }}
+  ]
+}}
 
-Return ONLY the JSON array."""
+Return ONLY the JSON object."""
 
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": "gpt-4o-mini",
-            "messages": [{"role": "user", "content": prompt}],
-            "max_completion_tokens": 3000,
-            "temperature": 1,
-        }
-
-        try:
-            resp = traced_post("generate-homework",
-                "https://api.openai.com/v1/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=60,
-            )
-            if resp.ok:
-                content = resp.json()["choices"][0]["message"]["content"].strip()
-                if content.startswith("```"):
-                    content = content.split("```")[1]
-                    if content.startswith("json"):
-                        content = content[4:]
-                questions = json.loads(content)
-
-                # Add IDs
-                for q in questions:
-                    q["question_id"] = hashlib.md5(
-                        q.get("question", "").encode()
-                    ).hexdigest()[:12]
-
-                return questions[:num_questions]
-        except Exception as e:
-            logger.warning(f"[HomeworkEngine] LLM generation failed: {e}")
+        # JSON mode only yields objects, hence {"questions": [...]} rather than a bare array.
+        data = self._llm_json(
+            [{"role": "user", "content": prompt}],
+            temperature=1, max_tokens=3000, timeout=60, trace_name="generate-homework",
+        )
+        questions = [q for q in (data or {}).get("questions") or [] if isinstance(q, dict)]
+        if questions:
+            for q in questions:
+                q["question_id"] = hashlib.md5(
+                    q.get("question", "").encode()
+                ).hexdigest()[:12]
+            return questions[:num_questions]
 
         return self._fallback_homework(subject, unit_number, num_questions)
 
@@ -305,10 +309,6 @@ Return ONLY the JSON array."""
         subject: str,
     ) -> List[Dict[str, Any]]:
         """Use LLM to evaluate homework answers against expected answers."""
-        api_key = os.environ.get("OPENAI_API_KEY_TEXT") or os.environ.get("OPENAI_API_KEY")
-        if not api_key:
-            return self._simple_evaluate(questions, answers)
-
         # Build evaluation prompt
         qa_text = ""
         for i, q in enumerate(questions, 1):
@@ -329,15 +329,17 @@ Evaluate each answer and provide scores and feedback.
 Questions and Answers:
 {qa_text}
 
-For each question, respond in JSON array:
-[
-  {{
-    "question_index": 1,
-    "score_percentage": 80,
-    "is_correct": true,
-    "feedback": "Good understanding of the concept. You correctly identified..."
-  }}
-]
+For each question, respond with a JSON object whose "evaluations" key holds the list:
+{{
+  "evaluations": [
+    {{
+      "question_index": 1,
+      "score_percentage": 80,
+      "is_correct": true,
+      "feedback": "Good understanding of the concept. You correctly identified..."
+    }}
+  ]
+}}
 
 Scoring rules:
 - Score as a percentage (0-100)
@@ -346,64 +348,17 @@ Scoring rules:
 - If no answer provided, score 0
 - Provide constructive feedback to help the student improve
 
-Return ONLY the JSON array."""
+Return ONLY the JSON object."""
 
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": "gpt-4o-mini",
-            "messages": [{"role": "user", "content": prompt}],
-            "max_completion_tokens": 2000,
-            "temperature": 0.2,
-        }
-
-        try:
-            resp = traced_post("evaluate-homework-answers",
-                "https://api.openai.com/v1/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=60,
-            )
-            if resp.ok:
-                content = resp.json()["choices"][0]["message"]["content"].strip()
-                evals = self._parse_json_safe(content)
-                if evals:
-                    return evals
-        except Exception as e:
-            logger.warning(f"[HomeworkEngine] LLM evaluation failed: {e}")
+        data = self._llm_json(
+            [{"role": "user", "content": prompt}],
+            temperature=0.2, max_tokens=2000, timeout=60, trace_name="evaluate-homework-answers",
+        )
+        evals = [e for e in (data or {}).get("evaluations") or [] if isinstance(e, dict)]
+        if evals:
+            return evals
 
         return self._simple_evaluate(questions, answers)
-
-    def _parse_json_safe(self, raw: str) -> Optional[Any]:
-        """
-        Parse JSON from LLM output. Handles:
-        - Clean JSON
-        - JSON wrapped in ```json ... ``` fences
-        - Truncated JSON (find largest valid prefix)
-        """
-        # Strip markdown fences
-        cleaned = re.sub(r'^```[a-z]*\n?', '', raw.strip())
-        cleaned = re.sub(r'\n?```$', '', cleaned).strip()
-
-        # Try direct parse
-        try:
-            return json.loads(cleaned)
-        except Exception:
-            pass
-
-        # Salvage: find largest valid JSON prefix
-        for end in range(len(cleaned), 0, -1):
-            if cleaned[end - 1] in ('}', ']'):
-                try:
-                    result = json.loads(cleaned[:end])
-                    logger.info(f"[HomeworkEngine] Salvaged JSON up to char {end}/{len(cleaned)}")
-                    return result
-                except Exception:
-                    continue
-
-        return None
 
     def _simple_evaluate(
         self,
@@ -1040,10 +995,6 @@ Return ONLY the JSON array."""
         Parses a school homework sheet (via OCR image or text content) into a structured JSON
         homework assignment, generating expected answer rubrics and progressive hints.
         """
-        api_key = os.environ.get("OPENAI_API_KEY_TEXT") or os.environ.get("OPENAI_API_KEY")
-        if not api_key:
-            raise Exception("OpenAI API Key is missing.")
-
         # System prompt for structured parsing
         system_prompt = (
             "You are an educational assistant that processes raw school homework worksheets or text.\n"
@@ -1079,35 +1030,19 @@ Return ONLY the JSON array."""
                     "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}
                 }
             ]
-            model = "gpt-4o"
         else:
             user_content = f"Subject: {subject}\nUnit Number: {unit_number}\nText Content:\n{text_content or 'Please explain how to solve my homework'}"
-            model = "gpt-4o-mini"
 
         messages.append({"role": "user", "content": user_content})
 
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": model,
-            "messages": messages,
-            "response_format": {"type": "json_object"},
-            "temperature": 0.2,
-        }
-
-        resp = traced_post("ingest-school-homework",
-            "https://api.openai.com/v1/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=45
+        # A worksheet can carry many questions, each with a rubric and two hints.
+        result_data = self._llm_json(
+            messages, temperature=0.2, max_tokens=4096, timeout=45,
+            trace_name="ingest-school-homework",
         )
+        if result_data is None:
+            raise Exception(f"Failed to ingest homework: {HOMEWORK_MODEL} returned no usable JSON")
 
-        if not resp.ok:
-            raise Exception(f"Failed to ingest homework via OpenAI: {resp.text}")
-
-        result_data = json.loads(resp.json()["choices"][0]["message"]["content"])
         questions = result_data.get("questions", [])
 
         if not questions:
@@ -1258,11 +1193,6 @@ Return ONLY the JSON array."""
             rag_queries.insert(0, message)
         textbook_context = self._retrieve_textbook_context(rag_queries, homework)
 
-        # Call OpenAI to run Socratic feedback
-        api_key = os.environ.get("OPENAI_API_KEY_TEXT") or os.environ.get("OPENAI_API_KEY")
-        if not api_key:
-            raise Exception("OpenAI API Key is missing.")
-
         pending_offer = (session.get("pending_offer") or "").strip()
         offer_block = (
             f"## YOUR PREVIOUS OFFER (the student is replying to this):\n"
@@ -1380,35 +1310,17 @@ Return ONLY the JSON array."""
                     "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}
                 }
             ]
-            model = "gpt-4o"
         else:
             user_content = user_prompt
-            model = "gpt-4o-mini"
 
         messages.append({"role": "user", "content": user_content})
 
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": model,
-            "messages": messages,
-            "response_format": {"type": "json_object"},
-            "temperature": 0.3,
-        }
-
-        resp = traced_post("socratic-chat-turn",
-            "https://api.openai.com/v1/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=40
+        eval_result = self._llm_json(
+            messages, temperature=0.3, max_tokens=2048, timeout=40,
+            trace_name="socratic-chat-turn",
         )
-
-        if not resp.ok:
-            raise Exception(f"Socratic LLM request failed: {resp.text}")
-
-        eval_result = json.loads(resp.json()["choices"][0]["message"]["content"])
+        if eval_result is None:
+            raise Exception(f"Socratic LLM request failed: {HOMEWORK_MODEL} returned no usable JSON")
         intent = str(eval_result.get("intent") or "answer_attempt").strip().lower()
         is_correct = bool(eval_result.get("correct", False))
         assistant_resp = eval_result.get("assistant_response", "Let's keep trying! What do you think is the next step?")

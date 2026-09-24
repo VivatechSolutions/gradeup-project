@@ -1031,19 +1031,22 @@ def build_document_lessons(document_id: str, *, unit_number: Optional[int] = Non
                            with_visuals: bool = True, with_audio: bool = True,
                            voices: Optional[List[str]] = None, speed: Optional[float] = None,
                            upload: bool = True, subject: Optional[str] = None,
-                           progress_cb: Optional[ProgressCallback] = None) -> Dict[str, Any]:
+                           progress_cb: Optional[ProgressCallback] = None,
+                           doc_dir: Optional[Path] = None) -> Dict[str, Any]:
     """Build and store the lesson of every eligible section of a document.
 
     ``unit_number`` / ``section_title`` narrow the run; ``force`` rebuilds
     sections that already have a lesson. ``progress_cb`` is called after every
     section with the running report, so a background job can expose it.
+    ``doc_dir`` reads and writes a folder other than ``outputs/<document_id>``
+    (``/enrichment/process`` builds a posted structured.json in a temp folder).
     """
     from config import OUTPUTS_DIR
     from enrichment_pipeline import (EnrichmentOrchestrator, _detect_subject,
                                      load_env, save_json)
 
     load_env()
-    doc_dir = Path(OUTPUTS_DIR) / document_id
+    doc_dir = Path(doc_dir) if doc_dir else Path(OUTPUTS_DIR) / document_id
     structured_path = doc_dir / "structured.json"
     if not structured_path.exists():
         raise FileNotFoundError(f"No structured.json for document '{document_id}'")

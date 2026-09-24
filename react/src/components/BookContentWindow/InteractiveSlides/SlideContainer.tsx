@@ -71,6 +71,7 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
   }, [chapter, book]);
 
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
   const [direction, setDirection] = useState<"next" | "prev">("next");
   const [isNavigating, setIsNavigating] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
@@ -97,13 +98,16 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
   const doubtRecorderRef = useRef<MediaRecorder | null>(null);
   const doubtStreamRef = useRef<MediaStream | null>(null);
   const doubtChunksRef = useRef<Blob[]>([]);
+  const serverPausedForDoubtRef = useRef(false);
   const avatarEndCalledRef = useRef(false);
   const sessionId = String(chapter?.session_id || chapter?.sessionId || "");
 
   // Track task states for each slide
   const [taskStates, setTaskStates] = useState<Record<string, TaskState>>({});
 
-  const currentSlide: SlideData = lesson.slides[currentIndex] || lesson.slides[0];
+  const currentPhaseSlide: SlideData = lesson.slides[currentIndex] || lesson.slides[0];
+  const currentSlide: SlideData =
+    currentPhaseSlide?.segments?.[currentSegmentIndex] || currentPhaseSlide;
   currentSlideIdRef.current = currentSlide?.id || "";
   doubtOpenRef.current = doubtOpen;
 
@@ -333,6 +337,7 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
 
   const pauseForDoubt = () => {
     cancelAutoAdvance();
+    serverPausedForDoubtRef.current = false;
     const audio = lessonAudioRef.current;
     if (audio && !audio.paused) {
       audio.pause();
@@ -342,18 +347,22 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
     setDoubtOpen(true);
   };
 
-  const resumeAfterDoubt = async () => {
-    if (sessionId) {
-      try {
-        await resumeAvatarSession({ sessionId });
-      } catch {}
-    }
+  const resumeAfterDoubt = () => {
+    const shouldResumeServer = serverPausedForDoubtRef.current;
+    serverPausedForDoubtRef.current = false;
     setDoubtOpen(false);
     const audio = lessonAudioRef.current;
     if (audio?.paused) {
       audio.play().catch(() => undefined);
-    } else if (currentTaskState.isCompleted) {
+      setIsAvatarPaused(false);
+    } else if (
+      currentTaskState.isCompleted &&
+      currentSlide.task.type === "narration"
+    ) {
       scheduleAutoAdvance();
+    }
+    if (sessionId && shouldResumeServer) {
+      void resumeAvatarSession({ sessionId }).catch(() => undefined);
     }
   };
 
@@ -367,6 +376,7 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
     ]);
     setDoubtText("");
     setIsAskingDoubt(true);
+    serverPausedForDoubtRef.current = true;
     try {
       const response = await raiseAvatarHand({
         sessionId,
@@ -473,6 +483,7 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
 
   useEffect(() => {
     setCurrentIndex(0);
+    setCurrentSegmentIndex(0);
     setPlaybackState("idle");
     setDirection("next");
     setIsNavigating(false);
@@ -500,7 +511,10 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
   }, [currentSlide.id, avatarType]);
 
   useEffect(() => {
-    const nextSlide = lesson.slides[currentIndex + 1];
+    const nextSlide =
+      currentPhaseSlide.segments?.[currentSegmentIndex + 1] ||
+      lesson.slides[currentIndex + 1]?.segments?.[0] ||
+      lesson.slides[currentIndex + 1];
     const nextUrl = nextSlide ? getSlideAudioUrl(nextSlide, avatarType) : "";
     if (!nextUrl) return undefined;
     const preload = new Audio();
@@ -512,7 +526,7 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
       preload.load();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentIndex, avatarType, lesson.id]);
+  }, [currentIndex, currentSegmentIndex, avatarType, lesson.id]);
 
   useEffect(() => {
     if (!sessionId) return undefined;
@@ -547,7 +561,7 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
 
   // Update avatar message whenever slide changes
   useEffect(() => {
-    const slide = lesson.slides[currentIndex];
+    const slide = currentSlide;
     if (slide) {
       const state = taskStates[slide.id];
       if (state?.isCompleted && slide.avatarMessage?.completed) {
@@ -556,12 +570,16 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
         setAvatarSpeech(slide.avatarMessage?.initial || "Think about it and give it a try!");
       }
     }
-  }, [currentIndex, lesson, taskStates]);
+  }, [currentSlide, taskStates]);
 
   // Mark task completed for current slide
   const handleCompleteCurrentTask = (
     customFeedback?: string,
-    options?: { isCorrect?: boolean; tone?: "success" | "error" | "neutral" },
+    options?: {
+      isCorrect?: boolean;
+      tone?: "success" | "error" | "neutral";
+      autoAdvance?: boolean;
+    },
   ) => {
     if (currentTaskState.isCompleted) return;
     stopAvatarSpeech();
@@ -590,7 +608,7 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
     setCelebrationMsg(celebrationText);
     setCelebrationTone(tone);
     setShowCelebration(true);
-    scheduleAutoAdvance();
+    if (options?.autoAdvance !== false) scheduleAutoAdvance();
   };
 
   // Single option selection (e.g. Think slide)
@@ -631,9 +649,7 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
     setShowCelebration(true);
     const resolutionAudio = resolution?.audio || selectedOption?.audio;
     if (resolutionAudio) {
-      playVoiceAudio(resolutionAudio, avatarType, "feedback", () => scheduleAutoAdvance());
-    } else {
-      scheduleAutoAdvance();
+      playVoiceAudio(resolutionAudio, avatarType, "feedback");
     }
   };
 
@@ -679,6 +695,7 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
       {
         isCorrect: isSuccess,
         tone: isSuccess ? "success" : "error",
+        autoAdvance: false,
       },
     );
   };
@@ -705,7 +722,6 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
     setCelebrationMsg("Explanation Submitted! Great synthesis!");
     setCelebrationTone("success");
     setShowCelebration(true);
-    scheduleAutoAdvance();
   };
 
   // Voice explanation recorded for Teach It Back slide
@@ -730,23 +746,31 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
     setCelebrationMsg("Voice Explanation Recorded!");
     setCelebrationTone("success");
     setShowCelebration(true);
-    scheduleAutoAdvance();
   };
 
   // Navigate to next slide
   const handleNext = () => {
     if (isNavigating) return;
-    if (!currentTaskState.isCompleted) return;
 
     cancelAutoAdvance();
     setShowCelebration(false);
     setShowInsightModal(false);
     stopAvatarSpeech();
 
+    if (
+      currentPhaseSlide.segments?.length &&
+      currentSegmentIndex < currentPhaseSlide.segments.length - 1
+    ) {
+      setPlaybackState("advancing");
+      setCurrentSegmentIndex((previous) => previous + 1);
+      return;
+    }
+
     if (currentIndex < lesson.slides.length - 1) {
       setIsNavigating(true);
       setPlaybackState("advancing");
       setDirection("next");
+      setCurrentSegmentIndex(0);
       setCurrentIndex((prev) => prev + 1);
       setTimeout(() => setIsNavigating(false), shouldReduceMotion ? 80 : 360);
     } else {
@@ -758,6 +782,15 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
   // Navigate to previous slide
   const handlePrevious = () => {
     if (isNavigating) return;
+    if (currentSegmentIndex > 0) {
+      cancelAutoAdvance();
+      setShowCelebration(false);
+      setShowInsightModal(false);
+      stopAvatarSpeech();
+      setPlaybackState("advancing");
+      setCurrentSegmentIndex((previous) => previous - 1);
+      return;
+    }
     if (currentIndex > 0) {
       cancelAutoAdvance();
       setShowCelebration(false);
@@ -766,6 +799,7 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
       setIsNavigating(true);
       setPlaybackState("advancing");
       setDirection("prev");
+      setCurrentSegmentIndex(0);
       setCurrentIndex((prev) => prev - 1);
       setTimeout(() => setIsNavigating(false), shouldReduceMotion ? 80 : 360);
     }
@@ -773,13 +807,12 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
 
   advanceRef.current = handleNext;
   narrationEndedRef.current = () => {
-    const requiresAnswer = ["select-option", "submit-answer", "record-or-type"].includes(currentSlide.task.type);
-    if (requiresAnswer) return;
+    if (currentSlide.task.type !== "narration") return;
     if (currentTaskState.isCompleted) {
       scheduleAutoAdvance();
       return;
     }
-    handleCompleteCurrentTask("Narration complete. Moving to the next slide.", { tone: "neutral" });
+    handleCompleteCurrentTask("Narration complete.", { tone: "neutral" });
   };
 
   const currentCoreInsight = getCoreInsight(currentSlide);
@@ -1121,7 +1154,7 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
           {/* Slide Motion Transition Wrapper */}
           <AnimatePresence mode="wait" custom={direction}>
             <motion.div
-              key={currentSlide.id}
+              key={currentPhaseSlide.id}
               custom={direction}
               variants={shouldReduceMotion ? undefined : slideVariants}
               initial={shouldReduceMotion ? { opacity: 0 } : "enter"}
@@ -1182,11 +1215,10 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
         </motion.div>
       </main>
 
-      {/* Bottom Navigation: Previous, Task Status, Next (Locked/Unlocked) */}
+      {/* Bottom navigation */}
       <SlideNavigation
         currentIndex={currentIndex}
         totalSlides={lesson.totalSlides}
-        isTaskCompleted={currentTaskState.isCompleted}
         onPrevious={handlePrevious}
         onNext={handleNext}
         isNavigating={isNavigating}

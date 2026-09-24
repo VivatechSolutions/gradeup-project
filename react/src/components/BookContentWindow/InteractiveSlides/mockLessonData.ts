@@ -408,7 +408,6 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
   const explainBack = getPhase(avatarLesson, "explain_back");
   const reflect = getPhase(avatarLesson, "reflect");
   const mysteries = getMysteryItems(mysteryPhase);
-  const overview = response.enrichment?.concept_overview;
   const faqs = response.enrichment?.faqs || [];
   const practiceQuestions = response.enrichment?.practice_questions || [];
   const coinSegment = explanation?.segments?.find((segment: any) =>
@@ -421,8 +420,9 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
   const report = response.report;
   const suggestionsBySegment = suggestionMapFromResponse(response, avatarLesson);
 
-  const slides: any[] = [
-    {
+  const slides: any[] = [];
+  if (hook) {
+    slides.push({
       id: "backend-hook",
       phase: "hook",
       segmentId: hook?.intro?.segment_id,
@@ -432,7 +432,7 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
       badge: { label: hook?.title || "Hook", icon: "sparkles" },
       title: hook?.scenario || `Let's explore ${sectionTitle}`,
       highlightWords: ["bus", "brakes", "inertia"],
-      description: hook?.intro?.text || overview,
+      description: hook?.intro?.text,
       images: {
         main: visualUrl(hook),
         caption: visualCaption(hook?.visual),
@@ -449,8 +449,8 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
         initial: hook?.intro?.text || `Let's start ${sectionTitle}.`,
         completed: hook?.bridge?.text || "Great, now make your prediction.",
       },
-    },
-    {
+    });
+    if (hook?.question || Object.keys(hook?.options || {}).length) slides.push({
       id: "backend-think",
       phase: "hook",
       segmentId: hook?.question_segment_id || hook?.ask?.segment_id || hook?.intro?.segment_id,
@@ -472,31 +472,10 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
         completed: hook?.resolutions?.[hook?.answer]?.text || "Nice prediction. Let's connect it to the science.",
         error: "Good try. Watch what your body was already doing before the bus changed motion.",
       },
-    },
-  ];
-
-  if (overview) {
-    slides.push({
-      id: "backend-concept-overview",
-      phase: "explanation",
-      type: "learn" as const,
-      badge: { label: "Concept Overview", icon: "book-open" },
-      title: `What is ${sectionTitle}?`,
-      description: overview,
-      content: hook?.bridge?.text,
-      images: { main: visualUrl(hook), caption: visualCaption(hook?.visual) },
-      takeaway: {
-        label: "Main idea",
-        text: faqs[0]?.answer || "Inertia is an object's resistance to a change in rest, motion, or direction.",
-      },
-      task: { type: "button-click" as const, buttonLabel: "Start Learning", completedButtonLabel: "Concept Clear" },
-      avatarMessage: {
-        initial: overview,
-        completed: "Good. Now let's walk through every part of the lesson.",
-      },
     });
   }
 
+  const explanationSegments: any[] = [];
   explanation?.segments?.forEach((segment: any, index: number) => {
     if (segment.type === "flashcard") {
       const cards = Array.isArray(segment.cards) && segment.cards.length ? segment.cards : [segment];
@@ -507,7 +486,7 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
           const optionResolutions = card.resolutions || Object.fromEntries(
             Object.entries(card.option_explanations || {}).map(([key, text]) => [key, { text }]),
           );
-          slides.push({
+          explanationSegments.push({
             id: `${segment.segment_id || `flashcard-${index}`}-${card.flashcard_id || card.card_id || cardIndex}`,
             segmentId: card.segment_id || segment.segment_id,
             phase: "explanation",
@@ -533,7 +512,7 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
           });
           return;
         }
-        slides.push({
+        explanationSegments.push({
           id: `${segment.segment_id || `flashcard-${index}`}-${card.flashcard_id || card.card_id || cardIndex}`,
           segmentId: card.segment_id || segment.segment_id,
           phase: "explanation",
@@ -553,9 +532,7 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
             text: card.avatar_line || card.front,
           },
           task: {
-            type: "button-click" as const,
-            buttonLabel: "Flip Through",
-            completedButtonLabel: "Flashcard Done",
+            type: "narration" as const,
           },
           avatarMessage: {
             initial: card.avatar_line || card.front,
@@ -568,7 +545,7 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
 
     const visual = segment.visual;
     const segmentMedia = mediaText(segment.text);
-    slides.push({
+    explanationSegments.push({
       id: segment.segment_id || `explanation-${index + 1}`,
       segmentId: segment.segment_id,
       phase: "explanation",
@@ -598,9 +575,7 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
           }
         : undefined,
       task: {
-        type: "button-click" as const,
-        buttonLabel: "Got It",
-        completedButtonLabel: "Understood",
+        type: "narration" as const,
       },
       avatarMessage: {
         initial: segment.text || visual?.avatar_line || `Let's continue with ${sectionTitle}.`,
@@ -608,6 +583,23 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
       },
     });
   });
+
+  if (explanationSegments.length) {
+    slides.push({
+      id: "backend-explanation",
+      phase: "explanation",
+      segmentId: explanationSegments[0].segmentId,
+      type: explanationSegments[0].type,
+      badge: { label: explanation?.title || "Explanation", icon: "book-open" },
+      title: explanation?.title || sectionTitle,
+      task: { type: "narration" as const },
+      avatarMessage: {
+        initial: explanationSegments[0].avatarMessage?.initial || `Let's understand ${sectionTitle}.`,
+        completed: explanation?.closing?.text || "Explanation complete.",
+      },
+      segments: explanationSegments,
+    });
+  }
 
   if (explore) {
     slides.push({
@@ -850,7 +842,7 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
   const sourcePhases = Array.isArray(avatarLesson?.phases) ? avatarLesson.phases : [];
   const representedPhases = new Set(slides.map((slide) => slide.phase).filter(Boolean));
   sourcePhases.forEach((phase: any, phaseIndex: number) => {
-    const phaseName = cleanText(phase?.phase) || `phase-${phaseIndex + 1}`;
+    const phaseName = cleanText(phase?.phase).toLowerCase() || `phase-${phaseIndex + 1}`;
     if (representedPhases.has(phaseName)) return;
     const primary = phase?.intro || phase?.ask || phase?.reveal || phase?.closing || phase?.segments?.[0] || phase;
     const primaryMedia = mediaText(primary?.text || phase?.description || phase?.content);
@@ -878,17 +870,19 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
     });
   });
 
-  const orderedPhaseNames = Array.from(new Set([
-    ...(Array.isArray(avatarLesson?.phase_order) ? avatarLesson.phase_order : []),
-    ...sourcePhases
-      .slice()
-      .sort((left: any, right: any) => Number(left?.order || 0) - Number(right?.order || 0))
-      .map((phase: any) => phase?.phase),
-  ].filter(Boolean)));
+  const orderedPhaseNames = Array.from(new Set(
+    sourcePhases
+      .map((phase: any) => cleanText(phase?.phase).toLowerCase())
+      .filter(Boolean),
+  ));
   const phaseRank = (slide: any) => {
-    const index = orderedPhaseNames.indexOf(slide?.phase);
+    const index = orderedPhaseNames.indexOf(cleanText(slide?.phase).toLowerCase());
     return index >= 0 ? index : orderedPhaseNames.length;
   };
+  const fallbackSuggestions =
+    suggestionsBySegment.get("seg_001") ||
+    Array.from(suggestionsBySegment.values()).find((questions) => questions.length) ||
+    [];
   const lessonSlides = slides
     .filter((slide) =>
       !String(slide.id).startsWith("backend-practice-") &&
@@ -897,10 +891,22 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
     )
     .map((slide, index) => ({ slide, index }))
     .sort((left, right) => phaseRank(left.slide) - phaseRank(right.slide) || left.index - right.index)
-    .map(({ slide }) => normalizeSlideMedia({
-      ...slide,
-      suggestedQuestions: suggestionsBySegment.get(String(slide.segmentId || "")) || [],
-    }));
+    .map(({ slide }) => {
+      const prepareSlide = (value: any, index?: number) => normalizeSlideMedia({
+        ...value,
+        ...(index === undefined ? {} : { slideNumber: index + 1 }),
+        suggestedQuestions:
+          suggestionsBySegment.get(String(value.segmentId || "")) ||
+          fallbackSuggestions,
+      });
+      const prepared = prepareSlide(slide);
+      return {
+        ...prepared,
+        segments: Array.isArray(slide.segments)
+          ? slide.segments.map((segment: any, index: number) => prepareSlide(segment, index))
+          : undefined,
+      };
+    });
   const numberedSlides = renumberSlides(lessonSlides);
 
   return {

@@ -27,18 +27,21 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
 
-import requests
-from langfuse_utils import traced_post
+from dotenv import load_dotenv
+
+import avatar_llm
 from langfuse_utils import with_student_context
 from logger import get_logger
 
+load_dotenv()
 logger = get_logger(__name__)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 SESSION_DATA_DIR = Path("english_session_data")
-SESSION_MODEL = "gpt-4o-mini"
-SESSION_FALLBACK_MODEL = "gpt-4o"
+# Never OpenAI: that key has no credits. avatar_llm routes gemini-* to Google direct.
+SESSION_MODEL = os.getenv("ENGLISH_TEACHER_MODEL", "gemini-3.6-flash")
+SESSION_FALLBACK_MODEL = os.getenv("ENGLISH_TEACHER_FALLBACK_MODEL", "meta-llama/llama-4-scout")
 SESSION_TIMEOUT = 90
 SESSION_DURATION_MINUTES = 60
 SESSION_MAX_EXTENSION_MINUTES = 10
@@ -258,32 +261,21 @@ class EnglishTeacherEngine:
     # ── LLM ───────────────────────────────────────────────────────────────
 
     def _call_llm(self, messages: List[Dict], temperature: float = 0.8) -> str:
-        api_key = os.environ.get("OPENAI_API_KEY_TEXT") or os.environ.get("OPENAI_API_KEY")
-        if not api_key:
-            return "AI teacher is not configured. Please contact your administrator."
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-        payload = {
-            "model": SESSION_MODEL,
-            "messages": messages,
-            "max_completion_tokens": 2048,
-            "temperature": temperature,
-        }
-        try:
-            resp = traced_post("english-teacher-turn",
-                "https://api.openai.com/v1/chat/completions",
-                headers=headers, json=payload, timeout=SESSION_TIMEOUT,
-            )
-            if not resp.ok:
-                payload["model"] = SESSION_FALLBACK_MODEL
-                resp = traced_post("english-teacher-turn",
-                    "https://api.openai.com/v1/chat/completions",
-                    headers=headers, json=payload, timeout=SESSION_TIMEOUT,
-                )
-            if resp.ok:
-                return resp.json()["choices"][0]["message"]["content"].strip()
-        except Exception as e:
-            logger.error(f"[EnglishTeacher] LLM error: {e}")
-        return "I'm having trouble right now. Let's try again in a moment!"
+        """A prose teacher turn through avatar_llm; the canned apology on failure."""
+        result = avatar_llm.chat(
+            SESSION_MODEL,
+            messages=messages,
+            max_tokens=2048,
+            temperature=temperature,
+            force_json=False,
+            timeout=SESSION_TIMEOUT,
+            fallback_model=SESSION_FALLBACK_MODEL,
+            trace_name="english-teacher-turn",
+        )
+        if not result.ok:
+            logger.error(f"[EnglishTeacher] LLM call failed ({SESSION_MODEL}): {(result.error or '')[:300]}")
+            return "I'm having trouble right now. Let's try again in a moment!"
+        return result.text
 
     def _parse_json_from_llm(self, raw: str) -> Optional[Any]:
         cleaned = re.sub(r'^```[a-z]*\n?', '', raw.strip())

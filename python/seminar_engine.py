@@ -24,20 +24,24 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
 
-import requests
-from langfuse_utils import traced_post
+from dotenv import load_dotenv
+
+import avatar_llm
 from langfuse_utils import with_student_context
 from logger import get_logger
 
+load_dotenv()
 logger = get_logger(__name__)
 
 SEMINAR_DATA_DIR = Path("seminar_data")
 SEMINAR_PRACTICE_DATA_DIR = Path("seminar_practice_data")
 SEMINAR_PRACTICE_SESSION_DIR = Path("practice_session")
 SEMINAR_CHAT_DIR = Path("seminar_chat")
-SEMINAR_MODEL = "gpt-4o-mini"
-SEMINAR_FALLBACK_MODEL = "gpt-4o"
+# Never OpenAI: that key has no credits. avatar_llm routes gemini-* to Google direct.
+SEMINAR_MODEL = os.getenv("SEMINAR_MODEL", "gemini-3.6-flash")
+SEMINAR_FALLBACK_MODEL = os.getenv("SEMINAR_FALLBACK_MODEL", "meta-llama/llama-4-scout")
 SEMINAR_TIMEOUT = 90
+SEMINAR_UNAVAILABLE_TEXT = "Something went wrong. Please try again."
 HINT_SILENCE_THRESHOLD = 8  # seconds of silence to trigger hint
 
 
@@ -160,53 +164,33 @@ class SeminarEngine:
         seed = f"seminar_{candidate_id}_{datetime.now().isoformat()}_{time.time()}"
         return hashlib.md5(seed.encode()).hexdigest()[:16]
 
+    def _complete(self, messages: List[Dict], temperature: float, *,
+                  force_json: bool, trace_name: str) -> Optional[str]:
+        """One completion through avatar_llm. None on any failure."""
+        result = avatar_llm.chat(
+            SEMINAR_MODEL,
+            messages=messages,
+            max_tokens=2048,
+            temperature=temperature,
+            force_json=force_json,
+            timeout=SEMINAR_TIMEOUT,
+            fallback_model=SEMINAR_FALLBACK_MODEL,
+            trace_name=trace_name,
+        )
+        if not result.ok:
+            logger.error(f"[SeminarEngine] LLM call failed ({SEMINAR_MODEL}): {(result.error or '')[:300]}")
+            return None
+        return result.text
+
     def _call_llm(self, messages: List[Dict], temperature: float = 0.7) -> str:
-        api_key = os.environ.get("OPENAI_API_KEY_TEXT") or os.environ.get("OPENAI_API_KEY")
-        if not api_key:
-            return "AI is not configured."
-
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": SEMINAR_MODEL,
-            "messages": messages,
-            "max_completion_tokens": 2048,
-            "temperature": temperature,
-        }
-
-        try:
-            resp = traced_post("seminar-turn",
-                "https://api.openai.com/v1/chat/completions",
-                headers=headers, json=payload, timeout=SEMINAR_TIMEOUT,
-            )
-            if not resp.ok:
-                payload["model"] = SEMINAR_FALLBACK_MODEL
-                resp = traced_post("seminar-turn",
-                    "https://api.openai.com/v1/chat/completions",
-                    headers=headers, json=payload, timeout=SEMINAR_TIMEOUT,
-                )
-            if resp.ok:
-                return resp.json()["choices"][0]["message"]["content"].strip()
-        except Exception as e:
-            logger.error(f"[SeminarEngine] Error: {e}")
-        return "Something went wrong. Please try again."
+        """A prose examiner/coach turn; the canned apology when the model is unavailable."""
+        text = self._complete(messages, temperature, force_json=False, trace_name="seminar-turn")
+        return text or SEMINAR_UNAVAILABLE_TEXT
 
     def _call_llm_json(self, messages: List[Dict], temperature: float = 0.3) -> Optional[Dict]:
-        raw = self._call_llm(messages, temperature)
-        try:
-            if raw.startswith("```"):
-                raw = raw.split("```")[1]
-                if raw.startswith("json"):
-                    raw = raw[4:]
-            start = raw.find("{")
-            end = raw.rfind("}")
-            if start != -1 and end != -1:
-                return json.loads(raw[start:end + 1])
-        except Exception:
-            pass
-        return None
+        """A JSON-mode completion parsed to a dict, or None."""
+        raw = self._complete(messages, temperature, force_json=True, trace_name="seminar-json")
+        return avatar_llm.parse_json(raw)
 
     # ── System Prompts ────────────────────────────────────────────────────────
 
@@ -530,24 +514,13 @@ Return ONLY valid JSON in this format:
     "recommendation": "Brief recommendation for the student about content gaps."
 }}"""
 
-        raw = self._call_llm([
+        result = self._call_llm_json([
             {"role": "system", "content": "You are a precise educational content analyst. Always respond with valid JSON only."},
             {"role": "user", "content": prompt},
         ], temperature=0.3)
-
-        # Parse the response
-        try:
-            if raw.startswith("```"):
-                raw = raw.split("```")[1]
-                if raw.startswith("json"):
-                    raw = raw[4:]
-            start = raw.find("{")
-            end = raw.rfind("}")
-            if start != -1 and end != -1:
-                result = json.loads(raw[start:end + 1])
-                return result
-        except Exception as e:
-            logger.warning(f"[SeminarEngine] Failed to parse comparison analysis: {e}")
+        if result:
+            return result
+        logger.warning("[SeminarEngine] Comparison analysis unavailable or unparseable")
 
         # Fallback
         return {

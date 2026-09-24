@@ -17,18 +17,22 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 from datetime import datetime, timezone
 
-import requests
-from langfuse_utils import traced_post
+from dotenv import load_dotenv
+
+import avatar_llm
 from langfuse_utils import with_student_context
 from logger import get_logger
 
+load_dotenv()
 logger = get_logger(__name__)
 
 QUIZ_DATA_DIR = Path("quiz_data")
+# Never OpenAI: that key has no credits. avatar_llm routes gemini-* to Google direct.
+QUIZ_MODEL = os.getenv("QUIZ_MODEL", "gemini-3.6-flash")
+QUIZ_FALLBACK_MODEL = os.getenv("QUIZ_FALLBACK_MODEL", "meta-llama/llama-4-scout")
 
 # Points awarded per quiz based on difficulty
 QUIZ_POINTS = {"easy": 50, "medium": 75, "hard": 100}
-
 
 class QuizEngine:
     """
@@ -254,12 +258,6 @@ class QuizEngine:
         Generate quiz questions using LLM + RAG.
         Mixes questions across sections based on priority weights.
         """
-        api_key = os.environ.get("OPENAI_API_KEY_TEXT") or os.environ.get("OPENAI_API_KEY")
-        if not api_key:
-            return self._fallback_from_enriched(
-                document_id, unit_number, difficulty, num_questions, exclude_ids
-            )
-
         # Get RAG context from textbook
         rag_context = self._get_rag_context(subject, unit_number, sections, term=term, board=board, part=part)
 
@@ -290,77 +288,69 @@ Topic sections (prioritize HIGH priority topics):
 Textbook context:
 {rag_context[:3000]}
 
-Generate a JSON array of questions. Mix EXACTLY these question types: "mcq", "one_word", and "fill_in_the_blanks".
+Generate a JSON object whose "questions" key holds the list. Mix EXACTLY these question types: "mcq", "one_word", and "fill_in_the_blanks".
 For MCQ questions, always include 4 options and mark the correct one.
 For fill-in-the-blanks, use a blank line like "_________" in the question text.
 
 Format:
-[
-  {{
-    "question": "What is the purpose of map projections?",
-    "type": "mcq",
-    "options": ["To distort the Earth", "To transfer spherical surface to flat plane", "To draw circles", "To measure area"],
-    "correct_answer": "To transfer spherical surface to flat plane",
-    "section_title": "MAP PROJECTION",
-    "explanation": "Map projection transfers the graticule from the curved globe surface onto a flat plane.",
-    "difficulty": "{difficulty}"
-  }},
-  {{
-    "question": "Distortion is _________ in map projections because the Earth is a sphere.",
-    "type": "fill_in_the_blanks",
-    "correct_answer": "inevitable",
-    "section_title": "NEED FOR MAP PROJECTION",
-    "explanation": "A sphere cannot be unfolded without deformation.",
-    "difficulty": "{difficulty}"
-  }},
-  {{
-    "question": "What is the shape of the Earth?",
-    "type": "one_word",
-    "correct_answer": "Sphere",
-    "section_title": "INTRODUCTION",
-    "explanation": "The Earth is roughly a sphere.",
-    "difficulty": "{difficulty}"
-  }}
-]
+{{
+  "questions": [
+    {{
+      "question": "What is the purpose of map projections?",
+      "type": "mcq",
+      "options": ["To distort the Earth", "To transfer spherical surface to flat plane", "To draw circles", "To measure area"],
+      "correct_answer": "To transfer spherical surface to flat plane",
+      "section_title": "MAP PROJECTION",
+      "explanation": "Map projection transfers the graticule from the curved globe surface onto a flat plane.",
+      "difficulty": "{difficulty}"
+    }},
+    {{
+      "question": "Distortion is _________ in map projections because the Earth is a sphere.",
+      "type": "fill_in_the_blanks",
+      "correct_answer": "inevitable",
+      "section_title": "NEED FOR MAP PROJECTION",
+      "explanation": "A sphere cannot be unfolded without deformation.",
+      "difficulty": "{difficulty}"
+    }},
+    {{
+      "question": "What is the shape of the Earth?",
+      "type": "one_word",
+      "correct_answer": "Sphere",
+      "section_title": "INTRODUCTION",
+      "explanation": "The Earth is roughly a sphere.",
+      "difficulty": "{difficulty}"
+    }}
+  ]
+}}
 
-Return ONLY the JSON array."""
+Return ONLY the JSON object."""
 
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": "gpt-4o-mini",
-            "messages": [{"role": "user", "content": prompt}],
-            "max_completion_tokens": 3000,
-            "temperature": 1,
-        }
+        # JSON mode only yields objects, hence {"questions": [...]} rather than a bare array.
+        result = avatar_llm.chat(
+            QUIZ_MODEL,
+            user_prompt=prompt,
+            max_tokens=3000,
+            temperature=1,
+            force_json=True,
+            timeout=60,
+            fallback_model=QUIZ_FALLBACK_MODEL,
+            trace_name="generate-quiz-questions",
+        )
+        if not result.ok:
+            logger.warning(f"[QuizEngine] LLM generation failed ({QUIZ_MODEL}): {(result.error or '')[:300]}")
+        data = avatar_llm.parse_json(result.text) or {}
+        questions = [q for q in data.get("questions") or [] if isinstance(q, dict)]
+        if questions:
+            # Add question IDs
+            for q in questions:
+                q_id = hashlib.md5(q.get("question", "").encode()).hexdigest()[:12]
+                q["question_id"] = q_id
 
-        try:
-            resp = traced_post("generate-quiz-questions",
-                "https://api.openai.com/v1/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=60,
-            )
-            if resp.ok:
-                content = resp.json()["choices"][0]["message"]["content"].strip()
-                if content.startswith("```"):
-                    content = content.split("```")[1]
-                    if content.startswith("json"):
-                        content = content[4:]
-                questions = json.loads(content)
-
-                # Add question IDs
-                for q in questions:
-                    q_id = hashlib.md5(q.get("question", "").encode()).hexdigest()[:12]
-                    q["question_id"] = q_id
-
-                # Filter out previously seen questions
-                fresh = [q for q in questions if q["question_id"] not in exclude_ids]
-                return fresh[:num_questions]
-        except Exception as e:
-            logger.warning(f"[QuizEngine] LLM generation failed: {e}")
+            # Filter out previously seen questions
+            fresh = [q for q in questions if q["question_id"] not in exclude_ids]
+            return fresh[:num_questions]
+        if result.ok:
+            logger.warning(f"[QuizEngine] LLM returned no usable questions ({len(result.text)} chars)")
 
         # Fallback to enriched.json
         return self._fallback_from_enriched(

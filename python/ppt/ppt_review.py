@@ -5,53 +5,57 @@ Given a slide's current content and the chapter's authoritative textbook context
 judge the slide's CONTENT — accuracy, completeness, clarity — and suggest concise bullets the
 student can present. Design/fonts are out of scope here (that's the heuristic path).
 
-Matches the repo's LLM convention (seminar_engine._call_llm): POST to OpenAI chat completions
-with OPENAI_API_KEY_TEXT / OPENAI_API_KEY, gpt-4o-mini with a gpt-4o fallback, JSON output.
-Degrades gracefully: no API key or a failed call → severity "good" with a note (never blocks).
+Matches the repo's LLM convention (seminar_engine._complete): one call through avatar_llm,
+which routes gemini-* straight to Google. Degrades gracefully: no API key or a failed call
+→ severity "good" with a note (never blocks).
 
 See SEMINAR_PPT_AUTOMATION_PLAN.md §2b / §6 (M2).
 """
 
-import json
 import os
 import re
 from typing import Any, Dict, List, Optional
 
-import requests
-from langfuse_utils import traced_post
+import avatar_llm
 from logger import get_logger
 
 logger = get_logger(__name__)
 
-REVIEW_MODEL = "gpt-4o-mini"
-REVIEW_FALLBACK_MODEL = "gpt-4o"
+# Pre-migration: POSTed to api.openai.com with OPENAI_API_KEY_TEXT / OPENAI_API_KEY.
+# REVIEW_MODEL = "gpt-4o-mini"
+# REVIEW_FALLBACK_MODEL = "gpt-4o"
+# Never OpenAI: that key has no credits (429 insufficient_quota, which the old helper
+# swallowed into a bland "(AI content review unavailable.)"). avatar_llm routes
+# gemini-* to Google direct. Every PPT brain call -- slide review, the intent router
+# in ppt_source_router, image queries, design guidance -- comes through _call_llm_json.
+REVIEW_MODEL = os.getenv("PPT_REVIEW_MODEL", "gemini-3.6-flash")
+REVIEW_FALLBACK_MODEL = os.getenv("PPT_REVIEW_FALLBACK_MODEL", "meta-llama/llama-4-scout")
 REVIEW_TIMEOUT = 60
 
 
-def _call_llm_json(messages: List[Dict[str, str]], temperature: float = 0.2):
-    api_key = os.environ.get("OPENAI_API_KEY_TEXT") or os.environ.get("OPENAI_API_KEY")
-    if not api_key:
+def _call_llm_json(messages: List[Dict[str, str]], temperature: float = 0.2,
+                   trace_name: str = "review-slides"):
+    """One JSON-mode completion through avatar_llm, parsed to a dict. None on any failure.
+
+    The reason for a failure is now LOGGED rather than swallowed: the old helper
+    returned None on a non-OK response without saying why, so an exhausted API key
+    looked identical to a model that simply had nothing to add.
+    """
+    result = avatar_llm.chat(
+        REVIEW_MODEL,
+        messages=messages,
+        max_tokens=1024,
+        temperature=temperature,
+        force_json=True,
+        timeout=REVIEW_TIMEOUT,
+        fallback_model=REVIEW_FALLBACK_MODEL,
+        trace_name=trace_name,
+    )
+    if not result.ok:
+        logger.error(f"[ppt_review] LLM call failed ({REVIEW_MODEL}): "
+                     f"{(result.error or '')[:300]}")
         return None
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    payload = {
-        "model": REVIEW_MODEL,
-        "messages": messages,
-        "temperature": temperature,
-        "max_completion_tokens": 1024,
-        "response_format": {"type": "json_object"},
-    }
-    try:
-        resp = traced_post("review-slides", "https://api.openai.com/v1/chat/completions",
-                             headers=headers, json=payload, timeout=REVIEW_TIMEOUT)
-        if not resp.ok:
-            payload["model"] = REVIEW_FALLBACK_MODEL
-            resp = traced_post("review-slides", "https://api.openai.com/v1/chat/completions",
-                                 headers=headers, json=payload, timeout=REVIEW_TIMEOUT)
-        if resp.ok:
-            return json.loads(resp.json()["choices"][0]["message"]["content"])
-    except Exception as e:
-        logger.error(f"[ppt_review] LLM call failed: {e}")
-    return None
+    return avatar_llm.parse_json(result.text)
 
 
 def _readable_slide_text(slide_content: Dict[str, Any]) -> str:
@@ -752,6 +756,13 @@ Return JSON: {{"query": "2-5 word image subject grounded in the slide content"}}
 Rules:
 - Describe the VISUAL that best fits THIS slide's topic (e.g. "vegetative propagation",
   "plant reproduction diagram", "human digestive system").
+- Name something a camera or a textbook diagram actually SHOWS: a real object, organism,
+  place or piece of apparatus, a reaction you can see happening, or a standard LABELLED
+  diagram. Good: "litmus paper colour change", "pH scale colour chart", "zinc granules in
+  dilute acid", "human heart labelled diagram".
+- Never a bare topic or activity word such as "acid base chemistry experiment",
+  "chemical properties" or "science concept": searches for those return decorative stock
+  photos and posters, which are rejected because they teach nothing.
 - If the student named a specific subject, prefer it; otherwise use the slide's main topic.
 - No words like slide, image, picture, presentation, deck, design."""
 
@@ -762,6 +773,63 @@ Rules:
     if not result:
         return ""
     return _strip_md(result.get("query", ""))
+
+
+def llm_image_queries(student_msg: str, slide_title: str, slide_text: str,
+                      unit_title: str, count: int = 3) -> List[str]:
+    """Several DIFFERENT picturable image-search queries for one slide.
+
+    One query is one roll of the dice. llm_image_query kept producing a generic
+    "acid base reaction experiment" (despite a rule against it), and a generic query
+    returns decorative stock photos and university-level structures: 14 of 14
+    rejected, zero pictures. Asking for several concrete, distinct subjects -
+    "litmus paper colour change", "pH scale colour chart", "zinc granules in dilute
+    acid" - gives the search several shots, and the picker judges the best
+    candidates of all of them within the same check budget.
+
+    Returns up to ``count`` queries, the most important first; [] on failure (the
+    caller then falls back to llm_image_query).
+    """
+    system = (
+        "You plan image searches for a school student's presentation slide. Each query "
+        "must name something a camera or a textbook diagram actually SHOWS. Respond in "
+        "strict JSON."
+    )
+    user = f"""Chapter: {unit_title or '(unknown)'}
+Slide title: {slide_title or '(none)'}
+Slide content:
+{(slide_text or '(empty)')[:600]}
+Student request: "{student_msg or '(none)'}"
+
+Return JSON: {{"queries": ["...", "...", "..."]}} with exactly {count} queries.
+
+Rules:
+- Each query is 2-5 words and names ONE concrete, photographable or diagrammable
+  subject from THIS slide's topic: a real object, substance, organism, place, piece of
+  apparatus, a reaction you can see happening, or a standard LABELLED diagram.
+  Good: "litmus paper colour change", "pH scale colour chart", "zinc granules in
+  dilute acid", "universal indicator colours", "human heart labelled diagram".
+- The queries must show DIFFERENT things, so the student gets a real choice - not
+  three wordings of one picture.
+- NEVER a generic topic or activity phrase. These are forbidden because they return
+  decorative stock photos: "acid base reaction experiment", "chemistry experiment",
+  "chemical properties", "science lab", "science concept".
+- Stay at the level of a school textbook - no university-level structures or graphs.
+- If the student named a specific subject, make that the FIRST query.
+- No words like slide, image, picture, presentation, deck, design."""
+
+    result = _call_llm_json([
+        {"role": "system", "content": system},
+        {"role": "user", "content": user},
+    ], temperature=0.3, trace_name="image-queries")
+    if not result:
+        return []
+    queries: List[str] = []
+    for q in result.get("queries") or []:
+        q = _strip_md(str(q or "")).strip()
+        if q and q.lower() not in {x.lower() for x in queries}:
+            queries.append(q)
+    return queries[:count]
 
 
 def llm_suggest_image(slide_content: Dict[str, Any], unit_title: str) -> Optional[str]:

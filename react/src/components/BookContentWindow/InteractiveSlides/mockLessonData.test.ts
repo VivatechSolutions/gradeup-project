@@ -9,6 +9,7 @@ describe("generateLessonFromBackendResponse", () => {
       success: true,
       section_title: "Resources",
       suggested_questions_by_segment: {
+        seg_001: ["Can you explain the first idea?"],
         seg_1: ["Why is this useful?"],
       },
       enrichment: {
@@ -52,15 +53,21 @@ describe("generateLessonFromBackendResponse", () => {
     });
 
     expect(lesson).not.toBeNull();
-    const teachingSlide = lesson!.slides.find((slide) => slide.segmentId === "seg_1");
+    const explanationSlide = lesson!.slides.find((slide) => slide.phase === "explanation");
+    const explanationSegments = explanationSlide?.segments || [];
+    expect(explanationSegments.map((slide) => slide.segmentId)).toEqual(["seg_1", "seg_mcq"]);
+    const teachingSlide = explanationSegments.find((slide) => slide.segmentId === "seg_1");
     expect(teachingSlide?.description).not.toContain(imageUrl);
     expect(teachingSlide?.images?.main).toBe(imageUrl);
     expect(teachingSlide?.suggestedQuestions).toEqual(["Why is this useful?"]);
 
-    const mcqSlide = lesson!.slides.find((slide) => slide.segmentId === "seg_mcq");
+    const mcqSlide = explanationSegments.find((slide) => slide.segmentId === "seg_mcq");
     expect(mcqSlide?.options?.[0].imageUrl).toBe("option-a.jpg");
     expect(mcqSlide?.resolutions?.B.text).toBe("Correct answer.");
     expect(mcqSlide?.resolutions?.B.audio?.male).toBe("b.mp3");
+    expect(mcqSlide?.suggestedQuestions).toEqual(["Can you explain the first idea?"]);
+    expect(lesson!.slides.filter((slide) => slide.phase === "explanation")).toHaveLength(1);
+    expect(lesson!.slides.some((slide) => slide.id === "backend-concept-overview")).toBe(false);
 
     expect(lesson!.slides.some((slide) => slide.phase === "challenge_lab")).toBe(true);
   });

@@ -31,13 +31,14 @@ export const RealWorldSlide: React.FC<RealWorldSlideProps> = ({
       {/* Scenario Hero Layout: Spacecraft visual + Explanation card */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-stretch">
         {/* Left: Astronaut in space visual */}
-        <div className="md:col-span-8">
+        <div className="min-w-0 md:col-span-8">
           <PlaceholderImage
             src={slide.images?.main}
             category="astronaut-space"
             alt="Astronaut floating freely inside spacecraft"
             aspectRatio="16/9"
-            className="h-full min-h-[220px] shadow-lg border-2 border-slate-200/80 dark:border-white/10"
+            className="w-full max-w-full shadow-lg border-2 border-slate-200/80 dark:border-white/10 bg-white dark:bg-white/5"
+            imageClassName="object-contain"
           />
           {slide.images?.caption && (
             <p className="mt-2 rounded-xl bg-slate-50/80 px-3 py-2 text-xs font-bold leading-relaxed text-slate-600 dark:bg-white/5 dark:text-slate-300">
@@ -47,7 +48,7 @@ export const RealWorldSlide: React.FC<RealWorldSlideProps> = ({
         </div>
 
         {/* Right: Scenario Explanation Card */}
-        <div className="md:col-span-4 p-5 rounded-2xl bg-white dark:bg-[#151f3e] border border-slate-200/90 dark:border-white/10 shadow-sm flex flex-col justify-between">
+        <div className="min-w-0 md:col-span-4 p-5 rounded-2xl bg-white dark:bg-[#151f3e] border border-slate-200/90 dark:border-white/10 shadow-sm flex flex-col justify-between">
           <p className="text-xs md:text-sm font-semibold text-slate-700 dark:text-slate-300 leading-relaxed">
             {slide.description ||
               "There's no support force opposing their orbital trajectory, so they and the spacecraft continuously move forward together in the same state of motion."}

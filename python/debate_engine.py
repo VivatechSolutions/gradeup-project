@@ -19,17 +19,22 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
 
-import requests
-from langfuse_utils import traced_post
+from dotenv import load_dotenv
+
+import avatar_llm
 from langfuse_utils import with_student_context
 from logger import get_logger
 
+load_dotenv()
 logger = get_logger(__name__)
 
 DEBATE_DATA_DIR = Path("debate_data")
-DEBATE_MODEL = "gpt-4o-mini"
-DEBATE_FALLBACK_MODEL = "gpt-4o"
+# Never OpenAI: that key has no credits, and every call came back as the canned
+# "I'm having trouble" text. avatar_llm routes gemini-* to Google direct.
+DEBATE_MODEL = os.getenv("DEBATE_MODEL", "gemini-3.6-flash")
+DEBATE_FALLBACK_MODEL = os.getenv("DEBATE_FALLBACK_MODEL", "meta-llama/llama-4-scout")
 DEBATE_TIMEOUT = 90
+DEBATE_UNAVAILABLE_TEXT = "I'm having trouble right now. Please try again."
 MIN_TURNS_TO_END = 0
 
 
@@ -93,65 +98,33 @@ class DebateEngine:
         seed = f"{candidate_id}_{datetime.now().isoformat()}_{time.time()}"
         return hashlib.md5(seed.encode()).hexdigest()[:16]
 
-    def _call_llm(self, messages: List[Dict], temperature: float = 0.8) -> str:
-        """Call OpenAI LLM with messages."""
-        api_key = os.environ.get("OPENAI_API_KEY_TEXT") or os.environ.get(
-            "OPENAI_API_KEY"
+    def _complete(self, messages: List[Dict], temperature: float, *,
+                  force_json: bool, trace_name: str) -> Optional[str]:
+        """One completion through avatar_llm. None on any failure."""
+        result = avatar_llm.chat(
+            DEBATE_MODEL,
+            messages=messages,
+            max_tokens=2048,
+            temperature=temperature,
+            force_json=force_json,
+            timeout=DEBATE_TIMEOUT,
+            fallback_model=DEBATE_FALLBACK_MODEL,
+            trace_name=trace_name,
         )
-        if not api_key:
-            return "AI Debate engine is not configured. Please contact administrator."
+        if not result.ok:
+            logger.error(f"[DebateEngine] LLM call failed ({DEBATE_MODEL}): {(result.error or '')[:300]}")
+            return None
+        return result.text
 
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": DEBATE_MODEL,
-            "messages": messages,
-            "max_completion_tokens": 2048,
-            "temperature": temperature,
-        }
-
-        try:
-            resp = traced_post("debate-turn",
-                "https://api.openai.com/v1/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=DEBATE_TIMEOUT,
-            )
-            if not resp.ok:
-                payload["model"] = DEBATE_FALLBACK_MODEL
-                resp = traced_post("debate-turn",
-                    "https://api.openai.com/v1/chat/completions",
-                    headers=headers,
-                    json=payload,
-                    timeout=DEBATE_TIMEOUT,
-                )
-            if resp.ok:
-                return resp.json()["choices"][0]["message"]["content"].strip()
-            else:
-                logger.error(f"[DebateEngine] API error: {resp.status_code}")
-                return "I'm having trouble right now. Please try again."
-        except Exception as e:
-            logger.error(f"[DebateEngine] Error: {e}")
-            return "Something went wrong. Please try again."
+    def _call_llm(self, messages: List[Dict], temperature: float = 0.8) -> str:
+        """A prose debate turn; the canned apology when the model is unavailable."""
+        text = self._complete(messages, temperature, force_json=False, trace_name="debate-turn")
+        return text or DEBATE_UNAVAILABLE_TEXT
 
     def _call_llm_json(self, messages: List[Dict], temperature: float = 0.3) -> Optional[Dict]:
-        """Call LLM and parse the response as JSON."""
-        raw = self._call_llm(messages, temperature)
-        try:
-            # Try to extract JSON from the response
-            if raw.startswith("```"):
-                raw = raw.split("```")[1]
-                if raw.startswith("json"):
-                    raw = raw[4:]
-            start = raw.find("{")
-            end = raw.rfind("}")
-            if start != -1 and end != -1:
-                return json.loads(raw[start : end + 1])
-        except Exception:
-            pass
-        return None
+        """A JSON-mode completion parsed to a dict, or None."""
+        raw = self._complete(messages, temperature, force_json=True, trace_name="debate-score")
+        return avatar_llm.parse_json(raw)
 
     # ── System Prompts ────────────────────────────────────────────────────────
 
@@ -171,6 +144,16 @@ class DebateEngine:
 You are debating with {candidate_name} on the topic: "{topic}" from {subject}, Unit {unit_number}.{stance_str}
 You take the OPPOSING stance to challenge the student's thinking. Use Socratic questioning.
 
+## HOW TO TALK — SIMPLE WORDS
+- Write for a school student aged 12-15: simple, everyday words, one idea per sentence, most
+  sentences 15 words or fewer.
+- Pick the common word over the textbook word ("harm to the soil", not "land degradation").
+  If you must use a textbook term, say what it means in plain words right after it
+  (e.g. "sustainable development — using resources so enough is left for the future").
+- Only use facts that are in the textbook context. Name a person (e.g. Gandhiji) ONLY to quote
+  their exact words from the context, in quotation marks — never describe what they "warned" or
+  "believed" in your own words, and never stretch a quote to fit your argument.
+
 ## DEBATE RULES
 1. In each response, COUNTER the student's argument with evidence from the textbook.
 2. Ask probing questions that push the student to think deeper.
@@ -178,7 +161,11 @@ You take the OPPOSING stance to challenge the student's thinking. Use Socratic q
    "That's an interesting point, but let's stay focused on our debate topic: {topic}. How would you counter..."
 4. NEVER agree too easily — always challenge, even if the student is correct. Play devil's advocate.
 5. Use textbook facts from the context below to strengthen your arguments.
-6. Keep your responses concise but substantive (3-5 sentences max).
+6. Explain in detail, then argue. Each reply has three parts (6-9 short sentences in all, no labels):
+   - Explain: the idea behind the student's point and how it connects to "{topic}" — use a fact from
+     the textbook context and one everyday example the student can picture.
+   - Counter: your opposing argument, and the reason behind it.
+   - Ask: one clear question that makes the student think deeper.
 
 ## CONTENT SAFETY — ABSOLUTE ZERO TOLERANCE
 - NEVER produce 18+, sexual, violent, harmful, or abusive content.
@@ -241,7 +228,7 @@ Score each criterion from 0 to 25 (total 100). Use the anchoring scale below:
 - DO NOT give sympathy scores. A student who participates but shows ZERO knowledge deserves 0-5 in textbook_knowledge.
 - "Willingness to participate" or "creativity" do NOT count as academic strengths if the content is completely wrong or off-topic.
 
-Also provide:
+Also provide (write every text field in simple words a school student understands):
 - **overall_feedback**: 2-3 sentences of overall assessment
 - **strengths**: List of 2-3 specific ACADEMIC strengths shown (NOT things like "creative thinking" or "willingness to try" if student was off-topic)
 - **improvements**: List of 2-3 specific areas for improvement
@@ -359,15 +346,22 @@ Return ONLY valid JSON:
             subject, unit_number, topic, candidate_name, rag_context, student_stance
         )
 
+        # Both greetings explain the topic before the debate starts, in simple words.
+        topic_explainer = (
+            "Then explain the topic in simple words: what it means, the key idea from the textbook "
+            "behind it, and one everyday example (3-4 short sentences)."
+        )
         if student_stance:
             greeting_prompt = f"""Start the debate session. Greet {candidate_name}, introduce the debate topic "{topic}" from {subject} Unit {unit_number}.
+{topic_explainer}
 The student has selected the following stance/argument: "{student_stance}".
-Briefly acknowledge their stance, explain your opposing stance, and invite them to present their opening argument.
-Keep it engaging and under 5 sentences."""
+Acknowledge their stance, explain your opposing stance with one reason, and invite them to present their opening argument.
+Keep it engaging, about 6-8 short sentences."""
         else:
             greeting_prompt = f"""Start the debate session. Greet {candidate_name}, introduce the debate topic "{topic}" from {subject} Unit {unit_number}.
-Briefly set up the debate — explain your stance (you take the opposing side) and invite the student to present their opening argument.
-Keep it engaging and under 5 sentences."""
+{topic_explainer}
+Then set up the debate — explain your stance (you take the opposing side) with one reason, and invite the student to present their opening argument.
+Keep it engaging, about 6-8 short sentences."""
 
 
         ai_greeting = self._call_llm([

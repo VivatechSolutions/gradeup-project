@@ -32,14 +32,17 @@ export const ThinkSlide: React.FC<ThinkSlideProps> = ({
       </h2>
 
       {slide.images?.main && (
-        <PlaceholderImage
-          src={slide.images.main}
-          category="general-science"
-          alt={slide.images.caption || slide.question || slide.title}
-          aspectRatio="16/9"
-          badge="Question visual"
-          className="max-h-[260px]"
-        />
+        <div className="w-full max-w-md self-center">
+          <PlaceholderImage
+            src={slide.images.main}
+            category="general-science"
+            alt={slide.images.caption || slide.question || slide.title}
+            aspectRatio="16/9"
+            badge="Question visual"
+            className="max-h-[190px] bg-white dark:bg-white/5"
+            imageClassName="object-contain"
+          />
+        </div>
       )}
 
       {/* Interactive Multiple Choice Option Cards */}
@@ -83,7 +86,7 @@ export const ThinkSlide: React.FC<ThinkSlideProps> = ({
                   <img
                     src={option.imageUrl}
                     alt=""
-                    className="h-14 w-20 shrink-0 rounded-lg border border-slate-200 object-cover dark:border-white/10"
+                    className="h-10 w-14 shrink-0 rounded-md border border-slate-200 bg-white object-contain dark:border-white/10 dark:bg-white/5"
                   />
                 )}
                 <span className="min-w-0 text-sm md:text-base font-bold tracking-tight">
@@ -125,7 +128,7 @@ export const ThinkSlide: React.FC<ThinkSlideProps> = ({
             <img
               src={selectedResolution.imageUrl}
               alt="Answer explanation"
-              className="h-28 w-full rounded-xl object-cover md:w-44"
+              className="h-24 w-full rounded-xl bg-white object-contain md:w-36 dark:bg-white/5"
             />
           )}
         </motion.div>

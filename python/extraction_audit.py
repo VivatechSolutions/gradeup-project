@@ -19,7 +19,7 @@ Criteria (all must hold):
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, fields
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from logger import get_logger
@@ -229,13 +229,20 @@ class AuditFailure:
     # over, so id and title cannot say WHICH box a failure means - a repair
     # that looked one up by title overwrote the wrong activity's content.
     content_head: str = ""
+    # The failing section object itself, for the repair to fill in place. An
+    # English unit prints "Glossary" once per reading and its sections carry no
+    # ids, so an EMPTY section cannot be found again by id or title either: the
+    # repair filled the first Glossary (already full) every pass, the empty one
+    # stayed empty, and the gate rejected the unit. Not serialized.
+    section_ref: Any = field(default=None, repr=False, compare=False)
 
     @property
     def needs_llm(self) -> bool:
         return self.kind in _NEEDS_LLM
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        return {f.name: getattr(self, f.name) for f in fields(self)
+                if f.name != "section_ref"}
 
 
 @dataclass
@@ -306,6 +313,98 @@ def _is_empty(sec: Dict[str, Any]) -> bool:
     if any(sec.get(k) for k in (*_CHILD_KEYS, "sub_items")):
         return False
     return _section_is_empty(sec)
+
+
+def _holds_source_body(sec: Dict[str, Any], body: str) -> bool:
+    """The section already carries every word the book prints beneath it.
+
+    `_is_empty` reads a short, word-poor body as empty, and some headings print
+    no more than that: TN Class 10 English prints "Parts of Speech." over the
+    single line "Read the following sentences." (29 chars, 4 words). A section
+    holding exactly that line is complete, yet it was failed as empty, the
+    repair re-extracted the same line, and the gate rejected the unit after the
+    loop stopped making progress. Nothing can be added that the book never
+    printed."""
+    from auto_schema_extractor import _IMAGE_REF_RE
+    want = _norm_key(_IMAGE_REF_RE.sub(" ", body))
+    have = _norm_key(_IMAGE_REF_RE.sub(" ", " ".join(
+        [str(sec.get("content") or "")]
+        + [str(item.get("content") or "") for item in (sec.get("sub_items") or [])
+           if isinstance(item, dict)])))
+    return bool(want) and want in have
+
+
+def _place_sections(
+    nodes: List[Dict[str, Any]],
+    spans: List[Tuple[str, str, int, int]],
+    source_md: str,
+) -> Dict[int, Tuple[int, int]]:
+    """The source span each section stands for, keyed by id(section).
+
+    A section is placed by its number, else by its title. A title the book
+    prints more than once ("Glossary" and "About the author" once per reading
+    in an English unit, "Activity" all through a Science chapter) names several
+    spans, and mapping it to the first one made every later copy look like it
+    belonged there: an empty poem Glossary was re-extracted from the prose
+    Glossary, and correctly ordered copies were reported out of order. Such a
+    section is placed where its own text sits in the book; one with no text to
+    find takes the first unclaimed copy after the section placed before it.
+    """
+    from auto_schema_extractor import _SECNUM, _locate_text
+
+    by_number = {n: (s, e) for n, _t, s, e in spans if n}
+    copies: Dict[str, List[Tuple[int, int]]] = {}
+    for _n, t, s, e in spans:
+        copies.setdefault(_norm_key(t), []).append((s, e))
+
+    def _key(sec: Dict[str, Any]) -> str:
+        return _norm_key(re.sub(r'^\s*' + _SECNUM + r'\s*', '', str(sec.get("title") or "")))
+
+    placed: Dict[int, Tuple[int, int]] = {}
+    claimed: Dict[str, Set[int]] = {}
+    pending: List[Dict[str, Any]] = []
+    for sec in nodes:
+        sid = str(sec.get("id") or "").strip()
+        if sid in by_number:
+            placed[id(sec)] = by_number[sid]
+            continue
+        found = copies.get(_key(sec))
+        if not found:
+            continue
+        if len(found) == 1:
+            placed[id(sec)] = found[0]
+            continue
+        pos = _locate_text(str(sec.get("content") or ""), source_md)
+        hit = next((i for i, (s, e) in enumerate(found) if s <= pos < e), None) \
+            if pos is not None else None
+        if hit is None:
+            pending.append(sec)
+            continue
+        placed[id(sec)] = found[hit]
+        claimed.setdefault(_key(sec), set()).add(hit)
+
+    waiting = {id(sec) for sec in pending}
+    cursor = 0
+    for sec in nodes:
+        if id(sec) in placed:
+            cursor = placed[id(sec)][0]
+            continue
+        if id(sec) not in waiting:
+            continue
+        key = _key(sec)
+        found = copies[key]
+        taken = claimed.setdefault(key, set())
+        free = [i for i in range(len(found)) if i not in taken]
+        pick = next((i for i in free if found[i][0] >= cursor), None)
+        if pick is None:
+            # Every copy after it is claimed: a free one earlier in the book,
+            # else (an extra copy) the one nearest after the section before it.
+            pick = free[0] if free else next(
+                (i for i, (s, _e) in enumerate(found) if s >= cursor), len(found) - 1)
+        taken.add(pick)
+        placed[id(sec)] = found[pick]
+        cursor = found[pick][0]
+    return placed
 
 
 # ── source facts shared with the schema validator ─────────────────────────────
@@ -597,17 +696,14 @@ def audit_extraction(
             ))
 
     # ── 2. no empty sections ─────────────────────────────────────────────────
-    span_by_number = {n: (s, e) for n, _t, s, e in spans if n}
-    span_by_title = {}
-    for n, t, s, e in spans:
-        span_by_title.setdefault(_norm_key(t), (s, e))
+    placed = _place_sections(nodes, spans, source_md or "")
 
     for sec in nodes:
         if not _is_empty(sec):
             continue
         sid = str(sec.get("id") or "").strip()
         title = str(sec.get("title") or "").strip()
-        span = span_by_number.get(sid) or span_by_title.get(_norm_key(title))
+        span = placed.get(id(sec))
         # An empty section is only a content-loss FAILURE when the book actually
         # prints prose under it. Structural furniture — a chapter-number heading,
         # a QR/ICT box, an author portrait caption — has no body to extract, so
@@ -618,6 +714,8 @@ def audit_extraction(
         source_body = source_md[span[0]:span[1]].strip() if span else ""
         if len(source_body) < _MIN_SECTION_BODY:
             continue
+        if _holds_source_body(sec, source_body):
+            continue
         failures.append(AuditFailure(
             kind=EMPTY_SECTION,
             detail="section carries no content anywhere",
@@ -625,6 +723,7 @@ def audit_extraction(
             title=title,
             span_start=span[0] if span else None,
             span_end=span[1] if span else None,
+            section_ref=sec,
         ))
 
     # ── 2b. no publisher colophon masquerading as content ────────────────────
@@ -760,23 +859,13 @@ def audit_extraction(
     # where it does not. Keying on numbers alone made this check a no-op for
     # every unnumbered book — a Social Science chapter has zero numbered
     # headings, so nothing was ever compared and out_of_order could not be
-    # reported at all, whatever order the sections were actually in.
-    position = {n: s for n, _t, s, _e in spans if n}
-    position_by_title: Dict[str, int] = {}
-    for _n, t, s, _e in spans:
-        position_by_title.setdefault(_norm_key(t), s)
-
-    def _source_pos(sec: Dict[str, Any]) -> Optional[int]:
-        sid = str(sec.get("id") or "").strip()
-        if sid in position:
-            return position[sid]
-        title = str(sec.get("title") or "")
-        key = _norm_key(re.sub(r'^\s*' + _SECNUM + r'\s*', '', title))
-        return position_by_title.get(key)
-
+    # reported at all, whatever order the sections were actually in. A title
+    # printed more than once is placed at ITS copy (_place_sections): mapping
+    # every "Glossary" to the first one reported the poem's Glossary as out of
+    # order, and the repair's re-sort then moved it into the prose.
     ordered: List[Tuple[str, int]] = []
     for sec in sections:
-        pos = _source_pos(sec)
+        pos = placed[id(sec)][0] if id(sec) in placed else None
         if pos is not None:
             label = (str(sec.get("id") or "").strip()
                      or str(sec.get("title") or "")[:40])
@@ -797,7 +886,7 @@ def audit_extraction(
     # under "Sources". Order alone cannot see this: the top level stayed
     # perfectly ascending while the tree underneath was wrong.
     def _is_source_heading(sec: Dict[str, Any]) -> bool:
-        return _source_pos(sec) is not None
+        return id(sec) in placed
 
     for sec in nodes:
         kids = [k for key in _CHILD_KEYS for k in (sec.get(key) or [])
