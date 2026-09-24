@@ -69,6 +69,7 @@ def _retrieve_rag_context(
     unit_number: Optional[int] = None,
     limit: int = HIGHLIGHT_RAG_TOP_K,
     term: Optional[Any] = None,
+    part: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Retrieve relevant chunks from Qdrant for the highlighted text."""
     try:
@@ -81,6 +82,7 @@ def _retrieve_rag_context(
             unit_number=unit_number,
             limit=limit,
             term=term,
+            part=part,
         )
     except ImportError:
         logger.warning("ai_tutor module not available for RAG retrieval")
@@ -494,6 +496,7 @@ def highlight_explain(
     subject: str = "",
     unit_number: Optional[int] = None,
     term: Optional[Any] = None,
+    part: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Explain highlighted text using RAG + LLM + TTS.
@@ -533,6 +536,7 @@ def highlight_explain(
         subject=subject,
         unit_number=unit_number,
         term=term,
+        part=part,
     )
     context_text = _format_context(chunks)
 
@@ -609,6 +613,7 @@ def highlight_summarize(
     subject: str = "",
     unit_number: Optional[int] = None,
     term: Optional[Any] = None,
+    part: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Summarize highlighted text using RAG + LLM + TTS.
@@ -644,6 +649,7 @@ def highlight_summarize(
         subject=subject,
         unit_number=unit_number,
         term=term,
+        part=part,
     )
     context_text = _format_context(chunks)
 
@@ -721,6 +727,7 @@ def highlight_ask_ai(
     subject: str = "",
     unit_number: Optional[int] = None,
     term: Optional[Any] = None,
+    part: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Chat with AI about highlighted text using RAG.
@@ -747,6 +754,7 @@ def highlight_ask_ai(
         subject=subject,
         unit_number=unit_number,
         term=term,
+        part=part,
     )
     context_text = _format_context(chunks)
 

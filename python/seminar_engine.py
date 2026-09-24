@@ -633,6 +633,7 @@ Return ONLY valid JSON in this format:
         session_mode: str = "main",
         uploaded_content: Optional[str] = None,
         term: Optional[Any] = None,
+        part: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Start a new seminar session.
@@ -668,7 +669,7 @@ Return ONLY valid JSON in this format:
         # Get RAG context and validate topic
         chunks = retrieve_context(
             query=current_topic, subject=subject, unit_number=unit_number,
-            board=board, class_number=class_number, limit=5, term=term
+            board=board, class_number=class_number, limit=5, term=term, part=part,
         )
         rag_context = _format_context(chunks)
 

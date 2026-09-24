@@ -27,7 +27,6 @@ logger = get_logger(__name__)
 
 load_dotenv()
 
-
 # CONFIGURATION
 
 

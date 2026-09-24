@@ -177,7 +177,6 @@ The API will be available at `http://localhost:5000`. Interactive docs at `http:
 |--------|------------------------|------------------------------------------------------|
 | POST   | `/split-pdf`           | Split a textbook PDF into unit-level PDFs            |
 | POST   | `/upload`              | Upload a PDF and run the full pipeline               |
-| POST   | `/upload-subject`      | Upload a PDF with subject-aware extraction           |
 | POST   | `/upload-agentic`      | Upload a PDF and run the LangGraph pipeline: OCR, vision pass, extraction, audit, then the six-phase avatar lesson per section (pictures + narration), debate topics, Qdrant |
 | POST   | `/process/textbooks`   | Batch-process all PDFs in the `textbooks/` directory |
 | POST   | `/ocr/{id}`            | Run OCR only on an existing document                 |
@@ -186,13 +185,16 @@ The API will be available at `http://localhost:5000`. Interactive docs at `http:
 - `file`: PDF file to split.
 - `subject`: Subject name (helps in boundary detection).
 
-#### `/upload-subject` Form Parameters
+#### `/upload-agentic` Form Parameters
 
 | Parameter             | Type        | Description                                                  |
 |-----------------------|-------------|--------------------------------------------------------------|
 | `file`                | File        | The PDF file to upload                                       |
 | `subject`             | string      | Subject name (e.g. "Science", "Mathematics", "English")      |
 | `part`                | string      | Optional: Book/part name (e.g. "History", "Civics")          |
+| `board`               | string      | Board name (e.g. "CBSE", "State Board")                      |
+| `class_name`          | string      | Optional: class 1-12 or LKG/UKG/Nursery; stored as two digits |
+| `term`                | string      | Optional: "1", "2" or "3" for term-split books; omit for CBSE/NCERT |
 | `skip_enrichment`     | boolean     | Skip enrichment step                                         |
 | `skip_qdrant`         | boolean     | Skip Qdrant upload                                           |
 | `skip_llm_refinement` | boolean     | Skip LLM verification                                        |
@@ -399,7 +401,7 @@ Key settings in `config.py`:
 
 | Setting                  | Default                    | Description                      |
 |--------------------------|----------------------------|----------------------------------|
-| `DEFAULT_OCR_MODEL`      | `mistral-ocr-latest`       | Mistral OCR model                |
+| `DEFAULT_OCR_MODEL`      | `mistral-ocr-4-1`          | Mistral OCR model (`MISTRAL_OCR_MODEL`) |
 | `ENRICHMENT_MODEL`       | `gpt-4o-mini`              | OpenAI model for enrichment      |
 | `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small`   | Embedding model for Qdrant       |
 | `SIMILARITY_THRESHOLD`   | `0.8`                      | Qdrant similarity cutoff         |

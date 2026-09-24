@@ -171,7 +171,11 @@ try:
 except ImportError:
     LLM_FIRST_AVAILABLE = False
 
-DEFAULT_MODEL = "mistral-ocr-latest"
+# Mistral OCR generation. Pinned rather than left on the "-latest" alias so an
+# upstream release cannot silently change extraction quality mid-textbook; the
+# alias resolved to this same id when it was pinned (2026-09-22). Set
+# MISTRAL_OCR_MODEL to move it - "mistral-ocr-latest" restores auto-upgrade.
+DEFAULT_MODEL = os.getenv("MISTRAL_OCR_MODEL", "mistral-ocr-4-1")
 
 
 
@@ -769,23 +773,63 @@ def _detect_low_quality_pages(markdown: str) -> List[int]:
 
 
 def _vision_reocr_pages(
-    pdf_path: Path, 
-    page_numbers: List[int], 
-    api_key: str,
-    model: str = "gpt-4o"
+    pdf_path: Path,
+    page_numbers: List[int],
+    api_key: str = "",
+    model: str = "",
 ) -> Dict[int, str]:
     """
-    Re-OCR specific pages using GPT-4o Vision.
-    
+    Re-OCR specific pages with a vision model on OpenRouter.
+
+    Runs on VISION_MODEL, through the same OpenRouter routing and
+    VISION_FALLBACK_MODELS as the image check in _extract_text_from_images.
+    This used to post to api.openai.com with gpt-4o, but the agentic pipeline
+    passes it the OpenRouter key, so every call there could only come back 401
+    and a garbled page stayed garbled.
+
     Args:
         pdf_path: Path to the PDF file
         page_numbers: 1-indexed page numbers to re-OCR
-        api_key: OpenAI API key
-        model: Vision model to use (default: gpt-4o)
-    
+        api_key: OpenRouter API key (default: OPENROUTER_API_KEY)
+        model: Vision model to use (default: VISION_MODEL)
+
     Returns:
-        Dict mapping page_number -> extracted markdown text
+        Dict mapping page_number -> extracted markdown text. A page that comes
+        back empty is left out: _patch_markdown_pages replaces the whole page,
+        so recording "" would erase the text Mistral did read.
     """
+    import httpx
+
+    results: Dict[int, str] = {}
+
+    try:
+        from config import (
+            OPENROUTER_BASE_URL, OPENROUTER_APP_NAME, OPENROUTER_APP_URL,
+            VISION_MODEL, VISION_FALLBACK_MODELS, openrouter_routing,
+        )
+        vision_url = OPENROUTER_BASE_URL
+        extra_headers = {"HTTP-Referer": OPENROUTER_APP_URL, "X-Title": OPENROUTER_APP_NAME}
+        model = model or VISION_MODEL
+        routing = openrouter_routing(model)
+        if VISION_FALLBACK_MODELS:
+            routing = {**routing,
+                       "models": [model, *[m for m in VISION_FALLBACK_MODELS if m != model]]}
+    except Exception:
+        vision_url = "https://openrouter.ai/api/v1/chat/completions"
+        extra_headers = {}
+        model = model or "qwen/qwen3-vl-235b-a22b-instruct"
+        routing = {}
+    try:
+        from auto_schema_extractor import _exclude_provider, _provider_from_error
+    except Exception:                                    # pragma: no cover
+        _exclude_provider = lambda payload, slug: payload   # noqa: E731
+        _provider_from_error = lambda resp: None            # noqa: E731
+
+    api_key = api_key or os.environ.get("OPENROUTER_API_KEY", "")
+    if not api_key:
+        logger.warning("Vision re-OCR skipped: no OPENROUTER_API_KEY")
+        return results
+
     try:
         import fitz  # PyMuPDF
         has_fitz = True
@@ -793,60 +837,49 @@ def _vision_reocr_pages(
         has_fitz = False
         try:
             import pypdfium2 as pdfium
-            has_pdfium = True
         except ImportError:
-            has_pdfium = False
             logger.error("Neither PyMuPDF (fitz) nor pypdfium2 installed. Required for Vision re-OCR.")
             logger.info("Run: pip install pymupdf  (or: pip install pypdfium2)")
             return results
 
-    import base64
-    import httpx
-    
-    results = {}
-    
     try:
-        if has_fitz:
-            doc = fitz.open(str(pdf_path))
-        else:
-            doc = pdfium.PdfDocument(str(pdf_path))
+        doc = fitz.open(str(pdf_path)) if has_fitz else pdfium.PdfDocument(str(pdf_path))
     except Exception as e:
         logger.error(f"Failed to open PDF for vision re-OCR: {e}")
         return results
-    
-    for page_num in page_numbers:
-        page_idx = page_num - 1  # 0-indexed
-        
-        try:
-            num_pages = len(doc) if has_fitz else len(doc)
-            if page_idx < 0 or page_idx >= num_pages:
-                logger.warning(f"Page {page_num} out of range (PDF has {num_pages} pages)")
+
+    max_attempts = max(1, int(os.getenv("VISION_MAX_RETRIES", "4")))
+    base_delay = float(os.getenv("VISION_RETRY_BASE_DELAY", "2"))
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        **extra_headers,
+    }
+
+    logger.info(f"Vision re-OCR: {len(page_numbers)} page(s) {page_numbers} using {model}")
+
+    # A whole page of transcription runs well past the 60s an image verdict needs.
+    with httpx.Client(timeout=180) as http_client:
+        for page_num in page_numbers:
+            page_idx = page_num - 1  # 0-indexed
+            if page_idx < 0 or page_idx >= len(doc):
+                logger.warning(f"Page {page_num} out of range (PDF has {len(doc)} pages)")
                 continue
 
-            if has_fitz:
-                # Render with PyMuPDF
-                page = doc[page_idx]
-                mat = fitz.Matrix(200 / 72, 200 / 72)  # 200 DPI
-                pix = page.get_pixmap(matrix=mat)
-                img_bytes = pix.tobytes("png")
-            else:
-                # Render with pypdfium2
-                page = doc[page_idx]
-                bitmap = page.render(scale=200/72) # scale from 72 DPI to 200 DPI
-                pil_image = bitmap.to_pil()
-                import io
-                buf = io.BytesIO()
-                pil_image.save(buf, format="PNG")
-                img_bytes = buf.getvalue()
+            try:
+                if has_fitz:
+                    pix = doc[page_idx].get_pixmap(matrix=fitz.Matrix(200 / 72, 200 / 72))  # 200 DPI
+                    img_bytes = pix.tobytes("png")
+                else:
+                    import io
+                    buf = io.BytesIO()
+                    doc[page_idx].render(scale=200 / 72).to_pil().save(buf, format="PNG")
+                    img_bytes = buf.getvalue()
+            except Exception as e:
+                logger.error(f"Vision re-OCR could not render page {page_num}: {e}")
+                continue
 
             img_b64 = base64.b64encode(img_bytes).decode("utf-8")
-            
-            # Call GPT-4o Vision
-            headers = {
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            }
-            
             payload = {
                 "model": model,
                 "messages": [
@@ -878,25 +911,54 @@ def _vision_reocr_pages(
                     }
                 ],
                 "max_tokens": 4096,
-                "temperature": 0.1
+                "temperature": 0.1,
+                **routing,
             }
-            
-            with httpx.Client(timeout=60) as http_client:
-                resp = http_client.post(
-                    "https://api.openai.com/v1/chat/completions",
-                    headers=headers,
-                    json=payload
-                )
-                resp.raise_for_status()
-                data = resp.json()
-            
-            extracted = data["choices"][0]["message"]["content"]
+
+            extracted = None
+            last_error = ""
+            for attempt in range(max_attempts):
+                if attempt:
+                    wait = base_delay * (2 ** (attempt - 1))
+                    logger.info(f"Page {page_num}: re-OCR retry {attempt + 1}/{max_attempts} after {wait:.0f}s")
+                    time.sleep(wait)
+                try:
+                    resp = http_client.post(vision_url, headers=headers, json=payload)
+                    if resp.status_code == 429:
+                        culprit = _provider_from_error(resp)
+                        if culprit:
+                            payload = _exclude_provider(payload, culprit)
+                            logger.warning(
+                                f"[Route] {culprit} is rate-limited — excluding it "
+                                f"and retrying page {page_num} on another provider"
+                            )
+                        last_error = "429 Too Many Requests"
+                        continue
+                    if resp.status_code >= 500:
+                        last_error = f"{resp.status_code} from provider"
+                        continue
+                    resp.raise_for_status()
+                    extracted = (resp.json()["choices"][0]["message"]["content"] or "").strip()
+                    break
+                except (httpx.TimeoutException, httpx.TransportError) as e:
+                    last_error = type(e).__name__               # transient — retry
+                    continue
+                except Exception as e:
+                    last_error = f"{type(e).__name__}: {e}"     # 4xx, malformed reply
+                    break
+
+            # Some models fence the whole answer despite being asked for markdown.
+            if extracted and extracted.startswith("```"):
+                extracted = re.sub(r"^```[a-zA-Z]*\s*|\s*```$", "", extracted).strip()
+
+            if not extracted:
+                logger.error(f"Vision re-OCR failed for page {page_num} "
+                             f"({last_error or 'empty reply'}) — keeping the original OCR text")
+                continue
+
             results[page_num] = extracted
             logger.info(f"Page {page_num}: Vision re-OCR extracted {len(extracted)} chars")
-            
-        except Exception as e:
-            logger.error(f"Vision re-OCR failed for page {page_num}: {e}")
-    
+
     doc.close()
     return results
 
@@ -4605,11 +4667,13 @@ def process_pdf(
     save_json(metadata_json, doc_out_dir / "metadata.json")
     logger.info(f"Saved markdown ({len(markdown):,} chars) and metadata")
     
-    # ── VISION FALLBACK: Re-OCR garbled/scrapbook pages using GPT-4o Vision ──
+    # ── VISION FALLBACK: Re-OCR garbled/scrapbook pages with VISION_MODEL ──
+    # Not gated on openai_api_key: the re-OCR runs on OpenRouter and resolves
+    # OPENROUTER_API_KEY itself. Passing the OpenAI key here would 401.
     bad_pages = _detect_low_quality_pages(markdown)
-    if bad_pages and openai_api_key:
+    if bad_pages:
         logger.warning(f"Detected {len(bad_pages)} low-quality page(s) {bad_pages} — triggering Vision re-OCR...")
-        vision_results = _vision_reocr_pages(pdf_path, bad_pages, openai_api_key)
+        vision_results = _vision_reocr_pages(pdf_path, bad_pages)
         
         if vision_results:
             # Patch the markdown with the much-better vision text

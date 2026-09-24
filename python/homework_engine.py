@@ -136,7 +136,7 @@ class HomeworkEngine:
     def _get_rag_context_for_sections(
         self, subject: str, unit_number: int, section_titles: List[str],
         term: Optional[Any] = None, board: Optional[str] = None,
-        class_number: Optional[str] = None,
+        class_number: Optional[str] = None, part: Optional[str] = None,
     ) -> str:
         """Get textbook content for weak sections from Qdrant."""
         try:
@@ -150,6 +150,7 @@ class HomeworkEngine:
                 board_filter=board,
                 class_filter=class_number,
                 term_filter=term,
+                part_filter=part,
             )
             if results:
                 return "\n---\n".join(r.get("text", "")[:600] for r in results)
@@ -458,6 +459,7 @@ Return ONLY the JSON array."""
         term: Optional[Any] = None,
         board: Optional[str] = None,
         class_number: Optional[str] = None,
+        part: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         AI assigns homework based on the student's weak areas.
@@ -531,7 +533,7 @@ Return ONLY the JSON array."""
         section_titles = [s.get("section_title", "") for s in weak_sections[:5]]
         rag_context = self._get_rag_context_for_sections(
             subject, unit_number, section_titles,
-            term=term, board=board, class_number=class_number,
+            term=term, board=board, class_number=class_number, part=part,
         )
 
         # Generate questions
@@ -564,6 +566,7 @@ Return ONLY the JSON array."""
             "board": board,
             "class_number": class_number,
             "term": term,
+            "part": part,
             "difficulty": difficulty,
             "status": "pending",
             "questions": questions,
@@ -962,6 +965,7 @@ Return ONLY the JSON array."""
                     board_filter=homework.get("board"),
                     class_filter=homework.get("class_number"),
                     term_filter=homework.get("term"),
+                    part_filter=homework.get("part"),
                 )
             except Exception as q_err:
                 logger.error(f"[HomeworkEngine] RAG retrieval failed: {q_err}")
@@ -1030,6 +1034,7 @@ Return ONLY the JSON array."""
         board: Optional[str] = None,
         class_number: Optional[str] = None,
         term: Optional[Any] = None,
+        part: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Parses a school homework sheet (via OCR image or text content) into a structured JSON
@@ -1126,6 +1131,7 @@ Return ONLY the JSON array."""
             "board": board,
             "class_number": class_number,
             "term": term,
+            "part": part,
             "difficulty": "medium",
             "status": "pending",
             "questions": questions,
@@ -1154,6 +1160,7 @@ Return ONLY the JSON array."""
         board: Optional[str] = None,
         class_number: Optional[str] = None,
         term: Optional[Any] = None,
+        part: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Executes one interactive tutoring turn.
@@ -1179,6 +1186,7 @@ Return ONLY the JSON array."""
                 board=board,
                 class_number=class_number,
                 term=term,
+                part=part,
             )
             homework_id = homework["homework_id"]
             # Clear message since the ingestion creates the first question prompt

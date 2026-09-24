@@ -26,7 +26,9 @@ seminar_chat/
 seminar_practice_data/
 practice_session/
 avatar_data/
+exam_data/
 google_student_tokens/
+ppt.sessions.db
 
 # Avatar benchmark: keep the runner and the labelled fixtures, not the runs
 bench/results/

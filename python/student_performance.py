@@ -142,7 +142,8 @@ class StudentPerformanceTracker:
             section_data.get("quiz_scores", []) +
             section_data.get("homework_scores", []) +
             section_data.get("debate_scores", []) +
-            section_data.get("seminar_scores", [])
+            section_data.get("seminar_scores", []) +
+            section_data.get("exam_scores", [])
         )
         if not all_scores:
             return 0.7  # No data → assume moderately weak
@@ -162,6 +163,7 @@ class StudentPerformanceTracker:
             all_scores.extend(sec.get("homework_scores", []))
             all_scores.extend(sec.get("debate_scores", []))
             all_scores.extend(sec.get("seminar_scores", []))
+            all_scores.extend(sec.get("exam_scores", []))
         if all_scores:
             unit_data["overall_score"] = round(sum(all_scores) / len(all_scores), 2)
 
@@ -334,6 +336,54 @@ class StudentPerformanceTracker:
         self._recalculate_unit_overall(unit_data)
         self._save(candidate_id, data)
 
+    def record_exam_score(
+        self,
+        candidate_id: str,
+        subject: str,
+        unit_number: int,
+        section_scores: Dict[str, float],
+        total_score: float,
+        points: int = 0,
+        unit_title: str = "",
+        candidate_name: str = "",
+        exam_id: str = "",
+    ) -> None:
+        """Record exam results per section (one call per unit the exam covered).
+
+        `total_score` is the whole exam's percentage, so a multi-unit exam
+        records the same value once per unit; the per-section list is what
+        drives weakness, and that IS unit-specific.
+        """
+        data = self._load(candidate_id)
+        if candidate_name:
+            data["candidate_name"] = candidate_name
+
+        unit_data = self._ensure_unit(data, subject, unit_number, unit_title)
+        unit_data["exam_count"] = unit_data.get("exam_count", 0) + 1
+
+        for section_title, score in section_scores.items():
+            sec = self._ensure_section(unit_data, section_title)
+            if "exam_scores" not in sec:
+                sec["exam_scores"] = []
+            sec["exam_scores"].append(round(score, 2))
+            sec["weakness_score"] = self._recalculate_weakness(sec)
+
+        if points > 0:
+            unit_data["total_points"] = unit_data.get("total_points", 0) + points
+            data["total_points"] = data.get("total_points", 0) + points
+            data.setdefault("points_history", []).append({
+                "type": "exam",
+                "points": points,
+                "subject": subject,
+                "unit": unit_number,
+                "score": total_score,
+                "exam_id": exam_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+
+        self._recalculate_unit_overall(unit_data)
+        self._save(candidate_id, data)
+
     def record_faq_view(
         self,
         candidate_id: str,
@@ -379,6 +429,7 @@ class StudentPerformanceTracker:
                 "homework_scores": sec.get("homework_scores", []),
                 "debate_scores": sec.get("debate_scores", []),
                 "seminar_scores": sec.get("seminar_scores", []),
+                "exam_scores": sec.get("exam_scores", []),
                 "faq_views": sec.get("faq_views", 0),
             })
 
@@ -440,6 +491,7 @@ class StudentPerformanceTracker:
                     "homework_count": unit_data.get("homework_count", 0),
                     "debate_count": unit_data.get("debate_count", 0),
                     "seminar_count": unit_data.get("seminar_count", 0),
+                    "exam_count": unit_data.get("exam_count", 0),
                     "sections_count": len(unit_data.get("sections", {})),
                 }
             result["subject"] = subj
@@ -458,6 +510,7 @@ class StudentPerformanceTracker:
         result["homework_count"] = unit_data.get("homework_count", 0)
         result["debate_count"] = unit_data.get("debate_count", 0)
         result["seminar_count"] = unit_data.get("seminar_count", 0)
+        result["exam_count"] = unit_data.get("exam_count", 0)
         result["sections"] = unit_data.get("sections", {})
         return result
 

@@ -274,6 +274,12 @@ def merge_split_english_readings(sections: List[Dict[str, Any]],
                 for key, val in (p.get("metadata") or {}).items():
                     if val and not meta.get(key):
                         meta[key] = val
+            # Where each rejoined piece began: the avatar lesson teaches the
+            # reading in parts and cuts it back at the book's own check breaks
+            # (avatar_lesson_patterns.split_reading_parts). A list, not a
+            # string, so it never folds into RAG chunk text.
+            meta["reading_breaks"] = list(meta.get("reading_breaks") or []) + [
+                re.sub(r"\s+", " ", c)[:80] for c in chunks[1:] if c]
             merged["metadata"] = meta
             if base_title and not str(merged.get("title") or "").strip():
                 merged["title"] = base_title

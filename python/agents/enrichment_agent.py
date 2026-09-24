@@ -73,7 +73,7 @@ def enrich_unit_node(state: Dict[str, Any]) -> Dict[str, Any]:
     from datetime import datetime, timezone
 
     import avatar_lesson_patterns as lesson_patterns
-    from avatar_lesson_builder import _lesson_model, build_section_lesson, upsert_section
+    from avatar_lesson_builder import _lesson_model, build_section_lesson, lesson_extras, upsert_section
 
     unit         = state["target_unit"]
     subject      = state.get("subject", "unknown")
@@ -185,7 +185,7 @@ def enrich_unit_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 enricher=orch.enricher, subject=subject, section_kind=target["section_kind"],
                 part=target["part"], unit_title=target["unit_title"], board=board,
                 class_number=class_number, unit_number=target["unit_number"] or 0,
-                covers=folded,
+                covers=folded, **lesson_extras(target),
             )
         except Exception as e:  # noqa: BLE001 - one bad section must not end the unit
             logger.exception(f"[enrich] {tag}: crashed — {e}")

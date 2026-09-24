@@ -469,18 +469,30 @@ def _title_key(section: Dict[str, Any]) -> str:
     return re.sub(r"[^a-z0-9]+", "", title.lower())
 
 
+# The required fields whose emptiness means "this section carries nothing":
+# `content` for prose, `sub_items` for an exercise, poem or glossary. Whether
+# that emptiness is content LOSS is the audit's call (see substantive_headings).
+_BODY_FIELDS = ("content", "sub_items")
+
+
 def validate_unit_schema(
     unit: Dict[str, Any],
     furniture: Optional[Set[str]] = None,
+    substantive: Optional[Set[str]] = None,
 ) -> Dict[str, Any]:
     """
     Validate all sections in a single unit.
 
     `furniture` is the set of heading keys the book prints with no body beneath
-    them (a chart title, a chapter-number line). An empty section under one of
-    those is not lost content — there was none to extract — so its "empty
-    content" failure is reported as a warning instead. Without this the
-    validator vetoed documents the audit had passed, over pie-chart captions.
+    them (a chart title, a chapter-number line); `substantive` is the set it
+    prints real text beneath (None when there is no source to consult). An
+    empty section is only lost content when its heading is in `substantive` —
+    the audit's own rule — so under a furniture heading, or a heading the book
+    does not print at all, the "empty content / empty sub_items" failure is
+    reported as a warning instead. Without this the validator vetoed documents
+    the audit had passed: over pie-chart captions (content), then over an
+    empty exercise (sub_items) that the audit, applying the same rule, had
+    passed at 60/60 headings and nothing could repair.
 
     Returns {
         unit_number, failures, warnings,
@@ -505,19 +517,28 @@ def validate_unit_schema(
 
     for sec in sections:
         f, w = validate_section_schema(sec, unit_number)
-        if f and furniture and _title_key(sec) in furniture:
+        key = _title_key(sec)
+        if key in furniture:
+            not_loss = ("the book prints nothing under this heading either "
+                        "(chart title / structural furniture)")
+        elif substantive is not None and key not in substantive:
+            not_loss = ("the book prints no such heading — an extractor stub, "
+                        "not lost text")
+        else:
+            not_loss = None
+        if f and not_loss:
+            seen_fields = set()
             for failure in f:
-                if failure.field == "content":
+                if failure.field in _BODY_FIELDS and failure.field not in seen_fields:
+                    seen_fields.add(failure.field)
                     w.append(FieldWarning(
                         unit_number=failure.unit_number,
                         section_type=failure.section_type,
                         section_id=failure.section_id,
-                        field="content",
-                        reason="Section is empty, but the book prints nothing "
-                               "under this heading either (chart title / "
-                               "structural furniture)",
+                        field=failure.field,
+                        reason=f"Section's {failure.field} is empty, but {not_loss}",
                     ))
-            f = [failure for failure in f if failure.field != "content"]
+            f = [failure for failure in f if failure.field not in _BODY_FIELDS]
         all_failures.extend(f)
         all_warnings.extend(w)
 
@@ -631,17 +652,21 @@ def run_schema_validator(
     total_sections  = 0
     sections_ok     = 0
 
-    # Which headings the book prints with nothing beneath them — the audit's
-    # own rule, so the two verdicts stop disagreeing about the same caption.
-    try:
-        from extraction_audit import furniture_headings
-        furniture = furniture_headings(content_md)
-    except Exception as e:
-        logger.warning(f"[SchemaValidator] furniture lookup unavailable: {e}")
-        furniture = set()
+    # Which headings the book prints with nothing beneath them, and which it
+    # prints real text beneath — the audit's own census, so the two verdicts
+    # stop disagreeing about the same caption or the same empty exercise.
+    furniture: Set[str] = set()
+    substantive: Optional[Set[str]] = None
+    if content_md:
+        try:
+            from extraction_audit import furniture_headings, substantive_headings
+            furniture = furniture_headings(content_md)
+            substantive = substantive_headings(content_md)
+        except Exception as e:
+            logger.warning(f"[SchemaValidator] heading census unavailable: {e}")
 
     for unit in units:
-        ur = validate_unit_schema(unit, furniture=furniture)
+        ur = validate_unit_schema(unit, furniture=furniture, substantive=substantive)
         unit_results.append(ur)
         all_failures.extend(ur["failures"])
         all_warnings.extend(ur["warnings"])

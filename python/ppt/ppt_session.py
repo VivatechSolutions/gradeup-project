@@ -7,7 +7,9 @@ thread. Start creates/connects the deck and returns its shareable link; per-edit
 summarizes the accumulated design-skill progress.
 
 Persistence: SQLite (ppt_sessions.db in the project root). Sessions survive server
-restarts. TTL is 7 days; stale sessions are cleaned up lazily on start_session calls.
+restarts. TTL is PPT_SESSION_TTL_DAYS (default 365); stale sessions are cleaned up
+lazily on start_session calls. GradeUp-editor sessions (tool="gradeup") share this
+table and add a ppt_idempotency table -- see ppt/gradeup_editor.py.
 """
 
 import hashlib
@@ -27,7 +29,10 @@ _DB_PATH = os.environ.get(
     "PPT_SESSION_DB",
     os.path.join(os.path.dirname(os.path.dirname(__file__)), "ppt_sessions.db"),
 )
-_SESSION_TTL_DAYS = 7
+# _SESSION_TTL_DAYS = 7   # pre-GradeUp-editor default
+# GradeUp-editor decks are long-lived (Node persists the deck and may reconnect by
+# deck_ref much later), so the TTL is now configurable and defaults to a year.
+_SESSION_TTL_DAYS = int(os.environ.get("PPT_SESSION_TTL_DAYS", "365"))
 
 
 @contextmanager
@@ -46,15 +51,41 @@ def _db():
         conn.close()
 
 
+# def _init_db():
+#     with _db() as conn:
+#         conn.execute("""
+#             CREATE TABLE IF NOT EXISTS ppt_sessions (
+#                 session_id     TEXT PRIMARY KEY,
+#                 student_id     TEXT NOT NULL,
+#                 data           TEXT NOT NULL,   -- JSON blob of the whole session dict
+#                 created_at     TEXT NOT NULL,
+#                 updated_at     TEXT NOT NULL
+#             )
+#         """)
+
+
 def _init_db():
     with _db() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS ppt_sessions (
-                session_id     TEXT PRIMARY KEY,
-                student_id     TEXT NOT NULL,
-                data           TEXT NOT NULL,   -- JSON blob of the whole session dict
-                created_at     TEXT NOT NULL,
-                updated_at     TEXT NOT NULL
+                session_id TEXT PRIMARY KEY,
+                student_id TEXT NOT NULL,
+                data TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+
+        # GradeUp editor: every mutating call from Node carries a request_id; the
+        # response is stored per (scope, request_id) so a retried call replays the
+        # SAME answer instead of creating a second session / proposal.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS ppt_idempotency (
+                scope TEXT NOT NULL,
+                request_id TEXT NOT NULL,
+                response TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (scope, request_id)
             )
         """)
 
@@ -209,6 +240,95 @@ def _save_session(session: Dict[str, Any]) -> None:
         conn.execute(
             "UPDATE ppt_sessions SET data = ?, updated_at = ? WHERE session_id = ?",
             (_dump(session), now, session["session_id"]),
+        )
+
+
+# ── GradeUp editor: session records + idempotency ───────────────────────────────
+# Used by ppt/gradeup_editor.py (tool="gradeup"). The Google flow keeps using
+# start_session()/_save_session() above; these are thin wrappers plus the
+# idempotency store that lets Node safely retry any mutating call.
+
+def create_session_record(session: Dict[str, Any]) -> None:
+    now = session.get("created_at") or datetime.now(timezone.utc).isoformat()
+    with _db() as conn:
+        conn.execute(
+            """
+            INSERT INTO ppt_sessions
+                (session_id, student_id, data, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                session["session_id"],
+                session["student_id"],
+                _dump(session),
+                now,
+                now,
+            ),
+        )
+
+
+def update_session_record(session: Dict[str, Any]) -> None:
+    _save_session(session)
+
+
+def find_session_by_deck_ref(
+    deck_ref: str,
+    student_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    with _db() as conn:
+        rows = conn.execute(
+            "SELECT data FROM ppt_sessions ORDER BY updated_at DESC"
+        ).fetchall()
+
+    for row in rows:
+        session = _load(row)
+        if session.get("deck_ref") != deck_ref:
+            continue
+        if student_id and session.get("student_id") != student_id:
+            continue
+        return session
+
+    return None
+
+
+def get_idempotent_response(
+    scope: str,
+    request_id: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    if not request_id:
+        return None
+
+    with _db() as conn:
+        row = conn.execute(
+            """
+            SELECT response
+            FROM ppt_idempotency
+            WHERE scope = ? AND request_id = ?
+            """,
+            (scope, request_id),
+        ).fetchone()
+
+    return json.loads(row["response"]) if row else None
+
+
+def save_idempotent_response(
+    scope: str,
+    request_id: Optional[str],
+    response: Dict[str, Any],
+) -> None:
+    if not request_id:
+        return
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    with _db() as conn:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO ppt_idempotency
+                (scope, request_id, response, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (scope, request_id, json.dumps(response, default=str), now),
         )
 
 
@@ -373,8 +493,12 @@ def end_session(session_id: str) -> Optional[Dict[str, Any]]:
     session = get_session(session_id)
     if not session:
         return None
-    session["ended_at"] = datetime.now(timezone.utc).isoformat()
-    _save_session(session)
+    # session["ended_at"] = datetime.now(timezone.utc).isoformat()
+    # _save_session(session)
+    # Idempotent: a retried /ppt/session/end must not move ended_at forward.
+    if not session.get("ended_at"):
+        session["ended_at"] = datetime.now(timezone.utc).isoformat()
+        _save_session(session)
 
     # Compute average RAG score for the summary.
     rs = session.get("rag_stats", {})

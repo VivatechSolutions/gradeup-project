@@ -178,6 +178,8 @@ Respond with ONLY a JSON object:
         class_number: Optional[str] = None,
         unit_name: str = "",
         max_participants: int = 4,
+        term: Optional[Any] = None,
+        part: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Create a new multi-student debate session.
 
@@ -197,7 +199,7 @@ Respond with ONLY a JSON object:
         # Get RAG context and validate topic
         chunks = retrieve_context(
             query=topic, subject=subject, unit_number=unit_number,
-            board=board, class_number=class_number, limit=5
+            board=board, class_number=class_number, limit=5, term=term, part=part,
         )
         rag_context = _format_context(chunks)
 

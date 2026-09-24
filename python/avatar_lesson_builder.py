@@ -27,12 +27,29 @@ structured.json, and for every section the subject pattern covers:
                             explanation marker with no picture is removed
     narration               every spoken node, in play order, via avatar_tts
 
+English readings (user request 2026-09-23) change the script and add a phase:
+
+    story / supplementary   LLM 2 teaches the reading PART BY PART - the book's
+                            own breaks (split_reading_parts), one entry per
+                            part, the book's comprehension questions covered
+                            (never asked, never stored)
+                            (READING_TEACH_PROMPT); ``explanation.parts[]``
+    story (first prose)     + a GRAMMAR phase, the next part: the unit's
+                            Grammar section, or grammar the lesson decides
+                            from its language exercises (GRAMMAR_PROMPT),
+                            written alongside the plan
+    poem                    + a SING-ALONG phase before the explanation: "Would
+                            you like to join me?", the poem's own lines sung
+                            one by one (narrated at a slower pace), "sing the
+                            missing word" blanks (SING_ALONG_PROMPT)
+
 then writes the section into ``outputs/<document_id>/enriched.json`` before
 moving to the next one, so a crash or a gateway timeout keeps every finished
 section. Nothing here runs at session time: ``avatar_engine.start_session``
 only reads what this stored.
 
-Play order: hook -> explanation -> real_world -> explore -> mystery -> explain_back.
+Play order: hook -> [sing_along] -> explanation -> [grammar] -> real_world ->
+explore -> mystery -> explain_back.
 """
 
 from __future__ import annotations
@@ -41,6 +58,7 @@ import json
 import os
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -49,8 +67,9 @@ from logger import get_logger
 
 import avatar_lesson_patterns as patterns
 from avatar_lesson_patterns import (
-    EXPLANATION_IMAGES, LessonPattern, image_prompt_of, iter_spoken_nodes, lesson_plan_prompt,
-    normalize_lesson, phase, teach_prompt, textbook_activity,
+    EXPLANATION_IMAGES, LessonPattern, grammar_prompt, image_prompt_of, iter_spoken_nodes,
+    lesson_plan_prompt, normalize_lesson, phase, reading_teach_prompt, sing_along_prompt,
+    split_reading_parts, teach_prompt, textbook_activity,
 )
 from avatar_text_utils import IMAGE_MARKER_RE, parse_picture_marker, tidy_spacing
 
@@ -75,6 +94,10 @@ PICTURE_SEARCH_GROUNDING = float(os.getenv("AVATAR_LESSON_PICTURE_GROUNDING", "0
 # Keys a searched picture carries that the lesson does not use (the question
 # fields belong to the older enrichment; the spoken line is the writer's job).
 _SEARCH_DROP_KEYS = ("walkthrough", "look_prompt", "look_answer", "avatar_line")
+# The sing-along's lines are narrated slower than speech - a recitation pace.
+SING_PACE = float(os.getenv("AVATAR_SING_PACE", "0.9"))
+# A whole story, part by part, is a long JSON reply.
+READING_MAX_TOKENS = int(os.getenv("AVATAR_READING_MAX_TOKENS", "12000"))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -136,6 +159,186 @@ def _hook_context(hook: Optional[Dict[str, Any]]) -> str:
     lines.append("Your LAST segment must return to this question and answer it plainly "
                  "(role: \"hook_answer\").")
     return "\n".join(lines)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  English: a reading part by part, its grammar, a poem sung
+# ══════════════════════════════════════════════════════════════════════════════
+
+def lesson_extras(target: Dict[str, Any]) -> Dict[str, Any]:
+    """A target's English-only inputs (eligible_sections) as build_section_lesson kwargs."""
+    return {"reading_text": target.get("reading_text") or "",
+            "reading_notes": target.get("reading_notes") or "",
+            "check_groups": target.get("check_groups") or [],
+            "reading_breaks": target.get("reading_breaks") or [],
+            "grammar_source": target.get("grammar_source")}
+
+
+def _reading_user_prompt(section_title: str, unit_title: str, class_number: str, kind: str,
+                         notes: str, parts: List[Dict[str, Any]], reading_questions: List[str],
+                         hook: Optional[Dict[str, Any]]) -> str:
+    lines = [f"Subject: English — Class {class_number or '?'}", f"Unit: {unit_title}",
+             f"Reading: {section_title} ({kind})"]
+    if notes.strip():
+        lines += ["", notes.strip()[:2500]]
+    lines += ["", f"THE READING, IN {len(parts)} PART(S):"]
+    for p in parts:
+        lines += ["", f"=== PART {p['part']} ===", p["text"]]
+        if p["questions"]:
+            lines.append("Questions the textbook asks about THIS part (your teaching of it must make "
+                         "each answer clear; never ask them):")
+            lines += [f"- {q}" for q in p["questions"]]
+    if reading_questions:
+        lines += ["", "Questions the textbook asks about the reading, in story order (each answer "
+                      "must be clear from the part whose events answer it; never ask them):"]
+        lines += [f"- {q}" for q in reading_questions]
+    hook_ctx = _hook_context(hook)
+    if hook_ctx:
+        lines += ["", hook_ctx.replace("Your LAST segment", "The LAST segment of the LAST part")]
+    lines += ["", "Return in the JSON format specified."]
+    return "\n".join(lines)
+
+
+def _reading_teaching(raw: Optional[Dict[str, Any]], parts: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The writer's parts flattened into one numbered script: every segment
+    carries ``part`` and ``explanation.parts[]`` names each part's segments.
+    None when a part came back empty (the builder asks again).
+
+    The book's questions steered the writer but are not stored: the
+    explanation is spoken straight through, it asks nothing (user decision
+    2026-09-23)."""
+    from enrichment_pipeline import normalize_avatar_segments
+    if not isinstance(raw, dict):
+        return None
+    exp = raw.get("avatar_explanation") if isinstance(raw.get("avatar_explanation"), dict) else {}
+    raw_parts = exp.get("parts") or raw.get("parts") or []
+    written: List[Tuple[int, Dict[str, Any], List[Dict[str, Any]]]] = []
+    segments: List[Dict[str, Any]] = []
+    for rp in raw_parts if isinstance(raw_parts, list) else []:
+        if not isinstance(rp, dict):
+            continue
+        segs = [s for s in rp.get("segments") or [] if isinstance(s, dict) and str(s.get("text") or "").strip()]
+        if not segs:
+            continue
+        n = len(written) + 1
+        for s in segs:
+            s["part"] = n
+            s.setdefault("type", "teaching")
+        written.append((n, rp, segs))
+        segments.extend(segs)
+    if len(written) < len(parts):
+        logger.warning(f"[lesson] the reading script covers {len(written)} of {len(parts)} part(s)")
+        return None
+    normalize_avatar_segments(segments, checkpoints="none")
+    kept = {id(s) for s in segments}
+    return {
+        "concept_overview": raw.get("concept_overview", ""),
+        "avatar_explanation": {
+            "teaching_style": exp.get("teaching_style") or "storytelling",
+            "total_duration_estimate": exp.get("total_duration_estimate", ""),
+            "segments": segments,
+            "parts": [{"part": n, "title": str(rp.get("title") or "").strip() or f"Part {n}",
+                       "summary": str(rp.get("summary") or "").strip(),
+                       "segment_ids": [s["segment_id"] for s in segs if id(s) in kept]}
+                      for n, rp, segs in written],
+        },
+        "faqs": raw.get("faqs", []),
+        "practice_questions": raw.get("practice_questions", []),
+        "doubt_context": raw.get("doubt_context", {}),
+    }
+
+
+def _reading_script(enricher: Any, *, pattern: LessonPattern, section_title: str, unit_title: str,
+                    class_number: str, kind: str, notes: str, reading_text: str,
+                    check_groups: List[List[str]], reading_breaks: List[str],
+                    hook: Optional[Dict[str, Any]], image_count: int,
+                    with_grammar: bool) -> Tuple[Optional[Dict[str, Any]], int]:
+    """(the part-by-part teaching script or None, how many parts)."""
+    parts = split_reading_parts(reading_text, check_groups, breaks=reading_breaks)
+    if not parts:
+        return None, 0
+    # Checks the parts could not claim exactly still steer the writer, for the whole reading.
+    reading_questions = [] if any(p["questions"] for p in parts) else [q for g in check_groups for q in g]
+    sizes = ", ".join(format(len(p["text"]), ",") for p in parts)
+    to_cover = sum(len(p["questions"]) for p in parts) or len(reading_questions)
+    logger.info(f"[lesson] '{section_title}': writing the teaching script part by part - "
+                f"{len(parts)} part(s) of {sizes} chars"
+                + (f", {to_cover} textbook question(s) to cover" if to_cover else ""))
+    system = reading_teach_prompt(pattern, class_number, part_count=len(parts),
+                                  image_count=image_count, with_grammar=with_grammar)
+    user = _reading_user_prompt(section_title, unit_title, class_number, kind, notes, parts,
+                                reading_questions, hook)
+    for attempt in (1, 2):
+        teaching = _reading_teaching(_llm_json(enricher, system, user, max_tokens=READING_MAX_TOKENS), parts)
+        if teaching:
+            return teaching, len(parts)
+        logger.warning(f"[lesson] '{section_title}': part-by-part script unusable (attempt {attempt})")
+    return None, len(parts)
+
+
+def _build_grammar(enricher: Any, *, source: Dict[str, Any], reading_title: str,
+                   reading_text: str, class_number: str) -> Optional[Dict[str, Any]]:
+    """The grammar phase - the next part after the story (normalize_grammar), or None."""
+    kind = str((source or {}).get("source") or "story")
+    material = str((source or {}).get("text") or "").strip()
+    used = ", ".join((source or {}).get("sections") or [])
+    user = (f"Class: {class_number or '?'}\nReading: {reading_title}\n\n"
+            f"LANGUAGE MATERIAL - {kind}" + (f" (from: {used})" if used else "") + ":\n"
+            + (material or "(none - the unit prints no grammar section and no language exercises)")
+            + f"\n\nTHE READING (quote your examples from it):\n{reading_text[:6000]}"
+            + "\n\nReturn in the JSON format specified.")
+    for attempt in (1, 2):
+        grammar = patterns.normalize_grammar(
+            _llm_json(enricher, grammar_prompt(reading_title, class_number), user, max_tokens=8000))
+        if grammar:
+            logger.info(f"[lesson] '{reading_title}': grammar part ready - "
+                        f"{[t['title'] for t in grammar['topics']]} from {kind}, "
+                        f"{sum(len(t['practice']) for t in grammar['topics'])} practice item(s)")
+            return grammar
+        logger.warning(f"[lesson] '{reading_title}': grammar part unusable (attempt {attempt})")
+    return None
+
+
+def _build_sing_along(enricher: Any, *, reading_text: str, title: str,
+                      class_number: str) -> Optional[Dict[str, Any]]:
+    """The sing-along phase (normalize_sing_along), or None for a text with no lines.
+
+    Built from the poem's own lines; only the invite, moods, blanks and
+    cheers come from the model - and the line breaks, when extraction lost
+    them (checked word for word, see restore_poem_lines)."""
+    stanzas, known = patterns.poem_stanzas(reading_text)
+    if not stanzas:
+        return None
+    if known:
+        listing = "\n\n".join(f"Stanza {si}:\n" + "\n".join(f"  {li}. {ln}" for li, ln in enumerate(st, 1))
+                              for si, st in enumerate(stanzas, 1))
+    else:
+        listing = "\n\n".join(f"Stanza {si} (line breaks lost):\n{' '.join(st)}"
+                              for si, st in enumerate(stanzas, 1))
+    user = f"Class: {class_number or '?'}\nPoem: {title}\n\n{listing}\n\nReturn in the JSON format specified."
+    raw: Optional[Dict[str, Any]] = None
+    for attempt in (1, 2):
+        raw = _llm_json(enricher, sing_along_prompt(title, restore_lines=not known), user, max_tokens=4000)
+        if raw:
+            break
+        logger.warning(f"[lesson] '{title}': sing-along reply unusable (attempt {attempt})")
+    if not known:
+        stanzas = patterns.restore_poem_lines((raw or {}).get("stanzas"), stanzas)
+    sing = patterns.normalize_sing_along(raw or {}, stanzas, title=title)
+    if sing:
+        logger.info(f"[lesson] '{title}': sing-along ready - "
+                    f"{sum(len(s['lines']) for s in sing['stanzas'])} line(s) in {len(sing['stanzas'])} "
+                    f"stanza(s), {len(sing['blanks'])} missing-word blank(s)")
+    return sing
+
+
+def _sing_speed(speed: Optional[float]) -> float:
+    try:
+        import avatar_tts
+        base = speed if speed else avatar_tts.TTS_SPEED
+    except Exception:  # noqa: BLE001
+        base = speed or 1.0
+    return round(float(base) * SING_PACE, 2)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -505,16 +708,57 @@ def build_section_lesson(content: str, section_title: str, *, section: Dict[str,
                          unit_number: int = 0, with_visuals: bool = True,
                          with_audio: bool = True, voices: Optional[List[str]] = None,
                          speed: Optional[float] = None, upload: bool = True,
-                         covers: Optional[List[str]] = None
+                         covers: Optional[List[str]] = None,
+                         reading_text: str = "", reading_notes: str = "",
+                         check_groups: Optional[List[List[str]]] = None,
+                         reading_breaks: Optional[List[str]] = None,
+                         grammar_source: Optional[Dict[str, Any]] = None
                          ) -> Optional[Dict[str, Any]]:
     """Build one section's enrichment: overview, FAQs, practice questions,
     doubt context and the ordered ``avatar_lesson``. None when even the
     teaching script could not be produced. ``covers`` names the boxes folded
     into ``content`` (eligible_sections' ``folded``) so the doubt path knows
-    this lesson is where they are taught."""
+    this lesson is where they are taught.
+
+    English readings pass ``lesson_extras(target)``: ``reading_text`` (the
+    reading alone - taught in parts, or sung), ``reading_notes`` (author,
+    before-you-read), ``check_groups`` / ``reading_breaks`` (the book's own
+    part breaks) and, for the unit's first story, ``grammar_source`` - which
+    adds the grammar part. A poem gets the sing-along."""
     started = time.perf_counter()
     report: Dict[str, Any] = {"section_title": section_title, "pattern": pattern.key}
     ctx = _section_context(content, section_title, unit_title, subject, class_number)
+    reading_text = (reading_text or "").strip()
+    teach_in_parts = pattern.key in ("english.prose", "english.supplementary") and bool(reading_text)
+    want_grammar = pattern.key == "english.prose" and grammar_source is not None
+    want_sing = pattern.key == "english.poem" and bool(reading_text)
+
+    # The grammar part and the sing-along do not depend on the plan, so they
+    # are written while it runs.
+    side_pool = ThreadPoolExecutor(max_workers=1) if (want_grammar or want_sing) else None
+    side_job = None
+    if want_grammar:
+        logger.info(f"[lesson] '{section_title}': writing the grammar part alongside "
+                    f"(from {grammar_source.get('source') or 'story'})")
+        side_job = side_pool.submit(_build_grammar, enricher, source=grammar_source,
+                                    reading_title=section_title, reading_text=reading_text or content,
+                                    class_number=class_number)
+    elif want_sing:
+        logger.info(f"[lesson] '{section_title}': writing the sing-along alongside")
+        side_job = side_pool.submit(_build_sing_along, enricher, reading_text=reading_text,
+                                    title=section_title, class_number=class_number)
+
+    def _side_result() -> Optional[Dict[str, Any]]:
+        if side_job is None:
+            return None
+        try:
+            return side_job.result()
+        except Exception as e:  # noqa: BLE001 - the story still gets its lesson
+            logger.warning(f"[lesson] '{section_title}': {'grammar' if want_grammar else 'sing-along'} "
+                           f"failed: {e}")
+            return None
+        finally:
+            side_pool.shutdown(wait=False)
 
     # ── LLM 1: the interactive phases ────────────────────────────────────────
     # A JSON-mode call occasionally comes back empty or unparseable, and a
@@ -550,29 +794,51 @@ def build_section_lesson(content: str, section_title: str, *, section: Dict[str,
     # Pictures are rendered from the writer's own "[image: ...]" markers below;
     # the general enrichment's search-and-gate planner is not used for lessons.
     teaching = None
-    logger.info(f"[lesson] '{section_title}': writing the teaching script "
-                f"({len(content):,} chars of section text)")
+    parts_written = 0
+    image_count = EXPLANATION_IMAGES if with_visuals else 0
+    if teach_in_parts:
+        teaching, parts_written = _reading_script(
+            enricher, pattern=pattern, section_title=section_title, unit_title=unit_title,
+            class_number=class_number, kind=section_kind or pattern.key.split(".")[-1],
+            notes=reading_notes, reading_text=reading_text, check_groups=check_groups or [],
+            reading_breaks=reading_breaks or [], hook=hook_preview, image_count=image_count,
+            with_grammar=want_grammar)
+        if not teaching:
+            parts_written = 0
+            logger.warning(f"[lesson] '{section_title}': no part-by-part script - "
+                           f"falling back to one continuous script")
+    if not teaching:
+        logger.info(f"[lesson] '{section_title}': writing the teaching script "
+                    f"({len(content):,} chars of section text)")
     for attempt in (1, 2):
+        if teaching:
+            break
         teaching = enricher.enrich_section_avatar_style(
             content=content, section_title=section_title, unit_title=unit_title,
             web_context="", board=board, class_number=class_number, subject=subject,
             unit_number=unit_number, with_visuals=False,
-            teach_prompt=teach_prompt(pattern, class_number, EXPLANATION_IMAGES if with_visuals else 0),
+            teach_prompt=teach_prompt(pattern, class_number, image_count),
             checkpoints="none",
             extra_context=_hook_context(hook_preview), model=_lesson_model(),
         )
-        if teaching:
-            break
-        logger.warning(f"[lesson] '{section_title}': teaching script came back empty (attempt {attempt})")
+        if not teaching:
+            logger.warning(f"[lesson] '{section_title}': teaching script came back empty (attempt {attempt})")
+    side = _side_result()
     if not teaching:
         logger.error(f"[lesson] '{section_title}': teaching script failed twice — section skipped")
         return None
     explanation = teaching.get("avatar_explanation") or {}
     segments: List[Dict[str, Any]] = explanation.get("segments") or []
+    grammar = side if want_grammar else None
+    sing_along = side if want_sing else None
+    if want_grammar and not grammar:
+        logger.warning(f"[lesson] '{section_title}': no grammar part - the story plays without it")
+    if want_sing and not sing_along:
+        logger.warning(f"[lesson] '{section_title}': no sing-along - the poem is explained without it")
 
     # ── Assemble in play order ───────────────────────────────────────────────
     lesson = normalize_lesson(
-        plan_raw, pattern, explanation=explanation,
+        plan_raw, pattern, explanation=explanation, sing_along=sing_along, grammar=grammar,
         meta={
             "built_at": datetime.now(timezone.utc).isoformat(),
             "models": {"plan": _lesson_model(), "teach": _lesson_model(),
@@ -603,13 +869,26 @@ def build_section_lesson(content: str, section_title: str, *, section: Dict[str,
                 logger.warning(f"[lesson] '{section_title}': no narration — TTS unavailable: {reason}")
             else:
                 nodes = list(iter_spoken_nodes(lesson))
+                # The sing-along's lines are sung, not said: a slower pace.
+                sung = [n for n in nodes if str(n.get("segment_id") or "").startswith("sing_s")]
+                said = [n for n in nodes if not str(n.get("segment_id") or "").startswith("sing_s")]
                 logger.info(f"[lesson] '{section_title}': narrating {len(nodes)} spoken node(s) "
-                            f"in {', '.join(voices or ['male', 'female'])}")
+                            f"in {', '.join(voices or ['male', 'female'])}"
+                            + (f" ({len(sung)} sung line(s) at {_sing_speed(speed)}x)" if sung else ""))
                 result = avatar_tts.narrate_segments(
-                    nodes, board=board, class_number=class_number, subject=subject,
+                    said, board=board, class_number=class_number, subject=subject,
                     unit_number=unit_number, voices=voices, speed=speed,
                     upload=upload, attach=True)
                 audio = {"engine": result.get("engine"), **(result.get("summary") or {})}
+                if sung:
+                    sung_result = avatar_tts.narrate_segments(
+                        sung, board=board, class_number=class_number, subject=subject,
+                        unit_number=unit_number, voices=voices, speed=_sing_speed(speed),
+                        upload=upload, attach=True)
+                    for key, value in (sung_result.get("summary") or {}).items():
+                        if isinstance(value, (int, float)) and isinstance(audio.get(key), (int, float)):
+                            audio[key] = round(audio[key] + value, 1) if isinstance(value, float) else audio[key] + value
+                    audio["sung_lines"] = len(sung)
                 logger.info(f"[lesson] '{section_title}': narration done — "
                             f"{audio.get('files_rendered', 0)} file(s), "
                             f"{audio.get('failures', 0)} failed, {audio.get('seconds')}s "
@@ -631,9 +910,18 @@ def build_section_lesson(content: str, section_title: str, *, section: Dict[str,
         },
         "avatar_lesson": lesson,
     }
+    grammar_phase = phase(lesson, "grammar") or {}
+    sing_phase = phase(lesson, "sing_along") or {}
     report.update({
         "phases": [p["phase"] for p in lesson["phases"]],
         "segments": len(segments),
+        **({"parts": [p["title"] for p in (phase(lesson, "explanation") or {}).get("parts") or []]}
+           if parts_written else {}),
+        **({"grammar_topics": [t["title"] for t in grammar_phase.get("topics") or []],
+            "grammar_practice": sum(len(t["practice"]) for t in grammar_phase.get("topics") or [])}
+           if want_grammar else {}),
+        **({"sing_along_lines": sum(len(s["lines"]) for s in sing_phase.get("stanzas") or []),
+            "sing_along_blanks": len(sing_phase.get("blanks") or [])} if want_sing else {}),
         "hook_options": len((phase(lesson, "hook") or {}).get("options") or {}),
         "images": sum(image_counts.values()),
         "images_by_phase": image_counts,
@@ -827,6 +1115,7 @@ def build_document_lessons(document_id: str, *, unit_number: Optional[int] = Non
                 class_number=class_number, unit_number=target["unit_number"] or 0,
                 with_visuals=with_visuals, with_audio=with_audio, voices=voices,
                 speed=speed, upload=upload, covers=target.get("folded"),
+                **lesson_extras(target),
             )
         except Exception as e:  # noqa: BLE001 - one bad section must not end the run
             logger.exception(f"[lesson] '{title}' crashed: {e}")

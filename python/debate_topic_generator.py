@@ -3,7 +3,7 @@ Debate Topic Generator for GradeUp
 
 Generates interactive, high-value debate topics from structured textbook data.
 
-After enrichment completes in the /upload-subject pipeline:
+After enrichment completes in the /upload-agentic pipeline:
   1. Reads from a TEMPORARY copy of structured.json (never the main file)
   2. Iterates over units → filters to main content sections only
   3. Generates 3 debate topics per valid section via LLM

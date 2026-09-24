@@ -131,6 +131,7 @@ class DocumentPipelineState(TypedDict):
     fixes_made:          Annotated[int, operator.add]
     pass_number:         int
     verification_passed: bool
+    rejection_reason:    str   # why the gate refused to store; "" when it passed
 
     # ── Stage 4: Enrichment (fan-out results) ────────────────────────────
     enriched_data:      Annotated[Dict[str, Any], _merge_structured]
@@ -204,6 +205,7 @@ def verification_node(state: DocumentPipelineState) -> Dict[str, Any]:
         logger.warning("No structured data — skipping verification")
         return {
             "verification_passed": False,
+            "rejection_reason":    "the extraction produced no content",
             "overall_score":       0.0,
             "pass_number":         0,
             "fixes_made":          0,
@@ -281,10 +283,20 @@ def verification_node(state: DocumentPipelineState) -> Dict[str, Any]:
     audit     = report.get("audit") or {}
     passed    = converged and stored
 
+    reason = ""
     if passed:
         logger.info(f"Verification: PASSED audit (score {score:.1f}%) — stored")
     else:
+        # Carried to the API response, so a rejection says why instead of
+        # reading as a completed upload.
         counts = audit.get("failures_by_kind") or {}
+        if not report:
+            reason = "the verification step crashed, so the audit never ran"
+        elif audit and not audit.get("passed"):
+            reason = "audit failed: " + ", ".join(f"{k}×{v}" for k, v in sorted(counts.items()))
+        else:
+            reason = ("the schema validator failed the document "
+                      "(see schema_integrity_report.json)")
         logger.error(
             f"Verification: REJECTED — {counts or 'quality gate failed'} "
             f"(score {score:.1f}%). structured.json was NOT stored; enrichment, "
@@ -312,6 +324,7 @@ def verification_node(state: DocumentPipelineState) -> Dict[str, Any]:
         "fixes_made":         report.get("fixes_made", 0),
         "pass_number":        report.get("passes_run", 1),
         "verification_passed": passed,
+        "rejection_reason":   reason,
     }
 
 
@@ -454,7 +467,9 @@ def final_publish_node(state: DocumentPipelineState) -> Dict[str, Any]:
             "passes_run":    state.get("pass_number", 0),
             "overall_score": state.get("overall_score", 0),
             "fixes_made":    state.get("fixes_made", 0),
-            "passed":        state.get("verification_passed", False),
+            "passed":        _verified,
+            "rejection_reason": "" if _verified else (
+                state.get("rejection_reason") or "the extraction did not pass the audit"),
         },
         "enrichment": {
             "units_enriched":    len(state.get("enrichment_reports", [])),
@@ -473,13 +488,16 @@ def final_publish_node(state: DocumentPipelineState) -> Dict[str, Any]:
         },
         "errors": state.get("pipeline_errors", []),
         # Authoritative machine-readable verdict for callers: a run that
-        # errored or produced no units is NOT a success, whatever the score.
+        # errored, produced no units, or was REJECTED by the audit gate is NOT
+        # a success, whatever the score. The gate used to be left out, so a
+        # rejected document (nothing stored, enriched or indexed) answered
+        # success=true / units_published=1 and the dashboard showed "completed".
         "units_published": len(
             (structured_data or {}).get("units")
             or (structured_data or {}).get("chapters")
             or []
-        ),
-        "success": bool(_has_content) and not state.get("pipeline_errors"),
+        ) if _verified else 0,
+        "success": bool(_has_content) and _verified and not state.get("pipeline_errors"),
     }
     (doc_dir / "pipeline_report.json").write_bytes(_dumps(pipeline_report))
     logger.info("Saved pipeline_report.json")
@@ -836,6 +854,7 @@ def run_document_pipeline(
         "fixes_made":            0,
         "pass_number":           0,
         "verification_passed":   False,
+        "rejection_reason":      "",
         "enriched_data":         {},
         "enrichment_reports":    [],
         "tts_audio_s3_urls":     {},

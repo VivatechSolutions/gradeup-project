@@ -10,6 +10,7 @@ This module orchestrates all pipeline components:
 Provides a unified interface for the entire document processing workflow.
 """
 
+import json
 import os
 import shutil
 from pathlib import Path
@@ -559,6 +560,7 @@ class DocumentPipeline:
         subject_filter: Optional[str] = None,
         board_filter: Optional[str] = None,
         term_filter: Optional[Any] = None,
+        part_filter: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Search the vector database."""
         if not QDRANT_AVAILABLE:
@@ -573,6 +575,7 @@ class DocumentPipeline:
             subject_filter=subject_filter,
             board_filter=board_filter,
             term_filter=term_filter,
+            part_filter=part_filter,
             qdrant_client=self.qdrant_client
         )
     
@@ -633,18 +636,92 @@ class DocumentPipeline:
         
         return doc_info
     
-    def delete_document(self, document_id: str) -> bool:
-        """Delete a document and all its files."""
+    def delete_document(self, document_id: str, purge_vectors: bool = True) -> Dict[str, Any]:
+        """Delete a document's files and, by default, its chunks in Qdrant.
+
+        Returns {"deleted": bool, "files_deleted": bool, "vectors_deleted": int}.
+        `deleted` is True when either side had something to remove: the two
+        can disagree because outputs/ is per machine while the vectors are
+        shared, and a delete that only clears the local folder leaves orphan
+        chunks answering searches for a subject that no longer exists.
+        """
         doc_dir = OUTPUTS_DIR / document_id
-        if not doc_dir.exists():
-            return False
-        
-        try:
-            shutil.rmtree(doc_dir)
-            return True
-        except Exception as e:
-            logger.error(f"Error deleting document {document_id}: {e}")
-            return False
+        files_deleted = False
+        if doc_dir.exists():
+            try:
+                shutil.rmtree(doc_dir)
+                files_deleted = True
+            except Exception as e:
+                logger.error(f"Error deleting document {document_id}: {e}")
+
+        vectors_deleted = 0
+        if purge_vectors and QDRANT_AVAILABLE:
+            try:
+                from qdrant_integration import delete_document_chunks
+                vectors_deleted = delete_document_chunks(document_id, qdrant_client=self.qdrant_client)
+            except Exception as e:
+                logger.error(f"Error purging vectors for {document_id}: {e}")
+
+        return {
+            "deleted": files_deleted or vectors_deleted > 0,
+            "files_deleted": files_deleted,
+            "vectors_deleted": vectors_deleted,
+        }
+
+    # Local JSON files that carry the book's identity labels. Each is patched
+    # at the top level and inside every unit/chapter dict, but only where the
+    # key already exists - the files have different shapes and a label a file
+    # never had is not added to it.
+    _LABELLED_OUTPUT_FILES = ("structured.json", "enriched.json", "pipeline_report.json")
+
+    def update_document_metadata(self, document_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
+        """Relabel a book after ingestion: subject / board / class_number / term / part.
+
+        Applies to the Qdrant chunks (all of them, in place, no re-embedding)
+        and to the local outputs/ JSON, so both a wrong upload label and the
+        search filters that depend on it are fixed by one call. Either side
+        may be absent on this machine; the counts say which were touched.
+        """
+        from qdrant_integration import RELABELABLE_METADATA_FIELDS
+        clean = {k: v for k, v in (updates or {}).items() if k in RELABELABLE_METADATA_FIELDS}
+        if not clean:
+            raise ValueError(f"nothing to update; allowed fields: {RELABELABLE_METADATA_FIELDS}")
+
+        files_patched: List[str] = []
+        doc_dir = OUTPUTS_DIR / document_id
+        for name in self._LABELLED_OUTPUT_FILES:
+            path = doc_dir / name
+            if not path.exists():
+                continue
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError) as e:
+                logger.warning(f"Skipping unreadable {path.name}: {e}")
+                continue
+            changed = False
+            targets = [data] if isinstance(data, dict) else []
+            if isinstance(data, dict):
+                targets += [u for u in (data.get("units") or data.get("chapters") or []) if isinstance(u, dict)]
+            for target in targets:
+                for key, value in clean.items():
+                    if key in target and target[key] != value:
+                        target[key] = value
+                        changed = True
+            if changed:
+                path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+                files_patched.append(name)
+
+        vectors_updated = 0
+        if QDRANT_AVAILABLE:
+            from qdrant_integration import update_document_metadata
+            vectors_updated = update_document_metadata(document_id, clean, qdrant_client=self.qdrant_client)
+
+        return {
+            "document_id": document_id,
+            "updates": clean,
+            "files_patched": files_patched,
+            "vectors_updated": vectors_updated,
+        }
 
 
 # Global pipeline instance

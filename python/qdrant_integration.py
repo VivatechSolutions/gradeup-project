@@ -1067,6 +1067,81 @@ def _delete_existing_chunks(
         return 0
 
 
+# Payload fields an admin may relabel after ingestion. Everything else in the
+# payload (unit, section, content type, text) describes the chunk itself and
+# is only ever written by re-ingesting the book.
+RELABELABLE_METADATA_FIELDS = ("subject", "board", "class_number", "term", "part")
+
+
+def delete_document_chunks(
+    document_id: str,
+    collection_name: Optional[str] = None,
+    qdrant_client: Optional["QdrantClient"] = None,
+) -> int:
+    """Remove every chunk of a document from the collection. Returns the count.
+
+    The public face of _delete_existing_chunks, for the delete-document route:
+    removing the outputs/ folder alone leaves the vectors behind, and those
+    orphans keep answering searches for a subject that no longer exists.
+    """
+    if not QDRANT_AVAILABLE:
+        return 0
+    client = qdrant_client or initialize_qdrant_client()
+    if not client:
+        return 0
+    collection = collection_name or os.environ.get("QDRANT_COLLECTION_NAME", DEFAULT_COLLECTION_NAME)
+    return _delete_existing_chunks(client, document_id, collection)
+
+
+def update_document_metadata(
+    document_id: str,
+    updates: Dict[str, Any],
+    collection_name: Optional[str] = None,
+    qdrant_client: Optional["QdrantClient"] = None,
+) -> int:
+    """Relabel subject / board / class / term / part on every chunk of a document.
+
+    Returns the number of chunks touched (0 when the document has none).
+    Fixes a wrong upload label in place - a book ingested as "Science" that is
+    really "Social" - without re-embedding anything: set_payload with
+    key="metadata" merges into the nested object LangChain wrote, so the
+    chunk's own fields (unit, section, text) are untouched.
+
+    Only RELABELABLE_METADATA_FIELDS are accepted; a None value clears the
+    field (used to drop a term or part that was set by mistake).
+    """
+    if not QDRANT_AVAILABLE:
+        raise RuntimeError("qdrant-client not installed")
+    clean = {k: v for k, v in (updates or {}).items() if k in RELABELABLE_METADATA_FIELDS}
+    if not clean:
+        raise ValueError(f"nothing to update; allowed fields: {RELABELABLE_METADATA_FIELDS}")
+    if "class_number" in clean and clean["class_number"] is not None:
+        from class_utils import normalize_class_number
+        clean["class_number"] = normalize_class_number(clean["class_number"])
+    if "term" in clean and clean["term"] is not None:
+        from term_utils import normalize_term
+        clean["term"] = normalize_term(clean["term"])
+
+    client = qdrant_client or initialize_qdrant_client()
+    if not client:
+        raise RuntimeError("could not connect to Qdrant")
+    collection = collection_name or os.environ.get("QDRANT_COLLECTION_NAME", DEFAULT_COLLECTION_NAME)
+
+    selector = Filter(must=[FieldCondition(key="metadata.document_id", match=MatchValue(value=document_id))])
+    existing = client.count(collection_name=collection, count_filter=selector, exact=True).count
+    if not existing:
+        return 0
+
+    to_set = {k: v for k, v in clean.items() if v is not None}
+    to_clear = [f"metadata.{k}" for k, v in clean.items() if v is None]
+    if to_set:
+        client.set_payload(collection_name=collection, payload=to_set, points=selector, key="metadata", wait=True)
+    if to_clear:
+        client.delete_payload(collection_name=collection, keys=to_clear, points=selector, wait=True)
+    logger.info(f"Relabelled {existing} chunks of '{document_id}': set={to_set} cleared={to_clear}")
+    return existing
+
+
 
 # UPLOAD TO QDRANT
 
@@ -1241,8 +1316,14 @@ def search_qdrant(
     qdrant_client: Optional["QdrantClient"] = None,
     term_filter: Optional[Any] = None,
     term_strict: Optional[bool] = None,
+    part_filter: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    """Search Qdrant with optional filters for unit, content_type, class, subject and term.
+    """Search Qdrant with optional filters for unit, content_type, class, subject, term and part.
+
+    `part_filter` is the book within a multi-book subject ("Contemporary
+    India" for Social's geography book). Unit numbers restart in every book,
+    so a Social query with unit_filter=1 and no part mixes the geography and
+    history chapter 1s; pass the part whenever the caller knows it.
 
     `term_filter` accepts a single term or a list of them ("2", "Term 2",
     ["term_1", "term_2"], "1,2"). A list is the normal case for exams, which
@@ -1263,6 +1344,16 @@ def search_qdrant(
     collection = collection_name or os.environ.get(
         "QDRANT_COLLECTION_NAME", DEFAULT_COLLECTION_NAME
     )
+
+    # A blank string is an UNSET field, not a filter. Web forms and JSON
+    # bodies send "" for "no part" / "no subject"; matching on it excludes
+    # every chunk, which surfaces as a confident "no textbook found".
+    subject_filter = subject_filter or None
+    board_filter = board_filter or None
+    class_filter = class_filter or None
+    part_filter = (part_filter or "").strip() or None
+    unit_title_filter = unit_title_filter or None
+    content_type_filter = content_type_filter or None
 
     from term_utils import normalize_term, normalize_terms
 
@@ -1338,6 +1429,15 @@ def search_qdrant(
                     FieldCondition(key="metadata.board", match=MatchValue(value="State Board" if "state" in board_filter.lower() else board_filter)),
                 ])
             )
+        if part_filter is not None:
+            conditions.append(
+                Filter(should=[
+                    FieldCondition(key="metadata.part", match=MatchValue(value=part_filter)),
+                    FieldCondition(key="metadata.part", match=MatchValue(value=part_filter.lower())),
+                    FieldCondition(key="metadata.part", match=MatchValue(value=part_filter.title())),
+                    FieldCondition(key="metadata.part", match=MatchValue(value=part_filter.upper())),
+                ])
+            )
         # Terms are canonicalized on write, so one exact MatchAny covers the
         # scope — no casing fan-out needed like board/subject above.
         if terms:
@@ -1387,6 +1487,7 @@ def search_qdrant(
                         if class_filter is not None and not class_matches(meta.get("class_number"), class_filter): continue
                             
                         if subject_filter is not None and str(meta.get("subject", "")).lower() != str(subject_filter).lower(): continue
+                        if part_filter is not None and str(meta.get("part") or "").lower() != str(part_filter).lower(): continue
                         
                         if board_filter is not None:
                             meta_board = str(meta.get("board", "")).lower()

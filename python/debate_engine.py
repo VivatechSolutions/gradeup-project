@@ -327,6 +327,7 @@ Return ONLY valid JSON:
         topic: Optional[str] = None,
         student_stance: Optional[str] = None,
         term: Optional[Any] = None,
+        part: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Start a new 1-on-1 debate session.
@@ -346,7 +347,7 @@ Return ONLY valid JSON:
         # Get RAG context and validate topic
         chunks = retrieve_context(
             query=topic, subject=subject, unit_number=unit_number,
-            board=board, class_number=class_number, limit=5, term=term
+            board=board, class_number=class_number, limit=5, term=term, part=part,
         )
         rag_context = _format_context(chunks)
 

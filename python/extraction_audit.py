@@ -310,6 +310,31 @@ def _is_empty(sec: Dict[str, Any]) -> bool:
 
 # ── source facts shared with the schema validator ─────────────────────────────
 
+def _heading_body_lengths(source_md: str) -> List[Tuple[str, int]]:
+    """(heading key, chars printed beneath it) for every real heading the book
+    prints before its back matter. Shared by furniture_headings and
+    substantive_headings so the two sets are complements of one census."""
+    from auto_schema_extractor import iter_source_headings, _is_noise_heading
+    if not source_md:
+        return []
+    anchors = sorted(
+        {a[0]: a for a in iter_source_headings(source_md) + iter_source_labels(source_md)}.values(),
+        key=lambda a: a[0],
+    )
+    _SECNUM, backmatter_offset = _lazy()
+    cutoff = backmatter_offset(source_md)
+    if cutoff is not None:
+        anchors = [a for a in anchors if a[0] < cutoff]
+    out: List[Tuple[str, int]] = []
+    for i, (_start, h_end, text) in enumerate(anchors):
+        if _is_noise_heading(text):
+            continue
+        end = anchors[i + 1][0] if i + 1 < len(anchors) else len(source_md)
+        key = _norm_key(re.sub(r'^\s*' + _SECNUM + r'\s*', '', text))
+        out.append((key, len(source_md[h_end:end].strip())))
+    return out
+
+
 def furniture_headings(source_md: str) -> Set[str]:
     """Headings the book prints with (almost) nothing beneath them, as keys.
 
@@ -321,25 +346,24 @@ def furniture_headings(source_md: str) -> Set[str]:
     section and vetoing a document the audit had passed. Same rule, same
     threshold, one source of truth.
     """
-    from auto_schema_extractor import iter_source_headings, _is_noise_heading
-    if not source_md:
-        return set()
-    anchors = sorted(
-        {a[0]: a for a in iter_source_headings(source_md) + iter_source_labels(source_md)}.values(),
-        key=lambda a: a[0],
-    )
-    _SECNUM, backmatter_offset = _lazy()
-    cutoff = backmatter_offset(source_md)
-    if cutoff is not None:
-        anchors = [a for a in anchors if a[0] < cutoff]
-    out: Set[str] = set()
-    for i, (_start, h_end, text) in enumerate(anchors):
-        if _is_noise_heading(text):
-            continue
-        end = anchors[i + 1][0] if i + 1 < len(anchors) else len(source_md)
-        if len(source_md[h_end:end].strip()) < _MIN_SECTION_BODY:
-            out.add(_norm_key(re.sub(r'^\s*' + _SECNUM + r'\s*', '', text)))
-    return out
+    return {key for key, body in _heading_body_lengths(source_md)
+            if body < _MIN_SECTION_BODY}
+
+
+def substantive_headings(source_md: str) -> Set[str]:
+    """Headings the book prints real text beneath, as keys — the only headings
+    under which an EMPTY section is content loss.
+
+    This is the audit's own rule (check 2 below skips an empty section whose
+    heading it cannot place in the source, or whose printed body is under
+    _MIN_SECTION_BODY). The schema validator applied it to `content` only, so
+    an empty EXERCISE under a heading the book prints no questions beneath —
+    required field `sub_items` — stayed CRITICAL, twice, and vetoed a Class 10
+    Science chapter the audit had passed at 60/60 headings. Nothing could
+    repair it: the repair loop acts on audit failures, and the audit had none.
+    """
+    return {key for key, body in _heading_body_lengths(source_md)
+            if body >= _MIN_SECTION_BODY}
 
 
 # ── unit-level audit ──────────────────────────────────────────────────────────
@@ -694,12 +718,13 @@ def audit_extraction(
     # it in the book, was stored as {"title": ..., "content": ""}. It carries
     # nothing and it is not content loss (the check above already skips such
     # headings); it is dropped rather than shipped as an empty section.
+    # Any type: an empty "exercise" under a heading the book prints no
+    # questions beneath is as much a stub as an empty "section" under a chart
+    # title, and while it was kept the schema validator failed it (see
+    # substantive_headings) after this audit had passed.
     furniture = furniture_headings(source_md) if source_md else set()
     for sec in sections:
-        if str(sec.get("type") or "").lower() not in ("section", "prose", "other", ""):
-            continue
-        if (str(sec.get("content") or "").strip() or sec.get("sub_items")
-                or any(sec.get(k) for k in _CHILD_KEYS)):
+        if not _is_empty(sec):
             continue
         key = _norm_key(re.sub(r'^\s*' + _SECNUM + r'\s*', '', str(sec.get("title") or "")))
         if key and key in furniture:

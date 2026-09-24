@@ -1,10 +1,10 @@
 """
 Stage 0b — Vision Pass Agent
 Two sub-steps:
-  A) _extract_text_from_images(): GPT-4o Vision classifies each embedded image
+  A) _extract_text_from_images(): VISION_MODEL (OpenRouter) classifies each embedded image
      as text-box (Do You Know, sidebar) vs illustration. Text-boxes are injected
      back into markdown as readable text.
-  B) _vision_reocr_pages(): bad/watermarked pages are re-OCR'd via GPT-4o Vision.
+  B) _vision_reocr_pages(): bad/watermarked pages are re-OCR'd via VISION_MODEL (OpenRouter).
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ def _bad_page_reocr(
     api_key:    str,
 ) -> str:
     """
-    Detects low-quality pages and re-OCRs them via GPT-4o Vision.
+    Detects low-quality pages and re-OCRs them via VISION_MODEL on OpenRouter.
     Returns updated markdown.
     """
     try:
@@ -65,7 +65,7 @@ def _bad_page_reocr(
         vision_results = _vision_reocr_pages(Path(pdf_path), bad_pages, api_key)
         if vision_results:
             content_md = _patch_markdown_pages(content_md, vision_results)
-            logger.info(f"Re-OCR'd {len(vision_results)} page(s) via GPT-4o Vision")
+            logger.info(f"Re-OCR'd {len(vision_results)} page(s) via VISION_MODEL")
 
     except Exception as e:
         logger.warning(f"Bad-page re-OCR failed: {e}")
@@ -91,7 +91,7 @@ def vision_pass_node(state: Dict[str, Any]) -> Dict[str, Any]:
     logger.info("Stage 0b: Vision Pass")
 
     if not api_key:
-        logger.warning("No OpenAI API key — skipping vision pass")
+        logger.warning("No OpenRouter API key — skipping vision pass")
         return {
             "image_metadata":            {},
             "vision_replacement_count":  0,

@@ -228,13 +228,15 @@ def retrieve_context(
     unit_number: Optional[int] = None,
     limit: int = TUTOR_RAG_TOP_K,
     term: Optional[Any] = None,
+    part: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     Retrieve top-K relevant chunks from Qdrant for the student's query.
     Searches BOTH structured and enriched collections.
 
     `term` scopes retrieval to a term-split state book. Without it, a query for
-    unit 1 matches unit 1 of EVERY term book for that subject.
+    unit 1 matches unit 1 of EVERY term book for that subject. `part` does the
+    same for a multi-book subject (Social's geography vs history book).
     """
     try:
         from qdrant_integration import (
@@ -267,6 +269,7 @@ def retrieve_context(
                 class_filter=class_number,
                 board_filter=board,
                 term_filter=term,
+                part_filter=part,
             )
             all_results.extend(results)
         except Exception as e:
@@ -285,9 +288,10 @@ def retrieve_context(
                     subject_filter=subject,
                     class_filter=class_number,
                     board_filter=board,
-                    # Relax the unit, never the term: dropping it here would pull
-                    # in other term books' units — the exact bleed we filter for.
+                    # Relax the unit, never the term or the part: dropping them
+                    # would pull in other books' units — the exact bleed we filter for.
                     term_filter=term,
+                    part_filter=part,
                 )
                 all_results.extend(results)
             except Exception as e:
@@ -752,6 +756,7 @@ def ask_tutor(
     uploaded_context: str = "",
     image_base64: Optional[str] = None,
     term: Optional[Any] = None,
+    part: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Main entry point for the AI Tutor.
@@ -842,6 +847,7 @@ def ask_tutor(
             unit_number=unit_number,
             limit=limit,
             term=term,
+            part=part,
         )
 
     # in_current_context keeps both workers inside the request's trace. A bare

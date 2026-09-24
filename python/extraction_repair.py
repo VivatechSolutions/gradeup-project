@@ -210,6 +210,49 @@ def _drop_empty_furniture(sections: List[Dict[str, Any]], failures) -> Tuple[Lis
     return kept, len(sections) - len(kept)
 
 
+_IMAGE_TAG = re.compile(r"!\[[^\]]*\]\([^)]*\)|\[Image:[^\]]*\]")
+# Opening words of a heading's printed text that a section must hold, in order,
+# to count as that heading's section. Eight words tell "(i) Constant function"
+# (f: A -> B, range has one element) from "1.10.6 Constant Function"
+# (f: R -> R, f(x) = c) - both open "A function f".
+_PROBE_WORDS = 8
+
+
+def _words(text: str) -> List[str]:
+    return re.findall(r"[a-z0-9]+", _IMAGE_TAG.sub(" ", text or "").lower())
+
+
+def _find_misnumbered(sections: List[Dict[str, Any]], failure, source_md: str):
+    """The section that already holds a numbered heading's text under another id.
+
+    The audit counts a numbered heading present by its NUMBER only. A section
+    carrying the right title and text under a wrong or empty id is therefore
+    "missing", and re-extracting it would store the text twice - renumbering it
+    is the repair. Title alone does not prove identity: the book can print one
+    title twice ("(i) Constant function" under 1.8, "1.10.6 Constant Function"),
+    so the section must also hold the opening words printed under THIS heading.
+    """
+    from auto_schema_extractor import _SECNUM
+    from extraction_audit import _norm_key, iter_sections
+    if not failure.section_id or failure.span_start is None or failure.span_end is None:
+        return None
+    probe = _words(source_md[failure.span_start:failure.span_end])[:_PROBE_WORDS]
+    if len(probe) < _PROBE_WORDS:
+        return None                       # too little printed text to prove identity
+    needle = f" {' '.join(probe)} "
+    want = _norm_key(failure.title)
+    for _d, sec in iter_sections(sections):
+        title = re.sub(r"^\s*" + _SECNUM + r"\s*", "", str(sec.get("title") or ""))
+        if _norm_key(title) != want:
+            continue
+        own = [str(sec.get("content") or "")] + [
+            str(item.get("content") or "") for item in (sec.get("sub_items") or [])
+            if isinstance(item, dict)]
+        if needle in f" {' '.join(_words(' '.join(own)))} ":
+            return sec
+    return None
+
+
 def _find_section(sections: List[Dict[str, Any]], section_id: str, title: str):
     """Locate a section by id, else by title, anywhere in the tree."""
     want_id = (section_id or "").strip()
@@ -333,7 +376,8 @@ def repair_from_audit(
         return structured_data, {}
     counts = {"deterministic": 0, "targeted": 0, "failed": 0,
               "unit_fields": 0, "backmatter_dropped": 0, "reattached": 0,
-              "promoted": 0, "boxes_split": 0, "furniture_dropped": 0}
+              "promoted": 0, "boxes_split": 0, "furniture_dropped": 0,
+              "renumbered": 0}
 
     # ── deterministic first: they are free, and they change what is missing ──
     kinds = {f.kind for f in audit_result.failures}
@@ -379,6 +423,24 @@ def repair_from_audit(
             secs = ase.sort_sections_by_source(secs, source_md)
             counts["deterministic"] += 1
         unit["sections"] = secs
+
+    # ── mis-numbered: the text is there, filed under another id ─────────────
+    renumbered = set()
+    for failure in audit_result.failures:
+        if failure.kind != MISSING_HEADING or not failure.section_id:
+            continue
+        for unit in units:
+            twin = _find_misnumbered(unit.get("sections") or [], failure, source_md)
+            if twin is None:
+                continue
+            logger.info(f"[Repair] {failure.section_id} {failure.title[:40]!r} was extracted "
+                        f"as id={str(twin.get('id') or '')!r} - renumbered")
+            twin["id"] = failure.section_id
+            twin["title"] = re.sub(r"^\s*" + ase._SECNUM + r"\s*[\.\):]?\s*", "",
+                                   str(twin.get("title") or "")).strip() or failure.title
+            renumbered.add(id(failure))
+            counts["renumbered"] += 1
+            break
 
     # ── overfull boxes: the model says where the box ends ───────────────────
     # The box keeps its own text; the continuation becomes an untitled prose
@@ -426,7 +488,7 @@ def repair_from_audit(
     # ── targeted: one call per failing section, nothing more ────────────────
     llm_failures = [f for f in audit_result.failures
                     if f.kind in (MISSING_HEADING, EMPTY_SECTION)
-                    and f.span_start is not None]
+                    and f.span_start is not None and id(f) not in renumbered]
     if llm_failures and not api_key:
         logger.warning("[Repair] no API key — skipping targeted re-extraction")
         llm_failures = []
@@ -443,16 +505,22 @@ def repair_from_audit(
         if not section:
             counts["failed"] += 1
             continue
-        existing = _find_section(target_unit.get("sections") or [],
-                                 failure.section_id, failure.title)
-        if failure.kind == EMPTY_SECTION and existing is not None:
+        existing = None
+        if failure.kind == EMPTY_SECTION:
+            existing = _find_section(target_unit.get("sections") or [],
+                                     failure.section_id, failure.title)
+        if existing is not None:
             existing["content"] = section["content"]
             if section.get("sub_items"):
                 existing["sub_items"] = section["sub_items"]
-        elif existing is None:
-            target_unit.setdefault("sections", []).append(section)
         else:
-            continue                      # already there; nothing to do
+            # A MISSING heading is added, never skipped as "already there": the
+            # audit has already looked by its own rule. Skipping on a looser
+            # id-or-title match dead-ended the loop on a title the book prints
+            # twice - "1.10.6 Constant Function" was judged present because
+            # "(i) Constant function" under 1.8 was, and the document was
+            # rejected for missing_heading x1 after every pass.
+            target_unit.setdefault("sections", []).append(section)
         counts["targeted"] += 1
 
     # Re-sort so anything appended lands in reading order.
@@ -462,6 +530,7 @@ def repair_from_audit(
 
     logger.info(
         f"[Repair] {counts['targeted']} section(s) re-extracted, "
+        f"{counts['renumbered']} renumbered, "
         f"{counts['deterministic']} deterministic pass(es), {counts['failed']} failed, "
         f"{counts['unit_fields']} unit field(s) corrected, "
         f"{counts['backmatter_dropped']} colophon section(s) dropped, "

@@ -156,7 +156,11 @@ def openrouter_routing(model: Optional[str] = None) -> Dict[str, Any]:
 
 
 # ── Other Model Configuration ─────────────────────────────────────────────────
-DEFAULT_OCR_MODEL = "mistral-ocr-latest"  # Mistral OCR for PDF extraction
+# Mistral OCR for PDF extraction. Pinned to the current release instead of the
+# "-latest" alias (which resolved to this id on 2026-09-22) so extraction
+# quality does not shift under an upstream upgrade. Live value is
+# DEFAULT_MODEL in ocr_pipeline.py; both read MISTRAL_OCR_MODEL.
+DEFAULT_OCR_MODEL = os.getenv("MISTRAL_OCR_MODEL", "mistral-ocr-4-1")
 # Enrichment now runs on OpenRouter / Llama 4 Scout; the live setting is
 # ENRICHMENT_MODEL_DEFAULT in enrichment_pipeline.py, read from the
 # ENRICHMENT_MODEL env var. This constant is unused and kept for reference.

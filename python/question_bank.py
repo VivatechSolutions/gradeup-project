@@ -17,15 +17,63 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
 
-import requests
-from langfuse_utils import traced_post
+from dotenv import load_dotenv
 
 from class_utils import class_number_variants
 from logger import get_logger
 
 logger = get_logger(__name__)
 
+# Model overrides live in .env; load it here so the constants below see them
+# even when this module is imported before app/config.
+load_dotenv()
+
 QUESTION_BANK_DIR = Path("question_bank")
+
+# Difficulty / topic / unit scoring model. Routed by avatar_llm: a bare
+# gemini-* slug goes to Google direct on GEMINI_API_KEY, a vendor/model slug
+# to OpenRouter. Same defaults as the exam module that consumes the output.
+QUESTION_BANK_MODEL = os.getenv("QUESTION_BANK_MODEL", os.getenv("EXAM_MODEL", "gemini-3.6-flash"))
+QUESTION_BANK_FALLBACK_MODEL = os.getenv("QUESTION_BANK_FALLBACK_MODEL", "meta-llama/llama-4-scout")
+
+def _id_token(value: Any) -> str:
+    return str(value or "").strip().replace(" ", "_")
+
+
+def logical_document_id(board: str, class_number: Any, subject: str,
+                        terms: Optional[List[str]] = None, part: Optional[str] = None) -> str:
+    """The bank id a PDF-uploaded paper is stored under.
+
+    The PDF upload has no textbook document id to hand, so the paper is
+    keyed by what identifies it: board + class + subject, the exam's term
+    scope and, for a multi-book subject, the part. Kept here (not in the
+    route) so the exam module derives the very same id when it looks the
+    bank up - a paper stored under one spelling and searched under another
+    is invisible.
+
+    Examples: qb_pdf_CBSE_10_Social_Contemporary_India, qb_pdf_State_Board_07_Science_t1
+    """
+    from class_utils import normalize_class_number
+    from term_utils import term_slug
+    parts = ["qb_pdf", _id_token(board), _id_token(normalize_class_number(class_number) or ""),
+             _id_token(subject)]
+    if part:
+        parts.append(_id_token(part))
+    if terms:
+        parts.append(term_slug(terms))
+    return "_".join(p for p in parts if p)
+
+
+def logical_document_prefix(board: str, class_number: Any, subject: str,
+                            part: Optional[str] = None) -> str:
+    """logical_document_id without the term suffix, for prefix lookups.
+
+    An exam request carries ONE term while a half-yearly paper is stored
+    under a two-term scope, so the exam module matches the bank by prefix
+    (`prefix*`) and lets get_questions filter the per-question term.
+    """
+    return logical_document_id(board, class_number, subject, terms=None, part=part)
+
 
 # Bloom's taxonomy levels for difficulty mapping
 BLOOM_LEVELS = {
@@ -74,6 +122,7 @@ class QuestionBankManager:
         terms: Optional[List[str]] = None,
         board: Optional[str] = None,
         class_number: Optional[str] = None,
+        part: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Discover the (term, unit_number, unit_title) triples available in the vector DB.
 
@@ -121,8 +170,26 @@ class QuestionBankManager:
                         FieldCondition(key="metadata.class_number", match=MatchAny(any=class_variants))
                     )
             if terms:
+                # Same rule as search_qdrant: a chunk with NO term still
+                # matches. CBSE/NCERT books are never term-split, yet a "Board
+                # Exam" maps to a three-term scope - a strict match returned
+                # nothing for them, so the scorer had no unit list to clamp to.
+                from qdrant_client.models import IsEmptyCondition, PayloadField
                 conditions.append(
-                    FieldCondition(key="metadata.term", match=MatchAny(any=list(terms)))
+                    Filter(should=[
+                        FieldCondition(key="metadata.term", match=MatchAny(any=list(terms))),
+                        IsEmptyCondition(is_empty=PayloadField(key="metadata.term")),
+                    ])
+                )
+            if part:
+                # One book of a multi-book subject: its units only, so a
+                # geography paper is never offered the history book's units.
+                conditions.append(
+                    Filter(should=[
+                        FieldCondition(key="metadata.part", match=MatchValue(value=part)),
+                        FieldCondition(key="metadata.part", match=MatchValue(value=part.lower())),
+                        FieldCondition(key="metadata.part", match=MatchValue(value=part.title())),
+                    ])
                 )
 
             qdrant_filter = Filter(must=conditions)
@@ -167,7 +234,8 @@ class QuestionBankManager:
 
     def _get_rag_context(self, question: str, subject: str, unit_number: Optional[int] = None,
                          limit: int = 3, terms: Optional[List[str]] = None,
-                         board: Optional[str] = None, class_number: Optional[str] = None) -> str:
+                         board: Optional[str] = None, class_number: Optional[str] = None,
+                         part: Optional[str] = None) -> str:
         """Retrieve relevant textbook context from Qdrant for difficulty assessment."""
         try:
             from qdrant_integration import search_qdrant
@@ -180,6 +248,7 @@ class QuestionBankManager:
                 board_filter=board,
                 class_filter=class_number,
                 term_filter=terms,
+                part_filter=part,
             )
             if results:
                 context_parts = []
@@ -219,12 +288,13 @@ class QuestionBankManager:
         When the exam spans MORE THAN ONE term the model must also say which term
         each question belongs to, because a unit number alone is ambiguous. For a
         single-term exam the term is already known and is not asked for at all.
-        """
-        api_key = os.environ.get("OPENAI_API_KEY_TEXT") or os.environ.get("OPENAI_API_KEY")
-        if not api_key:
-            # Fallback: use simple heuristic scoring
-            return self._heuristic_scoring(questions, start_idx=start_idx, terms=terms)
 
+        Runs on QUESTION_BANK_MODEL through avatar_llm (Gemini direct by
+        default). It used to post to api.openai.com, whose key is exhausted -
+        every upload was silently falling through to the heuristic, which
+        stamps `topic: "general"` and, for a multi-unit paper, no unit at all,
+        so nothing downstream (exam prep, per-unit lookups) could use it.
+        """
         # Build the prompt with all questions
         questions_text = ""
         for i, q in enumerate(questions, start_idx):
@@ -285,8 +355,8 @@ Relevant textbook context (use the [Term N | Unit X: Title | Section: ...] heade
 Questions to analyze:
 {questions_text}
 
-For EACH question, respond in valid JSON array format:
-[
+For EACH question, respond with a JSON object holding one array, "questions":
+{{"questions": [
   {{
     "question_index": {start_idx},
     "unit_number": <integer — MUST be one of the unit numbers listed above>,{term_field}
@@ -299,50 +369,52 @@ For EACH question, respond in valid JSON array format:
     "cognitive_demand": "low|medium|high",
     "estimated_time_minutes": 2
   }}
-]
+]}}
 
 Rules:
 - CRITICAL: The `unit_number` MUST be one of: {self._valid_unit_numbers}. Do NOT use any number outside this set.{term_rules}
 - Identify the correct `unit_number` by matching the question topic to the textbook context headers. Use the context to determine the best match.
 - If a question could belong to multiple units, pick the MOST SPECIFIC match based on the retrieved context.
+- `topic` is a short, reusable name (2-5 words) for the concept tested, e.g. "Quadratic Formula", "Soil Erosion". Reuse the SAME name for questions on the same concept so they can be counted together; never "general".
 - MCQs testing recall = easy, MCQs requiring analysis = medium
 - Short answers (2-3 marks) requiring definitions = easy, explanations = medium
 - Long answers (5+ marks) requiring critical thinking = hard
 - Questions involving multiple concepts or real-world application = hard
-- Return ONLY the JSON array, no other text.
+- Return ONLY the JSON object, no other text.
 - Ensure all property names and string values use double quotes.
 - Do not include any trailing commas.
 - Do not wrap the JSON in markdown code blocks.
 """
 
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": "gpt-4o-mini",
-            "messages": [{"role": "user", "content": prompt}],
-            "max_completion_tokens": 8000,
-            "temperature": 0.2,
-        }
-
         try:
-            resp = traced_post("score-question-difficulty",
-                "https://api.openai.com/v1/chat/completions",
-                headers=headers,
-                json=payload,
+            import avatar_llm
+            result = avatar_llm.chat(
+                QUESTION_BANK_MODEL,
+                system_prompt="You are an expert educational assessment specialist. You answer ONLY with a JSON object.",
+                user_prompt=prompt,
+                max_tokens=8000,
+                temperature=0.2,
+                force_json=True,
                 timeout=120,
+                fallback_model=QUESTION_BANK_FALLBACK_MODEL,
+                trace_name="score-question-difficulty",
             )
-            if resp.ok:
-                content = resp.json()["choices"][0]["message"]["content"].strip()
-                scored = self._parse_json_safe(content)
-                if scored:
+            if result.ok:
+                parsed = avatar_llm.parse_json(result.text)
+                scored = parsed.get("questions") if isinstance(parsed, dict) else None
+                if not isinstance(scored, list):
+                    # A model that ignored the wrapper and returned the bare array.
+                    scored = self._parse_json_safe(result.text.strip())
+                if isinstance(scored, list) and scored:
                     return scored
+                logger.warning(f"[QuestionBank] LLM scoring returned no usable JSON ({len(result.text)} chars)")
             else:
-                logger.warning(f"[QuestionBank] LLM scoring failed: {resp.status_code}")
+                logger.warning(f"[QuestionBank] LLM scoring failed ({QUESTION_BANK_MODEL}): {(result.error or '')[:200]}")
         except Exception as e:
             logger.warning(f"[QuestionBank] LLM scoring error: {e}")
 
+        logger.warning("[QuestionBank] Falling back to heuristic scoring - topics will be 'general' "
+                       "and multi-unit papers get no per-question unit")
         return self._heuristic_scoring(questions, start_idx=start_idx, terms=terms)
 
     def _parse_json_safe(self, raw: str) -> Optional[Any]:
@@ -422,6 +494,7 @@ Rules:
         terms: Optional[List[str]] = None,
         board: Optional[str] = None,
         class_number: Optional[str] = None,
+        part: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Process a question paper: score difficulty, extract features.
@@ -446,7 +519,7 @@ Rules:
         # Discover available units from vector DB to constrain LLM. Scoped to the
         # exam's terms so out-of-syllabus units are never offered as candidates.
         available_units = self._get_available_units(
-            subject, terms=terms, board=board, class_number=class_number
+            subject, terms=terms, board=board, class_number=class_number, part=part,
         )
         if available_units:
             self._available_units_text = "\n".join(
@@ -505,7 +578,7 @@ Rules:
                 q_text = q.get("question", "")
                 q_ctx = self._get_rag_context(
                     q_text, subject, unit_number, limit=3,
-                    terms=terms, board=board, class_number=class_number,
+                    terms=terms, board=board, class_number=class_number, part=part,
                 )
                 if q_ctx:
                     context_parts.append(f"--- Context for Question {real_idx} ---\n{q_ctx}")
@@ -576,6 +649,7 @@ Rules:
             "unit_number": unit_number,
             "board": board,
             "class_number": class_number,
+            "part": part,
             # Paper-level scope (a list) vs per-question term (a single value).
             "term_scope": terms,
             "total_questions": len(processed_questions),
@@ -613,6 +687,12 @@ Rules:
         `term` filters on the PER-QUESTION term, not the paper's scope — so a
         Term II revision session pulls only its own questions out of a paper
         that happened to span several terms.
+
+        `unit_number` likewise: a full-exam paper is stored with a paper-level
+        unit of None and the LLM-assigned unit on each question, so the unit
+        filter (and the `unit_number` on each returned row) uses the paper's
+        unit when the paper has one and the question's own unit otherwise.
+        Without this, every multi-unit paper vanished from per-unit lookups.
         """
         from term_utils import normalize_term
         want_term = normalize_term(term)
@@ -627,7 +707,8 @@ Rules:
             # Apply filters
             if year and paper.get("year") != year:
                 continue
-            if unit_number is not None and paper.get("unit_number") != unit_number:
+            paper_unit = paper.get("unit_number")
+            if unit_number is not None and paper_unit is not None and paper_unit != unit_number:
                 continue
             # Skip papers whose scope cannot contain the requested term.
             scope = paper.get("term_scope") or []
@@ -636,6 +717,9 @@ Rules:
 
             for q in paper.get("questions", []):
                 if difficulty and q.get("difficulty") != difficulty:
+                    continue
+                q_unit = paper_unit if paper_unit is not None else q.get("unit_number")
+                if unit_number is not None and q_unit != unit_number:
                     continue
                 if want_term:
                     q_term = normalize_term(q.get("term"))
@@ -653,12 +737,40 @@ Rules:
                     "year": paper.get("year"),
                     "exam_name": paper.get("exam_name"),
                     "subject": paper.get("subject"),
-                    "unit_number": paper.get("unit_number"),
+                    "unit_number": q_unit,
                     "term_scope": paper.get("term_scope"),
                 }
                 all_questions.append(q_with_meta)
 
         return all_questions
+
+    def get_questions_for_ids(
+        self,
+        document_ids: List[str],
+        year: Optional[str] = None,
+        difficulty: Optional[str] = None,
+        unit_number: Optional[int] = None,
+        term: Optional[Any] = None,
+    ) -> List[Dict[str, Any]]:
+        """get_questions over several ids, deduplicated by question_id.
+
+        One book can be known under more than one id: the Qdrant document id
+        the frontend resolves, and the logical `qb_pdf_...` id the PDF upload
+        stores under. An id ending in `*` is a prefix (glob), so
+        `qb_pdf_CBSE_10_Social*` finds that subject's papers whatever term
+        scope they were uploaded with.
+        """
+        seen: set = set()
+        out: List[Dict[str, Any]] = []
+        for doc_id in [d for d in (document_ids or []) if d]:
+            for q in self.get_questions(document_id=doc_id, year=year, difficulty=difficulty,
+                                        unit_number=unit_number, term=term):
+                key = q.get("question_id") or q.get("question", "")[:80]
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append(q)
+        return out
 
     def get_stats(self, document_id: str) -> Dict[str, Any]:
         """Get question bank statistics for a document."""

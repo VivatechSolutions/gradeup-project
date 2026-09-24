@@ -475,6 +475,19 @@ class AvatarEngine:
         if real_world:
             parts.append(f"=== REAL-WORLD EXAMPLE ===\n{real_world.get('question', '')}\n"
                          f"{(real_world.get('reveal') or {}).get('text', '')}")
+        # English: the poem as sung, and the grammar part after the story.
+        sing = lesson_patterns.phase(lesson, "sing_along")
+        if sing:
+            poem = "\n\n".join("\n".join(ln.get("text", "") for ln in st.get("lines") or [])
+                               for st in sing.get("stanzas") or [])
+            parts.append(f"=== THE POEM (sung together before the explanation) ===\n{poem}")
+        grammar = lesson_patterns.phase(lesson, "grammar")
+        if grammar:
+            lines = []
+            for topic in grammar.get("topics") or []:
+                lines.append(f"{topic.get('title', '')}: {topic.get('rule', '')}")
+                lines += [f"[{s.get('segment_id')}] {s.get('text', '')}" for s in topic.get("segments") or []]
+            parts.append("=== GRAMMAR PART (after the story) ===\n" + "\n".join(lines))
 
         if current_text:
             parts.append(f"=== CURRENT SEGMENT (Student paused here) ===\n[{current_segment_id}] {current_text}")
@@ -1410,6 +1423,21 @@ Return EXACTLY this JSON:
                         item["visual"].pop("prompt", None)
             elif name == "real_world":
                 pass    # the reveal is fetched through reveal_real_world
+            elif name == "explanation":
+                # Parts built before 2026-09-23 stored the book's questions;
+                # the explanation asks nothing, so the client never gets them.
+                for part in ph.get("parts") or []:
+                    part.pop("questions", None)
+            elif name == "sing_along":
+                for blank in ph.get("blanks") or []:
+                    blank.pop("answer", None)
+            elif name == "grammar":
+                for topic in ph.get("topics") or []:
+                    for item in topic.get("practice") or []:
+                        for key in ("answer", "accept", "model_answer", "explanation"):
+                            item.pop(key, None)
+                        for opt in item.get("options") or []:
+                            opt.pop("feedback", None)
             elif name == "explain_back":
                 ph.pop("key_points", None)
                 ph.pop("model_explanation", None)
@@ -1432,7 +1460,9 @@ Return EXACTLY this JSON:
     def _set_phase(session: Dict, name: str) -> None:
         progress = session["avatar_session_history"]["progress"]
         progress["phase"] = name
-        order = lesson_patterns.PHASE_ORDER
+        # The position in THIS lesson: an English lesson has phases (sing-along,
+        # grammar) a science lesson does not.
+        order = [p.get("phase") for p in (session.get("avatar_lesson") or {}).get("phases") or []]
         progress["phase_index"] = order.index(name) if name in order else len(order)
 
     @staticmethod
@@ -1470,7 +1500,9 @@ Return EXACTLY this JSON:
             "option_id": option_id, "option_label": hook["options"][option_id],
             "is_correct": is_correct, "answered_at": now,
         }
-        self._set_phase(session, "explanation")
+        # A poem sings before it explains.
+        next_phase = self._next_phase(session, "hook") or "explanation"
+        self._set_phase(session, next_phase)
         session["avatar_session_history"].setdefault("emotion_timeline", []).append(
             {"phase": "hook", "emotion": resolution.get("emotion", "warm"), "timestamp": now})
         self.store.save(session)
@@ -1483,8 +1515,179 @@ Return EXACTLY this JSON:
             "resolution": resolution,                      # play after the hook_answer segment
             "bridge": hook.get("bridge"),
             "closing_segment_id": (lesson_patterns.phase(session["avatar_lesson"], "explanation") or {}).get("closing_segment_id"),
-            "next_phase": "explanation",
+            "next_phase": next_phase,
         }
+
+    # ── English: the poem's sing-along ───────────────────────────────────────
+
+    def submit_sing_along(self, session_id: str, action: str = "answer",
+                          blank_id: Optional[str] = None, response: Any = None) -> Dict:
+        """The student joins the song (or just listens), sings the missing words,
+        or says the song is over. Graded locally from the stored words; the
+        phase ends when every blank is answered or on ``action="done"``. No LLM."""
+        session, err = self._lesson_session(session_id)
+        if err:
+            return err
+        sing = lesson_patterns.phase(session["avatar_lesson"], "sing_along")
+        if not sing:
+            return {"error": "This lesson has no sing-along phase (only poems sing)"}
+        blanks = {b["blank_id"]: b for b in sing.get("blanks") or []}
+        state = session.setdefault("phase_state", {}).setdefault(
+            "sing_along", {"joined": None, "answers": {}, "correct": 0, "total": len(blanks)})
+        action = str(action or "answer").strip().lower()
+        now = datetime.now(timezone.utc).isoformat()
+
+        if action in ("join", "listen"):
+            state["joined"] = action == "join"
+            state["joined_at"] = now
+            self.store.save(session)
+            client = self._client_lesson({"phases": [sing]})["phases"][0]
+            return {
+                "action": "sing_along_started",
+                "joined": state["joined"],
+                # echo: the avatar sings a line, the student sings it back.
+                "mode": "echo" if state["joined"] else "listen",
+                "how_to_sing": sing.get("how_to_sing", ""),
+                "stanzas": client.get("stanzas") or [],
+                "blanks": client.get("blanks") or [],
+                "next_phase": "sing_along",
+            }
+        if action == "done":
+            out = {"action": "sing_along_done", **self._finish_sing_along(session, sing, state, now)}
+            self.store.save(session)
+            return out
+        if action != "answer":
+            return {"error": "action must be one of join, listen, answer, done"}
+
+        blank = blanks.get(str(blank_id or "").strip())
+        if not blank:
+            return {"error": f"blank_id must be one of {list(blanks)}"}
+        graded = lesson_patterns.grade_sung_word(blank, response)
+        is_correct = graded["verdict"] == "correct"
+        line = next((ln for st in sing.get("stanzas") or [] for ln in st.get("lines") or []
+                     if ln.get("line_id") == blank.get("line_id")), None)
+        state["answers"][blank["blank_id"]] = {"response": response, "verdict": graded["verdict"],
+                                               "answered_at": now}
+        state["correct"] = sum(1 for a in state["answers"].values() if a.get("verdict") == "correct")
+        cheer = sing.get("cheer") or {}
+        out: Dict[str, Any] = {
+            "action": "sung_word_graded",
+            "blank_id": blank["blank_id"],
+            "is_correct": is_correct,
+            "close": graded["close"],                     # right, with a one-letter slip
+            "word": blank.get("answer"),
+            "feedback": (cheer.get("text") or "Yes! That's it!") if is_correct else
+                        f"Almost! The word is \"{blank.get('answer')}\" - let's sing that line together.",
+            "cheer": cheer if is_correct else None,
+            "line": line,                                 # the sung line, with its audio
+            "answered": len(state["answers"]),
+            "total": len(blanks),
+        }
+        if len(state["answers"]) >= len(blanks):
+            out.update(self._finish_sing_along(session, sing, state, now))
+        else:
+            out["finished"] = False
+            out["next_phase"] = "sing_along"
+        self.store.save(session)
+        return out
+
+    def _finish_sing_along(self, session: Dict, sing: Dict, state: Dict, now: str) -> Dict:
+        state["finished_at"] = now
+        next_phase = self._next_phase(session, "sing_along") or "explanation"
+        self._set_phase(session, next_phase)
+        session["avatar_session_history"].setdefault("emotion_timeline", []).append(
+            {"phase": "sing_along", "emotion": (sing.get("outro") or {}).get("emotion", "warm"),
+             "timestamp": now})
+        return {"finished": True, "sung_words_correct": state.get("correct", 0),
+                "sung_words_total": state.get("total", 0), "outro": sing.get("outro"),
+                "next_phase": next_phase}
+
+    # ── English: the grammar part after the story ────────────────────────────
+
+    @staticmethod
+    def _client_item(item: Dict) -> Dict:
+        """A grammar practice item without its answer key."""
+        import copy
+        safe = copy.deepcopy(item)
+        for key in ("answer", "accept", "model_answer", "explanation"):
+            safe.pop(key, None)
+        for opt in safe.get("options") or []:
+            opt.pop("feedback", None)
+        return safe
+
+    def submit_grammar(self, session_id: str, action: str = "answer",
+                       item_id: Optional[str] = None, response: Any = None) -> Dict:
+        """Grade one grammar practice item. choice / fill_blank / order / match
+        come from the stored key; a rewrite (free_text) is judged by the model
+        against the stored model answer. After the last item (or
+        ``action="done"``) the phase ends with a score and the wrap-up line."""
+        session, err = self._lesson_session(session_id)
+        if err:
+            return err
+        grammar = lesson_patterns.phase(session["avatar_lesson"], "grammar")
+        if not grammar:
+            return {"error": "This lesson has no grammar phase"}
+        items = [(topic, item) for topic in grammar.get("topics") or []
+                 for item in topic.get("practice") or []]
+        by_id = {item["item_id"]: (topic, item) for topic, item in items}
+        state = session.setdefault("phase_state", {}).setdefault(
+            "grammar", {"answers": {}, "correct": 0, "total": len(items)})
+        action = str(action or "answer").strip().lower()
+        now = datetime.now(timezone.utc).isoformat()
+
+        if action == "done":
+            out = {"action": "grammar_done", **self._finish_grammar(session, grammar, state, now)}
+            self.store.save(session)
+            return out
+        if action != "answer":
+            return {"error": "action must be one of answer, done"}
+        if str(item_id or "") not in by_id:
+            return {"error": f"item_id must be one of {list(by_id)}"}
+        topic, item = by_id[str(item_id)]
+
+        graded = lesson_patterns.grade_interaction(item, response)
+        if graded.get("needs_llm"):
+            graded = self._judge_free_text(session, item, response)
+        verdict = graded["verdict"]
+        state["answers"][item["item_id"]] = {"response": response, "verdict": verdict, "answered_at": now}
+        state["correct"] = sum(1 for a in state["answers"].values() if a.get("verdict") == "correct")
+        itype = item.get("type")
+        out: Dict[str, Any] = {
+            "action": "grammar_graded",
+            "item_id": item["item_id"],
+            "topic_id": topic["topic_id"],
+            "topic_title": topic.get("title", ""),
+            "interaction_type": itype,
+            "verdict": verdict,
+            "feedback": graded.get("feedback", ""),
+            "emotion": graded.get("emotion") or ("encouraging" if verdict == "correct" else "empathetic"),
+            "answered": len(state["answers"]),
+            "total": len(items),
+        }
+        if verdict != "correct" and graded.get("expected") is not None \
+                and itype in ("choice", "fill_blank", "order", "match"):
+            out["expected"] = graded["expected"]
+        if itype == "free_text":
+            out["model_answer"] = item.get("model_answer", "")    # shown once judged
+        remaining = [i for t, i in items if i["item_id"] not in state["answers"]]
+        if remaining:
+            nxt_topic = next(t for t, i in items if i is remaining[0])
+            out["next_item"] = {"topic_id": nxt_topic["topic_id"], **self._client_item(remaining[0])}
+            out["finished"] = False
+            out["next_phase"] = "grammar"
+        else:
+            out.update(self._finish_grammar(session, grammar, state, now))
+        session["avatar_session_history"].setdefault("emotion_timeline", []).append(
+            {"phase": "grammar", "emotion": out["emotion"], "timestamp": now})
+        self.store.save(session)
+        return out
+
+    def _finish_grammar(self, session: Dict, grammar: Dict, state: Dict, now: str) -> Dict:
+        state["finished_at"] = now
+        next_phase = self._next_phase(session, "grammar") or "real_world"
+        self._set_phase(session, next_phase)
+        return {"finished": True, "score": {"correct": state.get("correct", 0), "total": state.get("total", 0)},
+                "wrap_up": grammar.get("wrap_up"), "next_phase": next_phase}
 
     # ── 3. Explore ──────────────────────────────────────────────────────────
 
@@ -1944,6 +2147,17 @@ Return EXACTLY this JSON:
                 "explain_level": explain_state.get("level"),
                 "explain_missing": explain_state.get("missing"),
             }
+            if "sing_along" in ps:
+                summary["lesson"].update({
+                    "sing_along_joined": ps["sing_along"].get("joined"),
+                    "sung_words_correct": ps["sing_along"].get("correct"),
+                    "sung_words_total": ps["sing_along"].get("total"),
+                })
+            if "grammar" in ps:
+                summary["lesson"].update({
+                    "grammar_correct": ps["grammar"].get("correct"),
+                    "grammar_total": ps["grammar"].get("total"),
+                })
 
         return {
             "session_id": session_id,
