@@ -79,10 +79,42 @@ function buildSubjectGroupKey(unit) {
 
 async function listStudentSubjects(userId) {
   const profile = await getStudentProfile(userId);
-  const { unitQuery } = studentContentFilter(profile);
-  const units = await SubjectUnit.find(unitQuery)
+  const { unitQuery, board, classNumber } = studentContentFilter(profile);
+  const projection = [
+      "_id",
+      "documentId",
+      "board",
+      "standard",
+      "subject",
+      "subjectGroupKey",
+      "part",
+      "term",
+      "partSequence",
+      "termSequence",
+      "unitNumber",
+      "unitTitle",
+      "unitLabel",
+      "chapterName",
+      "readerIndex",
+      "createdAt",
+      "updatedAt",
+    ].join(" ");
+  const normalizedStandard = normalize(classNumber).replace(/^(grade|class)\s*/i, "").replace(/^0+(?=\d)/, "");
+  const exactQuery = {
+    ...(board ? { board } : {}),
+    ...(normalizedStandard ? { standard: normalizedStandard } : {}),
+    "processing.status": { $ne: "failed" },
+  };
+  let units = await SubjectUnit.find(exactQuery)
+    .select(projection)
     .sort({ subject: 1, part: 1, term: 1, unitNumber: 1 })
     .lean();
+  if (!units.length && (board || classNumber)) {
+    units = await SubjectUnit.find(unitQuery)
+      .select(projection)
+      .sort({ subject: 1, part: 1, term: 1, unitNumber: 1 })
+      .lean();
+  }
 
   const groups = new Map();
   units.forEach((unit) => {
@@ -112,9 +144,13 @@ async function listStudentSubjects(userId) {
       board: unit.board,
       standard: unit.standard,
       subject: unit.subject,
+      part: unit.part || null,
+      term: unit.term || null,
       unitNumber: unit.unitNumber,
       unitTitle: unit.unitTitle,
       unitLabel: unit.unitLabel,
+      chapterName: unit.chapterName || null,
+      readerIndex: unit.readerIndex || null,
     });
   });
   return Array.from(groups.values());

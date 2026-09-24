@@ -15,7 +15,7 @@ import './slide-editor.css';
 
 function Tool({ label, children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { label: string }) { return <button type="button" title={label} aria-label={label} {...props}>{children}</button>; }
 export default function SlideEditorPage() {
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const userId = user?.id || user?._id;
   const deckId = window.location.pathname.split('/')[3] || '';
   const shareToken = new URLSearchParams(window.location.search).get('share') || '';
@@ -131,8 +131,9 @@ export default function SlideEditorPage() {
     });
   }
   const draftDownload = () => doc && download(new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' }), `${doc.title}-draft.json`);
+  if (authLoading) return <main className="se-entry"><h1>GradeUp Slides</h1><p role="status">Checking your GradeUp account...</p></main>;
   if (!user) return <main className="se-entry"><h1>GradeUp Slides</h1><p>Sign in to open this presentation.</p><button onClick={() => { localStorage.setItem('gradeup_post_auth_redirect', window.location.pathname + window.location.search); window.location.href = '/auth'; }}>Sign in</button></main>;
-  if (!deck || !doc || !slide) return <main className="se-entry"><h1>GradeUp Slides</h1><p role="status">{error || 'Loading presentation...'}</p><a href="/seminarPage">Back to seminar</a></main>;
+  if (!deck || !doc || !slide) return <main className="se-entry"><h1>GradeUp Slides</h1><p role="status">{error || 'Preparing your presentation...'}</p>{error && <button type="button" onClick={() => { setError(''); refresh().catch(e => setError(e.message)); }}>Retry</button>}<a href="/seminarPage">Back to seminar</a></main>;
   const scale = presenting || !zoom ? fit : zoom;
   return <main className={`se-app ${presenting ? 'se-presenting' : ''}`}>
     {!presenting && <>

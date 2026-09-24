@@ -15,6 +15,12 @@ export type LibraryUnit = {
   chapterName?: string | null;
   readerIndex?: {
     sections?: string[];
+    avatarSections?: Array<{
+      sectionId?: string | null;
+      sectionTitle: string;
+      order?: number | null;
+      hasAvatarLesson: boolean;
+    }>;
     hasGlossary?: boolean;
     hasSummary?: boolean;
   };
@@ -146,23 +152,26 @@ export async function recordStudentProgress(payload: {
     body: JSON.stringify(payload),
   });
 }
-
-export async function getLibrarySubjectDetail(subjectGroupKey: string) {
+export async function getLibrarySubjectDetail(
+  subjectGroupKey: string,
+  options: { summary?: boolean } = {},
+) {
+  const summary = options.summary ? "?summary=true" : "";
   return apiFetch<LibrarySubject>(
-    `/api/v1/library/subjects/${encodeURIComponent(subjectGroupKey)}`,
+    `/api/v1/library/subjects/${encodeURIComponent(subjectGroupKey)}${summary}`,
   );
 }
 
 export async function getUnitContent(
   unitId: string,
-  format: "structured" | "enriched" = "enriched",
+  format: "structured" | "enriched" | "both" = "enriched",
 ) {
   return apiFetch<{
     unit: LibraryUnit;
-    format: "structured" | "enriched";
+    format: "structured" | "enriched" | "both";
     content: any;
   }>(
-    `/api/v1/library/units/${encodeURIComponent(unitId)}/content?format=${format}`,
+    `/api/v1/library/units/${encodeURIComponent(unitId)}/content?format=${format}${format === "both" ? "&summary=true" : ""}`,
   );
 }
 
@@ -1029,6 +1038,7 @@ export type AvatarFlashcardRequest = {
 export async function startAvatarSession(payload: {
   unitId: string;
   sectionTitle: string;
+  sectionId?: string | null;
   section_title?: string;
   board?: string | null;
   class_number?: string | null;
@@ -1047,6 +1057,7 @@ export async function raiseAvatarHand(payload: {
   sessionId: string;
   studentDoubt?: string | null;
   studentResponse?: string | null;
+  segmentId?: string | null;
 }) {
   return apiFetch<any>("/api/v1/avatar/raise-hand", {
     method: "POST",
@@ -1076,4 +1087,13 @@ export async function endAvatarSession(payload: { sessionId: string }) {
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+export function endAvatarSessionKeepalive(payload: { sessionId: string }) {
+  return fetch(buildApiUrl("/api/v1/avatar/end"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    keepalive: true,
+    body: JSON.stringify(payload),
+  }).catch(() => undefined);
 }

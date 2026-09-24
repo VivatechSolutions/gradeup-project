@@ -7,7 +7,17 @@ import { SlideRenderer } from "./SlideRenderer";
 import { AvatarTeacher } from "./AvatarTeacher";
 import { CompletionEffect } from "./CompletionEffect";
 import { generateLessonFromChapter } from "./mockLessonData";
-import { Lightbulb, Volume2, X } from "lucide-react";
+import { Hand, Lightbulb, Loader2, Mic, Send, Square, Volume2, X } from "lucide-react";
+import {
+  endAvatarSession,
+  endAvatarSessionKeepalive,
+  raiseAvatarHand,
+  resumeAvatarSession,
+  transcribeDebateAudio,
+} from "../../../lib/gradeupApi";
+
+const pendingAvatarEndTimers = new Map<string, number>();
+const endedAvatarSessions = new Set<string>();
 
 interface SlideContainerProps {
   book?: any;
@@ -44,6 +54,7 @@ const slideVariants = {
 };
 
 type NarrationMode = "slide" | "feedback" | "insight";
+type PlaybackState = "idle" | "narrating" | "awaiting_action" | "feedback" | "ready" | "paused" | "advancing";
 
 export const SlideContainer: React.FC<SlideContainerProps> = ({
   book,
@@ -66,17 +77,35 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
   const [celebrationMsg, setCelebrationMsg] = useState("Activity Complete! Next Unlocked");
   const [celebrationTone, setCelebrationTone] = useState<"success" | "error" | "neutral">("success");
   const [avatarType, setAvatarType] = useState<"male" | "female">("male");
-  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [isAvatarSpeaking, setIsAvatarSpeaking] = useState(false);
   const [isAvatarPaused, setIsAvatarPaused] = useState(false);
-  const speechUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const [playbackState, setPlaybackState] = useState<PlaybackState>("idle");
+  const lessonAudioRef = useRef<HTMLAudioElement | null>(null);
   const narrationModeRef = useRef<NarrationMode | null>(null);
+  const autoAdvanceTimerRef = useRef<number | null>(null);
+  const advanceRef = useRef<() => void>(() => undefined);
+  const narrationEndedRef = useRef<() => void>(() => undefined);
+  const currentSlideIdRef = useRef("");
+  const doubtOpenRef = useRef(false);
   const [showInsightModal, setShowInsightModal] = useState(false);
+  const [doubtOpen, setDoubtOpen] = useState(false);
+  const [doubtText, setDoubtText] = useState("");
+  const [doubtChat, setDoubtChat] = useState<Array<{ id: string; role: "student" | "ai"; text: string }>>([]);
+  const [isAskingDoubt, setIsAskingDoubt] = useState(false);
+  const [isRecordingDoubt, setIsRecordingDoubt] = useState(false);
+  const [isTranscribingDoubt, setIsTranscribingDoubt] = useState(false);
+  const doubtRecorderRef = useRef<MediaRecorder | null>(null);
+  const doubtStreamRef = useRef<MediaStream | null>(null);
+  const doubtChunksRef = useRef<Blob[]>([]);
+  const avatarEndCalledRef = useRef(false);
+  const sessionId = String(chapter?.session_id || chapter?.sessionId || "");
 
   // Track task states for each slide
   const [taskStates, setTaskStates] = useState<Record<string, TaskState>>({});
 
   const currentSlide: SlideData = lesson.slides[currentIndex] || lesson.slides[0];
+  currentSlideIdRef.current = currentSlide?.id || "";
+  doubtOpenRef.current = doubtOpen;
 
   // Helper to retrieve current slide's task state
   const currentTaskState: TaskState = taskStates[currentSlide.id] || {
@@ -89,21 +118,13 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
     currentSlide.avatarMessage?.initial || "Let's explore this concept together!"
   );
 
-  const speechSupported =
-    typeof window !== "undefined" && "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
-
-  const getReadAloudVoice = (voices: SpeechSynthesisVoice[], voiceType = avatarType) => {
-    const femalePattern = /female|zira|samantha|karen|susan|victoria|hazel|serena|ava|aria|jenny/i;
-    const malePattern = /male|david|mark|daniel|george|guy|ryan|christopher|james/i;
-    const genderPattern = voiceType === "female" ? femalePattern : malePattern;
-
-    return (
-      voices.find((voice) => genderPattern.test(voice.name)) ||
-      voices.find((voice) => /^en/i.test(voice.lang) && voice.localService) ||
-      voices.find((voice) => /^en/i.test(voice.lang)) ||
-      voices[0]
-    );
-  };
+  const getVoiceAudioUrl = (audio: SlideData["audio"], voiceType = avatarType) =>
+    voiceType === "female"
+      ? audio?.female || audio?.male || ""
+      : audio?.male || audio?.female || "";
+  const getSlideAudioUrl = (slide = currentSlide, voiceType = avatarType) =>
+    getVoiceAudioUrl(slide?.questionAudio || slide?.audio, voiceType);
+  const speechSupported = Boolean(getSlideAudioUrl());
 
   const buildSlideNarration = (slide: SlideData, teacherMessage?: string, includeIntro = false) => {
     const parts: string[] = [];
@@ -153,25 +174,6 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
     return parts.join(". ");
   };
 
-  const buildFeedbackNarration = (
-    isCorrect?: boolean,
-    feedback?: string,
-    fallback?: string,
-  ) => {
-    const safeFeedback = feedback?.replace(/\s+/g, " ").trim();
-    const safeFallback = fallback?.replace(/\s+/g, " ").trim();
-
-    if (isCorrect === false) {
-      return `Oh oh! Not quite. ${safeFeedback || safeFallback || "Try again and look carefully at the clue."}`;
-    }
-
-    if (isCorrect === true) {
-      return `Wow! Excellent work. ${safeFeedback || safeFallback || "That is correct. Keep going!"}`;
-    }
-
-    return `Great job! ${safeFeedback || safeFallback || "Activity complete. You can move to the next slide."}`;
-  };
-
   const getCoreInsight = (slide: SlideData) => {
     const title =
       slide.takeaway?.label ||
@@ -195,14 +197,83 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
     speakAvatarText(`Core insight. ${insight.title}. ${insight.text}`, avatarType, "insight");
   };
 
+  const cancelAutoAdvance = () => {
+    if (autoAdvanceTimerRef.current !== null) {
+      window.clearTimeout(autoAdvanceTimerRef.current);
+      autoAdvanceTimerRef.current = null;
+    }
+  };
+
   const stopAvatarSpeech = () => {
     narrationModeRef.current = null;
-    if (speechSupported) {
-      window.speechSynthesis.cancel();
+    if (lessonAudioRef.current) {
+      lessonAudioRef.current.pause();
+      lessonAudioRef.current.onended = null;
+      lessonAudioRef.current.onerror = null;
+      lessonAudioRef.current = null;
     }
-    speechUtteranceRef.current = null;
     setIsAvatarSpeaking(false);
     setIsAvatarPaused(false);
+    setPlaybackState("idle");
+  };
+
+  const scheduleAutoAdvance = (delay = 2000) => {
+    cancelAutoAdvance();
+    if (doubtOpenRef.current) return;
+    setPlaybackState("ready");
+    autoAdvanceTimerRef.current = window.setTimeout(() => {
+      autoAdvanceTimerRef.current = null;
+      if (!doubtOpenRef.current) {
+        setPlaybackState("advancing");
+        advanceRef.current();
+      }
+    }, delay);
+  };
+
+  const playVoiceAudio = (
+    audioSource: SlideData["audio"],
+    voiceType = avatarType,
+    mode: NarrationMode = "slide",
+    onEnded?: () => void,
+  ) => {
+    const audioUrl = getVoiceAudioUrl(audioSource, voiceType);
+    if (!audioUrl) {
+      onEnded?.();
+      return false;
+    }
+    stopAvatarSpeech();
+    narrationModeRef.current = mode;
+    setIsAvatarPaused(false);
+    const slideId = currentSlideIdRef.current;
+    const audio = new Audio(audioUrl);
+    audio.preload = "auto";
+    lessonAudioRef.current = audio;
+    audio.onplay = () => {
+      setIsAvatarSpeaking(true);
+      setIsAvatarPaused(false);
+      setPlaybackState(mode === "feedback" ? "feedback" : "narrating");
+    };
+    audio.onended = () => {
+      setIsAvatarSpeaking(false);
+      setIsAvatarPaused(false);
+      lessonAudioRef.current = null;
+      narrationModeRef.current = null;
+      setPlaybackState("awaiting_action");
+      if (slideId === currentSlideIdRef.current) onEnded?.();
+    };
+    audio.onerror = () => {
+      setIsAvatarSpeaking(false);
+      setIsAvatarPaused(false);
+      lessonAudioRef.current = null;
+      narrationModeRef.current = null;
+      setPlaybackState("awaiting_action");
+    };
+    audio.play().catch(() => {
+      setIsAvatarSpeaking(false);
+      setIsAvatarPaused(true);
+      setPlaybackState("paused");
+    });
+    return true;
   };
 
   const speakAvatarText = (
@@ -210,44 +281,11 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
     voiceType = avatarType,
     mode: NarrationMode = "slide",
   ) => {
-    const safeText = text?.trim();
-    if (!safeText || !speechSupported) return;
-
-    window.speechSynthesis.cancel();
-    narrationModeRef.current = mode;
-    setIsAvatarPaused(false);
-
-    const utterance = new SpeechSynthesisUtterance(safeText);
-    const selectedVoice = getReadAloudVoice(availableVoices.length ? availableVoices : window.speechSynthesis.getVoices(), voiceType);
-    if (selectedVoice) utterance.voice = selectedVoice;
-    utterance.rate = 0.95;
-    utterance.pitch = voiceType === "female" ? 1.08 : 0.95;
-    utterance.volume = 1;
-
-    utterance.onstart = () => {
-      setIsAvatarSpeaking(true);
-      setIsAvatarPaused(false);
-    };
-    utterance.onend = () => {
-      setIsAvatarSpeaking(false);
-      setIsAvatarPaused(false);
-      speechUtteranceRef.current = null;
-      const completedMode = narrationModeRef.current;
-      narrationModeRef.current = null;
-      if (completedMode === "slide") {
-        window.setTimeout(() => speakCoreInsight(currentSlide), 350);
-      }
-    };
-    utterance.onerror = () => {
-      setIsAvatarSpeaking(false);
-      setIsAvatarPaused(false);
-      speechUtteranceRef.current = null;
-      narrationModeRef.current = null;
-    };
-
-    speechUtteranceRef.current = utterance;
-    window.speechSynthesis.speak(utterance);
-    setIsAvatarSpeaking(true);
+    if (mode === "insight") setShowInsightModal(true);
+    if (mode !== "slide") return;
+    playVoiceAudio(currentSlide.questionAudio || currentSlide.audio, voiceType, mode, () => {
+      narrationEndedRef.current();
+    });
   };
 
   const handleAvatarPlayStop = () => {
@@ -259,14 +297,19 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
   };
 
   const handleAvatarPauseResume = () => {
-    if (!speechSupported || !isAvatarSpeaking) return;
-
-    if (isAvatarPaused) {
-      window.speechSynthesis.resume();
+    const audio = lessonAudioRef.current;
+    if (!audio) {
+      speakAvatarText();
+      return;
+    }
+    if (audio.paused) {
+      audio.play().catch(() => undefined);
       setIsAvatarPaused(false);
+      setPlaybackState(narrationModeRef.current === "feedback" ? "feedback" : "narrating");
     } else {
-      window.speechSynthesis.pause();
+      audio.pause();
       setIsAvatarPaused(true);
+      setPlaybackState("paused");
     }
   };
 
@@ -276,7 +319,7 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
 
   const handleAvatarTypeChange = (type: "male" | "female") => {
     setAvatarType(type);
-    if (isAvatarSpeaking) {
+    if (isAvatarSpeaking || isAvatarPaused) {
       speakAvatarText(buildSlideNarration(currentSlide, avatarSpeech), type);
     }
   };
@@ -288,48 +331,219 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
     }
   };
 
+  const pauseForDoubt = () => {
+    cancelAutoAdvance();
+    const audio = lessonAudioRef.current;
+    if (audio && !audio.paused) {
+      audio.pause();
+      setIsAvatarPaused(true);
+      setPlaybackState("paused");
+    }
+    setDoubtOpen(true);
+  };
+
+  const resumeAfterDoubt = async () => {
+    if (sessionId) {
+      try {
+        await resumeAvatarSession({ sessionId });
+      } catch {}
+    }
+    setDoubtOpen(false);
+    const audio = lessonAudioRef.current;
+    if (audio?.paused) {
+      audio.play().catch(() => undefined);
+    } else if (currentTaskState.isCompleted) {
+      scheduleAutoAdvance();
+    }
+  };
+
+  const submitDoubtText = async (value = doubtText) => {
+    const question = value.trim();
+    if (!sessionId || !question || isAskingDoubt) return;
+    const messageId = Date.now();
+    setDoubtChat((current) => [
+      ...current,
+      { id: `student-${messageId}`, role: "student", text: question },
+    ]);
+    setDoubtText("");
+    setIsAskingDoubt(true);
+    try {
+      const response = await raiseAvatarHand({
+        sessionId,
+        studentDoubt: question,
+        segmentId: currentSlide.segmentId || currentSlide.id,
+      });
+      const clarificationSegments = Array.isArray(response?.clarification?.segments)
+        ? response.clarification.segments
+        : Array.isArray(response?.segments)
+          ? response.segments
+          : [];
+      const answer = clarificationSegments
+        .map((segment: any) => String(segment?.text || segment?.content || "").trim())
+        .filter(Boolean)
+        .join(" ") || String(response?.message || "I could not prepare a clarification for that yet.");
+      setDoubtChat((current) => [
+        ...current,
+        { id: `ai-${messageId}`, role: "ai", text: answer },
+      ]);
+    } catch (error: any) {
+      setDoubtChat((current) => [
+        ...current,
+        { id: `ai-${messageId}-error`, role: "ai", text: error?.message || "Unable to answer this doubt right now." },
+      ]);
+    } finally {
+      setIsAskingDoubt(false);
+    }
+  };
+
+  const startDoubtRecording = async () => {
+    if (isRecordingDoubt || isTranscribingDoubt || isAskingDoubt) return;
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      doubtStreamRef.current = stream;
+      doubtRecorderRef.current = recorder;
+      doubtChunksRef.current = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data?.size) doubtChunksRef.current.push(event.data);
+      };
+      recorder.onstop = async () => {
+        const chunks = [...doubtChunksRef.current];
+        doubtStreamRef.current?.getTracks().forEach((track) => track.stop());
+        doubtStreamRef.current = null;
+        doubtRecorderRef.current = null;
+        doubtChunksRef.current = [];
+        setIsRecordingDoubt(false);
+        if (!chunks.length) return;
+        setIsTranscribingDoubt(true);
+        try {
+          const result = await transcribeDebateAudio(
+            new Blob(chunks, { type: recorder.mimeType || "audio/webm" }),
+            "en",
+          );
+          const transcript = String(result?.text || result?.transcript || "").trim();
+          if (transcript) await submitDoubtText(transcript);
+        } finally {
+          setIsTranscribingDoubt(false);
+        }
+      };
+      recorder.start();
+      setIsRecordingDoubt(true);
+    } catch {
+      doubtStreamRef.current?.getTracks().forEach((track) => track.stop());
+      setIsRecordingDoubt(false);
+    }
+  };
+
+  const stopDoubtRecording = () => {
+    if (doubtRecorderRef.current?.state === "recording") doubtRecorderRef.current.stop();
+  };
+
+  const endLessonSession = async () => {
+    if (!sessionId || avatarEndCalledRef.current || endedAvatarSessions.has(sessionId)) return;
+    avatarEndCalledRef.current = true;
+    endedAvatarSessions.add(sessionId);
+    try {
+      await endAvatarSession({ sessionId });
+    } catch {}
+  };
+
+  const endLessonSessionKeepalive = () => {
+    if (!sessionId || avatarEndCalledRef.current || endedAvatarSessions.has(sessionId)) return;
+    avatarEndCalledRef.current = true;
+    endedAvatarSessions.add(sessionId);
+    void endAvatarSessionKeepalive({ sessionId });
+  };
+
+  const handleExitToUnits = async () => {
+    cancelAutoAdvance();
+    stopAvatarSpeech();
+    await endLessonSession();
+    onBackToUnits();
+  };
+
+  const handleFinishLesson = async () => {
+    cancelAutoAdvance();
+    stopAvatarSpeech();
+    await endLessonSession();
+    if (onLessonFinish) onLessonFinish();
+    else onBackToUnits();
+  };
+
   useEffect(() => {
     setCurrentIndex(0);
+    setPlaybackState("idle");
     setDirection("next");
     setIsNavigating(false);
     setShowCelebration(false);
     setCelebrationTone("success");
     setShowInsightModal(false);
     setTaskStates({});
+    cancelAutoAdvance();
     setAvatarSpeech(lesson.slides[0]?.avatarMessage?.initial || "Let's explore this concept together!");
     stopAvatarSpeech();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lesson.id]);
 
   useEffect(() => {
-    if (!speechSupported) return;
-
-    const loadVoices = () => {
-      setAvailableVoices(window.speechSynthesis.getVoices());
-    };
-
-    loadVoices();
-    window.speechSynthesis.addEventListener("voiceschanged", loadVoices);
-
-    return () => {
-      window.speechSynthesis.removeEventListener("voiceschanged", loadVoices);
-      window.speechSynthesis.cancel();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (!speechSupported || !avatarSpeech.trim()) return;
+    if (!getSlideAudioUrl(currentSlide, avatarType)) return;
 
     const timer = window.setTimeout(() => {
-      speakAvatarText(buildSlideNarration(currentSlide, avatarSpeech, currentIndex === 0), avatarType);
+      speakAvatarText("", avatarType);
     }, 420);
 
     return () => {
       window.clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentSlide.id]);
+  }, [currentSlide.id, avatarType]);
+
+  useEffect(() => {
+    const nextSlide = lesson.slides[currentIndex + 1];
+    const nextUrl = nextSlide ? getSlideAudioUrl(nextSlide, avatarType) : "";
+    if (!nextUrl) return undefined;
+    const preload = new Audio();
+    preload.preload = "auto";
+    preload.src = nextUrl;
+    preload.load();
+    return () => {
+      preload.removeAttribute("src");
+      preload.load();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentIndex, avatarType, lesson.id]);
+
+  useEffect(() => {
+    if (!sessionId) return undefined;
+    avatarEndCalledRef.current = endedAvatarSessions.has(sessionId);
+    const pendingTimer = pendingAvatarEndTimers.get(sessionId);
+    if (pendingTimer !== undefined) {
+      window.clearTimeout(pendingTimer);
+      pendingAvatarEndTimers.delete(sessionId);
+    }
+    const handlePageExit = () => endLessonSessionKeepalive();
+    window.addEventListener("pagehide", handlePageExit);
+    window.addEventListener("beforeunload", handlePageExit);
+
+    return () => {
+      window.removeEventListener("pagehide", handlePageExit);
+      window.removeEventListener("beforeunload", handlePageExit);
+      stopAvatarSpeech();
+      cancelAutoAdvance();
+      doubtStreamRef.current?.getTracks().forEach((track) => track.stop());
+      const timer = window.setTimeout(() => {
+        pendingAvatarEndTimers.delete(sessionId);
+        if (!endedAvatarSessions.has(sessionId)) {
+          endedAvatarSessions.add(sessionId);
+          void endAvatarSession({ sessionId });
+        }
+      }, 0);
+      pendingAvatarEndTimers.set(sessionId, timer);
+    };
+    // Deferred cleanup is cancelled by StrictMode's immediate effect replay.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
 
   // Update avatar message whenever slide changes
   useEffect(() => {
@@ -350,6 +564,7 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
     options?: { isCorrect?: boolean; tone?: "success" | "error" | "neutral" },
   ) => {
     if (currentTaskState.isCompleted) return;
+    stopAvatarSpeech();
 
     const safeFeedback = typeof customFeedback === "string" ? customFeedback : undefined;
     const feedbackText = safeFeedback || "Great job!";
@@ -375,19 +590,22 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
     setCelebrationMsg(celebrationText);
     setCelebrationTone(tone);
     setShowCelebration(true);
-    speakAvatarText(
-      buildFeedbackNarration(options?.isCorrect, feedbackText, currentSlide.avatarMessage?.completed),
-    );
+    scheduleAutoAdvance();
   };
 
   // Single option selection (e.g. Think slide)
   const handleSelectOption = (optionId: string) => {
+    cancelAutoAdvance();
+    stopAvatarSpeech();
     const selectedOption = currentSlide.options?.find((option) => option.id === optionId);
+    const resolution = currentSlide.resolutions?.[optionId];
     const hasCorrectAnswer = currentSlide.options?.some((option) => option.isCorrect);
-    const isCorrect = hasCorrectAnswer ? Boolean(selectedOption?.isCorrect) : true;
-    const feedbackMessage = isCorrect
-      ? "Correct! Nice thinking!"
-      : "Not quite. Good try!";
+    const isCorrect = hasCorrectAnswer ? Boolean(selectedOption?.isCorrect) : undefined;
+    const feedbackMessage = isCorrect === undefined
+      ? "Prediction saved. Let's test it in the lesson."
+      : isCorrect
+        ? "Correct! Nice thinking!"
+        : "Not quite. Good try!";
 
     setTaskStates((prev) => ({
       ...prev,
@@ -400,24 +618,23 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
       },
     }));
 
-    if (!isCorrect && currentSlide.avatarMessage?.error) {
+    if (resolution?.text) {
+      setAvatarSpeech(resolution.text);
+    } else if (isCorrect === false && currentSlide.avatarMessage?.error) {
       setAvatarSpeech(currentSlide.avatarMessage.error);
     } else if (currentSlide.avatarMessage?.completed) {
       setAvatarSpeech(currentSlide.avatarMessage.completed);
     }
 
-    setCelebrationMsg(isCorrect ? "Correct! Paper shower unlocked!" : "Oops, not quite. Try the next one!");
-    setCelebrationTone(isCorrect ? "success" : "error");
+    setCelebrationMsg(isCorrect === undefined ? feedbackMessage : isCorrect ? "Correct! Paper shower unlocked!" : "Oops, not quite. Try the next one!");
+    setCelebrationTone(isCorrect === undefined ? "neutral" : isCorrect ? "success" : "error");
     setShowCelebration(true);
-    speakAvatarText(
-      buildFeedbackNarration(
-        isCorrect,
-        isCorrect
-          ? "Correct! Nice thinking. Paper shower unlocked!"
-          : "Oops, not quite. Try again on the next challenge.",
-        isCorrect ? currentSlide.avatarMessage?.completed : currentSlide.avatarMessage?.error,
-      ),
-    );
+    const resolutionAudio = resolution?.audio || selectedOption?.audio;
+    if (resolutionAudio) {
+      playVoiceAudio(resolutionAudio, avatarType, "feedback", () => scheduleAutoAdvance());
+    } else {
+      scheduleAutoAdvance();
+    }
   };
 
   // Multi-option toggle (e.g. Apply slide)
@@ -488,9 +705,7 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
     setCelebrationMsg("Explanation Submitted! Great synthesis!");
     setCelebrationTone("success");
     setShowCelebration(true);
-    speakAvatarText(
-      buildFeedbackNarration(true, "Wonderful explanation! Great synthesis."),
-    );
+    scheduleAutoAdvance();
   };
 
   // Voice explanation recorded for Teach It Back slide
@@ -515,9 +730,7 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
     setCelebrationMsg("Voice Explanation Recorded!");
     setCelebrationTone("success");
     setShowCelebration(true);
-    speakAvatarText(
-      buildFeedbackNarration(true, "Nice speaking! Your voice explanation was recorded."),
-    );
+    scheduleAutoAdvance();
   };
 
   // Navigate to next slide
@@ -525,22 +738,20 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
     if (isNavigating) return;
     if (!currentTaskState.isCompleted) return;
 
+    cancelAutoAdvance();
     setShowCelebration(false);
     setShowInsightModal(false);
     stopAvatarSpeech();
 
     if (currentIndex < lesson.slides.length - 1) {
       setIsNavigating(true);
+      setPlaybackState("advancing");
       setDirection("next");
       setCurrentIndex((prev) => prev + 1);
       setTimeout(() => setIsNavigating(false), shouldReduceMotion ? 80 : 360);
     } else {
       // Last slide reached
-      if (onLessonFinish) {
-        onLessonFinish();
-      } else {
-        onBackToUnits();
-      }
+      void handleFinishLesson();
     }
   };
 
@@ -548,20 +759,34 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
   const handlePrevious = () => {
     if (isNavigating) return;
     if (currentIndex > 0) {
+      cancelAutoAdvance();
       setShowCelebration(false);
       setShowInsightModal(false);
       stopAvatarSpeech();
       setIsNavigating(true);
+      setPlaybackState("advancing");
       setDirection("prev");
       setCurrentIndex((prev) => prev - 1);
       setTimeout(() => setIsNavigating(false), shouldReduceMotion ? 80 : 360);
     }
   };
 
+  advanceRef.current = handleNext;
+  narrationEndedRef.current = () => {
+    const requiresAnswer = ["select-option", "submit-answer", "record-or-type"].includes(currentSlide.task.type);
+    if (requiresAnswer) return;
+    if (currentTaskState.isCompleted) {
+      scheduleAutoAdvance();
+      return;
+    }
+    handleCompleteCurrentTask("Narration complete. Moving to the next slide.", { tone: "neutral" });
+  };
+
   const currentCoreInsight = getCoreInsight(currentSlide);
 
   return (
     <div
+      data-playback-state={playbackState}
       className="fixed inset-0 z-40 h-[100dvh] max-h-[100dvh] w-screen flex flex-col bg-[#fbfcff] dark:bg-[#071126] text-slate-900 dark:text-slate-100 overflow-hidden p-2 sm:p-3 selection:bg-sky-500 selection:text-white"
       style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" }}
     >
@@ -873,7 +1098,7 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
         isTaskCompleted={currentTaskState.isCompleted}
         avatarType={avatarType}
         onAvatarTypeChange={handleAvatarTypeChange}
-        onBackToUnits={onBackToUnits}
+        onBackToUnits={handleExitToUnits}
       />
 
       {/* Main Learning Slide Area */}
@@ -914,7 +1139,7 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
                 onSubmitAnswer={handleSubmitAnswer}
                 onSubmitText={handleSubmitText}
                 onRecordVoice={handleRecordVoice}
-                onFinishLesson={onLessonFinish || onBackToUnits}
+                onFinishLesson={handleFinishLesson}
               />
             </motion.div>
           </AnimatePresence>
@@ -946,6 +1171,14 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
               />
             </div>
           </motion.div>
+          <button
+            type="button"
+            onClick={pauseForDoubt}
+            className="fixed bottom-24 right-5 z-50 inline-flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-3 text-sm font-black text-white shadow-xl shadow-emerald-600/25 transition hover:bg-emerald-700"
+          >
+            <Hand className="h-4 w-4" />
+            Raise hand
+          </button>
         </motion.div>
       </main>
 
@@ -958,6 +1191,82 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
         onNext={handleNext}
         isNavigating={isNavigating}
       />
+
+      <AnimatePresence>
+        {doubtOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ y: 24, scale: 0.96 }}
+              animate={{ y: 0, scale: 1 }}
+              exit={{ y: 18, scale: 0.97 }}
+              className="flex max-h-[82vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#0d1730]"
+            >
+              <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-white/10">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-wider text-emerald-600">Raise Hand</p>
+                  <h2 className="text-lg font-black">Ask about this segment</h2>
+                </div>
+                <button type="button" onClick={resumeAfterDoubt} className="rounded-lg p-2 hover:bg-slate-100 dark:hover:bg-white/10" title="Close and resume">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="min-h-40 flex-1 space-y-3 overflow-y-auto p-5">
+                {currentSlide.suggestedQuestions?.length ? (
+                  <div className="space-y-2 pb-2">
+                    <p className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Suggested questions</p>
+                    <div className="flex flex-wrap gap-2">
+                      {currentSlide.suggestedQuestions.map((question) => (
+                        <button
+                          key={question}
+                          type="button"
+                          disabled={isAskingDoubt}
+                          onClick={() => void submitDoubtText(question)}
+                          className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-left text-xs font-bold leading-snug text-emerald-800 transition hover:border-emerald-400 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-800/60 dark:bg-emerald-950/30 dark:text-emerald-200"
+                        >
+                          {question}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {doubtChat.length ? doubtChat.map((message) => (
+                  <div key={message.id} className={`max-w-[86%] rounded-xl px-4 py-3 text-sm font-semibold leading-relaxed ${message.role === "student" ? "ml-auto bg-blue-600 text-white" : "bg-slate-100 text-slate-800 dark:bg-white/10 dark:text-slate-100"}`}>
+                    {message.text}
+                  </div>
+                )) : (
+                  <p className="py-8 text-center text-sm font-semibold text-slate-500">Type your question or record it with the microphone.</p>
+                )}
+                {isAskingDoubt && <div className="flex items-center gap-2 text-sm font-bold text-emerald-600"><Loader2 className="h-4 w-4 animate-spin" /> Thinking...</div>}
+              </div>
+              <div className="border-t border-slate-200 p-4 dark:border-white/10">
+                <div className="flex gap-2">
+                  <input
+                    value={doubtText}
+                    onChange={(event) => setDoubtText(event.target.value)}
+                    onKeyDown={(event) => { if (event.key === "Enter") void submitDoubtText(); }}
+                    placeholder="Ask your doubt"
+                    className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500 dark:border-white/10 dark:bg-white/5"
+                  />
+                  <button type="button" onClick={isRecordingDoubt ? stopDoubtRecording : startDoubtRecording} className={`grid h-11 w-11 place-items-center rounded-xl text-white ${isRecordingDoubt ? "bg-red-500" : "bg-violet-600"}`} title={isRecordingDoubt ? "Stop recording" : "Record doubt"}>
+                    {isRecordingDoubt ? <Square className="h-4 w-4" /> : isTranscribingDoubt ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
+                  </button>
+                  <button type="button" onClick={() => void submitDoubtText()} disabled={!doubtText.trim() || isAskingDoubt} className="grid h-11 w-11 place-items-center rounded-xl bg-blue-600 text-white disabled:opacity-40" title="Send doubt">
+                    <Send className="h-4 w-4" />
+                  </button>
+                </div>
+                <button type="button" onClick={resumeAfterDoubt} className="mt-3 w-full rounded-xl border border-slate-200 py-2.5 text-sm font-black hover:bg-slate-50 dark:border-white/10 dark:hover:bg-white/5">
+                  Resume lesson
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

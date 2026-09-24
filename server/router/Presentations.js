@@ -1,5 +1,6 @@
 const express = require('express');
 const crypto = require('crypto');
+const mongoose = require('mongoose');
 const multer = require('multer');
 const Deck = require('../model/PresentationDeck');
 const Share = require('../model/PresentationShare');
@@ -7,7 +8,7 @@ const Asset = require('../model/PresentationAsset');
 const User = require('../model/User');
 const { requireStudentAuth } = require('../middleware/studentAuth');
 const { callPython } = require('../services/pythonGateway');
-const { access, publicDeck, commit, revokeRoom } = require('../services/presentationService');
+const { access, publicDeck, commit, persistPythonDeck, revokeRoom } = require('../services/presentationService');
 const { fail, clone, applyOperations, hashToken } = require('../services/presentationDocument');
 const assets = require('../services/presentationAssets');
 const router = express.Router();
@@ -19,9 +20,31 @@ const token = req => req.headers['x-presentation-share'];
 const user = req => String(req.studentUser._id);
 const auth = (req, needed) => access(req.params.deckId, user(req), token(req), needed);
 const documentOf = deck => ({ title: deck.title, slides: clone(deck.slides), theme: clone(deck.theme || {}) });
+function requireInternalKey(req) {
+  const expected = process.env.GRADEUP_INTERNAL_API_KEY;
+  const supplied = String(req.headers['x-gradeup-internal-key'] || '');
+  if (!expected) fail('Internal presentation registration is not configured', 503);
+  const expectedBytes = Buffer.from(expected);
+  const suppliedBytes = Buffer.from(supplied);
+  if (expectedBytes.length !== suppliedBytes.length || !crypto.timingSafeEqual(expectedBytes, suppliedBytes)) fail('Invalid internal API key', 401);
+}
 function checkRevision(req, deck) {
   if (!Number.isInteger(req.body.base_revision) || req.body.base_revision !== deck.revision) fail('Presentation changed. Reload before saving.', 409);
 }
+router.post('/internal/presentations/register', wrap(async (req, res) => {
+  requireInternalKey(req);
+  const studentId = String(req.body?.student_id || '');
+  const data = req.body?.deck;
+  const context = req.body?.context || {};
+  if (!mongoose.isObjectIdOrHexString(studentId)) fail('A valid student_id is required');
+  if (!data || typeof data !== 'object' || Array.isArray(data)) fail('A deck payload is required');
+  const owner = await User.findOne({ _id: studentId, role: 'student', status: 'active', deletedAt: null }).select('_id').lean();
+  if (!owner) fail('Active GradeUp student not found', 404);
+  console.info('[presentation:register] request', { deckId: data.deck_id || null, sessionId: data.session_id || null, studentId });
+  const deck = await persistPythonDeck(data, { ...context, title: data.title }, studentId);
+  console.info('[presentation:register] persisted', { deckId: deck.deckId, sessionId: deck.pythonSessionId, studentId });
+  send(res, { deckId: deck.deckId, deckRef: deck.deckRef, registered: true });
+}));
 router.get('/decks', wrap(async (req, res) => {
   const decks = await Deck.find({ deletedAt: null, $or: [{ ownerId: user(req) }, { 'collaborators.userId': user(req) }] }).select('deckId title editUrl updatedAt').sort({ updatedAt: -1 }).limit(100).lean(); send(res, decks);
 }));

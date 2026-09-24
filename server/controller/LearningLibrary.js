@@ -21,8 +21,13 @@ const controller = {
   },
 
   async getSubjectDetail(req, res) {
+    const startedAt = process.hrtime.bigint();
     try {
-      const data = await getSubjectGroupByKey(req.params.subjectGroupKey);
+      const data = await getSubjectGroupByKey(req.params.subjectGroupKey, {
+        summary: req.query.summary === "true" || req.query.summary === "1",
+      });
+      const durationMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
+      res.set("Server-Timing", `library-subject-detail;dur=${durationMs.toFixed(1)}`);
       return res.status(200).json({ status: true, data });
     } catch (error) {
       return res.status(error.statusCode || 500).json({
@@ -45,21 +50,36 @@ const controller = {
   },
 
   async getUnitContent(req, res) {
+    const startedAt = process.hrtime.bigint();
     try {
-      const format = req.query.format === "structured" ? "structured" : "enriched";
+      const requestedFormat = String(req.query.format || "enriched").toLowerCase();
+      const format = ["structured", "both"].includes(requestedFormat)
+        ? requestedFormat
+        : "enriched";
       const unit = await resolveSubjectUnit({ unitId: req.params.unitId });
-      const content =
-        format === "structured"
+      const content = format === "both"
+        ? {
+            structured: unit.structuredData || null,
+            enriched: unit.enrichedData || null,
+          }
+        : format === "structured"
           ? unit.structuredData || unit.enrichedData
           : unit.enrichedData || null;
 
+      const durationMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
+      res.set("Server-Timing", `library-unit-content;dur=${durationMs.toFixed(1)}`);
       return res.status(200).json({
         status: true,
         data: {
-          unit: toUnitSummary(unit),
+          unit: toUnitSummary(unit, {
+            lightweight: req.query.summary === "true" || req.query.summary === "1",
+          }),
           format,
           content,
-          sectionTopics: extractSectionTopicsForUnit(unit),
+          sectionTopics:
+            req.query.summary === "true" || req.query.summary === "1"
+              ? unit.readerIndex?.avatarSections || unit.readerIndex?.sections || []
+              : extractSectionTopicsForUnit(unit),
         },
       });
     } catch (error) {

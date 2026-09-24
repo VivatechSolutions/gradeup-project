@@ -249,18 +249,100 @@ const parseMockBackendResponse = () => {
 };
 
 const getPhase = (lesson: any, phaseName: string) =>
-  lesson?.phases?.find((phase: any) => phase?.phase === phaseName);
+  lesson?.phases?.find((phase: any) => String(phase?.phase || "").toLowerCase() === phaseName.toLowerCase());
 
 const visualUrl = (value: any) => value?.visual?.image_url || value?.image_url || undefined;
 
-const optionsFromRecord = (options: Record<string, string> = {}, answer?: string, explanations: Record<string, string> = {}) =>
-  Object.entries(options).map(([key, value]) => ({
-    id: key,
-    label: key,
-    title: value,
-    isCorrect: key === answer,
-    explanation: explanations[key],
-  }));
+const voiceAudio = (value: any) => {
+  const source = value?.audio || value;
+  if (typeof source === "string") return { male: source, female: source };
+  if (!source || typeof source !== "object") return undefined;
+  const male = source.male || source.male_url || source.maleUrl;
+  const female = source.female || source.female_url || source.femaleUrl;
+  return male || female ? { male, female } : undefined;
+};
+
+const imageUrl = (value: any) =>
+  value?.image_url || value?.imageUrl || value?.visual?.image_url || value?.visual?.imageUrl;
+
+const IMAGE_URL_PATTERN = /https?:\/\/[^\s\])}>'"]+\.(?:png|jpe?g|gif|webp|avif)(?:\?[^\s\])}>'"]*)?/gi;
+
+const mediaText = (value?: string | null) => {
+  if (typeof value !== "string") return { text: "", images: [] as string[] };
+  const images = Array.from(new Set(value.match(IMAGE_URL_PATTERN) || []));
+  const text = images
+    .reduce((current, url) => current.replaceAll(`![image](${url})`, "").replaceAll(`[${url}]`, "").replaceAll(url, ""), value)
+    .replace(/!\[[^\]]*\]\(\s*\)/g, "")
+    .replace(/\[\s*\]/g, "")
+    .replace(/\s+([.,!?])/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+  return { text, images };
+};
+
+const optionsFromRecord = (options: Record<string, any> = {}, answer?: string, explanations: Record<string, string> = {}) =>
+  Object.entries(options || {}).map(([key, value]) => {
+    const option = value && typeof value === "object" ? value : {};
+    return {
+      id: key,
+      label: key,
+      title: typeof value === "string" ? value : option.text || option.title || option.label || key,
+      isCorrect: key === answer || option.is_correct === true || option.isCorrect === true,
+      explanation: explanations?.[key] || option.explanation,
+      imageUrl: imageUrl(option),
+      audio: voiceAudio(option.audio || option.question_audio),
+    };
+  });
+
+const resolutionsFromValue = (value: any) => {
+  const entries = Array.isArray(value)
+    ? value.map((item, index) => [String(item?.option || item?.option_id || item?.optionId || item?.answer || item?.id || index), item])
+    : Object.entries(value || {});
+  return Object.fromEntries(entries.map(([key, resolution]: any) => [
+    String(key),
+    {
+      segmentId: resolution?.segment_id || resolution?.segmentId,
+      text: resolution?.text || resolution?.explanation || resolution?.content,
+      emotion: resolution?.emotion,
+      imageUrl: imageUrl(resolution),
+      audio: voiceAudio(resolution?.audio || resolution?.resolution_audio),
+    },
+  ]));
+};
+
+const suggestionMapFromResponse = (response: any, avatarLesson: any) => {
+  const mapped = new Map<string, string[]>();
+  const add = (segmentId: any, questions: any) => {
+    const key = String(segmentId || "").trim();
+    const values = (Array.isArray(questions) ? questions : [questions])
+      .map((question) => typeof question === "string" ? question : question?.question || question?.text)
+      .map((question) => String(question || "").trim())
+      .filter(Boolean);
+    if (!key || !values.length) return;
+    mapped.set(key, Array.from(new Set([...(mapped.get(key) || []), ...values])));
+  };
+  const consume = (source: any) => {
+    if (Array.isArray(source)) {
+      source.forEach((item) => add(
+        item?.segment_id || item?.segmentId,
+        item?.questions || item?.suggested_questions || item?.suggestions || item?.question,
+      ));
+    } else if (source && typeof source === "object") {
+      Object.entries(source).forEach(([segmentId, questions]) => add(segmentId, questions));
+    }
+  };
+  consume(response?.suggested_questions_by_segment);
+  consume(response?.enrichment?.suggested_questions_by_segment);
+  consume(avatarLesson?.suggested_questions_by_segment);
+  (avatarLesson?.phases || []).forEach((phase: any) => {
+    const candidates = [phase?.intro, phase?.ask, phase?.bridge, phase?.reveal, phase?.closing, ...(phase?.segments || [])];
+    candidates.filter(Boolean).forEach((segment: any) => add(
+      segment?.segment_id || segment?.segmentId,
+      segment?.suggested_questions || segment?.suggestions,
+    ));
+  });
+  return mapped;
+};
 
 const getMysteryItems = (mysteryPhase: any) => {
   if (Array.isArray(mysteryPhase?.pool)) return mysteryPhase.pool;
@@ -279,6 +361,35 @@ const labelFromPhase = (value?: string) =>
     .replace(/_/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
 
+const normalizeSlideMedia = (slide: any) => {
+  const description = mediaText(slide.description);
+  const content = mediaText(slide.content);
+  const subtitle = mediaText(slide.subtitle);
+  const question = mediaText(slide.question);
+  const embeddedImages = Array.from(new Set([
+    ...description.images,
+    ...content.images,
+    ...subtitle.images,
+    ...question.images,
+    ...(slide.images?.gallery || []),
+  ]));
+  const mainImage = slide.images?.main || embeddedImages[0];
+  return {
+    ...slide,
+    description: description.text || undefined,
+    content: content.text || undefined,
+    subtitle: subtitle.text || undefined,
+    question: question.text || undefined,
+    images: mainImage || embeddedImages.length
+      ? {
+          ...(slide.images || {}),
+          main: mainImage,
+          gallery: embeddedImages,
+        }
+      : slide.images,
+  };
+};
+
 const renumberSlides = (slides: any[]) =>
   slides.map((slide, index) => ({
     ...slide,
@@ -286,7 +397,7 @@ const renumberSlides = (slides: any[]) =>
   }));
 
 export function generateLessonFromBackendResponse(response: any): LessonData | null {
-  const avatarLesson = response?.enrichment?.avatar_lesson;
+  const avatarLesson = response?.avatar_lesson || response?.enrichment?.avatar_lesson;
   if (!response?.success || !avatarLesson) return null;
 
   const hook = getPhase(avatarLesson, "hook");
@@ -304,13 +415,19 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
     `${segment?.text || ""} ${segment?.visual?.query || ""}`.toLowerCase().includes("coin"),
   );
   const sectionTitle = response.section_title || avatarLesson.section_title || "Interactive Lesson";
-  const subject = response.pattern ? `${response.pattern[0].toUpperCase()}${response.pattern.slice(1)}` : "GradeUp Learning";
+  const pattern = response.pattern || avatarLesson.pattern;
+  const subject = pattern ? `${pattern[0].toUpperCase()}${pattern.slice(1)}` : "GradeUp Learning";
   const doubtContext = response.enrichment?.doubt_context;
   const report = response.report;
+  const suggestionsBySegment = suggestionMapFromResponse(response, avatarLesson);
 
   const slides: any[] = [
     {
       id: "backend-hook",
+      phase: "hook",
+      segmentId: hook?.intro?.segment_id,
+      emotion: hook?.intro?.emotion,
+      audio: hook?.intro?.audio,
       type: "hook" as const,
       badge: { label: hook?.title || "Hook", icon: "sparkles" },
       title: hook?.scenario || `Let's explore ${sectionTitle}`,
@@ -335,11 +452,20 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
     },
     {
       id: "backend-think",
+      phase: "hook",
+      segmentId: hook?.question_segment_id || hook?.ask?.segment_id || hook?.intro?.segment_id,
+      emotion: hook?.intro?.emotion,
+      questionAudio: voiceAudio(hook?.question_audio || hook?.ask?.audio),
       type: "think" as const,
       badge: { label: "Predict", icon: "lightbulb" },
       title: hook?.question || "What do you predict will happen?",
       question: hook?.question || "What do you predict will happen?",
       options: optionsFromRecord(hook?.options, hook?.answer, hook?.option_explanations),
+      resolutions: resolutionsFromValue(hook?.resolutions),
+      images: {
+        main: imageUrl(hook?.options_visual),
+        caption: hook?.options_visual?.prompt,
+      },
       task: { type: "select-option" as const },
       avatarMessage: {
         initial: "Choose the option that matches your intuition.",
@@ -352,6 +478,7 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
   if (overview) {
     slides.push({
       id: "backend-concept-overview",
+      phase: "explanation",
       type: "learn" as const,
       badge: { label: "Concept Overview", icon: "book-open" },
       title: `What is ${sectionTitle}?`,
@@ -372,14 +499,55 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
 
   explanation?.segments?.forEach((segment: any, index: number) => {
     if (segment.type === "flashcard") {
-      (segment.cards || []).forEach((card: any, cardIndex: number) => {
+      const cards = Array.isArray(segment.cards) && segment.cards.length ? segment.cards : [segment];
+      cards.forEach((card: any, cardIndex: number) => {
+        const isMcq = String(card.flashcard_type || card.flashcardType || "").toLowerCase() === "mcq" || Boolean(card.question && card.options);
+        const cardMedia = mediaText(card.front);
+        if (isMcq) {
+          const optionResolutions = card.resolutions || Object.fromEntries(
+            Object.entries(card.option_explanations || {}).map(([key, text]) => [key, { text }]),
+          );
+          slides.push({
+            id: `${segment.segment_id || `flashcard-${index}`}-${card.flashcard_id || card.card_id || cardIndex}`,
+            segmentId: card.segment_id || segment.segment_id,
+            phase: "explanation",
+            emotion: card.avatar_emotion || segment.emotion,
+            audio: voiceAudio(card.audio || segment.audio),
+            questionAudio: voiceAudio(card.question_audio),
+            type: "think" as const,
+            badge: { label: "Quick Check", icon: "lightbulb" },
+            title: card.question || card.card_title || "Quick Check",
+            question: card.question || card.card_title,
+            options: optionsFromRecord(card.options, card.answer, card.option_explanations),
+            resolutions: resolutionsFromValue(optionResolutions),
+            images: {
+              main: imageUrl(card?.options_visual) || imageUrl(card),
+              caption: card?.options_visual?.prompt,
+            },
+            task: { type: "select-option" as const },
+            avatarMessage: {
+              initial: card.avatar_line || card.question || "Choose the best answer.",
+              completed: card.option_explanations?.[card.answer] || "Let's continue.",
+              error: "Review the explanation and keep going.",
+            },
+          });
+          return;
+        }
         slides.push({
-          id: `${segment.segment_id || `flashcard-${index}`}-${card.card_id || cardIndex}`,
+          id: `${segment.segment_id || `flashcard-${index}`}-${card.flashcard_id || card.card_id || cardIndex}`,
+          segmentId: card.segment_id || segment.segment_id,
+          phase: "explanation",
+          emotion: card.avatar_emotion || segment.emotion,
+          audio: card.audio || segment.audio,
           type: "learn" as const,
           badge: { label: "Flashcard", icon: "book-open" },
           title: card.card_title || "Quick Example",
-          description: card.front,
+          description: cardMedia.text,
           content: card.avatar_line,
+          images: {
+            main: imageUrl(card) || cardMedia.images[0],
+            gallery: cardMedia.images,
+          },
           takeaway: {
             label: "Example insight",
             text: card.avatar_line || card.front,
@@ -399,16 +567,22 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
     }
 
     const visual = segment.visual;
+    const segmentMedia = mediaText(segment.text);
     slides.push({
       id: segment.segment_id || `explanation-${index + 1}`,
+      segmentId: segment.segment_id,
+      phase: "explanation",
+      emotion: segment.emotion,
+      audio: segment.audio,
       type: "learn" as const,
       badge: { label: `${labelFromPhase(segment.type) || "Explanation"} ${index + 1}`, icon: "book-open" },
       title: visual?.query ? labelFromPhase(visual.query) : `${sectionTitle}: idea ${index + 1}`,
-      description: segment.text,
+      description: segmentMedia.text,
       content: visual?.avatar_line,
       images: {
-        main: visual?.image_url,
+        main: visual?.image_url || segmentMedia.images[0],
         caption: visualCaption(visual),
+        gallery: segmentMedia.images,
       },
       callout: visual?.look_prompt
         ? {
@@ -438,6 +612,10 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
   if (explore) {
     slides.push({
       id: "backend-activity",
+      phase: "explore",
+      segmentId: explore?.intro?.segment_id,
+      emotion: explore?.intro?.emotion,
+      audio: explore?.intro?.audio,
       type: "try-it" as const,
       badge: { label: explore?.title || "Try It Yourself", icon: "flask" },
       title: explore?.title || "Coin and cardboard activity",
@@ -475,6 +653,10 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
     if (explore.challenge) {
       slides.push({
         id: "backend-explore-challenge",
+        phase: "explore",
+        segmentId: explore.challenge?.intro?.segment_id || explore?.intro?.segment_id,
+        emotion: explore.challenge?.intro?.emotion || explore?.intro?.emotion,
+        audio: explore.challenge?.intro?.audio || explore?.intro?.audio,
         type: "teach-back" as const,
         badge: { label: "Activity Challenge", icon: "mic" },
         title: explore.challenge.prompt,
@@ -491,6 +673,10 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
   mysteries.forEach((mystery: any, index: number) => {
     slides.push({
       id: mystery.mystery_id || `backend-mystery-${index + 1}`,
+      phase: "mystery",
+      segmentId: mystery?.ask?.segment_id || mystery.mystery_id,
+      emotion: mystery?.ask?.emotion || mysteryPhase?.intro?.emotion,
+      audio: mystery?.ask?.audio || mysteryPhase?.intro?.audio,
       type: "mystery" as const,
       badge: { label: `Mystery ${index + 1}`, icon: "search" },
       title: mystery.question || mystery.title || "Solve the inertia mystery",
@@ -520,6 +706,10 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
   if (realWorld) {
     slides.push({
       id: "backend-real-world",
+      phase: "real_world",
+      segmentId: realWorld?.ask?.segment_id || realWorld?.intro?.segment_id,
+      emotion: realWorld?.ask?.emotion || realWorld?.intro?.emotion,
+      audio: realWorld?.ask?.audio || realWorld?.intro?.audio,
       type: "real-world" as const,
       badge: { label: "Real World", icon: "globe" },
       title: realWorld?.question || "Where do you experience inertia?",
@@ -592,6 +782,10 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
   if (explainBack) {
     slides.push({
       id: "backend-teach-back",
+      phase: "explain_back",
+      segmentId: explainBack?.ask?.segment_id,
+      emotion: explainBack?.ask?.emotion,
+      audio: explainBack?.ask?.audio,
       type: "teach-back" as const,
       badge: { label: "Explain Back", icon: "mic" },
       title: explainBack?.prompt || `Explain ${sectionTitle} in your own words.`,
@@ -608,6 +802,7 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
   if (reflect) {
     slides.push({
       id: "backend-reflect",
+      phase: "reflect",
       type: "mastery" as const,
       badge: { label: "Reflect", icon: "award" },
       title: "Inertia mastered",
@@ -652,7 +847,61 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
     });
   }
 
-  const numberedSlides = renumberSlides(slides);
+  const sourcePhases = Array.isArray(avatarLesson?.phases) ? avatarLesson.phases : [];
+  const representedPhases = new Set(slides.map((slide) => slide.phase).filter(Boolean));
+  sourcePhases.forEach((phase: any, phaseIndex: number) => {
+    const phaseName = cleanText(phase?.phase) || `phase-${phaseIndex + 1}`;
+    if (representedPhases.has(phaseName)) return;
+    const primary = phase?.intro || phase?.ask || phase?.reveal || phase?.closing || phase?.segments?.[0] || phase;
+    const primaryMedia = mediaText(primary?.text || phase?.description || phase?.content);
+    const segmentId = primary?.segment_id || primary?.segmentId || `${phaseName}-${phaseIndex + 1}`;
+    slides.push({
+      id: `backend-phase-${phaseName}-${phaseIndex + 1}`,
+      phase: phaseName,
+      segmentId,
+      emotion: primary?.emotion,
+      audio: voiceAudio(primary?.audio),
+      type: "learn" as const,
+      badge: { label: labelFromPhase(phaseName), icon: "book-open" },
+      title: phase?.title || labelFromPhase(phaseName),
+      description: primaryMedia.text || phase?.prompt || phase?.question || "Continue through this lesson phase.",
+      images: {
+        main: imageUrl(primary) || imageUrl(phase) || primaryMedia.images[0],
+        caption: visualCaption(primary?.visual || phase?.visual),
+        gallery: primaryMedia.images,
+      },
+      task: { type: "button-click" as const, buttonLabel: "Continue", completedButtonLabel: "Complete" },
+      avatarMessage: {
+        initial: primaryMedia.text || phase?.prompt || phase?.question || `Let's continue with ${labelFromPhase(phaseName)}.`,
+        completed: phase?.closing?.text || phase?.outro?.text || "Let's continue.",
+      },
+    });
+  });
+
+  const orderedPhaseNames = Array.from(new Set([
+    ...(Array.isArray(avatarLesson?.phase_order) ? avatarLesson.phase_order : []),
+    ...sourcePhases
+      .slice()
+      .sort((left: any, right: any) => Number(left?.order || 0) - Number(right?.order || 0))
+      .map((phase: any) => phase?.phase),
+  ].filter(Boolean)));
+  const phaseRank = (slide: any) => {
+    const index = orderedPhaseNames.indexOf(slide?.phase);
+    return index >= 0 ? index : orderedPhaseNames.length;
+  };
+  const lessonSlides = slides
+    .filter((slide) =>
+      !String(slide.id).startsWith("backend-practice-") &&
+      !String(slide.id).startsWith("backend-faq-") &&
+      slide.id !== "backend-lesson-report",
+    )
+    .map((slide, index) => ({ slide, index }))
+    .sort((left, right) => phaseRank(left.slide) - phaseRank(right.slide) || left.index - right.index)
+    .map(({ slide }) => normalizeSlideMedia({
+      ...slide,
+      suggestedQuestions: suggestionsBySegment.get(String(slide.segmentId || "")) || [],
+    }));
+  const numberedSlides = renumberSlides(lessonSlides);
 
   return {
     id: `backend-${response.section_id || sectionTitle}`.toLowerCase().replace(/\s+/g, "-"),

@@ -255,8 +255,9 @@ function buildUnitLabel(unitNumber, fallbackTitle) {
   return normalizeUnitMetadata({ unitNumber, fallbackTitle }).unitLabel;
 }
 
-function getReaderIndex(structuredData) {
+function getReaderIndex(structuredData, enrichedData) {
   const unit = structuredData?.units?.[0] || structuredData || {};
+  const enrichedUnit = enrichedData?.units?.[0] || enrichedData || {};
   const sections = Array.isArray(unit.sections)
     ? unit.sections
         .map((section) => section?.title || section?.section_title)
@@ -265,6 +266,15 @@ function getReaderIndex(structuredData) {
 
   return {
     sections,
+    avatarSections: (Array.isArray(enrichedUnit.sections) ? enrichedUnit.sections : [])
+      .filter((section) => Array.isArray(section?.enrichment?.avatar_lesson?.phases))
+      .map((section, index) => ({
+        sectionId: section.id || section.section_id || null,
+        sectionTitle: section.section_title || section.title,
+        order: Number(section.order ?? index + 1),
+        hasAvatarLesson: true,
+      }))
+      .filter((section) => section.sectionTitle),
     hasGlossary: Boolean(unit?.glossary?.sub_items?.length),
     hasSummary: Boolean(unit?.summary?.content?.length),
   };
@@ -487,7 +497,11 @@ async function createOrUpdateSubjectUnit({
     structuredData: normalizedStructuredData,
     enrichedData: normalizedEnrichedData,
     debateTopics: normalizedDebateTopicsData,
-    readerIndex: getReaderIndex(normalizedStructuredData),
+    readerIndex: getReaderIndex(normalizedStructuredData, normalizedEnrichedData),
+    contentFlags: {
+      hasStructuredData: Boolean(normalizedStructuredData),
+      hasEnrichedData: Boolean(normalizedEnrichedData),
+    },
   };
 
   logApiStep({
@@ -666,7 +680,11 @@ async function processSingleUnitUpload(upload) {
           structuredData: normalizedStructured,
           enrichedData: normalizedEnriched,
           debateTopics: debateTopicsData || null,
-          readerIndex: getReaderIndex(normalizedStructured),
+          readerIndex: getReaderIndex(normalizedStructured, normalizedEnriched),
+          contentFlags: {
+            hasStructuredData: Boolean(normalizedStructured),
+            hasEnrichedData: Boolean(normalizedEnriched),
+          },
         });
 
         await subjectUnit.save();

@@ -102,8 +102,9 @@ async function fetchPythonPayload(aiUrl, pythonDocumentId) {
   };
 }
 
-function getReaderIndex(structuredData) {
+function getReaderIndex(structuredData, enrichedData) {
   const unit = structuredData?.units?.[0] || structuredData || {};
+  const enrichedUnit = enrichedData?.units?.[0] || enrichedData || {};
   const sections = Array.isArray(unit.sections)
     ? unit.sections
         .map((section) => section?.title || section?.section_title)
@@ -112,6 +113,15 @@ function getReaderIndex(structuredData) {
 
   return {
     sections,
+    avatarSections: (Array.isArray(enrichedUnit.sections) ? enrichedUnit.sections : [])
+      .filter((section) => Array.isArray(section?.enrichment?.avatar_lesson?.phases))
+      .map((section, index) => ({
+        sectionId: section.id || section.section_id || null,
+        sectionTitle: section.section_title || section.title,
+        order: Number(section.order ?? index + 1),
+        hasAvatarLesson: true,
+      }))
+      .filter((section) => section.sectionTitle),
     hasGlossary: Boolean(unit?.glossary?.sub_items?.length),
     hasSummary: Boolean(unit?.summary?.content?.length),
   };
@@ -165,7 +175,11 @@ function buildDataUpdate({
     structuredData,
     enrichedData,
     debateTopics,
-    readerIndex: getReaderIndex(structuredData),
+    readerIndex: getReaderIndex(structuredData, enrichedData),
+    contentFlags: {
+      hasStructuredData: Boolean(structuredData),
+      hasEnrichedData: Boolean(enrichedData),
+    },
     unitNumber: metadata.unitNumber,
     unitTitle: metadata.unitTitle,
     unitLabel: metadata.unitLabel,
@@ -411,7 +425,11 @@ async function runCreateMode({ rl, apply, pythonDocumentId, payload }) {
     structuredData: payload.structuredData,
     enrichedData: payload.enrichedData,
     debateTopics: payload.debateTopics,
-    readerIndex: getReaderIndex(payload.structuredData),
+    readerIndex: getReaderIndex(payload.structuredData, payload.enrichedData),
+    contentFlags: {
+      hasStructuredData: Boolean(payload.structuredData),
+      hasEnrichedData: Boolean(payload.enrichedData),
+    },
   };
 
   printSummary("New SubjectUnit create preview", {

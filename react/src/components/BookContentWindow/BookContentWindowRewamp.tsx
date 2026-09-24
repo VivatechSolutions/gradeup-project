@@ -3721,6 +3721,39 @@ function extractTopLevelSectionTopics(
     .filter((topic: any) => topic.title);
 }
 
+function extractAvatarLessonTopics(content: any, chapterId: string | number) {
+  const unitContent = Array.isArray(content?.units)
+    ? content.units[0]
+    : Array.isArray(content)
+      ? content[0]
+      : content;
+  const sections = Array.isArray(unitContent?.sections) ? unitContent.sections : [];
+
+  return sections
+    .filter((section: any) => {
+      const enrichment = section?.section_enrichment || section?.enrichment || {};
+      return Array.isArray(enrichment?.avatar_lesson?.phases) && enrichment.avatar_lesson.phases.length > 0;
+    })
+    .map((section: any, index: number) => {
+      const title = normalizeReaderLabel(
+        section.section_title || section.sectionTitle || section.title,
+      );
+      const number = normalizeReaderLabel(
+        section.id || section.section_id || section.sectionId,
+      );
+      const anchor = makeAnchorId(chapterId, number || title || index + 1);
+      return {
+        id: String(section.id || section.section_id || section.sectionId || anchor),
+        label: number ? `${number} ${title}`.trim() : title,
+        title: title || `Section ${index + 1}`,
+        number: number || null,
+        anchor,
+        sectionType: "section",
+      };
+    })
+    .filter((topic: any) => topic.title);
+}
+
 function buildStructuredLayout(
   content: any,
   chapterId: string | number,
@@ -4782,6 +4815,9 @@ const BookContentWindowRewamp = () => {
   >([]);
   const [isRaisingHand, setIsRaisingHand] = useState(false);
   const [isResumingAvatar, setIsResumingAvatar] = useState(false);
+  const [loadingUnitId, setLoadingUnitId] = useState<string | null>(null);
+  const unitContentCacheRef = useRef<Map<string, any>>(new Map());
+  const unitContentRequestsRef = useRef<Map<string, Promise<any>>>(new Map());
 
   const { userHeader } = useAuth();
   const [currentRole, setCurrentRole] = useState("student");
@@ -4839,47 +4875,58 @@ const BookContentWindowRewamp = () => {
   };
 
   const loadChapterContentPayload = async (unit: any) => {
-    // CHANGE: Request BOTH formats in parallel
-    const [structuredResult, enrichedResult] = await Promise.allSettled([
-      getUnitContent(unit.id, "structured"), // For READER view layout
-      getUnitContent(unit.id, "enriched"), // For GENIUS mode only
-    ]);
+    const unitId = String(unit?.id || "");
+    const cached = unitContentCacheRef.current.get(unitId);
+    if (cached) return cached;
+    const existingRequest = unitContentRequestsRef.current.get(unitId);
+    if (existingRequest) return existingRequest;
 
-    // Extract structured content for reader
-    const structured =
-      structuredResult.status === "fulfilled"
-        ? structuredResult.value?.content
-        : null;
+    const request = (async () => {
+      const combinedResult = await getUnitContent(unit.id, "both");
+      const structured = combinedResult?.content?.structured || null;
 
-    let structuredContent = structured;
-    if (structured?.units && Array.isArray(structured.units)) {
-      structuredContent = structured.units[0];
+      let structuredContent = structured;
+      if (structured?.units && Array.isArray(structured.units)) {
+        structuredContent = structured.units[0];
+      }
+
+      const enriched = combinedResult?.content?.enriched || null;
+      let enrichedContent = enriched;
+      if (enrichedContent?.units && Array.isArray(enrichedContent.units)) {
+        enrichedContent = enrichedContent.units[0];
+      }
+
+      const avatarSectionTopics = extractAvatarLessonTopics(
+        enrichedContent,
+        unit.id,
+      );
+      const structuredSectionTopics = extractTopLevelSectionTopics(
+        structuredContent,
+        unit.id,
+      );
+      const sectionTopics = avatarSectionTopics.length
+        ? avatarSectionTopics
+        : structuredSectionTopics.length
+          ? structuredSectionTopics
+        : combinedResult?.sectionTopics || unit.sectionTopics || [];
+
+      return {
+        structured: structuredContent || null,
+        enriched: enrichedContent || null,
+        hasEnrichedContent: Boolean(enrichedContent),
+        sectionTopics,
+        enrichedDataFull: enriched,
+      };
+    })();
+
+    unitContentRequestsRef.current.set(unitId, request);
+    try {
+      const payload = await request;
+      unitContentCacheRef.current.set(unitId, payload);
+      return payload;
+    } finally {
+      unitContentRequestsRef.current.delete(unitId);
     }
-
-    // Extract enriched content for genius mode
-    const enriched =
-      enrichedResult.status === "fulfilled" ? enrichedResult.value : null;
-
-    let enrichedContent = enriched?.content;
-    if (enrichedContent?.units && Array.isArray(enrichedContent.units)) {
-      enrichedContent = enrichedContent.units[0];
-    }
-
-    const structuredSectionTopics = extractTopLevelSectionTopics(
-      structuredContent,
-      unit.id,
-    );
-    const sectionTopics = structuredSectionTopics.length
-      ? structuredSectionTopics
-      : enriched?.sectionTopics || unit.sectionTopics || [];
-
-    return {
-      structured: structuredContent || null, // NEW: For reader view
-      enriched: enrichedContent || null, // For genius mode only
-      hasEnrichedContent: Boolean(enrichedContent),
-      sectionTopics,
-      enrichedDataFull: enriched?.content,
-    };
   };
 
   useEffect(() => {
@@ -4929,40 +4976,19 @@ const BookContentWindowRewamp = () => {
       setSelectedPart(null);
       setSelectedTerm(null);
       if (book.id.startsWith("sci-") || book.id.startsWith("phy-")) {
-        const firstChapter = book.chapters[0] || null;
         setSelectedBook(book);
-        setActiveChapter(firstChapter);
-        setDisplayChapter(firstChapter);
-        setIsTocView(false);
+        setActiveChapter(null);
+        setDisplayChapter(null);
+        setIsTocView(true);
         setCurrentSpreadIndex(0);
         setDisplaySpreadIndex(0);
         clearReaderState();
         return;
       }
-      const detail = await getLibrarySubjectDetail(book.id);
-      const chapters = await Promise.all(
-        detail.units.map(async (unit, index) => {
-          try {
-            const chapterContent = await loadChapterContentPayload(unit);
-            return buildChapterFromUnit(unit, chapterContent, index);
-          } catch (error) {
-            return buildChapterFromUnit(
-              unit,
-              { sectionTopics: unit.sectionTopics || [] },
-              index,
-            );
-          }
-        }),
-      );
-      const hydratedBook = {
-        ...mapRemoteSubjectToBook(detail, 0),
-        chapters,
-      };
-      const firstChapter = hydratedBook.chapters[0] || null;
-      setSelectedBook(hydratedBook);
-      setActiveChapter(firstChapter);
-      setDisplayChapter(firstChapter);
-      setIsTocView(false);
+      setSelectedBook(book);
+      setActiveChapter(null);
+      setDisplayChapter(null);
+      setIsTocView(true);
       setCurrentSpreadIndex(0);
       setDisplaySpreadIndex(0);
       clearReaderState();
@@ -4981,50 +5007,134 @@ const BookContentWindowRewamp = () => {
     }
   };
 
+  const loadUnitForAvatar = async (chapter: any) => {
+    if (chapter?.sourceContent && chapter?.sectionTopics?.length) return chapter;
+
+    const unitId = String(chapter?.id || "");
+    if (!unitId || loadingUnitId) return null;
+    setLoadingUnitId(unitId);
+    setIsLoadingPage(true);
+    try {
+      const chapterIndex = selectedBook?.chapters.findIndex(
+        (entry: any) => String(entry.id) === unitId,
+      ) ?? 0;
+      const contentPayload = await loadChapterContentPayload(chapter);
+      const hydratedChapter = buildChapterFromUnit(
+        {
+          ...chapter,
+          unitTitle: chapter.unitTitle || chapter.title,
+          unitNumber: chapter.unit,
+        },
+        contentPayload,
+        Math.max(chapterIndex, 0),
+      );
+      setSelectedBook((current) =>
+        current
+          ? {
+              ...current,
+              chapters: current.chapters.map((entry: any) =>
+                String(entry.id) === unitId ? hydratedChapter : entry,
+              ),
+            }
+          : current,
+      );
+      return hydratedChapter;
+    } catch (error: any) {
+      pushToast({
+        title: "Unit unavailable",
+        description: error?.message || "Unable to load this unit.",
+        variant: "destructive",
+      });
+      return null;
+    } finally {
+      setLoadingUnitId(null);
+      setIsLoadingPage(false);
+    }
+  };
+
+  const startRewampAvatarLesson = async (chapter: any, topic: any) => {
+    if (!chapter?.id || !topic?.title || loadingUnitId) return;
+    setLoadingUnitId(String(chapter.id));
+    setIsLoadingPage(true);
+    try {
+      const response = await startAvatarSession({
+        unitId: String(chapter.id),
+        sectionId: topic.id ? String(topic.id) : null,
+        sectionTitle: String(topic.title),
+        section_title: String(topic.title),
+        board: chapter.board || selectedBook?.board || null,
+        class_number: chapter.standard || selectedBook?.standard || null,
+        subject: chapter.subject || selectedBook?.subject || null,
+        unit_number: chapter.unit || null,
+        unit_name: chapter.unitTitle || chapter.title || null,
+        term: chapter.term || selectedBook?.term || null,
+      });
+      if (!response?.session_id || !(response?.avatar_lesson || response?.enrichment?.avatar_lesson)) {
+        throw new Error("Avatar start did not return a playable lesson.");
+      }
+      setActiveChapter({
+        ...response,
+        id: `${chapter.id}:${topic.id || topic.title}`,
+        sourceUnitId: String(chapter.id),
+        section_id: topic.id || null,
+        section_title: topic.title,
+        title: topic.title,
+        unit: chapter.unit,
+        unitTitle: chapter.unitTitle || chapter.title,
+        board: chapter.board || selectedBook?.board || null,
+        standard: chapter.standard || selectedBook?.standard || null,
+        subject: chapter.subject || selectedBook?.subject || null,
+        term: chapter.term || selectedBook?.term || null,
+      });
+      setDisplayChapter(null);
+      setIsTocView(false);
+    } catch (error: any) {
+      pushToast({
+        title: "Lesson unavailable",
+        description: error?.message || "Unable to start this avatar lesson.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingUnitId(null);
+      setIsLoadingPage(false);
+    }
+  };
+
   useEffect(() => {
     let ignore = false;
 
     async function loadRemoteBook(bookId: string, chapterId?: any) {
       setBookLoadError(null);
-      const detail = await getLibrarySubjectDetail(bookId);
-      const chapterPayloads = await Promise.all(
-        detail.units.map(async (unit, index) => {
-          try {
-            const chapterContent = await loadChapterContentPayload(unit);
-            return buildChapterFromUnit(unit, chapterContent, index);
-          } catch (error) {
-            return buildChapterFromUnit(
-              unit,
-              { sectionTopics: unit.sectionTopics || [] },
-              index,
-            );
-          }
-        }),
+      const detail = await getLibrarySubjectDetail(bookId, { summary: true });
+      const baseBook = mapRemoteSubjectToBook(detail, 0);
+      const selectedUnitIndex = Math.max(
+        0,
+        detail.units.findIndex((unit) => String(unit.id) === String(chapterId)),
       );
+      const selectedUnit = detail.units[selectedUnitIndex] || detail.units[0];
+      let hydratedChapter = baseBook.chapters[selectedUnitIndex] || baseBook.chapters[0] || null;
+      if (selectedUnit) {
+        try {
+          const chapterContent = await loadChapterContentPayload(selectedUnit);
+          hydratedChapter = buildChapterFromUnit(selectedUnit, chapterContent, selectedUnitIndex);
+        } catch (error) {
+          hydratedChapter = buildChapterFromUnit(
+            selectedUnit,
+            { sectionTopics: selectedUnit.sectionTopics || [] },
+            selectedUnitIndex,
+          );
+        }
+      }
 
       if (ignore) return;
 
-      const palettes = ["#6366f1", "#0ea5e9", "#10b981", "#f59e0b", "#ec4899"];
       const remoteBook: Book = {
-        id: detail.subjectGroupKey || detail.id,
-        title: detail.title,
-        subject: detail.subject,
-        subjectFilterLabel: detail.part ? `${detail.subject} - ${detail.part}` : detail.subject,
-        standard: detail.standard,
-        term: detail.term || null,
-        part: detail.part || null,
-        unitCount: detail.unitCount,
-        color: palettes[0],
-        coverImageUrl: detail.coverImageUrl || null,
-        imageCandidates: detail.imageCandidates || [],
-        chapters: chapterPayloads,
+        ...baseBook,
+        chapters: baseBook.chapters.map((chapter, index) =>
+          index === selectedUnitIndex && hydratedChapter ? hydratedChapter : chapter,
+        ),
       };
-      const nextChapter =
-        remoteBook.chapters.find(
-          (chapter) => String(chapter.id) === String(chapterId),
-        ) ||
-        remoteBook.chapters[0] ||
-        null;
+      const nextChapter = hydratedChapter;
 
       setSelectedBook(remoteBook);
       setSelectedPart(null);
@@ -7617,12 +7727,7 @@ const BookContentWindowRewamp = () => {
                           <div
                             key={topic.id}
                             className="toc-chapter-row"
-                            onClick={() => {
-                              setActiveChapter(firstChapter);
-                              setIsTocView(false);
-                              setDisplayChapter(null);
-                              setPendingSectionAnchor(topic.anchor);
-                            }}
+                            onClick={() => startRewampAvatarLesson(firstChapter, topic)}
                           >
                             <span className="toc-ch-num">
                               {topic.number || `${unitNumber}.${ci + 1}`}
@@ -7635,11 +7740,7 @@ const BookContentWindowRewamp = () => {
                           <div
                             key={ch.id}
                             className="toc-chapter-row"
-                            onClick={() => {
-                              setActiveChapter(ch);
-                              setIsTocView(false);
-                              setDisplayChapter(null);
-                            }}
+                            onClick={() => loadUnitForAvatar(ch)}
                           >
                             <span className="toc-ch-num">
                               {unitNumber}.{ci + 1}

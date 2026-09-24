@@ -43,8 +43,22 @@ const subjectUnitSchema = new mongoose.Schema(
     debateTopics: { type: mongoose.Schema.Types.Mixed, default: null },
     readerIndex: {
       sections: { type: [String], default: [] },
+      avatarSections: {
+        type: [{
+          _id: false,
+          sectionId: { type: String, default: null },
+          sectionTitle: { type: String, required: true },
+          order: { type: Number, default: null },
+          hasAvatarLesson: { type: Boolean, default: false },
+        }],
+        default: [],
+      },
       hasGlossary: { type: Boolean, default: false },
       hasSummary: { type: Boolean, default: false },
+    },
+    contentFlags: {
+      hasStructuredData: { type: Boolean, default: false },
+      hasEnrichedData: { type: Boolean, default: false },
     },
   },
   { timestamps: true },
@@ -53,5 +67,21 @@ const subjectUnitSchema = new mongoose.Schema(
 // Index for part-wise & term-wise grouping
 subjectUnitSchema.index({ subjectGroupKey: 1, part: 1, term: 1, unitNumber: 1 });
 subjectUnitSchema.index({ board: 1, standard: 1, subject: 1, part: 1, term: 1 });
+subjectUnitSchema.index({
+  board: 1,
+  standard: 1,
+  "processing.status": 1,
+  subject: 1,
+  part: 1,
+  term: 1,
+  unitNumber: 1,
+});
+subjectUnitSchema.index({
+  subjectGroupKey: 1,
+  termSequence: 1,
+  partSequence: 1,
+  unitNumber: 1,
+  unitTitle: 1,
+});
 
 module.exports = mongoose.model("SubjectUnit", subjectUnitSchema);

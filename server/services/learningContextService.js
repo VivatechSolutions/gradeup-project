@@ -636,7 +636,24 @@ async function resolveSubjectGroupImages(units = []) {
   };
 }
 
-function toUnitSummary(unit) {
+function lightweightSectionTopics(unit) {
+  const avatarSections = unit?.readerIndex?.avatarSections || [];
+  const sectionNames = avatarSections.length
+    ? avatarSections
+    : (unit?.readerIndex?.sections || []).map((sectionTitle, index) => ({
+        sectionTitle,
+        order: index + 1,
+      }));
+  return sectionNames.map((section, index) => createTopicRecord({
+    unit,
+    sectionId: section.sectionId,
+    sectionNumber: section.order ?? index + 1,
+    sectionTitle: section.sectionTitle,
+    sectionType: "section",
+  })).filter(Boolean);
+}
+
+function toUnitSummary(unit, { lightweight = false } = {}) {
   return {
     id: unit._id,
     subjectGroupKey: getSubjectGroupLookup(unit),
@@ -651,10 +668,10 @@ function toUnitSummary(unit) {
     unitLabel: unit.unitLabel,
     chapterName: unit.chapterName,
     readerIndex: unit.readerIndex,
-    hasStructuredData: Boolean(unit.structuredData),
-    hasEnrichedData: Boolean(unit.enrichedData),
-    debateTopics: unit.debateTopics || null,
-    sectionTopics: extractSectionTopicsForUnit(unit),
+    hasStructuredData: unit.contentFlags?.hasStructuredData ?? Boolean(unit.structuredData),
+    hasEnrichedData: unit.contentFlags?.hasEnrichedData ?? Boolean(unit.enrichedData),
+    debateTopics: lightweight ? null : unit.debateTopics || null,
+    sectionTopics: lightweight ? lightweightSectionTopics(unit) : extractSectionTopicsForUnit(unit),
     createdAt: unit.createdAt,
     updatedAt: unit.updatedAt,
   };
@@ -683,7 +700,7 @@ function getSubjectVisual(subject = "") {
   return { iconKey: "book-open", colorKey: "slate" };
 }
 
-function toSubjectGroup(units = []) {
+function toSubjectGroup(units = [], options = {}) {
   const orderedUnits = [...units].sort((a, b) => {
     const aNumber = a.unitNumber ?? Number.MAX_SAFE_INTEGER;
     const bNumber = b.unitNumber ?? Number.MAX_SAFE_INTEGER;
@@ -711,7 +728,7 @@ function toSubjectGroup(units = []) {
     unitNumbers: orderedUnits
       .map((unit) => unit.unitNumber)
       .filter((unitNumber) => unitNumber !== null && unitNumber !== undefined),
-    units: orderedUnits.map(toUnitSummary),
+    units: orderedUnits.map((unit) => toUnitSummary(unit, options)),
     updatedAt: orderedUnits.reduce(
       (latest, current) => (latest > current.updatedAt ? latest : current.updatedAt),
       orderedUnits[0].updatedAt,
@@ -782,13 +799,27 @@ async function listSubjectGroups(filters = {}) {
   );
 }
 
-async function getSubjectGroupByKey(subjectGroupKey) {
-  const units = await SubjectUnit.find(buildSubjectGroupKeyFilter(subjectGroupKey)).sort({
+async function getSubjectGroupByKey(subjectGroupKey, { summary = false } = {}) {
+  const projection = [
+    "_id", "documentId", "board", "standard", "subject", "subjectGroupKey",
+    "part", "term", "partSequence", "termSequence", "unitNumber", "unitTitle",
+    "unitLabel", "chapterName", "readerIndex", "contentFlags", "createdAt", "updatedAt",
+  ].join(" ");
+  let query = SubjectUnit.find(summary ? { subjectGroupKey } : buildSubjectGroupKeyFilter(subjectGroupKey));
+  if (summary) query = query.select(projection).lean();
+  let units = await query.sort({
     termSequence: 1,
     partSequence: 1,
     unitNumber: 1,
     unitTitle: 1,
   });
+
+  if (summary && !units.length) {
+    units = await SubjectUnit.find(buildSubjectGroupKeyFilter(subjectGroupKey))
+      .select(projection)
+      .sort({ termSequence: 1, partSequence: 1, unitNumber: 1, unitTitle: 1 })
+      .lean();
+  }
 
   if (!units.length) {
     const error = new Error("Subject group not found");
@@ -796,7 +827,7 @@ async function getSubjectGroupByKey(subjectGroupKey) {
     throw error;
   }
 
-  const group = toSubjectGroup(units);
+  const group = toSubjectGroup(units, { lightweight: summary });
   return {
     ...group,
     ...(await resolveSubjectGroupImages(group.units)),

@@ -194,6 +194,22 @@ export const LearnSlide: React.FC<LearnSlideProps> = ({
           </motion.button>
         </div>
       )}
+
+      {slide.images?.gallery?.filter((url) => url && url !== slide.images?.main).length ? (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {slide.images.gallery
+            .filter((url) => url && url !== slide.images?.main)
+            .map((url) => (
+              <PlaceholderImage
+                key={url}
+                src={url}
+                category="general-science"
+                alt={slide.title}
+                aspectRatio="16/9"
+              />
+            ))}
+        </div>
+      ) : null}
     </div>
   );
 };

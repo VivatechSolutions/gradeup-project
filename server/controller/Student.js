@@ -19,8 +19,11 @@ const controller = {
   },
 
   async subjects(req, res) {
+    const startedAt = process.hrtime.bigint();
     try {
       const data = await listStudentSubjects(req.studentUser._id);
+      const durationMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
+      res.set("Server-Timing", `student-subjects;dur=${durationMs.toFixed(1)}`);
       return res.status(200).json({ status: true, data });
     } catch (error) {
       return res.status(error.statusCode || 500).json({

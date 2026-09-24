@@ -66,9 +66,16 @@ function sectionTitleCandidates(section = {}) {
 
 function getSectionAvatarExplanation(section = {}) {
   const enrichment = section?.section_enrichment || section?.enrichment || section;
-  const explanation = enrichment?.avatar_explanation;
+  const lesson = enrichment?.avatar_lesson;
+  const lessonExplanation = Array.isArray(lesson?.phases)
+    ? lesson.phases.find((phase) => normalizeSectionValue(phase?.phase) === "explanation")
+    : null;
+  const legacyExplanation = enrichment?.avatar_explanation;
+  const explanation = Array.isArray(legacyExplanation?.segments) && legacyExplanation.segments.length
+    ? legacyExplanation
+    : lessonExplanation;
   return Array.isArray(explanation?.segments) && explanation.segments.length
-    ? explanation
+    ? { explanation, enrichment, lesson: lesson || null }
     : null;
 }
 
@@ -106,13 +113,13 @@ function findAvatarExplanationForSection(enrichedData, sectionTitle, sectionId =
       const sectionType = normalizeSectionValue(section?.type || section?.kind || section?.section_type);
       if (sectionType && sectionType !== "section") continue;
 
-      const explanation = getSectionAvatarExplanation(section);
-      if (!explanation) continue;
+      const avatarPayload = getSectionAvatarExplanation(section);
+      if (!avatarPayload) continue;
 
       const ids = sectionIdCandidates(section);
       const titles = sectionTitleCandidates(section);
       const normalizedTitles = titles.map(normalizeSectionValue).filter(Boolean);
-      sectionMatches.push({ section, explanation, ids, titles, normalizedTitles });
+      sectionMatches.push({ section, ...avatarPayload, ids, titles, normalizedTitles });
     }
   }
 
@@ -123,6 +130,8 @@ function findAvatarExplanationForSection(enrichedData, sectionTitle, sectionId =
     if (idMatch) {
       return {
         explanation: idMatch.explanation,
+        enrichment: idMatch.enrichment,
+        lesson: idMatch.lesson,
         matched_section: describeMatchedSection(idMatch.section, "exact_id"),
       };
     }
@@ -135,33 +144,24 @@ function findAvatarExplanationForSection(enrichedData, sectionTitle, sectionId =
     if (exactMatch) {
       return {
         explanation: exactMatch.explanation,
+        enrichment: exactMatch.enrichment,
+        lesson: exactMatch.lesson,
         matched_section: describeMatchedSection(exactMatch.section, "exact_title"),
       };
     }
 
-    const fallbackMatches = sectionMatches
-      .filter(({ normalizedTitles }) =>
-        normalizedTitles.some((candidate) => candidate.includes(target)),
-      )
-      .sort((left, right) => {
-        const leftLength = Math.min(...left.normalizedTitles.map((title) => title.length));
-        const rightLength = Math.min(...right.normalizedTitles.map((title) => title.length));
-        return leftLength - rightLength;
-      });
-
-    if (fallbackMatches.length) {
-      const fallbackMatch = fallbackMatches[0];
-      return {
-        explanation: fallbackMatch.explanation,
-        matched_section: describeMatchedSection(fallbackMatch.section, "fallback_contains_requested_title"),
-      };
-    }
   }
 
   return { explanation: null, matched_section: null };
 }
 
 async function resolveAvatarUnitFromBody(source = {}) {
+  const requestedUnitId = cleanText(source.unitId || source.subjectUnitId);
+  if (/^[a-f\d]{24}$/i.test(requestedUnitId)) {
+    const exactUnit = await SubjectUnit.findById(requestedUnitId);
+    if (exactUnit) return exactUnit;
+  }
+
   const query = { "processing.status": { $ne: "failed" } };
   const board = exactText(source.board);
   const subject = exactText(source.subject);
@@ -285,7 +285,14 @@ const controller = {
         req.body.sectionId || req.body.section_id,
       );
       const avatarExplanation = avatarSectionMatch?.explanation;
+      const sectionEnrichment = avatarSectionMatch?.enrichment || null;
       const matchedSection = avatarSectionMatch?.matched_section || null;
+      if (!avatarExplanation || !matchedSection) {
+        return res.status(404).json({
+          status: false,
+          message: `No avatar lesson was found for the exact section title '${sectionTitle}'.`,
+        });
+      }
       const dbFilteredSegments = Array.isArray(avatarExplanation?.segments)
         ? avatarExplanation.segments
         : [];
@@ -310,7 +317,7 @@ const controller = {
           req.body.unitName ||
           context.unitName,
         section_title: sectionTitle,
-        segments: dbFilteredSegments.length ? dbFilteredSegments : null,
+        segments: dbFilteredSegments,
         term: req.body.term ?? unit.term ?? null,
       };
 
@@ -355,6 +362,12 @@ const controller = {
 
       const finalData = {
         ...data,
+        enrichment: sectionEnrichment
+          ? {
+              ...sectionEnrichment,
+              ...(data?.avatar_lesson ? { avatar_lesson: data.avatar_lesson } : {}),
+            }
+          : data?.enrichment,
         avatar_explanation: {
           ...(data?.avatar_explanation || {}),
           ...(avatarExplanation?.teaching_style && !data?.avatar_explanation?.teaching_style
@@ -385,6 +398,7 @@ const controller = {
           },
           db_matched_section: matchedSection,
           db_filtered_segments: dbFilteredSegments,
+          db_avatar_lesson: avatarSectionMatch?.lesson || null,
           python_start_request_body: pythonStartRequestBody,
           python_response_segments: pythonResponseSegments,
           flashcard_generate_request_body: flashcardGenerateRequestBody,
@@ -439,6 +453,7 @@ const controller = {
           student_doubt: req.body.studentDoubt || req.body.student_doubt || null,
           student_response:
             req.body.studentResponse || req.body.student_response || null,
+          segment_id: req.body.segmentId || req.body.segment_id || null,
         },
       });
 

@@ -18,6 +18,21 @@ export interface SlideOption {
   icon?: string;
   isCorrect?: boolean;
   explanation?: string;
+  imageUrl?: string;
+  audio?: VoiceAudio;
+}
+
+export interface VoiceAudio {
+  male?: string;
+  female?: string;
+}
+
+export interface SlideResolution {
+  segmentId?: string;
+  text?: string;
+  emotion?: string;
+  imageUrl?: string;
+  audio?: VoiceAudio;
 }
 
 export interface ClueItem {
@@ -44,6 +59,13 @@ export interface ActivityItem {
 
 export interface SlideData {
   id: string;
+  segmentId?: string;
+  phase?: string;
+  emotion?: string;
+  audio?: VoiceAudio;
+  questionAudio?: VoiceAudio;
+  suggestedQuestions?: string[];
+  resolutions?: Record<string, SlideResolution>;
   slideNumber: number;
   type: SlideType;
   badge: {
@@ -61,6 +83,7 @@ export interface SlideData {
     comparison?: VisualComparison;
     items?: ActivityItem[];
     caption?: string;
+    gallery?: string[];
   };
   options?: SlideOption[];
   question?: string;
