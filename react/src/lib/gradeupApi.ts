@@ -69,24 +69,32 @@ type UnitLabelSource = Pick<
 const normalizeUnitLabelPart = (value?: string | null) =>
   String(value || "").trim().replace(/\s+/g, " ");
 
+const isUnitNumberLabel = (value: string) => /^unit\s*0*\d+$/i.test(value);
+
+export function getLibraryUnitContentTitle(unit: UnitLabelSource) {
+  const chapterName = normalizeUnitLabelPart(unit.chapterName);
+  const unitTitle = normalizeUnitLabelPart(unit.unitTitle);
+  const unitLabel = normalizeUnitLabelPart(unit.unitLabel);
+
+  return (
+    [chapterName, unitTitle, unitLabel].find(
+      (value) => value && !isUnitNumberLabel(value),
+    ) || chapterName || unitTitle || unitLabel || "Unit"
+  );
+}
+
 export function getLibraryUnitDisplayLabel(unit: UnitLabelSource) {
   const unitLabel = normalizeUnitLabelPart(unit.unitLabel);
   const unitTitle = normalizeUnitLabelPart(unit.unitTitle);
-  const chapterName = normalizeUnitLabelPart(unit.chapterName);
   const numberLabel =
     unit.unitNumber !== null && unit.unitNumber !== undefined
       ? `Unit ${String(unit.unitNumber).padStart(2, "0")}`
       : "";
-  const isUnitNumberLabel = (value: string) => /^unit\s*0*\d+$/i.test(value);
   const prefix =
     [unitLabel, unitTitle].find((value) => isUnitNumberLabel(value)) ||
     numberLabel;
-  const chapter =
-    chapterName ||
-    [unitTitle, unitLabel].find(
-      (value) => value && !isUnitNumberLabel(value) && value.toLowerCase() !== prefix.toLowerCase(),
-    ) ||
-    "";
+  const contentTitle = getLibraryUnitContentTitle(unit);
+  const chapter = isUnitNumberLabel(contentTitle) ? "" : contentTitle;
 
   if (prefix && chapter && prefix.toLowerCase() !== chapter.toLowerCase()) {
     return `${prefix} — ${chapter}`;

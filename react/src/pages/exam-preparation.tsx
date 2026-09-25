@@ -4,19 +4,14 @@ import { useLocation } from "wouter";
 import { ArrowLeft, ArrowRight, BarChart3, BookOpen, BrainCircuit, CheckCircle2, Clock3, FileQuestion, Home, RefreshCw, Sparkles, Target } from "lucide-react";
 import Navigation from "../components/navigation";
 import { useAuth } from "../hooks/use-auth";
-import { ExamPreparation, ExamSetup, getLibrarySubjects, LibrarySubject, LibraryUnit, prepareExam } from "../lib/gradeupApi";
+import { ExamPreparation, ExamSetup, getLibrarySubjects, getLibraryUnitContentTitle, getLibraryUnitDisplayLabel, LibrarySubject, prepareExam } from "../lib/gradeupApi";
 import "./exam-preparation.css";
 
 export const EXAM_SETUP_STORAGE_KEY = "gradeup_exam_setup";
 
-function unitLabel(unit: LibraryUnit) {
-  const number = unit.unitNumber == null ? "" : `Unit ${unit.unitNumber}`;
-  return [number, unit.unitTitle || unit.chapterName].filter(Boolean).join(" · ");
-}
-
-function setupFrom(subject: LibrarySubject, unit: LibraryUnit): ExamSetup | null {
+function setupFrom(subject: LibrarySubject, unit: LibrarySubject["units"][number]): ExamSetup | null {
   if (unit.unitNumber == null) return null;
-  return { unitId: unit.id, subjectGroupKey: subject.subjectGroupKey, subject: subject.subject, board: subject.board, classNumber: subject.standard, unitNumber: unit.unitNumber, unitName: unit.unitTitle || unit.chapterName || unit.unitLabel };
+  return { unitId: unit.id, subjectGroupKey: subject.subjectGroupKey, subject: subject.subject, board: subject.board, classNumber: subject.standard, unitNumber: unit.unitNumber, unitName: getLibraryUnitContentTitle(unit) };
 }
 
 export default function ExamPreparationPage() {
@@ -65,7 +60,7 @@ export default function ExamPreparationPage() {
           <div className="xp-step"><span>1</span><div><b>Choose a subject</b><small>Only subjects available in your library are shown.</small></div></div>
           {subjectsQuery.isLoading ? <div className="xp-loading-line">Loading your subjects…</div> : subjects.length === 0 ? <div className="xp-empty">No uploaded subjects are available for exam preparation.</div> : <div className="xp-subjects">{subjects.map((subject) => <button key={subject.subjectGroupKey} className={subject.subjectGroupKey === selectedSubject?.subjectGroupKey ? "active" : ""} onClick={() => { setSubjectKey(subject.subjectGroupKey); setUnitId(""); }}><BookOpen size={18}/><span><b>{subject.subject}</b><small>{subject.board} · Class {subject.standard} · {subject.unitCount} units</small></span>{subject.subjectGroupKey === selectedSubject?.subjectGroupKey && <CheckCircle2 size={18}/>}</button>)}</div>}
           <div className="xp-divider"/><div className="xp-step"><span>2</span><div><b>Choose one unit</b><small>The preparation API currently builds one unit at a time.</small></div></div>
-          <div className="xp-units">{eligibleUnits.map((unit) => <button key={unit.id} className={unit.id === selectedUnit?.id ? "active" : ""} onClick={() => setUnitId(unit.id)}><span className="xp-unit-number">{unit.unitNumber}</span><span><b>{unit.unitTitle || unit.chapterName}</b><small>{unitLabel(unit)}</small></span>{unit.id === selectedUnit?.id && <CheckCircle2 size={18}/>}</button>)}</div>
+          <div className="xp-units">{eligibleUnits.map((unit) => <button key={unit.id} className={unit.id === selectedUnit?.id ? "active" : ""} onClick={() => setUnitId(unit.id)}><span className="xp-unit-number">{unit.unitNumber}</span><span><b>{getLibraryUnitContentTitle(unit)}</b><small>{getLibraryUnitDisplayLabel(unit)}</small></span>{unit.id === selectedUnit?.id && <CheckCircle2 size={18}/>}</button>)}</div>
           {selectedSubject && eligibleUnits.length === 0 && <div className="xp-empty">This subject has no numbered units supported by the exam API.</div>}{error && <div className="xp-error">{error}</div>}
           <button className="xp-primary" disabled={!selectedSetup || preparing} onClick={generatePreparation}>{preparing ? <><RefreshCw className="spin" size={18}/> Building preparation…</> : <><Sparkles size={18}/> Generate preparation</>}</button>
         </div>

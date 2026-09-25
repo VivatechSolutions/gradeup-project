@@ -5,11 +5,29 @@ import { FaceDetection } from "@mediapipe/face_detection";
 import { AlertTriangle, BookOpen, Camera, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Eye, FileText, Home, Loader2, LockKeyhole, Play, RefreshCw, Save, Shield, ShieldAlert, Star, Timer, Trophy, Users, XCircle } from "lucide-react";
 import Navigation from "../components/navigation";
 import ExamResultDisplay from "../components/exam-result-display";
-import { ExamAttempt, ExamSetup, getExamAttempt, getExamAttempts, getLibrarySubjects, LibrarySubject, recordExamWarning, saveExamAnswer, saveExamProgress, startExam, submitExam } from "../lib/gradeupApi";
+import { ExamAttempt, ExamSetup, getExamAttempt, getExamAttempts, getLibrarySubjects, getLibraryUnitContentTitle, LibrarySubject, recordExamWarning, saveExamAnswer, saveExamProgress, startExam, submitExam } from "../lib/gradeupApi";
 import { EXAM_SETUP_STORAGE_KEY } from "./exam-preparation";
 import "./main-exam-page.css";
 
 type Mode = "setup" | "secure" | "exam" | "evaluating" | "result";
+
+const faceDetectionAssetUrl = (file: string) => {
+  const publicUrl = String(process.env.PUBLIC_URL || "").replace(/\/+$/, "");
+  return `${publicUrl}/mediapipe/face_detection/${file}`;
+};
+
+async function verifyFaceDetectionAssets() {
+  const assetUrl = faceDetectionAssetUrl(
+    "face_detection_solution_simd_wasm_bin.js",
+  );
+  const response = await fetch(assetUrl, { cache: "no-store" });
+  const contentType = response.headers.get("content-type") || "";
+  if (!response.ok || contentType.toLowerCase().includes("text/html")) {
+    throw new Error(
+      "Face-detection assets are not being served by this React app. Run the app from its react folder with npm start (so prestart copies the MediaPipe assets), then reload the page.",
+    );
+  }
+}
 
 function readStoredSetup(): ExamSetup | null {
   try { return JSON.parse(sessionStorage.getItem(EXAM_SETUP_STORAGE_KEY) || "null"); } catch { return null; }
@@ -40,12 +58,16 @@ function useSecureCamera(active: boolean) {
     video.muted = true; video.playsInline = true;
     const initialize = async () => {
       try {
+        setCameraError("");
+        await verifyFaceDetectionAssets();
         const media = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
         if (cancelled) { media.getTracks().forEach((track) => track.stop()); return; }
         streamRef.current = media; setStream(media); video.srcObject = media; await video.play();
-        detector = new FaceDetection({ locateFile: (file) => `/mediapipe/face_detection/${file}` });
+        detector = new FaceDetection({ locateFile: faceDetectionAssetUrl });
         detector.setOptions({ model: "short", minDetectionConfidence: 0.62 });
         detector.onResults((results) => { if (!cancelled) { setDetectorReady(true); setFaceCount(results.detections?.length || 0); } });
+        await detector.initialize();
+        if (cancelled) { await detector.close(); return; }
         let lastSent = 0;
         const scan = async (now: number) => {
           if (cancelled) return;
@@ -57,12 +79,16 @@ function useSecureCamera(active: boolean) {
         };
         frame = requestAnimationFrame(scan);
       } catch (error: any) {
+        void detector?.close();
+        streamRef.current?.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+        setStream(null);
         if (!cancelled) setCameraError(error?.message || "Camera permission is required for Secure Mode.");
       }
     };
     void initialize();
     return () => {
-      cancelled = true; cancelAnimationFrame(frame); detector?.close();
+      cancelled = true; cancelAnimationFrame(frame); void detector?.close();
       streamRef.current?.getTracks().forEach((track) => track.stop()); streamRef.current = null;
       setStream(null); setFaceCount(null); setDetectorReady(false);
     };
@@ -117,7 +143,7 @@ export default function MainExamPage() {
   const selectedSubject = subjects.find((subject) => subject.subjectGroupKey === subjectKey) || subjects.find((subject) => subject.subjectGroupKey === pendingSetup?.subjectGroupKey) || subjects[0];
   const units = (selectedSubject?.units || []).filter((unit) => unit.unitNumber != null);
   const selectedUnit = units.find((unit) => unit.id === unitId) || units.find((unit) => unit.id === pendingSetup?.unitId) || units[0];
-  const setup = selectedSubject && selectedUnit && selectedUnit.unitNumber != null ? { unitId: selectedUnit.id, subjectGroupKey: selectedSubject.subjectGroupKey, subject: selectedSubject.subject, board: selectedSubject.board, classNumber: selectedSubject.standard, unitNumber: selectedUnit.unitNumber, unitName: selectedUnit.unitTitle || selectedUnit.chapterName || selectedUnit.unitLabel } satisfies ExamSetup : null;
+  const setup = selectedSubject && selectedUnit && selectedUnit.unitNumber != null ? { unitId: selectedUnit.id, subjectGroupKey: selectedSubject.subjectGroupKey, subject: selectedSubject.subject, board: selectedSubject.board, classNumber: selectedSubject.standard, unitNumber: selectedUnit.unitNumber, unitName: getLibraryUnitContentTitle(selectedUnit) } satisfies ExamSetup : null;
   const cameraActive = mode === "secure" || mode === "exam";
   const camera = useSecureCamera(cameraActive);
   const question = attempt?.questions[idx];
@@ -236,7 +262,7 @@ export default function MainExamPage() {
   if (mode === "evaluating") return <div className="mx-evaluating"><div className="mx-eval-orbit"><Loader2 className="spin"/></div><h1>Evaluating your answers</h1><p>Your exam is locked and safely submitted. Detailed feedback may take a moment.</p>{error && <div className="mx-error">{error}</div>}</div>;
   if (mode === "result" && attempt) return <ExamResultDisplay attempt={attempt} onDashboard={() => setLocation("/dashboard")} onPrepare={() => setLocation("/exam-preparation")} onAnother={() => { setMode("setup"); setAttempt(null); void attemptsQuery.refetch(); }}/>;
 
-  if (mode === "setup") return <div className="mx-setup-page"><Navigation currentRole={currentRole as any} onRoleChange={setCurrentRole as any}/><main className="mx-setup-shell"><header><div><span className="mx-kicker"><Shield size={15}/> Secure assessments</span><h1>Main Exam Centre</h1><p>Start a protected exam or continue exactly where you left off.</p></div><button className="mx-secondary" onClick={() => setLocation("/dashboard")}><Home size={16}/> Dashboard</button></header>{error && <div className="mx-error"><AlertTriangle size={16}/>{error}</div>}<section className="mx-setup-layout"><div className="mx-panel"><div className="mx-panel-title"><span>New exam</span><small>One subject · one unit</small></div><label>Subject</label><div className="mx-select-grid">{subjects.map((subject) => <button key={subject.subjectGroupKey} className={subject.subjectGroupKey === selectedSubject?.subjectGroupKey ? "active" : ""} onClick={() => { setSubjectKey(subject.subjectGroupKey); setUnitId(""); setPendingSetup(null); }}><BookOpen size={17}/><span><b>{subject.subject}</b><small>{subject.board} · Class {subject.standard}</small></span></button>)}</div><label>Unit</label><div className="mx-unit-list">{units.map((unit) => <button key={unit.id} className={unit.id === selectedUnit?.id ? "active" : ""} onClick={() => { setUnitId(unit.id); setPendingSetup(null); }}><span>{unit.unitNumber}</span><b>{unit.unitTitle || unit.chapterName}</b>{unit.id === selectedUnit?.id && <CheckCircle2 size={17}/>}</button>)}</div><button className="mx-primary mx-start" disabled={!setup || subjectsQuery.isLoading} onClick={chooseNewExam}><Shield size={17}/> Enter Secure Check</button></div><aside className="mx-panel mx-rules"><ShieldAlert size={34}/><h2>Secure Mode rules</h2><p>Your camera and on-device face detector stay active throughout the assessment.</p><ul><li>Keep exactly one face visible.</li><li>Five-second grace period avoids accidental warnings.</li><li>Three warnings automatically end and submit the exam.</li><li>Closing the page does not pause the timer.</li></ul></aside></section><section className="mx-history"><div className="mx-history-head"><div><h2>Your exams</h2><p>Continue active attempts or review evaluated results.</p></div><button className="mx-secondary" onClick={() => attemptsQuery.refetch()}><RefreshCw size={15}/> Refresh</button></div>{attemptsQuery.isLoading ? <div className="mx-empty"><Loader2 className="spin"/> Loading exams…</div> : (attemptsQuery.data || []).length === 0 ? <div className="mx-empty"><FileText size={28}/><b>No exams yet</b><span>Your first attempt will appear here.</span></div> : <div className="mx-attempts">{(attemptsQuery.data || []).map((item) => { const score = item.result?.percentage; return <article key={item.examId}><div className={`mx-status ${item.status}`}>{item.status === "in_progress" ? "In Progress" : item.status === "evaluating" ? "Evaluating" : item.status === "ended" ? "Ended" : "Completed"}</div><h3>{item.subject}</h3><p>Unit {item.unitNumber} · {item.unitName}</p><div className="mx-attempt-meta"><span><Clock3 size={14}/>{item.status === "in_progress" ? formatTime(item.remainingSeconds ?? null) : new Date(item.startedAt).toLocaleDateString()}</span>{score != null && <span><Trophy size={14}/>{Math.round(score)}%</span>}<span><FileText size={14}/>{item.totalQuestions} questions</span></div><button onClick={() => void chooseAttempt(item)}>{item.status === "in_progress" ? "Continue Exam" : item.status === "evaluating" ? "Check Status" : "View Results"}<ChevronRight size={15}/></button></article>; })}</div>}</section></main></div>;
+  if (mode === "setup") return <div className="mx-setup-page"><Navigation currentRole={currentRole as any} onRoleChange={setCurrentRole as any}/><main className="mx-setup-shell"><header><div><span className="mx-kicker"><Shield size={15}/> Secure assessments</span><h1>Main Exam Centre</h1><p>Start a protected exam or continue exactly where you left off.</p></div><button className="mx-secondary" onClick={() => setLocation("/dashboard")}><Home size={16}/> Dashboard</button></header>{error && <div className="mx-error"><AlertTriangle size={16}/>{error}</div>}<section className="mx-setup-layout"><div className="mx-panel"><div className="mx-panel-title"><span>New exam</span><small>One subject · one unit</small></div><label>Subject</label><div className="mx-select-grid">{subjects.map((subject) => <button key={subject.subjectGroupKey} className={subject.subjectGroupKey === selectedSubject?.subjectGroupKey ? "active" : ""} onClick={() => { setSubjectKey(subject.subjectGroupKey); setUnitId(""); setPendingSetup(null); }}><BookOpen size={17}/><span><b>{subject.subject}</b><small>{subject.board} · Class {subject.standard}</small></span></button>)}</div><label>Unit</label><div className="mx-unit-list">{units.map((unit) => <button key={unit.id} className={unit.id === selectedUnit?.id ? "active" : ""} onClick={() => { setUnitId(unit.id); setPendingSetup(null); }}><span>{unit.unitNumber}</span><b>{getLibraryUnitContentTitle(unit)}</b>{unit.id === selectedUnit?.id && <CheckCircle2 size={17}/>}</button>)}</div><button className="mx-primary mx-start" disabled={!setup || subjectsQuery.isLoading} onClick={chooseNewExam}><Shield size={17}/> Enter Secure Check</button></div><aside className="mx-panel mx-rules"><ShieldAlert size={34}/><h2>Secure Mode rules</h2><p>Your camera and on-device face detector stay active throughout the assessment.</p><ul><li>Keep exactly one face visible.</li><li>Five-second grace period avoids accidental warnings.</li><li>Three warnings automatically end and submit the exam.</li><li>Closing the page does not pause the timer.</li></ul></aside></section><section className="mx-history"><div className="mx-history-head"><div><h2>Your exams</h2><p>Continue active attempts or review evaluated results.</p></div><button className="mx-secondary" onClick={() => attemptsQuery.refetch()}><RefreshCw size={15}/> Refresh</button></div>{attemptsQuery.isLoading ? <div className="mx-empty"><Loader2 className="spin"/> Loading exams…</div> : (attemptsQuery.data || []).length === 0 ? <div className="mx-empty"><FileText size={28}/><b>No exams yet</b><span>Your first attempt will appear here.</span></div> : <div className="mx-attempts">{(attemptsQuery.data || []).map((item) => { const score = item.result?.percentage; return <article key={item.examId}><div className={`mx-status ${item.status}`}>{item.status === "in_progress" ? "In Progress" : item.status === "evaluating" ? "Evaluating" : item.status === "ended" ? "Ended" : "Completed"}</div><h3>{item.subject}</h3><p>Unit {item.unitNumber} · {item.unitName}</p><div className="mx-attempt-meta"><span><Clock3 size={14}/>{item.status === "in_progress" ? formatTime(item.remainingSeconds ?? null) : new Date(item.startedAt).toLocaleDateString()}</span>{score != null && <span><Trophy size={14}/>{Math.round(score)}%</span>}<span><FileText size={14}/>{item.totalQuestions} questions</span></div><button onClick={() => void chooseAttempt(item)}>{item.status === "in_progress" ? "Continue Exam" : item.status === "evaluating" ? "Check Status" : "View Results"}<ChevronRight size={15}/></button></article>; })}</div>}</section></main></div>;
 
   if (!attempt || !question) return null;
   const answered = attempt.questions.filter((item) => Boolean(answers[item.question_id]?.trim())).length;

@@ -26,12 +26,25 @@ function required(value, label) {
 }
 
 function examContext(body = {}) {
+  const suppliedUnitName = String(body.unit_name ?? body.unitName ?? "").trim();
   return {
     subject: String(required(body.subject, "Subject")).trim(),
     unit_number: Number(required(body.unit_number ?? body.unitNumber, "Unit number")),
     board: String(required(body.board, "Board")).trim(),
     class_number: String(required(body.class_number ?? body.classNumber, "Class number")).trim(),
-    unit_name: String(required(body.unit_name ?? body.unitName, "Unit name")).trim(),
+    // Labels such as "Unit 02" identify the number, not the textbook title.
+    // Omitting them lets the exam engine resolve the canonical title itself.
+    unit_name: /^unit\s*0*\d+$/i.test(suppliedUnitName) ? "" : suppliedUnitName,
+  };
+}
+
+function upstreamContext(context) {
+  if (context.unit_name) return context;
+  return {
+    subject: context.subject,
+    unit_number: context.unit_number,
+    board: context.board,
+    class_number: context.class_number,
   };
 }
 
@@ -65,7 +78,7 @@ const controller = {
       const data = await callPython({
         method: "post",
         path: "/api/exam/prepare",
-        data: { ...candidate(req), ...context },
+        data: { ...candidate(req), ...upstreamContext(context) },
       });
       return res.status(200).json({ status: true, data });
     } catch (error) {
@@ -91,7 +104,7 @@ const controller = {
       const data = await callPython({
         method: "post",
         path: "/api/exam/start",
-        data: { ...identity, ...context },
+        data: { ...identity, ...upstreamContext(context) },
       });
       const startedAt = data?.created_at && !Number.isNaN(new Date(data.created_at).valueOf())
         ? new Date(data.created_at)
@@ -114,7 +127,7 @@ const controller = {
             board: data.board || context.board,
             classNumber: String(data.class_number || context.class_number),
             unitNumber: Number(data.unit_numbers?.[0] ?? context.unit_number),
-            unitName: context.unit_name,
+            unitName: context.unit_name || data.unit_title || `Unit ${context.unit_number}`,
             examType: data.exam_type || "mixed",
             questions,
             totalQuestions: Number(data.total_questions ?? questions.length),
