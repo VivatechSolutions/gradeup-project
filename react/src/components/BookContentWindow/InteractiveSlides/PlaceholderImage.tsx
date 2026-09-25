@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
 interface PlaceholderImageProps {
   src?: string;
@@ -30,17 +30,34 @@ export const PlaceholderImage: React.FC<PlaceholderImageProps> = ({
   badge,
 }) => {
   const [imgError, setImgError] = useState(false);
+  const [naturalAspectRatio, setNaturalAspectRatio] = useState<number>();
+
+  useEffect(() => {
+    setImgError(false);
+    setNaturalAspectRatio(undefined);
+  }, [src]);
 
   // If real image source is provided and hasn't failed, render the image
   if (src && !imgError) {
     return (
       <div
         className={`relative overflow-hidden rounded-2xl border border-slate-200/80 dark:border-white/10 shadow-md group ${className}`}
-        style={{ aspectRatio: aspectRatio === "auto" ? undefined : aspectRatio }}
+        style={{
+          aspectRatio:
+            aspectRatio === "auto"
+              ? naturalAspectRatio
+              : aspectRatio,
+        }}
       >
         <img
           src={src}
           alt={alt}
+          onLoad={(event) => {
+            const image = event.currentTarget;
+            if (image.naturalWidth && image.naturalHeight) {
+              setNaturalAspectRatio(image.naturalWidth / image.naturalHeight);
+            }
+          }}
           onError={() => setImgError(true)}
           className={`w-full h-full object-center transition-transform duration-300 group-hover:scale-[1.02] ${imageClassName}`}
         />

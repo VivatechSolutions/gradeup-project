@@ -746,6 +746,25 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
     handleSelectOptionForSlide(segment, optionId);
   };
 
+  const revealNextExplanationSegment = () => {
+    if (!isExplanationSequence || isLastExplanationSegment || isNavigating) return;
+    if (currentSlide.task.type !== "narration" && !currentTaskState.isCompleted) return;
+    cancelAutoAdvance();
+    stopAvatarSpeech();
+    setTaskStates((previous) => ({
+      ...previous,
+      [currentSlide.id]: {
+        ...(previous[currentSlide.id] || { selectedOptionIds: [] }),
+        selectedOptionIds: previous[currentSlide.id]?.selectedOptionIds || [],
+        isCompleted: true,
+        feedbackMessage: "Segment completed.",
+      },
+    }));
+    setShowCelebration(false);
+    setPlaybackState("advancing");
+    setCurrentSegmentIndex((previous) => previous + 1);
+  };
+
   // Multi-option toggle (e.g. Apply slide)
   const handleToggleOption = (optionId: string) => {
     setTaskStates((prev) => {
@@ -916,7 +935,7 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
       if (isLastExplanationSegment) {
         setPlaybackState("ready");
       } else {
-        scheduleAutoAdvance();
+        scheduleAutoAdvance(450);
       }
       return;
     }
@@ -1283,6 +1302,7 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
                   activeSegmentIndex={currentSegmentIndex}
                   taskStates={taskStates}
                   onSelectOption={handleExplanationOptionSelect}
+                  onRevealNext={revealNextExplanationSegment}
                 />
               ) : (
                 <SlideRenderer

@@ -65,7 +65,9 @@ fill, stroke, strokeWidth, cornerRadius, lineHeight, list, assetId, crop, groupI
 Element types: text, image, rect, ellipse, line, arrow. Shapes remain editable.
 Colors are six-digit hex or transparent; backgrounds use six-digit hex.
 Fonts: Arial, Verdana, Georgia, Times New Roman, Courier New, Trebuchet MS.
-Text font sizes: 6-300; opacity 0-1; lineHeight .5-4; text at most 20000 characters.
+Text font sizes are points (6-300); browsers convert points to canvas pixels at 96/72.
+Corner radius and element geometry use 1280 x 720 canvas units. Opacity is 0-1;
+lineHeight is .5-4; text is at most 20000 characters.
 Lists: none, bullet, number. Alignment: left, center, right, justify.
 Image assetId must already belong to the deck. Crop coordinates are normalized
 0-1 fractions of the original image. Lines/arrows run from (x,y) to

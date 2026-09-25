@@ -38,17 +38,17 @@ export const ThinkSlide: React.FC<ThinkSlideProps> = ({
 
       {slide.images?.main && (
         <div className={isHookMcq
-          ? "w-full self-center lg:col-start-2 lg:row-start-1 lg:row-span-4"
+          ? "flex w-full self-center justify-center lg:col-start-2 lg:row-start-1 lg:row-span-4"
           : "w-full max-w-md self-center"
         }>
           <PlaceholderImage
             src={slide.images.main}
             category="general-science"
             alt={slide.images.caption || slide.question || slide.title}
-            aspectRatio="16/9"
+            aspectRatio={isHookMcq ? "auto" : "16/9"}
             badge="Question visual"
             className={isHookMcq
-              ? "w-full bg-white dark:bg-white/5 lg:max-h-[430px] xl:max-h-[500px]"
+              ? "w-[min(clamp(320px,31vw,500px),56vh)] max-w-full bg-white dark:bg-white/5"
               : "max-h-[190px] bg-white dark:bg-white/5"
             }
             imageClassName="object-contain"

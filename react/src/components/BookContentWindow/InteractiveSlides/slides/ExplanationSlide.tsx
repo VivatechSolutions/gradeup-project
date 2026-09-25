@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from "react";
-import { CheckCircle2, Circle, Image as ImageIcon, XCircle } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { ArrowRight, CheckCircle2, Circle, Image as ImageIcon, XCircle } from "lucide-react";
 import { PlaceholderImage } from "../PlaceholderImage";
 import { SlideData, TaskState } from "../types";
 
@@ -8,6 +9,7 @@ interface ExplanationSlideProps {
   activeSegmentIndex: number;
   taskStates: Record<string, TaskState>;
   onSelectOption: (segmentIndex: number, optionId: string) => void;
+  onRevealNext: () => void;
 }
 
 export const ExplanationSlide: React.FC<ExplanationSlideProps> = ({
@@ -15,9 +17,18 @@ export const ExplanationSlide: React.FC<ExplanationSlideProps> = ({
   activeSegmentIndex,
   taskStates,
   onSelectOption,
+  onRevealNext,
 }) => {
   const segmentRefs = useRef<Array<HTMLElement | null>>([]);
   const segments = slide.segments || [];
+  const visibleSegments = segments.slice(0, activeSegmentIndex + 1);
+  const activeSegment = segments[activeSegmentIndex];
+  const activeTaskState = activeSegment
+    ? taskStates[activeSegment.id] || { isCompleted: false, selectedOptionIds: [] }
+    : { isCompleted: false, selectedOptionIds: [] };
+  const hasMoreSegments = activeSegmentIndex < segments.length - 1;
+  const canRevealNext =
+    activeSegment?.task.type === "narration" || Boolean(activeTaskState.isCompleted);
 
   useEffect(() => {
     segmentRefs.current[activeSegmentIndex]?.scrollIntoView({
@@ -39,17 +50,21 @@ export const ExplanationSlide: React.FC<ExplanationSlideProps> = ({
       </div>
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-2">
-        {segments.map((segment, index) => {
+        <AnimatePresence initial={false}>
+        {visibleSegments.map((segment, index) => {
           const isActive = index === activeSegmentIndex;
           const state = taskStates[segment.id] || { isCompleted: false, selectedOptionIds: [] };
           const hasImage = Boolean(segment.images?.main);
 
           return (
-            <section
+            <motion.section
               key={segment.id}
               ref={(node) => {
                 segmentRefs.current[index] = node;
               }}
+              initial={index === activeSegmentIndex ? { opacity: 0, x: -36 } : false}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.42, ease: [0.25, 1, 0.5, 1] }}
               className={`rounded-xl border px-4 py-3 transition-colors md:px-5 ${
                 isActive
                   ? "border-cyan-300/65 bg-cyan-400/10 shadow-[0_0_22px_rgba(34,211,238,.12)]"
@@ -129,9 +144,25 @@ export const ExplanationSlide: React.FC<ExplanationSlideProps> = ({
                   />
                 )}
               </div>
-            </section>
+            </motion.section>
           );
         })}
+        </AnimatePresence>
+
+        {hasMoreSegments && (
+          <div className="sticky bottom-0 flex justify-end bg-gradient-to-t from-[#0c1530] via-[#0c1530]/95 to-transparent pb-1 pt-5">
+            <button
+              type="button"
+              onClick={onRevealNext}
+              disabled={!canRevealNext}
+              className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-blue-600/25 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-600 disabled:text-slate-300 disabled:shadow-none"
+              title={canRevealNext ? "Show the next explanation part" : "Complete this activity first"}
+            >
+              Next part
+              <ArrowRight className="h-4 w-4" />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
