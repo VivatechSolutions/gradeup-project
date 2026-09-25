@@ -294,6 +294,37 @@ const optionsFromRecord = (options: Record<string, any> = {}, answer?: string, e
     };
   });
 
+const optionsFromInteraction = (interaction: any) =>
+  (Array.isArray(interaction?.options) ? interaction.options : []).map((value: any, index: number) => {
+    const id = String(value?.id || value?.option_id || value?.optionId || String.fromCharCode(65 + index));
+    return {
+      id,
+      label: id,
+      title: value?.label || value?.text || value?.title || id,
+      isCorrect: id === String(interaction?.answer || ""),
+      explanation: value?.feedback || value?.explanation,
+      imageUrl: imageUrl(value),
+      audio: voiceAudio(value?.audio),
+    };
+  });
+
+const resolutionsFromInteraction = (interaction: any) =>
+  Object.fromEntries(optionsFromInteraction(interaction).map((option: any) => [
+    option.id,
+    {
+      text: option.explanation,
+      imageUrl: option.imageUrl,
+      audio: option.audio,
+    },
+  ]));
+
+const narrationCue = (value: any, fallbackId: string) => value ? {
+  id: String(value?.segment_id || value?.segmentId || fallbackId),
+  text: value?.text,
+  emotion: value?.emotion,
+  audio: voiceAudio(value?.audio),
+} : undefined;
+
 const resolutionsFromValue = (value: any) => {
   const entries = Array.isArray(value)
     ? value.map((item, index) => [String(item?.option || item?.option_id || item?.optionId || item?.answer || item?.id || index), item])
@@ -410,9 +441,6 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
   const mysteries = getMysteryItems(mysteryPhase);
   const faqs = response.enrichment?.faqs || [];
   const practiceQuestions = response.enrichment?.practice_questions || [];
-  const coinSegment = explanation?.segments?.find((segment: any) =>
-    `${segment?.text || ""} ${segment?.visual?.query || ""}`.toLowerCase().includes("coin"),
-  );
   const sectionTitle = response.section_title || avatarLesson.section_title || "Interactive Lesson";
   const pattern = response.pattern || avatarLesson.pattern;
   const subject = pattern ? `${pattern[0].toUpperCase()}${pattern.slice(1)}` : "GradeUp Learning";
@@ -462,6 +490,9 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
       question: hook?.question || "What do you predict will happen?",
       options: optionsFromRecord(hook?.options, hook?.answer, hook?.option_explanations),
       resolutions: resolutionsFromValue(hook?.resolutions),
+      completionNarration: narrationCue(hook?.bridge, "hook-bridge")
+        ? [narrationCue(hook?.bridge, "hook-bridge")]
+        : undefined,
       images: {
         main: imageUrl(hook?.options_visual),
         caption: hook?.options_visual?.prompt,
@@ -602,6 +633,8 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
   }
 
   if (explore) {
+    const exploreOptions = optionsFromInteraction(explore?.interaction);
+    const exploreVisual = visualUrl(explore) || imageUrl(explore?.visual);
     slides.push({
       id: "backend-activity",
       phase: "explore",
@@ -610,32 +643,31 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
       audio: explore?.intro?.audio,
       type: "try-it" as const,
       badge: { label: explore?.title || "Try It Yourself", icon: "flask" },
-      title: explore?.title || "Coin and cardboard activity",
+      title: explore?.title || "Try It Yourself",
       subtitle: explore?.intro?.text || "Use simple objects to see inertia of rest.",
       images: {
-        diagram: visualUrl(coinSegment),
-        items: (explore?.materials || ["Glass", "Cardboard", "Coin"]).map((name: string, index: number) => ({
+        diagram: exploreVisual,
+        caption: visualCaption(explore?.visual),
+        items: (explore?.materials || []).map((name: string, index: number) => ({
           id: `material-${index + 1}`,
           name,
         })),
       },
-      instructions: explore?.steps || [
-        "Place a card over a glass.",
-        "Put a coin on the card.",
-        "Flick the card quickly and observe the coin.",
-      ],
+      instructions: explore?.steps || [],
+      question: explore?.interaction?.prompt,
+      options: exploreOptions,
+      resolutions: resolutionsFromInteraction(explore?.interaction),
+      completionNarration: narrationCue(explore?.wrap_up, "explore-wrap")
+        ? [narrationCue(explore?.wrap_up, "explore-wrap")]
+        : undefined,
       callout: explore?.interaction?.prompt
         ? {
             title: "Observation question",
-            text: `${explore.interaction.prompt} ${
-              explore.interaction.options
-                ?.map((option: any) => `${option.id}. ${option.text}`)
-                .join(" ")
-            }`,
+            text: explore.interaction.prompt,
             type: "info" as const,
           }
         : undefined,
-      task: { type: "confirm-activity" as const, buttonLabel: "Try It Now", completedButtonLabel: "Activity Complete!" },
+      task: { type: exploreOptions.length ? "select-option" as const : "confirm-activity" as const, buttonLabel: "Try It Now", completedButtonLabel: "Activity Complete!" },
       avatarMessage: {
         initial: explore?.intro?.text || "This activity demonstrates inertia of rest.",
         completed: explore?.wrap_up?.text || "Nice. The coin resisted the sudden change and dropped down.",
@@ -643,17 +675,23 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
     });
 
     if (explore.challenge) {
+      const challengeInteraction = explore.challenge.interaction;
+      const challengeOptions = optionsFromInteraction(challengeInteraction);
+      const isChoiceChallenge = String(challengeInteraction?.type || "").toLowerCase() === "choice" && challengeOptions.length > 0;
       slides.push({
         id: "backend-explore-challenge",
         phase: "explore",
         segmentId: explore.challenge?.intro?.segment_id || explore?.intro?.segment_id,
         emotion: explore.challenge?.intro?.emotion || explore?.intro?.emotion,
         audio: explore.challenge?.intro?.audio || explore?.intro?.audio,
-        type: "teach-back" as const,
-        badge: { label: "Activity Challenge", icon: "mic" },
+        type: isChoiceChallenge ? "think" as const : "teach-back" as const,
+        badge: { label: "Activity Challenge", icon: isChoiceChallenge ? "lightbulb" : "mic" },
         title: explore.challenge.prompt,
+        question: challengeInteraction?.prompt || explore.challenge.prompt,
         description: explore.challenge.interaction?.model_answer,
-        task: { type: "record-or-type" as const },
+        options: isChoiceChallenge ? challengeOptions : undefined,
+        resolutions: isChoiceChallenge ? resolutionsFromInteraction(challengeInteraction) : undefined,
+        task: { type: isChoiceChallenge ? "select-option" as const : "record-or-type" as const },
         avatarMessage: {
           initial: explore.challenge.interaction?.prompt || explore.challenge.prompt,
           completed: explore.challenge.interaction?.model_answer || "Good connection.",
@@ -690,6 +728,13 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
       segmentId: mystery?.ask?.segment_id || mystery.mystery_id,
       emotion: mystery?.ask?.emotion || mysteryPhase?.intro?.emotion,
       audio: mystery?.ask?.audio || mysteryPhase?.intro?.audio,
+      introNarration: [
+        narrationCue(mysteryPhase?.intro, "mystery-intro"),
+        narrationCue(mystery?.ask, `${mystery.mystery_id || index}-ask`),
+      ].filter(Boolean),
+      completionNarration: narrationCue(mysteryPhase?.outro, "mystery-outro")
+        ? [narrationCue(mysteryPhase?.outro, "mystery-outro")]
+        : undefined,
       type: "mystery" as const,
       badge: { label: `Mystery ${index + 1}`, icon: "search" },
       title: mystery.question || mystery.title || "Solve the inertia mystery",
@@ -722,10 +767,13 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
       segmentId: realWorld?.ask?.segment_id || realWorld?.intro?.segment_id,
       emotion: realWorld?.ask?.emotion || realWorld?.intro?.emotion,
       audio: realWorld?.ask?.audio || realWorld?.intro?.audio,
+      completionNarration: narrationCue(realWorld?.reveal, "real-world-reveal")
+        ? [narrationCue(realWorld?.reveal, "real-world-reveal")]
+        : undefined,
       type: "real-world" as const,
       badge: { label: "Real World", icon: "globe" },
       title: realWorld?.question || "Where do you experience inertia?",
-      description: realWorld?.reveal?.text,
+      description: realWorld?.ask?.text,
       images: {
         main: visualUrl(realWorld),
         caption: visualCaption(realWorld?.visual),
@@ -798,10 +846,14 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
       segmentId: explainBack?.ask?.segment_id,
       emotion: explainBack?.ask?.emotion,
       audio: explainBack?.ask?.audio,
+      completionNarration: narrationCue(explainBack?.closing, "explain-back-closing")
+        ? [narrationCue(explainBack?.closing, "explain-back-closing")]
+        : undefined,
       type: "teach-back" as const,
       badge: { label: "Explain Back", icon: "mic" },
       title: explainBack?.prompt || `Explain ${sectionTitle} in your own words.`,
       description: explainBack?.guidance || explainBack?.ask?.text,
+      keyPoints: Array.isArray(explainBack?.key_points) ? explainBack.key_points : [],
       takeaway: { label: "Model answer", text: explainBack?.model_explanation },
       task: { type: "record-or-type" as const },
       avatarMessage: {
@@ -892,8 +944,14 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
 
   const orderedPhaseNames = Array.from(new Set(
     sourcePhases
-      .map((phase: any) => cleanText(phase?.phase).toLowerCase())
-      .filter(Boolean),
+      .map((phase: any, index: number) => ({
+        name: cleanText(phase?.phase).toLowerCase(),
+        order: Number.isFinite(Number(phase?.order)) ? Number(phase.order) : index + 1,
+        index,
+      }))
+      .filter((phase: any) => Boolean(phase.name))
+      .sort((left: any, right: any) => left.order - right.order || left.index - right.index)
+      .map((phase: any) => phase.name),
   ));
   const phaseRank = (slide: any) => {
     const index = orderedPhaseNames.indexOf(cleanText(slide?.phase).toLowerCase());

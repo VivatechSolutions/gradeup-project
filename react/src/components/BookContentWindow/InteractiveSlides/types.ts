@@ -27,6 +27,13 @@ export interface VoiceAudio {
   female?: string;
 }
 
+export interface NarrationCue {
+  id: string;
+  text?: string;
+  emotion?: string;
+  audio?: VoiceAudio;
+}
+
 export interface SlideResolution {
   segmentId?: string;
   text?: string;
@@ -64,6 +71,8 @@ export interface SlideData {
   emotion?: string;
   audio?: VoiceAudio;
   questionAudio?: VoiceAudio;
+  introNarration?: NarrationCue[];
+  completionNarration?: NarrationCue[];
   suggestedQuestions?: string[];
   segments?: SlideData[];
   resolutions?: Record<string, SlideResolution>;
@@ -90,6 +99,7 @@ export interface SlideData {
   question?: string;
   clues?: ClueItem[];
   instructions?: string[];
+  keyPoints?: string[];
   takeaway?: {
     label?: string;
     text: string;

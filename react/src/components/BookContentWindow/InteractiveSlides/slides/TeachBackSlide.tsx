@@ -54,7 +54,8 @@ export const TeachBackSlide: React.FC<TeachBackSlideProps> = ({
   };
 
   const helperText =
-    slide.takeaway?.text ||
+    slide.keyPoints?.[0] ||
+    slide.description ||
     "Use examples from the lesson and explain what resists the change in motion.";
 
   return (
@@ -72,6 +73,20 @@ export const TeachBackSlide: React.FC<TeachBackSlideProps> = ({
           {slide.description || "Synthesizing and explaining a concept in your own words builds lasting mastery."}
         </p>
       </div>
+
+      {slide.keyPoints && slide.keyPoints.length > 0 && (
+        <div className="rounded-2xl border border-cyan-300/25 bg-cyan-400/5 p-4">
+          <div className="mb-2 text-xs font-black uppercase text-cyan-300">Key points to include</div>
+          <ul className="grid gap-2 text-xs font-semibold leading-relaxed text-slate-200 md:grid-cols-2 md:text-sm">
+            {slide.keyPoints.map((point, index) => (
+              <li key={`${index}-${point}`} className="flex gap-2">
+                <span className="grid h-5 w-5 shrink-0 place-items-center rounded-md bg-cyan-400/15 text-[11px] font-black text-cyan-200">{index + 1}</span>
+                <span>{point}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start pt-2">
         <div className="lg:col-span-12 space-y-4">
@@ -198,7 +213,7 @@ export const TeachBackSlide: React.FC<TeachBackSlideProps> = ({
           </div>
         </div>
 
-        {slide.takeaway?.text && (
+        {taskState.isCompleted && slide.takeaway?.text && (
           <div className="lg:col-span-12 rounded-2xl border border-blue-200/80 bg-blue-50/80 p-4 shadow-sm dark:border-blue-800/40 dark:bg-blue-950/25">
             <div className="mb-1 text-xs font-black uppercase tracking-wider text-blue-800 dark:text-blue-300">
               {slide.takeaway.label || "Model answer"}
@@ -207,6 +222,16 @@ export const TeachBackSlide: React.FC<TeachBackSlideProps> = ({
               {slide.takeaway.text}
             </p>
           </div>
+        )}
+
+        {taskState.isCompleted && slide.completionNarration?.some((cue) => cue.text) && (
+          <motion.div
+            initial={{ opacity: 0, x: -18 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="lg:col-span-12 rounded-2xl border border-emerald-300/40 bg-emerald-400/10 p-4 text-sm font-bold text-emerald-50"
+          >
+            {slide.completionNarration.find((cue) => cue.text)?.text}
+          </motion.div>
         )}
       </div>
     </div>

@@ -15,6 +15,7 @@ export const RealWorldSlide: React.FC<RealWorldSlideProps> = ({
   taskState,
   onCompleteTask,
 }) => {
+  const revealText = slide.completionNarration?.find((cue) => cue.text)?.text;
   return (
     <div className="flex flex-col text-left space-y-6 max-w-4xl">
       {/* Badge Pill */}
@@ -34,8 +35,8 @@ export const RealWorldSlide: React.FC<RealWorldSlideProps> = ({
         <div className="min-w-0 md:col-span-8">
           <PlaceholderImage
             src={slide.images?.main}
-            category="astronaut-space"
-            alt="Astronaut floating freely inside spacecraft"
+            category="general-science"
+            alt={slide.images?.caption || slide.title}
             aspectRatio="16/9"
             className="w-full max-w-full shadow-lg border-2 border-slate-200/80 dark:border-white/10 bg-white dark:bg-white/5"
             imageClassName="object-contain"
@@ -49,10 +50,20 @@ export const RealWorldSlide: React.FC<RealWorldSlideProps> = ({
 
         {/* Right: Scenario Explanation Card */}
         <div className="min-w-0 md:col-span-4 p-5 rounded-2xl bg-white dark:bg-[#151f3e] border border-slate-200/90 dark:border-white/10 shadow-sm flex flex-col justify-between">
-          <p className="text-xs md:text-sm font-semibold text-slate-700 dark:text-slate-300 leading-relaxed">
-            {slide.description ||
-              "There's no support force opposing their orbital trajectory, so they and the spacecraft continuously move forward together in the same state of motion."}
-          </p>
+          <div className="space-y-3">
+            <p className="text-xs md:text-sm font-semibold text-slate-700 dark:text-slate-300 leading-relaxed">
+              {slide.description}
+            </p>
+            {taskState.isCompleted && revealText && (
+              <motion.div
+                initial={{ opacity: 0, x: -18 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="rounded-xl border border-cyan-300/30 bg-cyan-400/10 p-3 text-xs font-bold leading-relaxed text-cyan-50 md:text-sm"
+              >
+                {revealText}
+              </motion.div>
+            )}
+          </div>
 
           <div className="pt-4 mt-4 border-t border-slate-100 dark:border-white/10">
             <motion.button
@@ -82,7 +93,7 @@ export const RealWorldSlide: React.FC<RealWorldSlideProps> = ({
       </div>
 
       {/* Bottom Lightbulb Connection Callout */}
-      <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50/40 dark:from-amber-950/30 dark:to-orange-950/20 border border-amber-200/80 dark:border-amber-800/40 flex items-start gap-3.5 shadow-sm">
+      {taskState.isCompleted && <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50/40 dark:from-amber-950/30 dark:to-orange-950/20 border border-amber-200/80 dark:border-amber-800/40 flex items-start gap-3.5 shadow-sm">
         <div className="w-9 h-9 rounded-xl bg-amber-500/10 dark:bg-amber-400/20 flex items-center justify-center shrink-0">
           <Lightbulb className="w-5 h-5 text-amber-600 dark:text-amber-400 fill-amber-500" />
         </div>
@@ -95,7 +106,7 @@ export const RealWorldSlide: React.FC<RealWorldSlideProps> = ({
               "In the same way, when the bus stops, your body keeps moving forward because of inertia!"}
           </p>
         </div>
-      </div>
+      </div>}
 
       {slide.callout?.text && (
         <div className="p-4 rounded-2xl bg-blue-50/80 dark:bg-blue-950/30 border border-blue-200/80 dark:border-blue-800/40 shadow-sm">

@@ -151,6 +151,16 @@ export const ThinkSlide: React.FC<ThinkSlideProps> = ({
         </motion.div>
       )}
 
+      {taskState.isCompleted && slide.completionNarration?.some((cue) => cue.text) && (
+        <motion.div
+          initial={{ opacity: 0, x: -18 }}
+          animate={{ opacity: 1, x: 0 }}
+          className={`rounded-2xl border border-cyan-300/35 bg-cyan-400/10 p-4 text-sm font-bold leading-relaxed text-cyan-50 ${isHookMcq ? "lg:col-start-1" : ""}`}
+        >
+          {slide.completionNarration.find((cue) => cue.text)?.text}
+        </motion.div>
+      )}
+
       {/* Bottom helper prompt */}
       <div className={`flex items-center gap-2 pt-0 text-xs font-semibold text-slate-500 dark:text-slate-400 md:text-sm ${isHookMcq ? "lg:col-start-1" : ""}`}>
         <Clock className="w-4 h-4 text-slate-400 dark:text-slate-500" />

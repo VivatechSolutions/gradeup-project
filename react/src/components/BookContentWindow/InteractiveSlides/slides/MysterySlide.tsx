@@ -242,6 +242,16 @@ export const MysterySlide: React.FC<MysterySlideProps> = ({
                       </p>
                     </div>
                   )}
+                  {slide.completionNarration?.some((cue) => cue.text) && (
+                    <div className="border-t border-emerald-200 pt-3 dark:border-emerald-800/60">
+                      <div className="text-[11px] font-black uppercase text-emerald-700 dark:text-emerald-300">
+                        Key takeaway
+                      </div>
+                      <p className="mt-1 text-xs font-bold leading-relaxed text-slate-700 dark:text-slate-200">
+                        {slide.completionNarration.find((cue) => cue.text)?.text}
+                      </p>
+                    </div>
+                  )}
                   <button
                     type="button"
                     disabled={!canCloseFeedback}

@@ -67,6 +67,7 @@ export const SlideRenderer: React.FC<SlideRendererProps> = ({
           slide={slide}
           taskState={taskState}
           onCompleteTask={() => onCompleteTask()}
+          onSelectOption={onSelectOption}
         />
       );
 

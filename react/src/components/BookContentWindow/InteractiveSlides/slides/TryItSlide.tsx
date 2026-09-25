@@ -1,19 +1,21 @@
 import React from "react";
 import { SlideData, TaskState } from "../types";
 import { PlaceholderImage } from "../PlaceholderImage";
-import { FlaskConical, ArrowRight, Check, Flashlight, FileText, CircleDot, Book } from "lucide-react";
+import { FlaskConical, ArrowRight, Check, CheckCircle2, Flashlight, FileText, CircleDot, Book, XCircle } from "lucide-react";
 import { motion } from "framer-motion";
 
 interface TryItSlideProps {
   slide: SlideData;
   taskState: TaskState;
   onCompleteTask: () => void;
+  onSelectOption: (optionId: string) => void;
 }
 
 export const TryItSlide: React.FC<TryItSlideProps> = ({
   slide,
   taskState,
   onCompleteTask,
+  onSelectOption,
 }) => {
   const getItemIcon = (name: string) => {
     const lower = name.toLowerCase();
@@ -23,20 +25,10 @@ export const TryItSlide: React.FC<TryItSlideProps> = ({
     return <Book className="w-5 h-5 text-emerald-600" />;
   };
 
-  const defaultItems = [
-    { id: "1", name: "Torch", subtext: "(or phone light)" },
-    { id: "2", name: "Paper", subtext: "(sheet)" },
-    { id: "3", name: "Coin", subtext: "(or small object)" },
-    { id: "4", name: "Book", subtext: "(flat cover)" },
-  ];
-
-  const items = slide.images?.items || defaultItems;
-
-  const instructions = slide.instructions || [
-    "Place the object on a smooth surface.",
-    "Give the paper or card a swift gentle flick.",
-    "Observe how the coin drops straight into the glass!",
-  ];
+  const items = slide.images?.items || [];
+  const instructions = slide.instructions || [];
+  const hasVisual = Boolean(slide.images?.diagram);
+  const hasOptions = Boolean(slide.options?.length);
 
   return (
     <div className="flex flex-col text-left space-y-6 max-w-4xl">
@@ -56,8 +48,7 @@ export const TryItSlide: React.FC<TryItSlideProps> = ({
         </p>
       </div>
 
-      {/* "Things you can use" row */}
-      <div>
+      {items.length > 0 && <div>
         <h4 className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3">
           Things you can use:
         </h4>
@@ -81,14 +72,14 @@ export const TryItSlide: React.FC<TryItSlideProps> = ({
             </div>
           ))}
         </div>
-      </div>
+      </div>}
 
       {/* Two columns: Instructions List + Experiment Visual Preview */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center pt-2">
         {/* Left: Numbered Step Instructions */}
-        <div className="md:col-span-7 space-y-3">
+        <div className={`${hasVisual ? "md:col-span-7" : "md:col-span-12"} space-y-3`}>
           <h4 className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
-            Choose an object and try this:
+            Follow these steps:
           </h4>
           <ol className="space-y-2.5">
             {instructions.map((step, idx) => (
@@ -106,8 +97,7 @@ export const TryItSlide: React.FC<TryItSlideProps> = ({
             ))}
           </ol>
 
-          {/* Action CTA */}
-          <div className="pt-2">
+          {!hasOptions && <div className="pt-2">
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
@@ -130,15 +120,14 @@ export const TryItSlide: React.FC<TryItSlideProps> = ({
                 </>
               )}
             </motion.button>
-          </div>
+          </div>}
         </div>
 
-        {/* Right: Visual preview */}
-        <div className="md:col-span-5">
+        {hasVisual && <div className="md:col-span-5">
           <PlaceholderImage
             src={slide.images?.diagram}
-            category="coin-experiment"
-            alt="Coin inertia experiment demonstration"
+            category="general-science"
+            alt={slide.images?.caption || slide.title}
             aspectRatio="4/3"
             className="border-2 border-slate-200/90 dark:border-white/10 shadow-lg"
           />
@@ -147,10 +136,46 @@ export const TryItSlide: React.FC<TryItSlideProps> = ({
               {slide.images.caption}
             </p>
           )}
-        </div>
+        </div>}
       </div>
 
-      {slide.callout?.text && (
+      {hasOptions && (
+        <div className="space-y-3 rounded-2xl border border-cyan-300/30 bg-cyan-400/5 p-4">
+          <h4 className="text-sm font-extrabold text-white">{slide.question || slide.callout?.text}</h4>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {slide.options?.map((option) => {
+              const isSelected = taskState.selectedOptionIds.includes(option.id);
+              const isWrong = taskState.isCompleted && isSelected && taskState.isCorrect === false;
+              const isCorrect = taskState.isCompleted && (option.isCorrect || taskState.revealedCorrectOptionId === option.id);
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  disabled={taskState.isCompleted || taskState.isFeedbackPlaying}
+                  onClick={() => onSelectOption(option.id)}
+                  className={`flex items-start gap-3 rounded-xl border px-4 py-3 text-left text-sm font-bold transition ${
+                    isWrong
+                      ? "border-rose-400/70 bg-rose-500/10 text-rose-100"
+                      : isCorrect
+                        ? "border-emerald-400/70 bg-emerald-500/10 text-emerald-100"
+                        : "border-white/15 bg-white/5 text-slate-200 hover:border-cyan-300/60"
+                  }`}
+                >
+                  {isWrong ? <XCircle className="mt-0.5 h-4 w-4 shrink-0" /> : isCorrect ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <span className="grid h-5 w-5 shrink-0 place-items-center rounded-md bg-white/10 text-[11px]">{option.label}</span>}
+                  <span>
+                    {option.title}
+                    {taskState.isCompleted && isSelected && option.explanation && (
+                      <span className="mt-1 block text-xs font-semibold text-slate-300">{option.explanation}</span>
+                    )}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {!hasOptions && slide.callout?.text && (
         <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/80 p-4 shadow-sm dark:border-emerald-800/40 dark:bg-emerald-950/25">
           <div className="mb-1 text-xs font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
             {slide.callout.title || "Observation"}
@@ -159,6 +184,16 @@ export const TryItSlide: React.FC<TryItSlideProps> = ({
             {slide.callout.text}
           </p>
         </div>
+      )}
+
+      {taskState.isCompleted && slide.completionNarration?.some((cue) => cue.text) && (
+        <motion.div
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          className="rounded-2xl border border-emerald-300/40 bg-emerald-400/10 p-4 text-sm font-bold leading-relaxed text-emerald-50"
+        >
+          {slide.completionNarration.find((cue) => cue.text)?.text}
+        </motion.div>
       )}
     </div>
   );
