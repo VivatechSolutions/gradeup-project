@@ -8,9 +8,9 @@ interface State {
 }
 export const useEditor = create<State>((set, get) => ({
   deck: null, document: null, selectedSlide: '', selected: [], past: [], future: [], generation: 0, savedGeneration: 0,
-  initialize: deck => set(s => ({ deck, document: docOf(deck), selectedSlide: deck.slides.some(v => v.id === s.selectedSlide) ? s.selectedSlide : deck.slides[0]?.id, selected: [], past: [], future: [], generation: 0, savedGeneration: 0 })),
+  initialize: deck => set(s => ({ deck, document: docOf(deck), selectedSlide: deck.proposal?.slideId || (deck.slides.some(v => v.id === s.selectedSlide) ? s.selectedSlide : deck.slides[0]?.id), selected: [], past: [], future: [], generation: 0, savedGeneration: 0 })),
   change: fn => {
-    const s = get(); if (!s.document || s.deck?.role === 'viewer') return;
+    const s = get(); if (!s.document || s.deck?.role === 'viewer' || s.deck?.proposal) return;
     const next = copy(s.document); fn(next);
     if (JSON.stringify(next) === JSON.stringify(s.document)) return;
     set({ document: next, past: [...s.past.slice(-39), s.document], future: [], generation: s.generation + 1 });

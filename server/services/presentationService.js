@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const Deck = require('../model/PresentationDeck');
 const Share = require('../model/PresentationShare');
 const Asset = require('../model/PresentationAsset');
-const { fail, validateStart, validateDocument, hashToken } = require('./presentationDocument');
+const { fail, validateStart, validateDocument, applyOperations, hashToken } = require('./presentationDocument');
 let io;
 const room = id => `presentation:${id}`;
 function attachPresentationSocket(serverIo) {
@@ -43,7 +43,19 @@ async function access(deckId, userId, token, needed = 'viewer') {
 }
 function publicDeck(deck, role) {
   const { _id, ownerId, aiLock, receipts, history, __v, collaborators, ...data } = deck;
-  return { ...data, role, collaborators: role === 'owner' ? collaborators : [], messages: role === 'viewer' ? [] : deck.messages, proposal: role === 'viewer' ? null : deck.proposal };
+  let proposal = null;
+  if (role !== 'viewer' && deck.proposal) {
+    const { operations, ...details } = deck.proposal;
+    const previewDocument = applyOperations({ title: deck.title, slides: deck.slides, theme: deck.theme || {} }, operations);
+    proposal = {
+      ...details,
+      preview: {
+        slide: previewDocument.slides.find(slide => slide.id === deck.proposal.slideId) || null,
+        theme: previewDocument.theme,
+      },
+    };
+  }
+  return { ...data, role, collaborators: role === 'owner' ? collaborators : [], messages: role === 'viewer' ? [] : deck.messages, proposal };
 }
 async function validateAssets(deckId, document) {
   const ids = [...new Set(document.slides.flatMap(s => s.elements.filter(e => e.type === 'image').map(e => e.assetId)))];

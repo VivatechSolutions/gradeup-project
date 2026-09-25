@@ -62,17 +62,18 @@ test('CAS rejects a stale save and duplicate mutation does not overwrite',async(
   assert.equal((await request('/decks/python-deck','PATCH',first)).status,200);assert.equal(stored.revision,1);
 });
 test('server snapshots selected slide and approval writes exact proposal once',async()=>{
-  await request('/decks/python-deck/ai/suggest','POST',{slide_id:'s2',query:'Add content',base_revision:0,mutation_id:'request-1',slide_snapshot:{title:'Untrusted'}});
+  const suggested=await request('/decks/python-deck/ai/suggest','POST',{slide_id:'s2',query:'Add content',base_revision:0,mutation_id:'request-1',slide_snapshot:{title:'Untrusted'}});
   assert.equal(pythonCalls[0].data.slide_index,1);assert.equal(pythonCalls[0].data.slide_snapshot.title,'Two');assert.equal(stored.slides[1].elements.length,0);
+  assert.equal(suggested.data.proposal.preview.slide.elements[0].text,'AI content');assert.equal(suggested.data.proposal.operations,undefined);
   const body={proposal_id:'p1',decision:'approve',base_revision:1,mutation_id:'decision-1'};
   await request('/decks/python-deck/ai/decide','POST',body);assert.equal(stored.slides[1].elements[0].text,'AI content');assert.equal(stored.slides[0].elements.length,0);
   await request('/decks/python-deck/ai/decide','POST',body);assert.equal(stored.slides[1].elements.length,1);assert.equal(pythonCalls.length,2);
 });
-test('manual editing invalidates pending proposal and foreign images are rejected',async()=>{
+test('manual editing is blocked during a preview and foreign images are rejected',async()=>{
   await request('/decks/python-deck/ai/suggest','POST',{slide_id:'s1',query:'Add content',base_revision:0,mutation_id:'request-1'});
-  await request('/decks/python-deck','PATCH',{...saveBody(),title:'Manual change'});
-  assert.equal((await request('/decks/python-deck/ai/decide','POST',{proposal_id:'p1',decision:'approve',base_revision:2,mutation_id:'decision-1'})).status,409);
+  assert.equal((await request('/decks/python-deck','PATCH',{...saveBody(),title:'Manual change'})).status,409);
   assert.equal(stored.slides[0].elements.length,0);
+  assert.equal((await request('/decks/python-deck/ai/decide','POST',{proposal_id:'p1',decision:'skip',base_revision:1,mutation_id:'decision-1'})).status,200);
   const body=saveBody();body.slides[0].elements=[{id:'image',type:'image',x:0,y:0,width:100,height:100,assetId:'foreign'}];body.mutation_id='image-1';
   assert.equal((await request('/decks/python-deck','PATCH',body)).status,422);
 });

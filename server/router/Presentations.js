@@ -31,6 +31,9 @@ function requireInternalKey(req) {
 function checkRevision(req, deck) {
   if (!Number.isInteger(req.body.base_revision) || req.body.base_revision !== deck.revision) fail('Presentation changed. Reload before saving.', 409);
 }
+function requireResolvedProposal(deck) {
+  if (deck.proposal) fail('Apply, reject, or cancel the AI preview before editing this presentation.', 409);
+}
 router.post('/internal/presentations/register', wrap(async (req, res) => {
   requireInternalKey(req);
   const studentId = String(req.body?.student_id || '');
@@ -79,6 +82,7 @@ router.get('/decks/:deckId', wrap(async (req, res) => { const { deck, role } = a
 router.patch('/decks/:deckId', wrap(async (req, res) => {
   const { deck, role } = await auth(req, 'editor');
   if (deck.receipts.includes(req.body.mutation_id)) return send(res, publicDeck(deck, role));
+  requireResolvedProposal(deck);
   checkRevision(req, deck);
   const next = { title: req.body.title, theme: req.body.theme, slides: req.body.slides };
   send(res, publicDeck(await commit(deck, next, user(req), req.body.mutation_id), role));
@@ -92,6 +96,7 @@ router.delete('/decks/:deckId', wrap(async (req, res) => {
 async function edit(req, res, op) {
   const { deck, role } = await auth(req, 'editor');
   if (deck.receipts.includes(req.body.mutation_id)) return send(res, publicDeck(deck, role));
+  requireResolvedProposal(deck);
   checkRevision(req, deck);
   send(res, publicDeck(await commit(deck, applyOperations(documentOf(deck), [op]), user(req), req.body.mutation_id), role));
 }
@@ -101,7 +106,7 @@ router.patch('/decks/:deckId/slides/:slideId', wrap((req, res) => edit(req, res,
 router.delete('/decks/:deckId/slides/:slideId', wrap((req, res) => edit(req, res, { op: 'delete_slide', slide_id: req.params.slideId })));
 router.get('/decks/:deckId/revisions', wrap(async (req, res) => { const { deck } = await auth(req, 'editor'); send(res, deck.history.map(({ slides, theme, ...entry }) => entry)); }));
 router.post('/decks/:deckId/revisions/:revision/restore', wrap(async (req, res) => {
-  const { deck, role } = await auth(req, 'editor'); checkRevision(req, deck);
+  const { deck, role } = await auth(req, 'editor'); requireResolvedProposal(deck); checkRevision(req, deck);
   const entry = deck.history.find(v => v.revision === Number(req.params.revision));
   if (!entry) fail('Revision no longer retained', 404);
   send(res, publicDeck(await commit(deck, { title: entry.title, slides: entry.slides, theme: entry.theme }, user(req), req.body.mutation_id), role));
@@ -208,7 +213,12 @@ router.post('/decks/:deckId/ai/decide', wrap(async (req, res) => withAi(req, res
   await auth(req, 'editor');
   // Commit the exact reviewed operations, never a different set returned on approval.
   const next = req.body.decision === 'approve' ? applyOperations(documentOf(deck), p.operations) : documentOf(deck);
-  const messages = [...deck.messages, { id: crypto.randomUUID(), role: 'assistant', text: req.body.decision === 'approve' ? 'Approved changes saved.' : 'Proposal dismissed.', slideId: p.slideId }].slice(-100);
+  const decisionMessage = req.body.decision === 'approve'
+    ? 'Changes applied and saved.'
+    : req.body.decision === 'reject'
+      ? 'Change rejected.'
+      : 'Preview cancelled.';
+  const messages = [...deck.messages, { id: crypto.randomUUID(), role: 'assistant', text: decisionMessage, slideId: p.slideId }].slice(-100);
   send(res, publicDeck(await commit(deck, next, user(req), req.body.mutation_id, { messages, proposal: null }), role));
 })));
 router.post('/decks/:deckId/session/end', wrap(async (req, res) => withAi(req, res, async (deck, role) => {

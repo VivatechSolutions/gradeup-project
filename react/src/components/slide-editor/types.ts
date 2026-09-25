@@ -14,7 +14,7 @@ export interface Deck extends SlideDocument {
   deckId: string; deckRef: string; pythonSessionId: string; editUrl: string; embedUrl: string;
   revision: number; role: 'owner' | 'editor' | 'viewer'; sessionEnded: boolean;
   collaborators: { userId: string; email: string; role: string }[]; messages: ChatMessage[];
-  proposal: null | { id: string; slideId: string; baseRevision: number; operations: any[]; feedback: string };
+  proposal: null | { id: string; slideId: string; baseRevision: number; feedback: string; preview: { slide: Slide | null; theme: Record<string, any> } };
 }
 export const WIDTH = 1280, HEIGHT = 720;
 export const uid = () => crypto.randomUUID();
