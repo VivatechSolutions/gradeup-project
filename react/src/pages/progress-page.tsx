@@ -647,6 +647,10 @@ const CustomChartTooltip = ({ active, payload, label }: any) => {
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function ProgressPage() {
   const { user } = useAuth() as any;
+  const greetingName =
+    String(user?.firstName || "").trim() ||
+    String(user?.lastName || "").trim() ||
+    "Scholar";
   const { isDark: dark, toggleTheme } = useTheme();
   const { addNotification } = useNotificationStore();
 
@@ -846,7 +850,7 @@ export default function ProgressPage() {
                   <TrendingUp size={12} style={{ marginRight: 4 }} /> Academic Mastery &amp; Insights
                 </div>
                 <div className="pg-hero-title">
-                  Welcome back, {user?.username || "Scholar"}! 🚀
+                  Welcome back, {greetingName}! 🚀
                 </div>
                 <div className="pg-hero-sub">
                   Level {stats.currentLevel} Scholar · {stats.totalPoints.toLocaleString()} XP earned · {stats.streakDays} Day Streak 🔥

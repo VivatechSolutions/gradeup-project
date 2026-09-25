@@ -99,6 +99,7 @@ import {
   clearTutorHistory,
   getCandidateContext,
   getLibrarySubjects,
+  getLibraryUnitDisplayLabel,
   getTutorConversation,
   getTutorConversations,
   synthesizeDebateSpeech,
@@ -1862,8 +1863,8 @@ export default function AITutorModern() {
   }, [currentChatId]);
 
   const handleUnitChange = (newUnit: string) => {
-    if (newUnit === selectedUnit) return;
-    setIsLoading(true);
+    if (newUnit === selectedUnitId) return;
+    setIsLoading(Boolean(newUnit));
     setChatError(null);
     console.log(
       "[handleUnitChange] resetting currentChatId → null (unit changed to:",
@@ -1874,7 +1875,9 @@ export default function AITutorModern() {
     currentChatIdRef.current = null;
     setMessages([]);
     setCurrentMessage("");
-    setSelectedUnit(newUnit);
+    const unitMatch = availableUnits.find((unit) => unit.unitId === newUnit);
+    setSelectedUnitId(newUnit);
+    setSelectedUnit(unitMatch?.name || "");
   };
 
   useEffect(() => {
@@ -1882,7 +1885,7 @@ export default function AITutorModern() {
       setAvailableUnits(
         (selectedSubjectGroup?.units || []).map((unit, index) => ({
           id: index + 1,
-          name: unit.unitTitle || unit.unitLabel,
+          name: getLibraryUnitDisplayLabel(unit),
           unitId: unit.id,
           subjectGroupKey: unit.subjectGroupKey,
           unitNumber: unit.unitNumber,
@@ -1901,8 +1904,6 @@ export default function AITutorModern() {
   }, [selectedSubject, selectedSubjectGroup]);
 
   useEffect(() => {
-    const unitMatch = availableUnits.find((unit) => unit.name === selectedUnit);
-    setSelectedUnitId(unitMatch?.unitId || "");
     if (selectedUnit && selectedSubject && selectedSubject !== 0) {
       setIsLoading(false);
       if (messages.length === 0) {
@@ -2988,7 +2989,7 @@ export default function AITutorModern() {
             <div className="at-select-label">Unit</div>
             <div className="at-select-wrap">
               <select
-                value={selectedUnit}
+                value={selectedUnitId}
                 onChange={(e) => handleUnitChange(e.target.value)}
                 disabled={
                   subjectsLoading ||
@@ -3016,7 +3017,7 @@ export default function AITutorModern() {
                         : "Select unit"}
                 </option>
                 {availableUnits.map((u) => (
-                  <option key={u.id} value={u.name}>
+                  <option key={u.unitId || u.id} value={u.unitId || ""}>
                     {u.name}
                   </option>
                 ))}
@@ -3458,7 +3459,7 @@ export default function AITutorModern() {
                 ))}
             </select>
             <select
-              value={selectedUnit}
+              value={selectedUnitId}
               onChange={(e) => handleUnitChange(e.target.value)}
               disabled={
                 subjectsLoading ||
@@ -3486,7 +3487,7 @@ export default function AITutorModern() {
                     : "Select Unit"}
               </option>
               {availableUnits.map((u) => (
-                <option key={u.id} value={u.name}>
+                <option key={u.unitId || u.id} value={u.unitId || ""}>
                   {u.name}
                 </option>
               ))}
@@ -4133,7 +4134,7 @@ export default function AITutorModern() {
                 <div className="at-select-label">Unit</div>
                 <div className="at-select-wrap">
                   <select
-                    value={selectedUnit}
+                    value={selectedUnitId}
                     onChange={(e) => {
                       handleUnitChange(e.target.value);
                       setIsLeftPanelOpen(false);
@@ -4164,7 +4165,7 @@ export default function AITutorModern() {
                             : "Select unit"}
                     </option>
                     {availableUnits.map((u) => (
-                      <option key={u.id} value={u.name}>
+                      <option key={u.unitId || u.id} value={u.unitId || ""}>
                         {u.name}
                       </option>
                     ))}

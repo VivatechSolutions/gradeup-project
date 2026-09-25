@@ -24,6 +24,7 @@ import {
   getDebateRoom,
   getDebateTopics,
   getLibrarySubjects,
+  getLibraryUnitDisplayLabel,
   listGroupChats,
   joinDebateRoom,
   respondDebate,
@@ -3257,7 +3258,7 @@ function IntegratedDebateSetup({
                   </option>
                   {availableUnits.map((item) => (
                     <option key={item.id} value={item.id}>
-                      {item.unitTitle || item.unitLabel}
+                      {getLibraryUnitDisplayLabel(item)}
                     </option>
                   ))}
                 </select>

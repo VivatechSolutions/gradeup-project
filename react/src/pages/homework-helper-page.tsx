@@ -17,6 +17,7 @@ import { useTheme } from "../hooks/use-theme";
 import Navigation from "../components/navigation";
 import {
   getLibrarySubjects,
+  getLibraryUnitDisplayLabel,
   getHomeworkChatHistory,
   getHomeworkChatSession,
   sendHomeworkChat,
@@ -1475,7 +1476,7 @@ export default function HomeworkHelper() {
                 subjectGroupKey: subjectGroup.subjectGroupKey,
                 subject: unit.subject || subjectGroup.subject,
                 unitId: unit.id,
-                unitTitle: unit.unitTitle || unit.unitLabel,
+                unitTitle: getLibraryUnitDisplayLabel(unit),
                 unitNumber: unit.unitNumber ?? null,
                 board: unit.board || subjectGroup.board,
                 classNumber: unit.standard || subjectGroup.standard,
@@ -1610,7 +1611,7 @@ export default function HomeworkHelper() {
         ...session,
         subject: unit?.subject || activeSubjectGroup?.subject || session.subject,
         unitId: unit?.id || null,
-        unitTitle: unit?.unitTitle || unit?.unitLabel || null,
+        unitTitle: unit ? getLibraryUnitDisplayLabel(unit) : null,
         unitNumber: unit?.unitNumber ?? null,
         board: unit?.board || activeSubjectGroup?.board || session.board || null,
         classNumber: unit?.standard || activeSubjectGroup?.standard || session.classNumber || null,
@@ -2084,8 +2085,7 @@ export default function HomeworkHelper() {
                 </option>
                 {availableUnits.map((unit) => (
                   <option key={unit.id} value={unit.id}>
-                    {unit.unitNumber ? `${unit.unitNumber}. ` : ""}
-                    {unit.unitTitle || unit.unitLabel}
+                    {getLibraryUnitDisplayLabel(unit)}
                   </option>
                 ))}
               </select>
@@ -2345,8 +2345,7 @@ export default function HomeworkHelper() {
               </option>
               {availableUnits.map((unit) => (
                 <option key={unit.id} value={unit.id}>
-                  {unit.unitNumber ? `${unit.unitNumber}. ` : ""}
-                  {unit.unitTitle || unit.unitLabel}
+                  {getLibraryUnitDisplayLabel(unit)}
                 </option>
               ))}
             </select>

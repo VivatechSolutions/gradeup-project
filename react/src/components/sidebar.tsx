@@ -21,6 +21,25 @@ type MenuItem = SectionDivider | NavItem;
 const isSection = (item: MenuItem): item is SectionDivider => "section" in item;
 const isParent  = (item: MenuItem): item is NavItem => "children" in item && Array.isArray((item as NavItem).children);
 
+function formatStandard(value?: string | number | null) {
+  const grade = String(value ?? "").trim();
+  if (!grade) return "";
+  if (/^[ivxlcdm]+$/i.test(grade)) return `${grade.toUpperCase()} Standard`;
+  const numeric = Number(grade.replace(/(?:st|nd|rd|th)$/i, ""));
+  if (!Number.isFinite(numeric)) return `${grade} Standard`;
+  const mod100 = numeric % 100;
+  const suffix = mod100 >= 11 && mod100 <= 13
+    ? "th"
+    : numeric % 10 === 1
+      ? "st"
+      : numeric % 10 === 2
+        ? "nd"
+        : numeric % 10 === 3
+          ? "rd"
+          : "th";
+  return `${numeric}${suffix} Standard`;
+}
+
 /* ─────────────────────────────────────────────────────────────
    CSS — fixes:
    1. Tooltip: pointer-events on .sb-iw so hover works even
@@ -131,6 +150,7 @@ const css = `
 .sb-root.collapsed .sb-profile-text { display:none; }
 .sb-pname { font-size:13px; font-weight:800; color:var(--sb-ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .sb-prole { font-size:11px; color:var(--sb-muted); text-transform:capitalize; margin-top:1px; }
+.sb-prole.academic { text-transform:none; }
 
 /* ── TOGGLE BUTTON ── */
 .sb-toggle {
@@ -556,6 +576,10 @@ export default function Sidebar({
   const menu  = currentRole === "student" ? STUDENT_MENU : TEACHER_MENU;
   const first = user?.firstName?.trim() || "Student";
   const last  = user?.lastName?.trim() || "";
+  const studentAcademicLabel = [
+    String(user?.board || "").trim().toUpperCase(),
+    formatStandard(user?.grade),
+  ].filter(Boolean).join(" | ") || "Learning profile incomplete";
 
   const isActive = (href: string) =>
     location === href || (href === "/dashboard" && (location === "/" || location === "/dashboard"));
@@ -599,7 +623,9 @@ export default function Sidebar({
               <div className="sb-ava">{first[0]}{last[0] || ""}</div>
               <div className="sb-profile-text">
                 <div className="sb-pname">{first} {last}</div>
-                <div className="sb-prole">{currentRole}</div>
+                <div className={`sb-prole${currentRole === "student" ? " academic" : ""}`}>
+                  {currentRole === "student" ? studentAcademicLabel : currentRole}
+                </div>
               </div>
             </>
           )}
