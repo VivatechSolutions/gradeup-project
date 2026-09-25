@@ -61,6 +61,39 @@ export type LibrarySubject = {
   updatedAt: string;
 };
 
+type UnitLabelSource = Pick<
+  LibraryUnit,
+  "unitNumber" | "unitTitle" | "unitLabel" | "chapterName"
+>;
+
+const normalizeUnitLabelPart = (value?: string | null) =>
+  String(value || "").trim().replace(/\s+/g, " ");
+
+export function getLibraryUnitDisplayLabel(unit: UnitLabelSource) {
+  const unitLabel = normalizeUnitLabelPart(unit.unitLabel);
+  const unitTitle = normalizeUnitLabelPart(unit.unitTitle);
+  const chapterName = normalizeUnitLabelPart(unit.chapterName);
+  const numberLabel =
+    unit.unitNumber !== null && unit.unitNumber !== undefined
+      ? `Unit ${String(unit.unitNumber).padStart(2, "0")}`
+      : "";
+  const isUnitNumberLabel = (value: string) => /^unit\s*0*\d+$/i.test(value);
+  const prefix =
+    [unitLabel, unitTitle].find((value) => isUnitNumberLabel(value)) ||
+    numberLabel;
+  const chapter =
+    chapterName ||
+    [unitTitle, unitLabel].find(
+      (value) => value && !isUnitNumberLabel(value) && value.toLowerCase() !== prefix.toLowerCase(),
+    ) ||
+    "";
+
+  if (prefix && chapter && prefix.toLowerCase() !== chapter.toLowerCase()) {
+    return `${prefix} — ${chapter}`;
+  }
+  return prefix || chapter || unitTitle || "Unit";
+}
+
 async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const isFormDataBody =
     typeof FormData !== "undefined" && init?.body instanceof FormData;
