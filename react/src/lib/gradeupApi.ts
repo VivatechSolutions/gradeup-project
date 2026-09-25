@@ -146,6 +146,193 @@ export function getCandidateContext(user: any) {
   };
 }
 
+export type ExamSetup = {
+  unitId?: string;
+  subjectGroupKey?: string;
+  subject: string;
+  board: string;
+  classNumber: string;
+  unitNumber: number;
+  unitName: string;
+};
+
+export type ExamQuestion = {
+  question_id: string;
+  question: string;
+  type: string;
+  marks: number;
+  difficulty?: string;
+  bloom_level?: string;
+  unit_number?: number;
+  section_title?: string;
+  topic?: string;
+  options?: string[];
+  source?: string;
+  year?: string;
+  exam_name?: string;
+  student_answer?: string | null;
+  score?: number;
+  max_score?: number;
+  score_percentage?: number;
+  is_correct?: boolean;
+  correct_answer?: string;
+  explanation?: string;
+  feedback?: string;
+  textbook_reference?: string;
+};
+
+export type ExamPreparation = {
+  success: boolean;
+  prep_id: string;
+  subject: string;
+  subject_family?: string;
+  unit_number: number;
+  unit_title: string;
+  board: string;
+  class_number: string;
+  generated_once?: boolean;
+  priority_topics: Array<{
+    topic: string;
+    source?: string;
+    frequency?: number;
+    hard_count?: number;
+    avg_bloom?: number;
+    years?: string[];
+    why_important?: string;
+    key_takeaways?: string[];
+    priority?: number;
+  }>;
+  subject_specifics?: Record<string, string[]>;
+  important_questions_preview?: Array<{
+    question: string;
+    marks?: number;
+    frequency?: number;
+    difficulty?: string;
+    topic?: string;
+    year?: string;
+    exam_name?: string;
+    type?: string;
+  }>;
+  sources?: Record<string, any>;
+  personalized?: { candidate_id?: string; weak_sections_used?: string[] };
+  from_cache?: boolean;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type ExamAnswer = {
+  questionId: string;
+  answer: string;
+  savedAt?: string;
+  syncedAt?: string | null;
+};
+
+export type ExamAttempt = {
+  id: string;
+  examId: string;
+  candidateId: string;
+  candidateName: string;
+  unitId?: string | null;
+  subjectGroupKey?: string | null;
+  subject: string;
+  board?: string | null;
+  classNumber?: string | null;
+  unitNumber?: number | null;
+  unitName?: string | null;
+  examType?: string;
+  questions: ExamQuestion[];
+  answers: ExamAnswer[];
+  currentQuestionId?: string | null;
+  currentQuestionIndex: number;
+  reviewQuestionIds: string[];
+  totalQuestions: number;
+  totalMarks: number;
+  timerSeconds?: number | null;
+  remainingSeconds?: number | null;
+  startedAt: string;
+  expiresAt?: string | null;
+  status: "in_progress" | "evaluating" | "completed" | "ended";
+  submissionReason?: "manual" | "time_expired" | "security_warnings" | null;
+  warningCount: number;
+  warnings?: Array<{ reason: string; questionId?: string; message?: string; occurredAt: string }>;
+  result?: any;
+  submittedAt?: string | null;
+  submissionError?: string | null;
+  serverNow?: string;
+};
+
+export async function prepareExam(setup: ExamSetup) {
+  return apiFetch<ExamPreparation>("/api/exam/prepare", {
+    method: "POST",
+    body: JSON.stringify({
+      unitId: setup.unitId,
+      subjectGroupKey: setup.subjectGroupKey,
+      subject: setup.subject,
+      board: setup.board,
+      class_number: setup.classNumber,
+      unit_number: setup.unitNumber,
+      unit_name: setup.unitName,
+    }),
+  });
+}
+
+export async function startExam(setup: ExamSetup) {
+  return apiFetch<ExamAttempt>("/api/exam/start", {
+    method: "POST",
+    body: JSON.stringify({
+      unitId: setup.unitId,
+      subjectGroupKey: setup.subjectGroupKey,
+      subject: setup.subject,
+      board: setup.board,
+      class_number: setup.classNumber,
+      unit_number: setup.unitNumber,
+      unit_name: setup.unitName,
+    }),
+  });
+}
+
+export async function getExamAttempts() {
+  return apiFetch<ExamAttempt[]>("/api/exam/attempts");
+}
+
+export async function getExamAttempt(examId: string) {
+  return apiFetch<ExamAttempt>(`/api/exam/attempts/${encodeURIComponent(examId)}`);
+}
+
+export async function saveExamAnswer(examId: string, questionId: string, answer: string) {
+  return apiFetch<any>(`/api/exam/${encodeURIComponent(examId)}/answer`, {
+    method: "POST",
+    body: JSON.stringify({ question_id: questionId, answer }),
+  });
+}
+
+export async function saveExamProgress(
+  examId: string,
+  payload: { currentQuestionIndex: number; reviewQuestionIds: string[] },
+) {
+  return apiFetch<ExamAttempt>(`/api/exam/attempts/${encodeURIComponent(examId)}/progress`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function recordExamWarning(
+  examId: string,
+  payload: { reason: string; questionId?: string; message?: string },
+) {
+  return apiFetch<ExamAttempt & { examEnded?: boolean }>(
+    `/api/exam/attempts/${encodeURIComponent(examId)}/warnings`,
+    { method: "POST", body: JSON.stringify(payload) },
+  );
+}
+
+export async function submitExam(examId: string) {
+  return apiFetch<ExamAttempt>(`/api/exam/${encodeURIComponent(examId)}/submit`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
 export async function getLibrarySubjects(search = "") {
   const params = new URLSearchParams();
   if (search) {

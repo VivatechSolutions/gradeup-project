@@ -28,10 +28,12 @@ const StudentRouter = require("./router/Student");
 const GroupChatRouter = require("./router/GroupChat");
 const CommunityRouter = require("./router/Community");
 const LiveEventsRouter = require("./router/LiveEvents");
+const ExamRouter = require("./router/Exam");
 
 // const { logRoutes } = require("./utils/routeLogger");
 const  secureRequestLogger  = require("./utils/logger");
 const { initializeSubjectUploadQueue } = require("./services/adminSubjectService");
+const { initializeExamExpiryWorker } = require("./services/examAttemptService");
 
 // Allowing only added origins (i.e client side access)
 const allowedOrigins = [process.env.FE_URL,process.env.VITE_API_BASE_URL,process.env.FE_URL_2,"http://192.168.1.35:3000","http://localhost:3000","https://main.d303utafz3zrke.amplifyapp.com"].filter(Boolean);
@@ -65,6 +67,7 @@ app.use("/api/v1/admin/subjects", AdminSubjectRouter);
 app.use("/api/v1/group-chat", GroupChatRouter);
 app.use("/api/community", CommunityRouter);
 app.use("/api/v1/live-events", LiveEventsRouter);
+app.use("/api/exam", ExamRouter);
 app.use('/api/realtime', realtimeRouter);
 //AI Router
 app.use("/api/v1/AI/higlight", AIFeaturesRouter);
@@ -76,6 +79,7 @@ mongoose
   .then(() => {
     console.log("DB Connected");
     initializeSubjectUploadQueue();
+    initializeExamExpiryWorker();
   })
   .catch((err) => console.log(err));
 

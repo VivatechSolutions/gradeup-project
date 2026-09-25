@@ -9,6 +9,7 @@
     "@hookform/resolvers": "^3.10.0",
     "@jridgewell/trace-mapping": "^0.3.25",
     "@livekit/components-react": "^2.9.21",
+    "@mediapipe/face_detection": "^0.4.1646425229",
     "@neondatabase/serverless": "^0.10.4",
     "@radix-ui/react-accordion": "^1.2.4",
     "@radix-ui/react-alert-dialog": "^1.1.7",
@@ -156,7 +157,9 @@
     "bufferutil": "^4.0.8"
   },
   "scripts": {
+    "prestart": "node scripts/copyFaceDetectionAssets.js",
     "start": "react-scripts start",
+    "prebuild": "node scripts/copyFaceDetectionAssets.js",
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
