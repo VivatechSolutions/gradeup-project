@@ -20,6 +20,7 @@ Deck.findOne = filter => query(matches(filter) ? stored : null);
 Deck.findOneAndUpdate = (filter, patch) => { if (!matches(filter)) return query(null); update(patch); return query(stored); };
 Deck.updateOne = async (filter, patch) => { if(!matches(filter))return {modifiedCount:0}; if(filter.$or && stored.aiLock && new Date(stored.aiLock.until)>new Date())return {modifiedCount:0}; update(patch); return {modifiedCount:1}; };
 Deck.create = async data => { stored={...base(),...clone(data)}; return stored; };
+Deck.aggregate = async () => stored ? [{ deckId:stored.deckId,title:stored.title,editUrl:stored.editUrl,embedUrl:stored.embedUrl,context:stored.context || {},revision:stored.revision,slideCount:stored.slides.length,sessionEnded:stored.sessionEnded,role:'owner',createdAt:new Date(),updatedAt:new Date() }] : [];
 Asset.countDocuments = async () => 0;
 Share.findOne = filter => query(shares.find(s => s.deckId===filter.deckId && s.tokenHash===filter.tokenHash && !s.revokedAt && new Date(s.expiresAt)>new Date()) || null);
 User.findOne = filter => ({ select: () => query(filter._id === '507f1f77bcf86cd799439011' ? { _id: filter._id } : null) });
@@ -42,6 +43,10 @@ test('authentication, owner, collaborator viewer and stranger access',async()=>{
   assert.equal((await request('/decks/python-deck','GET',undefined,'stranger')).status,403);
   assert.equal((await request('/decks/python-deck','GET',undefined,'viewer')).data.role,'viewer');
   const before=clone(stored); assert.equal((await request('/decks/python-deck','PATCH',saveBody(),'viewer')).status,403);assert.deepEqual(stored,before);
+});
+test('lists saved presentations with reopen metadata',async()=>{
+  const response=await request('/decks');
+  assert.equal(response.status,200);assert.equal(response.data[0].editUrl,stored.editUrl);assert.equal(response.data[0].slideCount,2);assert.equal(response.data[0].role,'owner');
 });
 test('share token respects expiry and revocation on every read/write',async()=>{
   shares.push({deckId:'python-deck',tokenHash:hashToken('valid'),role:'editor',expiresAt:new Date(Date.now()+60000),revokedAt:null});

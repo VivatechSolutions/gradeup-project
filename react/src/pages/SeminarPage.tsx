@@ -11,6 +11,7 @@ import {
   ClipboardList,
   Copy,
   Eye,
+  ExternalLink,
   FileText,
   GraduationCap,
   HelpCircle,
@@ -45,6 +46,7 @@ import {
   getActiveSeminarSessions,
   getCandidateContext,
   getLibrarySubjects,
+  listSeminarPresentations,
   listGroupChats,
   getSeminarAiDocument,
   getSeminarSession,
@@ -71,6 +73,7 @@ import {
   transcribeDebateAudio,
   synthesizeDebateSpeech,
   type LibrarySubject,
+  type SeminarPresentationSummary,
 } from "../lib/gradeupApi";
 
 const seminarIcons = {
@@ -419,6 +422,14 @@ select.finput option{background:#fff;color:#111827}
 .ongoing-meta{font-size:10.5px;color:#5f6e86;margin-top:2px}
 .ongoing-count{font-size:10px;font-weight:800;padding:2px 8px;border-radius:6px}
 .ongoing-empty{text-align:center;padding:18px;font-size:12px;color:#75849b;border-radius:12px;background:linear-gradient(180deg,#fff,#f7f9ff);border:1px dashed rgba(15,23,42,.08)}
+.saved-presentations{max-height:300px;overflow-y:auto;margin:0 0 14px;border-top:1px solid rgba(15,23,42,.08);border-bottom:1px solid rgba(15,23,42,.08)}
+.saved-presentation{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:11px 2px;border-bottom:1px solid rgba(15,23,42,.07)}
+.saved-presentation:last-child{border-bottom:0}
+.saved-presentation-title{font-size:12.5px;font-weight:800;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.saved-presentation-meta{font-size:10.5px;color:#64748b;margin-top:3px;line-height:1.45}
+.saved-presentation-status{display:inline-flex;margin-top:5px;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#16805b}
+.saved-presentation-status.ended{color:#64748b}
+.saved-presentations-note{font-size:11px;color:#64748b;line-height:1.5;margin:-2px 0 9px}
 
 .fi{margin-bottom:10px}.fl{display:block;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#677a92;margin-bottom:5px}
 .finput{width:100%;padding:10px 12px;border-radius:12px;border:1.5px solid rgba(15,23,42,.08);background:rgba(255,255,255,.9);color:#111827;font-size:13.5px;outline:none;transition:all .16s;box-shadow:inset 0 1px 1px rgba(0,0,0,.02)}
@@ -519,6 +530,7 @@ select.finput{cursor:pointer;appearance:none;background-image:url("data:image/sv
 .dark .module-card.sel,.dark .submode-card.sel{box-shadow:0 0 0 3px rgba(255,255,255,.3),0 16px 30px rgba(0,0,0,.45)}
 .dark .sec-div{color:#aebbd0}.dark .sec-div::after{background:rgba(226,232,240,.14)}
 .dark .timing-card,.dark .step-r,.dark .ongoing-card,.dark .ongoing-empty{background:linear-gradient(180deg,#172235,#121c2c);border-color:rgba(226,232,240,.13)}
+.dark .saved-presentations,.dark .saved-presentation{border-color:rgba(226,232,240,.13)}.dark .saved-presentation-title{color:#f8fafc}.dark .saved-presentation-meta,.dark .saved-presentations-note{color:#b7c4d8}
 .dark .finput,.dark .link-row{background:#172235;color:#f8fafc;border-color:rgba(226,232,240,.16)}
 .dark .finput::placeholder{color:#91a0b5}.dark .link-val{color:#93c5fd}
 @media(prefers-reduced-motion:reduce){.sp-left::after,.sp-feat,.module-card,.submode-card,.sp-logo-ico,.sp-badge-dot,.module-card .mod-ic,.submode-card .submode-ic{animation:none}.module-card::before,.submode-card::before{display:none}}
@@ -5072,6 +5084,12 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
   const [joinId, setJoinId] = useState("");
   const [selectedSession, setSelectedSession] = useState(null);
   const [onlineSessions, setOnlineSessions] = useState([]);
+  const [savedPresentations, setSavedPresentations] = useState<
+    SeminarPresentationSummary[]
+  >([]);
+  const [savedPresentationsLoading, setSavedPresentationsLoading] =
+    useState(false);
+  const [savedPresentationsError, setSavedPresentationsError] = useState("");
   const [inviteInput, setInviteInput] = useState("");
   const [invitees, setInvitees] = useState([]);
   const nameInitializedRef = useRef(false);
@@ -5183,6 +5201,29 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
       ignore = true;
     };
   }, []);
+
+  const loadSavedPresentations = useCallback(async () => {
+    if (!user) return;
+    setSavedPresentationsLoading(true);
+    setSavedPresentationsError("");
+    try {
+      setSavedPresentations(await listSeminarPresentations());
+    } catch (error) {
+      setSavedPresentationsError(
+        getErrorMessage(error, "Unable to load saved presentations."),
+      );
+    } finally {
+      setSavedPresentationsLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (seminarMode !== "create" || !user) return;
+    loadSavedPresentations();
+    const refreshOnFocus = () => loadSavedPresentations();
+    window.addEventListener("focus", refreshOnFocus);
+    return () => window.removeEventListener("focus", refreshOnFocus);
+  }, [seminarMode, user, loadSavedPresentations]);
 
   useEffect(() => {
     let ignore = false;
@@ -5487,6 +5528,12 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
     (seminarMode !== "session" || sessionSubMode !== "observer");
 
   async function handleCreateSubmit() {
+    const editorTab = window.open("", "_blank");
+    if (editorTab) {
+      editorTab.opener = null;
+      editorTab.document.title = "Creating GradeUp presentation";
+      editorTab.document.body.innerHTML = '<main style="font-family:Arial,sans-serif;padding:32px;color:#172033"><h1 style="font-size:22px">Creating your presentation...</h1><p>This tab will open the editor when your slides are ready.</p></main>';
+    }
     setJoining(true);
     setCreateDocLink("");
     setCreateDocConfig(null);
@@ -5563,14 +5610,23 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
 
       setCreateDocConfig(createdDocument);
       setCreateDocLink(pptSession.edit_url);
-      setShowCreateLinkModal(true);
-     sessionStorage.removeItem(startKey);
-      window.location.assign(pptSession.edit_url);
+      sessionStorage.removeItem(startKey);
+      const editorOpened = Boolean(editorTab && !editorTab.closed);
+      if (editorOpened) {
+        editorTab!.location.replace(pptSession.edit_url);
+        setShowCreateLinkModal(false);
+      } else {
+        setShowCreateLinkModal(true);
+      }
+      await loadSavedPresentations();
       toast$(
-       "Your GradeUp presentation is ready.",
+        editorOpened
+          ? "Presentation opened in a new tab."
+          : "Presentation is ready. Use Open presentation to continue.",
         "success",
       );
     } catch (error) {
+      if (editorTab && !editorTab.closed) editorTab.close();
       toast$(
         getErrorMessage(error, "Unable to create the AI seminar file."),
         "error",
@@ -5579,6 +5635,24 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
       setJoining(false);
       setJoinProgress(0);
     }
+  }
+
+  function openSavedPresentation(presentation: SeminarPresentationSummary) {
+    const opened = window.open("", "_blank");
+    if (opened) {
+      opened.opener = null;
+      opened.location.replace(presentation.editUrl);
+      toast$("Presentation opened in a new tab.", "success");
+      return;
+    }
+    setCreateDocConfig({
+      id: presentation.deckId,
+      editUrl: presentation.editUrl,
+      link: presentation.editUrl,
+    });
+    setCreateDocLink(presentation.editUrl);
+    setShowCreateLinkModal(true);
+    toast$("Your browser blocked the new tab.", "warn");
   }
 
   function openCreateDoc(event) {
@@ -5952,6 +6026,47 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
                 </div>
               ))}
             </div>
+
+            {seminarMode === "create" && (
+              <>
+                <div className="sec-div">Your Presentations</div>
+                <p className="saved-presentations-note">
+                  Continue a saved deck with its latest edits, or create a new one below.
+                </p>
+                {savedPresentationsLoading && !savedPresentations.length ? (
+                  <div className="ongoing-empty">Loading presentations...</div>
+                ) : savedPresentationsError ? (
+                  <div className="ongoing-empty">
+                    {savedPresentationsError}
+                    <div style={{ marginTop: 8 }}>
+                      <button type="button" className="btn-s" onClick={loadSavedPresentations}>Retry</button>
+                    </div>
+                  </div>
+                ) : savedPresentations.length ? (
+                  <div className="saved-presentations">
+                    {savedPresentations.map((presentation) => (
+                      <div className="saved-presentation" key={presentation.deckId}>
+                        <div style={{ minWidth: 0 }}>
+                          <div className="saved-presentation-title">{presentation.title}</div>
+                          <div className="saved-presentation-meta">
+                            {[presentation.context?.subject, presentation.context?.class_number ? `Class ${presentation.context.class_number}` : "", `${presentation.slideCount} slide${presentation.slideCount === 1 ? "" : "s"}`].filter(Boolean).join(" · ")}
+                            <br />Updated {new Date(presentation.updatedAt).toLocaleString()}
+                          </div>
+                          <span className={`saved-presentation-status${presentation.sessionEnded ? " ended" : ""}`}>
+                            {presentation.sessionEnded ? "Manual editing" : "AI active"} · {presentation.role}
+                          </span>
+                        </div>
+                        <button type="button" className="btn-s" onClick={() => openSavedPresentation(presentation)}>
+                          <ExternalLink size={14} /> Open
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="ongoing-empty">No saved presentations yet.</div>
+                )}
+              </>
+            )}
 
             {seminarMode === "prepare" && (
               <>
@@ -6699,8 +6814,8 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
                   marginBottom: 12,
                 }}
               >
-                Your Google Slides deck is ready. Open the GradeUp Copilot
-                add-on inside Slides to chat and edit.
+                Your GradeUp presentation is ready. Open it to continue editing
+                with the AI copilot.
               </div>
               <div
                 className="link-row"
@@ -6751,9 +6866,8 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
                     color: "rgba(255,255,255,.5)",
                   }}
                 >
-                  In Google Slides, use Extensions &gt; GradeUp Slides Copilot
-                  &gt; Open Copilot. The sidebar will detect this deck
-                  automatically after the Apps Script update.
+                  Your latest changes are saved automatically and this
+                  presentation will remain available under Your Presentations.
                 </div>
               )}
             </div>
@@ -6781,7 +6895,7 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
                 onClick={openCreateDoc}
                 style={{ marginTop: 0, width: "auto", padding: "8px 14px" }}
               >
-                Open Slides
+                Open presentation
               </a>
             </div>
           </div>

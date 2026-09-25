@@ -46,7 +46,28 @@ router.post('/internal/presentations/register', wrap(async (req, res) => {
   send(res, { deckId: deck.deckId, deckRef: deck.deckRef, registered: true });
 }));
 router.get('/decks', wrap(async (req, res) => {
-  const decks = await Deck.find({ deletedAt: null, $or: [{ ownerId: user(req) }, { 'collaborators.userId': user(req) }] }).select('deckId title editUrl updatedAt').sort({ updatedAt: -1 }).limit(100).lean(); send(res, decks);
+  const userId = user(req);
+  const decks = await Deck.aggregate([
+    { $match: { deletedAt: null, $or: [{ ownerId: userId }, { 'collaborators.userId': userId }] } },
+    { $sort: { updatedAt: -1 } },
+    { $limit: 100 },
+    { $project: {
+      _id: 0, deckId: 1, title: 1, editUrl: 1, embedUrl: 1, context: 1,
+      revision: 1, sessionEnded: 1, createdAt: 1, updatedAt: 1,
+      slideCount: { $size: { $ifNull: ['$slides', []] } },
+      role: {
+        $cond: [
+          { $eq: ['$ownerId', userId] },
+          'owner',
+          { $let: {
+            vars: { collaborator: { $arrayElemAt: [{ $filter: { input: { $ifNull: ['$collaborators', []] }, as: 'item', cond: { $eq: ['$$item.userId', userId] } } }, 0] } },
+            in: { $ifNull: ['$$collaborator.role', 'viewer'] },
+          } },
+        ],
+      },
+    } },
+  ]);
+  send(res, decks);
 }));
 router.get('/shared/:token', wrap(async (req, res) => {
   const share = await Share.findOne({ tokenHash: hashToken(req.params.token), revokedAt: null, expiresAt: { $gt: new Date() } }).lean();

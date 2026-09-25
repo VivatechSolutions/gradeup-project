@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowRight, Check, HelpCircle, Search, X } from "lucide-react";
 import { PlaceholderImage } from "../PlaceholderImage";
@@ -7,16 +7,17 @@ import { SlideData, TaskState } from "../types";
 interface MysterySlideProps {
   slide: SlideData;
   taskState: TaskState;
-  onCompleteTask: () => void;
+  onSelectOption: (optionId: string) => void;
 }
 
 export const MysterySlide: React.FC<MysterySlideProps> = ({
   slide,
   taskState,
-  onCompleteTask,
+  onSelectOption,
 }) => {
   const [isTheoryOpen, setIsTheoryOpen] = useState(false);
-  const [selectedTheory, setSelectedTheory] = useState<string | null>(null);
+  const [canCloseFeedback, setCanCloseFeedback] = useState(false);
+  const selectedTheory = taskState.selectedOptionIds[0] || null;
 
   const clues = slide.clues || [
     { id: "1", number: 1, text: "The bat hit the ball." },
@@ -45,10 +46,20 @@ export const MysterySlide: React.FC<MysterySlideProps> = ({
   const theories = slide.options?.length ? slide.options : defaultTheories;
 
   const handleConfirmTheory = (theoryId: string) => {
-    setSelectedTheory(theoryId);
-    setIsTheoryOpen(false);
-    onCompleteTask();
+    if (taskState.isCompleted) return;
+    onSelectOption(theoryId);
   };
+
+  const selectedOption = theories.find((theory) => theory.id === selectedTheory);
+
+  useEffect(() => {
+    if (!isTheoryOpen || !taskState.isCompleted || taskState.isFeedbackPlaying) {
+      setCanCloseFeedback(false);
+      return undefined;
+    }
+    const timer = window.setTimeout(() => setCanCloseFeedback(true), 2500);
+    return () => window.clearTimeout(timer);
+  }, [isTheoryOpen, taskState.isCompleted, taskState.isFeedbackPlaying, selectedTheory]);
 
   return (
     <div className="flex min-w-0 max-w-5xl flex-col space-y-5 text-left">
@@ -109,7 +120,10 @@ export const MysterySlide: React.FC<MysterySlideProps> = ({
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              onClick={() => setIsTheoryOpen(true)}
+              onClick={() => {
+                setCanCloseFeedback(false);
+                setIsTheoryOpen(true);
+              }}
               className={`w-full py-3 px-4 rounded-xl text-xs md:text-sm font-black tracking-wide flex items-center justify-center gap-2 transition-all shadow-md ${
                 taskState.isCompleted
                   ? "bg-emerald-600 text-white shadow-emerald-600/20"
@@ -138,7 +152,7 @@ export const MysterySlide: React.FC<MysterySlideProps> = ({
             {slide.takeaway.label || "Reveal"}
           </div>
           <p className="text-xs md:text-sm font-bold leading-relaxed text-slate-800 dark:text-slate-200">
-            {slide.takeaway.text}
+            {selectedOption?.explanation || slide.takeaway.text}
           </p>
         </div>
       )}
@@ -163,7 +177,8 @@ export const MysterySlide: React.FC<MysterySlideProps> = ({
                 </div>
                 <button
                   onClick={() => setIsTheoryOpen(false)}
-                  className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center hover:bg-slate-200"
+                  disabled={taskState.isCompleted && !canCloseFeedback}
+                  className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center hover:bg-slate-200 disabled:cursor-wait disabled:opacity-40"
                   aria-label="Close hypothesis picker"
                 >
                   <X className="w-4 h-4" />
@@ -175,6 +190,7 @@ export const MysterySlide: React.FC<MysterySlideProps> = ({
                   <button
                     key={theory.id}
                     onClick={() => handleConfirmTheory(theory.id)}
+                    disabled={taskState.isCompleted}
                     className={`w-full p-4 rounded-2xl border-2 text-left transition-all flex items-start gap-3 ${
                       selectedTheory === theory.id
                         ? "border-blue-600 bg-blue-50/70 dark:bg-blue-950/50"
@@ -192,7 +208,7 @@ export const MysterySlide: React.FC<MysterySlideProps> = ({
                     </div>
                     <span className="text-xs md:text-sm font-bold text-slate-800 dark:text-slate-200 leading-snug">
                       {theory.title}
-                      {theory.explanation && (
+                      {selectedTheory === theory.id && theory.explanation && (
                         <span className="mt-1 block text-[11px] font-semibold leading-relaxed text-slate-500 dark:text-slate-300">
                           {theory.explanation}
                         </span>
@@ -201,6 +217,41 @@ export const MysterySlide: React.FC<MysterySlideProps> = ({
                   </button>
                 ))}
               </div>
+
+              {taskState.isCompleted && selectedOption && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="space-y-3 rounded-2xl border border-emerald-300/70 bg-emerald-50/80 p-4 dark:border-emerald-700/60 dark:bg-emerald-950/30"
+                >
+                  <div>
+                    <div className="text-[11px] font-black uppercase text-emerald-700 dark:text-emerald-300">
+                      Your answer
+                    </div>
+                    <p className="mt-1 text-xs font-bold leading-relaxed text-slate-700 dark:text-slate-200">
+                      {selectedOption.explanation || "Your answer has been recorded."}
+                    </p>
+                  </div>
+                  {slide.takeaway?.text && slide.takeaway.text !== selectedOption.explanation && (
+                    <div className="border-t border-emerald-200 pt-3 dark:border-emerald-800/60">
+                      <div className="text-[11px] font-black uppercase text-emerald-700 dark:text-emerald-300">
+                        Answer reveal
+                      </div>
+                      <p className="mt-1 text-xs font-bold leading-relaxed text-slate-700 dark:text-slate-200">
+                        {slide.takeaway.text}
+                      </p>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    disabled={!canCloseFeedback}
+                    onClick={() => setIsTheoryOpen(false)}
+                    className="w-full rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-black text-white transition hover:bg-emerald-700 disabled:cursor-wait disabled:bg-emerald-700/45"
+                  >
+                    {canCloseFeedback ? "Continue" : "Listen to the explanation..."}
+                  </button>
+                </motion.div>
+              )}
             </motion.div>
           </div>
         )}

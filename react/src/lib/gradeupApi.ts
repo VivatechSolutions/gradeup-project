@@ -884,6 +884,30 @@ export async function startSeminarPptSession(payload: {
   });
 }
 
+export type SeminarPresentationSummary = {
+  deckId: string;
+  title: string;
+  editUrl: string;
+  embedUrl?: string;
+  context?: {
+    board?: string;
+    class_number?: string;
+    chapter?: number;
+    subject?: string;
+    term?: string | null;
+  };
+  revision: number;
+  slideCount: number;
+  sessionEnded: boolean;
+  role: "owner" | "editor" | "viewer";
+  createdAt: string;
+  updatedAt: string;
+};
+
+export async function listSeminarPresentations() {
+  return apiFetch<SeminarPresentationSummary[]>("/api/v1/seminar/decks");
+}
+
 export async function joinSeminarSession(payload: {
   sessionId: string;
   candidateId: string;

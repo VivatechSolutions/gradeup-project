@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowRight, Check, Keyboard, Mic, Square, Trophy } from "lucide-react";
+import { ArrowRight, Check, Keyboard, Mic, Square } from "lucide-react";
 import { SlideData, TaskState } from "../types";
 
 interface TeachBackSlideProps {
@@ -74,7 +74,7 @@ export const TeachBackSlide: React.FC<TeachBackSlideProps> = ({
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start pt-2">
-        <div className="lg:col-span-8 space-y-4">
+        <div className="lg:col-span-12 space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <button
               onClick={() => setActiveTab("speak")}
@@ -195,34 +195,6 @@ export const TeachBackSlide: React.FC<TeachBackSlideProps> = ({
                 </div>
               </form>
             )}
-          </div>
-        </div>
-
-        <div className="lg:col-span-4 p-6 rounded-2xl bg-gradient-to-b from-amber-50/80 to-yellow-50/40 dark:from-[#1c223c] dark:to-[#171b30] border-2 border-amber-200/80 dark:border-amber-500/20 shadow-md flex flex-col items-center text-center space-y-3">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-amber-500 to-yellow-400 flex items-center justify-center text-white shadow-lg shadow-amber-500/30">
-            <Trophy className="w-9 h-9 stroke-[2]" />
-          </div>
-
-          <div>
-            <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
-              Mission Complete!
-            </h3>
-            <p className="text-xs font-semibold text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
-              You've mastered the core intuition of Newton's First Law!
-            </p>
-          </div>
-
-          <div className="pt-2 w-full">
-            <button
-              onClick={() => {
-                if (!taskState.isCompleted) {
-                  onRecordVoice();
-                }
-              }}
-              className="w-full py-2 px-3 rounded-xl bg-amber-500/15 dark:bg-amber-400/20 text-amber-800 dark:text-amber-300 text-xs font-black tracking-wide hover:bg-amber-500/25 transition-colors"
-            >
-              View Summary
-            </button>
           </div>
         </div>
 

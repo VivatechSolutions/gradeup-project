@@ -8,6 +8,7 @@ interface SlideNavigationProps {
   onPrevious: () => void;
   onNext: () => void;
   isNavigating?: boolean;
+  isNextDisabled?: boolean;
 }
 
 export const SlideNavigation: React.FC<SlideNavigationProps> = ({
@@ -16,6 +17,7 @@ export const SlideNavigation: React.FC<SlideNavigationProps> = ({
   onPrevious,
   onNext,
   isNavigating = false,
+  isNextDisabled = false,
 }) => {
   const canGoPrevious = currentIndex > 0;
   const isLastSlide = currentIndex >= totalSlides - 1;
@@ -38,12 +40,12 @@ export const SlideNavigation: React.FC<SlideNavigationProps> = ({
       </motion.button>
 
       <motion.button
-        whileHover={{ scale: 1.08, x: 2 }}
-        whileTap={{ scale: 0.94 }}
+        whileHover={!isNextDisabled ? { scale: 1.08, x: 2 } : {}}
+        whileTap={!isNextDisabled ? { scale: 0.94 } : {}}
         onClick={onNext}
-        disabled={isNavigating}
-        className="pointer-events-auto relative inline-flex h-11 w-11 sm:h-12 sm:w-12 md:h-14 md:w-14 items-center justify-center rounded-full border border-amber-100/70 bg-gradient-to-br from-orange-500 via-orange-400 to-amber-400 text-white shadow-xl shadow-orange-400/35 transition-all hover:from-orange-600 hover:to-amber-500 disabled:cursor-wait disabled:opacity-60 dark:from-amber-300 dark:via-orange-500 dark:to-fuchsia-500 dark:shadow-[0_0_34px_rgba(249,115,22,.55),inset_0_1px_0_rgba(255,255,255,.24)]"
-        title="Proceed to next slide"
+        disabled={isNavigating || isNextDisabled}
+        className="pointer-events-auto relative inline-flex h-11 w-11 sm:h-12 sm:w-12 md:h-14 md:w-14 items-center justify-center rounded-full border border-amber-100/70 bg-gradient-to-br from-orange-500 via-orange-400 to-amber-400 text-white shadow-xl shadow-orange-400/35 transition-all hover:from-orange-600 hover:to-amber-500 disabled:cursor-not-allowed disabled:from-slate-400 disabled:to-slate-500 disabled:opacity-55 disabled:shadow-none dark:from-amber-300 dark:via-orange-500 dark:to-fuchsia-500 dark:shadow-[0_0_34px_rgba(249,115,22,.55),inset_0_1px_0_rgba(255,255,255,.24)] dark:disabled:from-slate-600 dark:disabled:to-slate-700"
+        title={isNextDisabled ? "Complete the explanation first" : "Proceed to next slide"}
       >
         <ArrowRight className="w-5 h-5 sm:w-6 sm:h-6 stroke-[2.8]" />
         <span className="sr-only">{isLastSlide ? "Finish Lesson" : "Next"}</span>

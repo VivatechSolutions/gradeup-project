@@ -4,6 +4,7 @@ import { LessonData, SlideData, TaskState } from "./types";
 import { SlideHeader } from "./SlideHeader";
 import { SlideNavigation } from "./SlideNavigation";
 import { SlideRenderer } from "./SlideRenderer";
+import { ExplanationSlide } from "./slides/ExplanationSlide";
 import { AvatarTeacher } from "./AvatarTeacher";
 import { CompletionEffect } from "./CompletionEffect";
 import { generateLessonFromChapter } from "./mockLessonData";
@@ -104,6 +105,7 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
 
   // Track task states for each slide
   const [taskStates, setTaskStates] = useState<Record<string, TaskState>>({});
+  const [hasLastExplanationAudioStarted, setHasLastExplanationAudioStarted] = useState(false);
 
   const currentPhaseSlide: SlideData = lesson.slides[currentIndex] || lesson.slides[0];
   const currentSlide: SlideData =
@@ -116,6 +118,11 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
     isCompleted: false,
     selectedOptionIds: [],
   };
+  const isExplanationSequence =
+    currentPhaseSlide?.phase === "explanation" && Boolean(currentPhaseSlide.segments?.length);
+  const explanationSegmentCount = currentPhaseSlide.segments?.length || 0;
+  const isLastExplanationSegment =
+    isExplanationSequence && currentSegmentIndex === explanationSegmentCount - 1;
 
   // Avatar speech bubble message
   const [avatarSpeech, setAvatarSpeech] = useState<string>(
@@ -250,12 +257,21 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
     setIsAvatarPaused(false);
     const slideId = currentSlideIdRef.current;
     const audio = new Audio(audioUrl);
+    let hasFinished = false;
+    const finishPlayback = () => {
+      if (hasFinished) return;
+      hasFinished = true;
+      if (slideId === currentSlideIdRef.current) onEnded?.();
+    };
     audio.preload = "auto";
     lessonAudioRef.current = audio;
     audio.onplay = () => {
       setIsAvatarSpeaking(true);
       setIsAvatarPaused(false);
       setPlaybackState(mode === "feedback" ? "feedback" : "narrating");
+      if (mode === "slide" && isLastExplanationSegment) {
+        setHasLastExplanationAudioStarted(true);
+      }
     };
     audio.onended = () => {
       setIsAvatarSpeaking(false);
@@ -263,7 +279,7 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
       lessonAudioRef.current = null;
       narrationModeRef.current = null;
       setPlaybackState("awaiting_action");
-      if (slideId === currentSlideIdRef.current) onEnded?.();
+      finishPlayback();
     };
     audio.onerror = () => {
       setIsAvatarSpeaking(false);
@@ -271,11 +287,13 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
       lessonAudioRef.current = null;
       narrationModeRef.current = null;
       setPlaybackState("awaiting_action");
+      finishPlayback();
     };
     audio.play().catch(() => {
       setIsAvatarSpeaking(false);
       setIsAvatarPaused(true);
       setPlaybackState("paused");
+      if (mode === "feedback") finishPlayback();
     });
     return true;
   };
@@ -491,6 +509,7 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
     setCelebrationTone("success");
     setShowInsightModal(false);
     setTaskStates({});
+    setHasLastExplanationAudioStarted(false);
     cancelAutoAdvance();
     setAvatarSpeech(lesson.slides[0]?.avatarMessage?.initial || "Let's explore this concept together!");
     stopAvatarSpeech();
@@ -498,7 +517,16 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
   }, [lesson.id]);
 
   useEffect(() => {
-    if (!getSlideAudioUrl(currentSlide, avatarType)) return;
+    setHasLastExplanationAudioStarted(false);
+  }, [lesson.id, currentIndex]);
+
+  useEffect(() => {
+    if (!getSlideAudioUrl(currentSlide, avatarType)) {
+      if (isLastExplanationSegment) setHasLastExplanationAudioStarted(true);
+      if (currentSlide.task.type !== "narration") return;
+      const completionTimer = window.setTimeout(() => narrationEndedRef.current(), 350);
+      return () => window.clearTimeout(completionTimer);
+    }
 
     const timer = window.setTimeout(() => {
       speakAvatarText("", avatarType);
@@ -611,14 +639,18 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
     if (options?.autoAdvance !== false) scheduleAutoAdvance();
   };
 
-  // Single option selection (e.g. Think slide)
-  const handleSelectOption = (optionId: string) => {
+  const handleSelectOptionForSlide = (targetSlide: SlideData, optionId: string) => {
+    const targetState = taskStates[targetSlide.id] || { isCompleted: false, selectedOptionIds: [] };
+    if (targetState.isCompleted || targetState.isFeedbackPlaying) return;
     cancelAutoAdvance();
     stopAvatarSpeech();
-    const selectedOption = currentSlide.options?.find((option) => option.id === optionId);
-    const resolution = currentSlide.resolutions?.[optionId];
-    const hasCorrectAnswer = currentSlide.options?.some((option) => option.isCorrect);
+    const selectedOption = targetSlide.options?.find((option) => option.id === optionId);
+    const resolution = targetSlide.resolutions?.[optionId];
+    const correctOption = targetSlide.options?.find((option) => option.isCorrect);
+    const hasCorrectAnswer = Boolean(correctOption);
     const isCorrect = hasCorrectAnswer ? Boolean(selectedOption?.isCorrect) : undefined;
+    const isHookPrediction = targetSlide.phase === "hook" && hasCorrectAnswer;
+    const resolutionAudio = resolution?.audio || selectedOption?.audio;
     const feedbackMessage = isCorrect === undefined
       ? "Prediction saved. Let's test it in the lesson."
       : isCorrect
@@ -627,30 +659,91 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
 
     setTaskStates((prev) => ({
       ...prev,
-      [currentSlide.id]: {
-        ...(prev[currentSlide.id] || {}),
+      [targetSlide.id]: {
+        ...(prev[targetSlide.id] || {}),
         selectedOptionIds: [optionId],
         isCompleted: true,
         isCorrect,
+        revealedCorrectOptionId: undefined,
+        isFeedbackPlaying: isHookPrediction || Boolean(resolutionAudio),
         feedbackMessage,
       },
     }));
 
     if (resolution?.text) {
       setAvatarSpeech(resolution.text);
-    } else if (isCorrect === false && currentSlide.avatarMessage?.error) {
-      setAvatarSpeech(currentSlide.avatarMessage.error);
-    } else if (currentSlide.avatarMessage?.completed) {
-      setAvatarSpeech(currentSlide.avatarMessage.completed);
+    } else if (isCorrect === false && targetSlide.avatarMessage?.error) {
+      setAvatarSpeech(targetSlide.avatarMessage.error);
+    } else if (targetSlide.avatarMessage?.completed) {
+      setAvatarSpeech(targetSlide.avatarMessage.completed);
     }
 
     setCelebrationMsg(isCorrect === undefined ? feedbackMessage : isCorrect ? "Correct! Paper shower unlocked!" : "Oops, not quite. Try the next one!");
     setCelebrationTone(isCorrect === undefined ? "neutral" : isCorrect ? "success" : "error");
     setShowCelebration(true);
-    const resolutionAudio = resolution?.audio || selectedOption?.audio;
-    if (resolutionAudio) {
-      playVoiceAudio(resolutionAudio, avatarType, "feedback");
+    const finishHookFeedback = () => {
+      setTaskStates((previous) => ({
+        ...previous,
+        [targetSlide.id]: {
+          ...(previous[targetSlide.id] || { selectedOptionIds: [optionId], isCompleted: true }),
+          isFeedbackPlaying: false,
+        },
+      }));
+    };
+    const finishSelectedFeedback = () => {
+      setTaskStates((previous) => ({
+        ...previous,
+        [targetSlide.id]: {
+          ...(previous[targetSlide.id] || { selectedOptionIds: [optionId], isCompleted: true }),
+          isFeedbackPlaying: false,
+        },
+      }));
+    };
+
+    if (isHookPrediction && isCorrect === false && correctOption) {
+      playVoiceAudio(resolutionAudio, avatarType, "feedback", () => {
+        const correctResolution = targetSlide.resolutions?.[correctOption.id];
+        setTaskStates((previous) => ({
+          ...previous,
+          [targetSlide.id]: {
+            ...(previous[targetSlide.id] || { selectedOptionIds: [optionId], isCompleted: true }),
+            revealedCorrectOptionId: correctOption.id,
+            isFeedbackPlaying: true,
+            feedbackMessage: "Here is the correct answer and explanation.",
+          },
+        }));
+        setAvatarSpeech(correctResolution?.text || correctOption.explanation || targetSlide.avatarMessage?.completed || "");
+        playVoiceAudio(correctResolution?.audio || correctOption.audio, avatarType, "feedback", finishHookFeedback);
+      });
+      return;
     }
+
+    if (resolutionAudio) {
+      playVoiceAudio(
+        resolutionAudio,
+        avatarType,
+        "feedback",
+        isHookPrediction ? finishHookFeedback : finishSelectedFeedback,
+      );
+    } else if (isHookPrediction) {
+      finishHookFeedback();
+    }
+  };
+
+  // Single option selection (e.g. Think slide)
+  const handleSelectOption = (optionId: string) => {
+    handleSelectOptionForSlide(currentSlide, optionId);
+  };
+
+  const handleExplanationOptionSelect = (segmentIndex: number, optionId: string) => {
+    const segment = currentPhaseSlide.segments?.[segmentIndex];
+    if (!segment) return;
+    if (segmentIndex !== currentSegmentIndex) {
+      cancelAutoAdvance();
+      stopAvatarSpeech();
+      setCurrentSegmentIndex(segmentIndex);
+    }
+    handleSelectOptionForSlide(segment, optionId);
   };
 
   // Multi-option toggle (e.g. Apply slide)
@@ -782,7 +875,7 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
   // Navigate to previous slide
   const handlePrevious = () => {
     if (isNavigating) return;
-    if (currentSegmentIndex > 0) {
+    if (!isExplanationSequence && currentSegmentIndex > 0) {
       cancelAutoAdvance();
       setShowCelebration(false);
       setShowInsightModal(false);
@@ -808,6 +901,25 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
   advanceRef.current = handleNext;
   narrationEndedRef.current = () => {
     if (currentSlide.task.type !== "narration") return;
+    if (isExplanationSequence) {
+      if (!currentTaskState.isCompleted) {
+        setTaskStates((previous) => ({
+          ...previous,
+          [currentSlide.id]: {
+            ...(previous[currentSlide.id] || { selectedOptionIds: [] }),
+            selectedOptionIds: previous[currentSlide.id]?.selectedOptionIds || [],
+            isCompleted: true,
+            feedbackMessage: "Narration complete.",
+          },
+        }));
+      }
+      if (isLastExplanationSegment) {
+        setPlaybackState("ready");
+      } else {
+        scheduleAutoAdvance();
+      }
+      return;
+    }
     if (currentTaskState.isCompleted) {
       scheduleAutoAdvance();
       return;
@@ -1161,19 +1273,30 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
               animate={shouldReduceMotion ? { opacity: 1 } : "center"}
               exit={shouldReduceMotion ? { opacity: 0 } : "exit"}
               transition={shouldReduceMotion ? { duration: 0.08 } : undefined}
-              className="gu-slide-scroll relative z-10 w-full h-full min-h-0 max-h-full overflow-x-hidden overflow-y-auto overscroll-contain pr-1 md:pr-24 lg:pr-32"
+              className={`gu-slide-scroll relative z-10 h-full min-h-0 max-h-full w-full overflow-x-hidden overscroll-contain pr-1 md:pr-24 lg:pr-32 ${
+                isExplanationSequence ? "overflow-y-hidden" : "overflow-y-auto"
+              }`}
             >
-              <SlideRenderer
-                slide={currentSlide}
-                taskState={currentTaskState}
-                onCompleteTask={handleCompleteCurrentTask}
-                onSelectOption={handleSelectOption}
-                onToggleOption={handleToggleOption}
-                onSubmitAnswer={handleSubmitAnswer}
-                onSubmitText={handleSubmitText}
-                onRecordVoice={handleRecordVoice}
-                onFinishLesson={handleFinishLesson}
-              />
+              {isExplanationSequence ? (
+                <ExplanationSlide
+                  slide={currentPhaseSlide}
+                  activeSegmentIndex={currentSegmentIndex}
+                  taskStates={taskStates}
+                  onSelectOption={handleExplanationOptionSelect}
+                />
+              ) : (
+                <SlideRenderer
+                  slide={currentSlide}
+                  taskState={currentTaskState}
+                  onCompleteTask={handleCompleteCurrentTask}
+                  onSelectOption={handleSelectOption}
+                  onToggleOption={handleToggleOption}
+                  onSubmitAnswer={handleSubmitAnswer}
+                  onSubmitText={handleSubmitText}
+                  onRecordVoice={handleRecordVoice}
+                  onFinishLesson={handleFinishLesson}
+                />
+              )}
             </motion.div>
           </AnimatePresence>
 
@@ -1222,6 +1345,7 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
         onPrevious={handlePrevious}
         onNext={handleNext}
         isNavigating={isNavigating}
+        isNextDisabled={isExplanationSequence && !hasLastExplanationAudioStarted}
       />
 
       <AnimatePresence>

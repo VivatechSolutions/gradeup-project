@@ -552,8 +552,8 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
       emotion: segment.emotion,
       audio: segment.audio,
       type: "learn" as const,
-      badge: { label: `${labelFromPhase(segment.type) || "Explanation"} ${index + 1}`, icon: "book-open" },
-      title: visual?.query ? labelFromPhase(visual.query) : `${sectionTitle}: idea ${index + 1}`,
+      badge: { label: explanation?.title || "Explanation", icon: "book-open" },
+      title: explanation?.title || sectionTitle,
       description: segmentMedia.text,
       content: visual?.avatar_line,
       images: {
@@ -663,6 +663,27 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
   }
 
   mysteries.forEach((mystery: any, index: number) => {
+    const mysteryOptions = optionsFromRecord(mystery.options, mystery.answer, mystery.option_explanations);
+    const mysteryResolutions = Object.fromEntries(
+      mysteryOptions.map((option) => [
+        option.id,
+        {
+          text: option.explanation,
+          audio: mystery.resolutions?.[option.id]?.audio || mystery.reveal?.audio,
+        },
+      ]),
+    );
+    const mysteryClues = [
+      mystery.visual?.avatar_line,
+      mystery.visual?.look_prompt,
+    ]
+      .filter(Boolean)
+      .map((text, clueIndex) => ({
+        id: `${mystery.mystery_id || index}-clue-${clueIndex + 1}`,
+        number: clueIndex + 1,
+        text,
+      }));
+
     slides.push({
       id: mystery.mystery_id || `backend-mystery-${index + 1}`,
       phase: "mystery",
@@ -677,12 +698,11 @@ export function generateLessonFromBackendResponse(response: any): LessonData | n
         main: visualUrl(mystery),
         caption: visualCaption(mystery.visual),
       },
-      options: optionsFromRecord(mystery.options, mystery.answer, mystery.option_explanations),
-      clues: [
-        { id: `${mystery.mystery_id || index}-clue-1`, number: 1, text: mystery.visual?.avatar_line || mystery.ask?.text || "Observe the situation carefully." },
-        { id: `${mystery.mystery_id || index}-clue-2`, number: 2, text: mystery.visual?.look_prompt || "Which object resists the change?" },
-        { id: `${mystery.mystery_id || index}-clue-3`, number: 3, text: mystery.visual?.look_answer || mystery.reveal?.text || "Inertia explains the motion." },
-      ],
+      options: mysteryOptions,
+      resolutions: mysteryResolutions,
+      clues: mysteryClues.length
+        ? mysteryClues
+        : [{ id: `${mystery.mystery_id || index}-clue-1`, number: 1, text: "Compare the conclusion with the original assumption." }],
       takeaway: {
         label: "Reveal",
         text: mystery.reveal?.text || mystery.option_explanations?.[mystery.answer],

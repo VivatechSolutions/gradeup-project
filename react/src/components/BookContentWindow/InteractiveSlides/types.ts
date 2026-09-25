@@ -128,6 +128,8 @@ export interface LessonData {
 export interface TaskState {
   isCompleted: boolean;
   selectedOptionIds: string[];
+  revealedCorrectOptionId?: string;
+  isFeedbackPlaying?: boolean;
   submittedText?: string;
   isVoiceRecorded?: boolean;
   isCorrect?: boolean;

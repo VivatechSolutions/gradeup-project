@@ -14,7 +14,7 @@ describe("generateLessonFromBackendResponse", () => {
       },
       enrichment: {
         avatar_lesson: {
-          phase_order: ["explanation", "challenge_lab"],
+          phase_order: ["explanation", "mystery", "challenge_lab"],
           phases: [
             {
               phase: "explanation",
@@ -39,6 +39,26 @@ describe("generateLessonFromBackendResponse", () => {
                     { option_id: "A", text: "Review this answer.", audio: { male: "a.mp3" } },
                     { option_id: "B", text: "Correct answer.", audio: { male: "b.mp3" } },
                   ],
+                },
+              ],
+            },
+            {
+              phase: "mystery",
+              pool: [
+                {
+                  mystery_id: "mystery_1",
+                  question: "Which assumption is contradicted?",
+                  options: { A: "The original assumption", B: "An unrelated statement" },
+                  answer: "A",
+                  option_explanations: {
+                    A: "Correct explanation.",
+                    B: "Incorrect explanation.",
+                  },
+                  reveal: {
+                    text: "The original assumption is contradicted.",
+                    audio: { male: "reveal-male.mp3", female: "reveal-female.mp3" },
+                  },
+                  visual: {},
                 },
               ],
             },
@@ -68,6 +88,12 @@ describe("generateLessonFromBackendResponse", () => {
     expect(mcqSlide?.suggestedQuestions).toEqual(["Can you explain the first idea?"]);
     expect(lesson!.slides.filter((slide) => slide.phase === "explanation")).toHaveLength(1);
     expect(lesson!.slides.some((slide) => slide.id === "backend-concept-overview")).toBe(false);
+
+    const mysterySlide = lesson!.slides.find((slide) => slide.phase === "mystery");
+    expect(mysterySlide?.clues?.map((clue) => clue.text)).not.toContain("The original assumption is contradicted.");
+    expect(mysterySlide?.options?.[0].explanation).toBe("Correct explanation.");
+    expect(mysterySlide?.resolutions?.A.audio?.male).toBe("reveal-male.mp3");
+    expect(mysterySlide?.resolutions?.B.audio?.male).toBe("reveal-male.mp3");
 
     expect(lesson!.slides.some((slide) => slide.phase === "challenge_lab")).toBe(true);
   });

@@ -94,7 +94,7 @@ export const SlideRenderer: React.FC<SlideRendererProps> = ({
         <MysterySlide
           slide={slide}
           taskState={taskState}
-          onCompleteTask={() => onCompleteTask()}
+          onSelectOption={onSelectOption}
         />
       );
 
