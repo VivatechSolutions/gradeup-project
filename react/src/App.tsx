@@ -1,4 +1,4 @@
-import React, { Suspense } from 'react';
+import React, { Suspense, useEffect } from 'react';
 import { Switch, Route, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -41,6 +41,7 @@ import NotFound from "./pages/not-found";
 import BookContentWindow from "./components/BookContentWindow/BookContentWindow";
 import BookContentWindowDemo from "./components/BookContentWindow/BookContentWindowDemo";
 import BookContentWindowRewamp from "./components/BookContentWindow/BookContentWindowRewamp";
+import { checkInStudent } from "./lib/gradeupApi";
 import AvatarGeniusView from "./components/BookContentWindow/AvatarGeniusView";
 import BookGallery from "./components/BookGallery";
 import SeminarToolPage from "./pages/seminar-tool-page";
@@ -75,6 +76,7 @@ import TeacherMeetingSetupPage from "./pages/teacher-meeting-setup-page";
 
 
 const SlideEditorPage = React.lazy(() => import('./pages/SlideEditorPage'));
+const LiveAssessmentRedirect = () => <Redirect to="/studio/quiz" />;
 
 const withTeacherLayout = (
   Component: React.ComponentType<any>,
@@ -89,6 +91,13 @@ const withTeacherLayout = (
 
 function AppWithAuth() {
   const { user, isLoading } = useAuth();
+  useEffect(() => {
+    if (user && (user as any).role === "student") {
+      void checkInStudent()
+        .then(() => queryClient.invalidateQueries({ queryKey: ["/api/v1/student/dashboard"] }))
+        .catch(() => undefined);
+    }
+  }, [user]);
 
   if (isLoading) {
     return (

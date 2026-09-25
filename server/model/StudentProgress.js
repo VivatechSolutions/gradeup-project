@@ -14,7 +14,7 @@ const studentProgressSchema = new mongoose.Schema(
     unitId: { type: mongoose.Schema.Types.ObjectId, ref: "SubjectUnit", default: null, index: true },
     activityType: {
       type: String,
-      enum: ["book_view", "unit_view", "tutor", "quiz", "homework", "debate", "seminar"],
+      enum: ["book_view", "unit_view", "tutor", "quiz", "homework", "exam", "debate", "seminar", "avatar", "focus"],
       required: true,
       index: true,
     },

@@ -16,7 +16,7 @@ const {
   listSessionTopics,
   saveFeedback,
 } = require("../services/liveSessionService");
-const { recordProgress } = require("../services/studentDataService");
+const { recordTrustedResult } = require("../services/activityService");
 const LiveSessionModel = require("../model/LiveSession");
 const {
   assertSessionAccess,
@@ -827,15 +827,16 @@ const controller = {
         results: data,
       });
       if (req.studentUser?._id) {
-        await recordProgress({
+        await recordTrustedResult({
           userId: req.studentUser._id,
           activityType: "seminar",
+          sourceId: liveSession?.sessionId || sessionId,
           subjectGroupKey: liveSession?.subjectGroupKey || null,
           unitId: liveSession?.unitId || null,
-          status: "completed",
           progressPercent: 100,
-          score: updatedLiveSession?.scores?.overall || updatedLiveSession?.scores?.student || null,
+          normalizedScore: updatedLiveSession?.scores?.overall || updatedLiveSession?.scores?.student || null,
           timeSpentMinutes: 20,
+          timezone: req.get("x-timezone") || "UTC",
           metadata: {
             title: liveSession?.topic || "Seminar",
             subject: liveSession?.subject,

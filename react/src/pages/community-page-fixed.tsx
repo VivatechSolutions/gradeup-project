@@ -45,6 +45,7 @@ import Navigation from "../components/navigation";
 import { useAuth } from "../hooks/use-auth";
 import { badWords } from "../lib/bad-words";
 import BlogFeed from "../components/BlogFeed";
+import { getStudentAchievements, getStudentDashboard, getStudentLeaderboard } from "../lib/gradeupApi";
 
 // Student Dashboard Assets
 import studyRoboImg from "../assets/dashboard/study-robo.png";
@@ -1638,12 +1639,12 @@ export default function CommunityPage() {
     queryKey: ["/api/community/trending-topics"],
   });
   const { data: privateMessages } = useQuery<any[]>({ queryKey: ["/api/community/messages"] });
-  const { data: classmates = [] } = useQuery<any[]>({ queryKey: ["/api/community/classmates"] });
-  const { data: communityPoints = 145 } = useQuery<number>({ queryKey: ["/api/community/points"] });
-  const { data: leaderboard = [], isLoading: isLoadingLeaderboard } = useQuery<any[]>({
-    queryKey: ["/api/community/leaderboard"],
-  });
-  const { data: badges = [] } = useQuery<any[]>({ queryKey: ["/api/community/badges"] });
+  const { data: dashboard } = useQuery<any>({ queryKey: ["/api/v1/student/dashboard", "community"], queryFn: getStudentDashboard });
+  const { data: cohortLeaderboard, isLoading: isLoadingLeaderboard } = useQuery<any>({ queryKey: ["/api/v1/student/leaderboard", "community"], queryFn: () => getStudentLeaderboard("week") });
+  const { data: badges = [] } = useQuery<any[]>({ queryKey: ["/api/v1/student/achievements", "community"], queryFn: getStudentAchievements });
+  const classmates = cohortLeaderboard?.entries || [];
+  const leaderboard = cohortLeaderboard?.entries || [];
+  const communityPoints = Number(dashboard?.stats?.totalPoints || 0);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -1897,15 +1898,15 @@ export default function CommunityPage() {
     },
     {
       label: "My Points",
-      value: communityPoints ?? 150,
-      badge: "Rank #4",
+      value: communityPoints,
+      badge: cohortLeaderboard?.currentUser?.rank ? `Rank #${cohortLeaderboard.currentUser.rank}` : "Unranked",
       cls: "green",
       icon: <Award size={19} />,
       si: "si-green",
     },
     {
       label: "Study Peers",
-      value: classmates?.length > 0 ? classmates.length : 24,
+      value: classmates.length,
       badge: "Online",
       cls: "purple",
       icon: <Users size={19} />,
@@ -1913,7 +1914,7 @@ export default function CommunityPage() {
     },
     {
       label: "Badges Earned",
-      value: badges?.length > 0 ? badges.length : 5,
+      value: badges.filter((badge: any) => badge.unlocked).length,
       badge: "Mastery",
       cls: "amber",
       icon: <Star size={19} />,
@@ -1981,15 +1982,15 @@ export default function CommunityPage() {
                   <span>Total Posts</span>
                 </div>
                 <div className="comm-hero-mini-stat">
-                  <b>{communityPoints || 145}</b>
+                  <b>{communityPoints}</b>
                   <span>XP Points</span>
                 </div>
                 <div className="comm-hero-mini-stat">
-                  <b>{classmates?.length || 24}</b>
+                  <b>{classmates.length}</b>
                   <span>Classmates</span>
                 </div>
                 <div className="comm-hero-mini-stat">
-                  <b>{badges?.length || 5}</b>
+                  <b>{badges.filter((badge: any) => badge.unlocked).length}</b>
                   <span>Badges</span>
                 </div>
               </div>
@@ -2823,7 +2824,7 @@ export default function CommunityPage() {
                     <Trophy size={18} style={{ color: "#ffb21d" }} /> Student Community Leaderboard
                   </div>
                   <span style={{ fontSize: 12, fontWeight: 700, color: "var(--comm-muted)" }}>
-                    Updated Daily 🏆
+                    Live cohort 🏆
                   </span>
                 </div>
                 <div className="comm-card-body">
@@ -2832,7 +2833,7 @@ export default function CommunityPage() {
                   ) : leaderboard && leaderboard.length > 0 ? (
                     leaderboard.map((student: any, idx: number) => (
                       <motion.div
-                        key={student.id || idx}
+                        key={student.userId || idx}
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: idx * 0.05 }}
@@ -2874,11 +2875,11 @@ export default function CommunityPage() {
                             fontWeight: 800,
                           }}
                         >
-                          {(student.firstName?.[0] || "S").toUpperCase()}
+                          {(student.name?.[0] || "S").toUpperCase()}
                         </div>
                         <div style={{ flex: 1 }}>
                           <b style={{ display: "block", fontSize: 14, color: "var(--comm-ink)" }}>
-                            {student.firstName} {student.lastName || ""}
+                            {student.name}
                           </b>
                           <span style={{ fontSize: 11.5, color: "var(--comm-muted)", fontWeight: 600 }}>
                             {student.points || 0} Community XP Points

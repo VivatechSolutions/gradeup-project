@@ -5,7 +5,12 @@ const LiveSession = require("../model/LiveSession");
 const StudentProfile = require("../model/StudentProfile");
 const StudentProgress = require("../model/StudentProgress");
 const RewardAccount = require("../model/RewardAccount");
-const RewardTransaction = require("../model/RewardTransaction");
+const StudentDailyActivity = require("../model/StudentDailyActivity");
+const { evaluateAchievements } = require("./achievementService");
+const { getStreak, localDateKey } = require("./activityService");
+const { getLeaderboard } = require("./leaderboardService");
+const { todayPlan } = require("./calendarService");
+const { awardPoints } = require("./rewardService");
 
 function normalize(value = "") {
   return String(value || "").trim();
@@ -179,7 +184,27 @@ async function listStudentSubjects(userId) {
       sectionTopics: getIndexedSectionTopics(unit),
     });
   });
-  return Array.from(groups.values());
+  const progressRows = await StudentProgress.find({ userId, subjectGroupKey: { $in: Array.from(groups.keys()) } }).lean();
+  const progressBySubject = new Map();
+  progressRows.forEach((row) => {
+    const current = progressBySubject.get(row.subjectGroupKey) || { total: 0, count: 0, completed: 0, scores: [] };
+    current.total += Number(row.progressPercent || 0);
+    current.count += 1;
+    if (row.status === "completed") current.completed += 1;
+    if (typeof row.score === "number") current.scores.push(row.score);
+    progressBySubject.set(row.subjectGroupKey, current);
+  });
+  return Array.from(groups.values()).map((group) => {
+    const summary = progressBySubject.get(group.subjectGroupKey);
+    return {
+      ...group,
+      progressPercent: summary ? Math.round(summary.total / summary.count) : 0,
+      completedActivities: summary?.completed || 0,
+      averageScore: summary?.scores?.length
+        ? Math.round(summary.scores.reduce((sum, value) => sum + value, 0) / summary.scores.length)
+        : null,
+    };
+  });
 }
 
 async function listStudentBooks(userId) {
@@ -211,36 +236,8 @@ async function listStudentBooks(userId) {
   });
 }
 
-async function awardPoints({ userId, studentProfileId, points, reason, sourceType, sourceId, metadata }) {
-  if (!points) return null;
-  const idempotencyKey = `${userId}:${sourceType}:${sourceId}:${reason}`;
-  const existingTransaction = await RewardTransaction.findOne({ idempotencyKey }).lean();
-  if (existingTransaction) {
-    return RewardAccount.findOne({ userId });
-  }
-  const account = await RewardAccount.findOneAndUpdate(
-    { userId },
-    { $setOnInsert: { studentProfileId }, $inc: { pointsBalance: points } },
-    { new: true, upsert: true, setDefaultsOnInsert: true },
-  );
-  account.level = Math.max(1, Math.floor(account.pointsBalance / 500) + 1);
-  await account.save();
-  await RewardTransaction.create({
-    userId,
-    rewardAccountId: account._id,
-    points,
-    reason,
-    sourceType,
-    sourceId,
-    idempotencyKey,
-    metadata,
-  });
-  return account;
-}
-
-async function recordProgress({ userId, activityType, subjectGroupKey, bookId, unitId, status, progressPercent, score, timeSpentMinutes, metadata }) {
+async function recordProgress({ userId, activityType, subjectGroupKey, bookId, unitId, status, progressPercent, metadata, timezone = "UTC" }) {
   const profile = await getStudentProfile(userId);
-  const points = status === "completed" ? 25 : activityType === "book_view" ? 5 : 10;
   const progress = await StudentProgress.findOneAndUpdate(
     {
       userId,
@@ -252,36 +249,50 @@ async function recordProgress({ userId, activityType, subjectGroupKey, bookId, u
     {
       $set: {
         studentProfileId: profile._id,
-        status: status || "in_progress",
-        progressPercent: Math.max(0, Math.min(100, Number(progressPercent || 0))),
-        score: score ?? null,
-        timeSpentMinutes: Number(timeSpentMinutes || 0),
+        ...(status === "completed" ? { status: "completed" } : {}),
         metadata: metadata || null,
         lastActivityAt: new Date(),
       },
-      $max: { pointsEarned: points },
+      ...(status === "completed" ? {} : { $setOnInsert: { status: status || "in_progress" } }),
+      $max: { progressPercent: Math.max(0, Math.min(100, Number(progressPercent || 0))) },
     },
     { new: true, upsert: true, setDefaultsOnInsert: true },
   );
-  await awardPoints({
-    userId,
-    studentProfileId: profile._id,
-    points,
-    reason: activityType,
-    sourceType: activityType,
-    sourceId: progress._id.toString(),
-    metadata,
-  });
+  if (status === "completed" && ["book_view", "unit_view"].includes(activityType)) {
+    const reward = await awardPoints({
+      userId,
+      studentProfileId: profile._id,
+      points: 25,
+      reason: `${activityType} completion`,
+      sourceType: activityType,
+      sourceId: progress._id.toString(),
+      idempotencyKey: `${userId}:reward:${activityType}:${progress._id}:completion`,
+      metadata,
+    });
+    if (reward.awarded) {
+      const today = localDateKey(new Date(), timezone);
+      await StudentDailyActivity.findOneAndUpdate(
+        { userId, localDate: today },
+        {
+          $setOnInsert: { studentProfileId: profile._id, timezone },
+          $inc: { completedActivities: 1, earnedPoints: 25 },
+          $set: { qualifiesForStudyStreak: true, visited: true, lastActivityAt: new Date() },
+        },
+        { upsert: true, setDefaultsOnInsert: true },
+      );
+    }
+  }
   return progress;
 }
 
-async function getDashboard(userId) {
-  const [profile, rewards, progressRows, conversations, sessions] = await Promise.all([
+async function getDashboard(userId, timezone = "UTC") {
+  const [profile, progressRows, conversations, sessions, dailyRows, subjects] = await Promise.all([
     getStudentProfile(userId),
-    RewardAccount.findOne({ userId }).lean(),
-    StudentProgress.find({ userId }).sort({ lastActivityAt: -1 }).limit(100).lean(),
+    StudentProgress.find({ userId }).sort({ lastActivityAt: -1 }).lean(),
     TutorConversation.find({ candidateId: userId.toString() }).sort({ lastActivityAt: -1 }).limit(20).lean(),
     LiveSession.find({ candidateId: userId.toString() }).sort({ updatedAt: -1 }).limit(30).lean(),
+    StudentDailyActivity.find({ userId }).sort({ localDate: -1 }).limit(370).lean(),
+    listStudentSubjects(userId),
   ]);
 
   const completed = progressRows.filter((row) => row.status === "completed").length;
@@ -289,13 +300,15 @@ async function getDashboard(userId) {
   const averageScore = averageScoreRows.length
     ? Math.round(averageScoreRows.reduce((sum, row) => sum + row.score, 0) / averageScoreRows.length)
     : 0;
-  const activityDates = new Set(
-    [...progressRows.map((row) => row.lastActivityAt), ...conversations.map((row) => row.lastActivityAt), ...sessions.map((row) => row.updatedAt)]
-      .filter(Boolean)
-      .map((date) => new Date(date).toISOString().slice(0, 10)),
-  );
-
-  const achievements = buildAchievements({ completed, sessions, rewards, conversations });
+  const [achievements, streak, plan] = await Promise.all([
+    evaluateAchievements(userId, timezone),
+    getStreak(userId, timezone),
+    todayPlan(userId, timezone),
+  ]);
+  const [currentRewards, leaderboard] = await Promise.all([
+    RewardAccount.findOne({ userId }).lean(),
+    getLeaderboard(userId, { period: "week" }),
+  ]);
   const recentActivity = [
     ...progressRows.slice(0, 5).map((row) => ({
       type: row.activityType,
@@ -311,56 +324,63 @@ async function getDashboard(userId) {
     })),
   ].sort((a, b) => new Date(b.lastUpdated) - new Date(a.lastUpdated)).slice(0, 8);
 
+  const studySeconds = dailyRows.reduce((sum, row) => sum + Number(row.activeSeconds || 0), 0);
+  const todayKey = localDateKey(new Date(), timezone);
+  const weekStart = new Date(`${todayKey}T00:00:00Z`);
+  weekStart.setUTCDate(weekStart.getUTCDate() - ((weekStart.getUTCDay() + 6) % 7));
+  const monthStart = todayKey.slice(0, 7);
+  const weekSeconds = dailyRows.filter((row) => row.localDate >= weekStart.toISOString().slice(0, 10)).reduce((sum, row) => sum + Number(row.activeSeconds || 0), 0);
+  const monthSeconds = dailyRows.filter((row) => row.localDate.startsWith(monthStart)).reduce((sum, row) => sum + Number(row.activeSeconds || 0), 0);
+  const weekPoints = dailyRows.filter((row) => row.localDate >= weekStart.toISOString().slice(0, 10)).reduce((sum, row) => sum + Number(row.earnedPoints || 0), 0);
+  const currentRank = leaderboard.currentUser?.rank || null;
   return {
     profile,
     stats: {
       lessonsCompleted: completed,
       averageScore,
-      totalTimeSpent: Math.round(progressRows.reduce((sum, row) => sum + Number(row.timeSpentMinutes || 0), 0) / 60),
+      totalTimeSpent: Math.round(studySeconds / 3600),
       badgesEarned: achievements.filter((item) => item.unlocked).length,
-      currentStreak: activityDates.size,
-      longestStreak: activityDates.size,
-      totalPoints: rewards?.pointsBalance || 0,
-      currentLevel: rewards?.level || 1,
-      pointsToNextLevel: 500 - ((rewards?.pointsBalance || 0) % 500),
+      currentStreak: streak.current,
+      longestStreak: streak.longest,
+      totalPoints: currentRewards?.pointsBalance || 0,
+      currentLevel: currentRewards?.level || 1,
+      pointsToNextLevel: 500 - ((currentRewards?.pointsBalance || 0) % 500),
       totalLessonsCompleted: completed,
-      streakDays: activityDates.size,
-      weeklyProgress: 0,
-      monthlyGoal: 0,
+      streakDays: streak.current,
+      weeklyProgress: weekPoints,
+      monthlyGoal: (currentRewards?.level || 1) * 500,
+      weeklyStudyMinutes: Math.round(weekSeconds / 60),
+      monthlyStudyMinutes: Math.round(monthSeconds / 60),
       completionRate: progressRows.length ? Math.round(progressRows.reduce((sum, row) => sum + Number(row.progressPercent || 0), 0) / progressRows.length) : 0,
-      studyTimeMinutes: progressRows.reduce((sum, row) => sum + Number(row.timeSpentMinutes || 0), 0),
-      rank: 1,
-      totalUsers: 1,
+      studyTimeMinutes: Math.round(studySeconds / 60),
+      rank: currentRank,
+      totalUsers: leaderboard.totalUsers,
     },
     achievements,
     recentActivity,
     sessions,
     progress: progressRows,
-    subjectDistribution: buildSubjectDistribution(progressRows),
+    subjectDistribution: buildSubjectDistribution(progressRows, subjects),
+    subjects,
+    leaderboard,
+    todayPlan: plan,
+    dailyActivity: dailyRows,
   };
 }
 
-function buildSubjectDistribution(progressRows) {
+function buildSubjectDistribution(progressRows, subjects = []) {
   const counts = new Map();
   progressRows.forEach((row) => {
     const subject = row.metadata?.subject || row.subjectGroupKey || "Learning";
     counts.set(subject, (counts.get(subject) || 0) + Math.max(1, Number(row.timeSpentMinutes || 1)));
   });
   const total = Array.from(counts.values()).reduce((sum, value) => sum + value, 0) || 1;
-  return Array.from(counts.entries()).map(([name, value]) => ({
+  const result = Array.from(counts.entries()).map(([name, value]) => ({
     name,
     value: Math.round((value / total) * 100),
   }));
-}
-
-function buildAchievements({ completed, sessions, rewards, conversations }) {
-  return [
-    { id: 1, title: "First Steps", description: "Start your first learning activity", icon: "BookOpen", unlocked: completed > 0 || conversations.length > 0, tier: "bronze", date: null },
-    { id: 2, title: "Book Explorer", description: "Complete 5 learning items", icon: "Trophy", unlocked: completed >= 5, tier: "silver", date: null },
-    { id: 3, title: "Debater", description: "Complete a debate session", icon: "Medal", unlocked: sessions.some((s) => s.sessionType === "debate" && s.status === "completed"), tier: "gold", date: null },
-    { id: 4, title: "Seminar Starter", description: "Complete a seminar session", icon: "Star", unlocked: sessions.some((s) => s.sessionType === "seminar" && s.status === "completed"), tier: "gold", date: null },
-    { id: 5, title: "Point Collector", description: "Earn 500 XP", icon: "Crown", unlocked: (rewards?.pointsBalance || 0) >= 500, tier: "gold", date: null },
-  ];
+  if (result.length) return result;
+  return subjects.map((subject) => ({ name: subject.subject, value: 0 }));
 }
 
 module.exports = {

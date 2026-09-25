@@ -2,16 +2,24 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../hooks/use-theme';
-import { Achievement } from '../lib/mock-achievements';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
-import { Moon, Sun, Lock, X, Trophy, Star, Medal, Crown, BookOpen } from 'lucide-react';
+import { Moon, Sun, Lock, X, Trophy, Star, Medal, Crown, BookOpen, Flame, Clock, Target } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useLocation } from 'wouter';
 import { useAuth } from '../hooks/use-auth';
 import Navigation from '../components/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { getStudentAchievements } from '../lib/gradeupApi';
+type Achievement = {
+    id: string | number;
+    title: string;
+    description: string;
+    icon: React.ElementType;
+    tier: 'bronze' | 'silver' | 'gold';
+    unlocked: boolean;
+    date?: string;
+};
 // Loader
 const AchievementsLoader = () => (
     <div className="flex items-center justify-center min-h-screen bg-[#f8fafc] dark:bg-[#080d1f]">
@@ -137,7 +145,7 @@ const AchievementsPage = () => {
         return () => clearTimeout(timer);
     }, []);
 
-    const iconMap: Record<string, any> = { Trophy, Star, Medal, Crown, BookOpen };
+    const iconMap: Record<string, any> = { Trophy, Star, Medal, Crown, BookOpen, Flame, Clock, Target };
     const achievements: Achievement[] = realAchievements.map((item: any) => ({
         id: item.id,
         title: item.title,
@@ -145,7 +153,7 @@ const AchievementsPage = () => {
         icon: iconMap[item.icon] || Trophy,
         tier: item.tier === 'gold' ? 'gold' : item.tier === 'silver' ? 'silver' : 'bronze',
         unlocked: Boolean(item.unlocked),
-        date: item.date || undefined,
+        date: item.date ? new Date(item.date).toLocaleDateString() : undefined,
     }));
     const unlockedCount = achievements.filter(a => a.unlocked).length;
     const totalCount = achievements.length;

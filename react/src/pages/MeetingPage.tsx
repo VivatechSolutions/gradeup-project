@@ -3,6 +3,7 @@ import Navigation from "../components/navigation";
 import { useAuth } from "../hooks/use-auth";
 import { useNotificationStore } from "../lib/notification-store";
 import { useSessionState } from "../hooks/useSessionState";
+import { createScheduledCalendarEvent } from "../lib/gradeupApi";
 
 // ─── CSS ──────────────────────────────────────────────────────────────────────
 const CSS = `
@@ -1049,7 +1050,7 @@ function ScheduleMeetingModal({config,onSchedule,onClose}:any) {
   const [title,setTitle]=useState(config?.title||""); const [date,setDate]=useState(""); const [time,setTime]=useState("10:00"); const [saving,setSaving]=useState(false);
   async function handleSave(){
     if(!title||!date) return; setSaving(true); await new Promise(r=>setTimeout(r,700));
-    try{const ev={id:`mt-${Date.now()}`,title,type:"meeting",date,startTime:time,subject:config?.subject||"",fromMeeting:true};const ex=JSON.parse(localStorage.getItem("gradeup_cal_events_v3")||"[]");localStorage.setItem("gradeup_cal_events_v3",JSON.stringify([...ex,ev]));window.dispatchEvent(new StorageEvent("storage",{key:"gradeup_cal_events_v3"}));}catch{}
+    try{await createScheduledCalendarEvent({title,type:"meeting",date,startTime:time,subject:config?.subject||""});}catch{}
     setSaving(false); onSchedule({title,date,time});
   }
   return (
@@ -1120,7 +1121,7 @@ function MeetingSetup({onLaunch}:{onLaunch:(cfg:any)=>void}) {
 
   async function handleJoin(){
     setJoining(true);
-    try{const ev={id:`mt-${Date.now()}`,title:title||"Study Session",type:"meeting",date:new Date().toISOString().slice(0,10),startTime:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}),subject,fromMeeting:true};const ex=JSON.parse(localStorage.getItem("gradeup_cal_events_v3")||"[]");localStorage.setItem("gradeup_cal_events_v3",JSON.stringify([...ex,ev]));window.dispatchEvent(new StorageEvent("storage",{key:"gradeup_cal_events_v3"}));}catch{}
+    try{const now=new Date();await createScheduledCalendarEvent({title:title||"Study Session",type:"meeting",date:now.toLocaleDateString("en-CA"),startTime:`${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`,subject});}catch{}
     for(let p=0;p<=100;p+=20){await new Promise(r=>setTimeout(r,180));setJoinProgress(p);}
     setJoining(false);setShowConfirm(false);setJoinProgress(0);
     onLaunch({name,role,mode:"meeting",topic:title||"Study Session",subject,stream,micOn,camOn,invitees,roomId:roomId.current,roomLink,usePasscode,pin:usePasscode?pin:null,enableWaitingRoom:enableWR,selectedTeacher,requiresTeacherApproval:role==="student"&&!!selectedTeacher,addDummies});

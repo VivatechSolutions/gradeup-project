@@ -12,6 +12,7 @@ import englishSubject from "../assets/dashboard/subject-english.png";
 import scienceSubject from "../assets/dashboard/subject-science.png";
 import socialSubject from "../assets/dashboard/subject-social.png";
 import mathsSubject from "../assets/dashboard/subject-maths.png";
+import { useStudySession } from "../hooks/use-study-session";
 
 interface StudentDashboardProps { onStartQuiz: () => void; }
 interface StudentStats {
@@ -201,6 +202,12 @@ export default function StudentDashboard({ onStartQuiz }: StudentDashboardProps)
   const [focusRemaining, setFocusRemaining] = useState(25 * 60);
   const [focusActive, setFocusActive] = useState(false);
   const [heroImageError, setHeroImageError] = useState(false);
+  useStudySession({
+    enabled: focusActive,
+    activityType: "focus",
+    sourceId: `dashboard-focus-${focusMinutes}`,
+    metadata: { title: `${focusMinutes} minute focus session` },
+  });
   const { data: dashboard, isLoading } = useQuery<any>({
     queryKey: ["/api/v1/student/dashboard"],
     queryFn: getStudentDashboard,
@@ -216,14 +223,7 @@ export default function StudentDashboard({ onStartQuiz }: StudentDashboardProps)
   const achievements = dashboard?.achievements || [];
 
   const subjectDist = useMemo(() => {
-    const source = dashboard?.subjectDistribution?.length
-      ? dashboard.subjectDistribution
-      : [
-          { name: "Science", value: Number(stats.completionRate || 72) },
-          { name: "Mathematics", value: Number(stats.averageScore || 58) },
-          { name: "English", value: 64 },
-          { name: "History", value: 40 },
-        ];
+    const source = dashboard?.subjectDistribution || [];
     return source.slice(0, 4).map((item: any, index: number) => ({
       name: item.name || `Subject ${index + 1}`,
       value: Math.max(0, Math.min(100, Number(item.value || 0))),
@@ -231,14 +231,16 @@ export default function StudentDashboard({ onStartQuiz }: StudentDashboardProps)
     }));
   }, [dashboard, stats.averageScore, stats.completionRate]);
 
-  const liveCourses = (recentActivity.length ? recentActivity : [
-    { title: "Photosynthesis in Plants", subject: "Science", unit: "Chapter 6", progressPercent: 72 },
-    { title: "Speed Maths Practice", subject: "Mathematics", unit: "Chapter 4", progressPercent: 58 },
-    { title: "Creative Writing", subject: "English", unit: "Chapter 3", progressPercent: 64 },
-    { title: "Ancient Kingdoms", subject: "History", unit: "Chapter 2", progressPercent: 40 },
-  ]).slice(0, 4);
+  const liveCourses = recentActivity.slice(0, 4);
 
-  const heroCourse = liveCourses[0] || {};
+  const firstUploadedSubject = (librarySubjects || [])[0];
+  const firstUploadedUnit = firstUploadedSubject?.units?.[0];
+  const heroCourse = liveCourses[0] || (firstUploadedSubject ? {
+    title: firstUploadedUnit?.unitTitle || firstUploadedSubject.title,
+    subject: firstUploadedSubject.subject,
+    unit: firstUploadedUnit?.unitLabel,
+    progressPercent: firstUploadedSubject.progressPercent || 0,
+  } : {});
   const heroLibraryBook = useMemo(() => {
     const availableLibrarySubjects: LibrarySubject[] = librarySubjects || [];
     const courseTitle = normalizeLearningText(heroCourse.title);
@@ -259,10 +261,10 @@ export default function StudentDashboard({ onStartQuiz }: StudentDashboardProps)
     ? buildApiUrl(heroLibraryImage)
     : getSubjectFallbackImage(heroCourse.subject);
   const overallProgress = Math.round(Number(stats.completionRate || subjectDist[0]?.value || 0));
-  const streakDays = Number(stats.streakDays || stats.currentLevel || 7);
-  const totalPoints = Number(stats.totalPoints || 1240);
-  const badgesEarned = Number(stats.badgesEarned || achievements.filter((a: any) => a.unlocked).length || 26);
-  const firstName = user?.firstName || "Teny";
+  const streakDays = Number(stats.streakDays || 0);
+  const totalPoints = Number(stats.totalPoints || 0);
+  const badgesEarned = Number(stats.badgesEarned || achievements.filter((a: any) => a.unlocked).length || 0);
+  const firstName = user?.firstName || "Learner";
 
   useEffect(() => {
     if (!focusActive) return;
@@ -288,16 +290,16 @@ export default function StudentDashboard({ onStartQuiz }: StudentDashboardProps)
   const focusLabel = `${String(Math.floor(focusRemaining / 60)).padStart(2, "0")}:${String(focusRemaining % 60).padStart(2, "0")}`;
 
   const goals = [
-    { label: "Study for 60 minutes", value: Math.min(60, Number(stats.studyTimeMinutes || 42)), total: 60, color: "#635bff" },
-    { label: "Complete 10 questions", value: Math.min(10, Number(stats.lessonsCompleted || 6)), total: 10, color: "#12a66a" },
-    { label: "Learn a new concept", value: 1, total: 1, color: "#7e45e8" },
+    { label: "Study for 60 minutes", value: Math.min(60, Number(stats.studyTimeMinutes || 0)), total: 60, color: "#635bff" },
+    { label: "Complete 10 activities", value: Math.min(10, Number(stats.lessonsCompleted || 0)), total: 10, color: "#12a66a" },
+    { label: "Learn a new concept", value: Math.min(1, Number(stats.lessonsCompleted || 0)), total: 1, color: "#7e45e8" },
   ];
 
   const playCards = [
     { title: "Progress", text: "Track your learning", icon: icon.target, bg: "linear-gradient(135deg,#ff5f99,#ff9f54)", action: () => setLocation("/progress") },
     { title: "AI Tutor", text: "Ask Geni anything", icon: icon.chat, bg: "linear-gradient(135deg,#2eb6ff,#2676e8)", action: () => setLocation("/ai-tutor") },
     // { title: "AI Tutor", text: "Ask Geni anything", icon: icon.chat, bg: "linear-gradient(135deg,#00c8e0,#0084f0)", action: () => setLocation("/ai-tutor") },
-    { title: "Book Library", text: "Read and discover", icon: icon.book, bg: "linear-gradient(135deg,#40c95f,#11a48c)", action: () => setLocation("/bookExpanded") },
+    { title: "Book Library", text: "Read and discover", icon: icon.book, bg: "linear-gradient(135deg,#40c95f,#11a48c)", action: () => setLocation("/bookRewamp") },
     { title: "Homework", text: "View your assignments", icon: icon.note, bg: "linear-gradient(135deg,#ff9c1a,#ff6c00)", action: () => setLocation("/homework") },
     { title: "Homework Helper", text: "Get help with tasks", icon: icon.bulb, bg: "linear-gradient(135deg,#8a4fff,#cf4bd8)", action: () => setLocation("/homework-helper") },
     // { title: "Homework Helper", text: "Get help with tasks", icon: icon.bulb, bg: "linear-gradient(135deg,#ff6b8b,#ff8e53)", action: () => setLocation("/homework-helper") },
@@ -307,39 +309,53 @@ export default function StudentDashboard({ onStartQuiz }: StudentDashboardProps)
     { title: "Exams", text: "Prepare and test yourself", icon: icon.quiz, bg: "linear-gradient(135deg,#3b82f6,#6366f1)", action: () => setLocation("/exam-preparation") },
   ];
 
-  const recs = [
-    { type: "Quiz", title: "Maths Speed Test", meta: "10 Questions", icon: icon.abacus, bg: "rgba(35,137,255,.15)", href: "/studio/quiz" },
-    { type: "Watch", title: "Water Cycle Explained", meta: "8:45 min", icon: icon.water, bg: "rgba(0,167,200,.16)", href: "/courses" },
-    { type: "AI Tutor", title: "Why is the sky blue?", meta: "Ask now", icon: icon.bulb, bg: "rgba(255,188,31,.18)", href: "/ai-tutor" },
-    { type: "Read", title: "Positive Thinking", meta: "5 min read", icon: icon.book, bg: "rgba(126,69,232,.14)", href: "/bookExpanded" },
-  ];
+  const recs = (librarySubjects || []).slice(0, 4).map((subject, index) => ({
+    type: subject.progressPercent ? "Continue" : "Start",
+    title: subject.title,
+    meta: `${subject.unitCount} uploaded unit${subject.unitCount === 1 ? "" : "s"}`,
+    icon: icon.book,
+    bg: ["rgba(35,137,255,.15)", "rgba(0,167,200,.16)", "rgba(255,188,31,.18)", "rgba(126,69,232,.14)"][index % 4],
+    href: "/bookRewamp",
+  }));
 
-  const plans = [
-    { time: "09:30 AM", title: "Science revision", meta: "Photosynthesis recap", color: "rgba(39,184,106,.18)" },
-    { time: "11:00 AM", title: "Math practice", meta: "12 quick problems", color: "rgba(35,137,255,.18)" },
-    { time: "04:15 PM", title: "Story session", meta: "Read for 15 minutes", color: "rgba(255,121,31,.18)" },
-  ];
+  const plans = (dashboard?.todayPlan?.items || []).map((item: any, index: number) => ({
+    time: item.startsAt ? new Date(item.startsAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Recommended",
+    title: item.title,
+    meta: item.subject || item.type || item.source,
+    route: item.route || "/calendar",
+    color: ["rgba(39,184,106,.18)", "rgba(35,137,255,.18)", "rgba(255,121,31,.18)"][index % 3],
+  }));
 
-  const skills = [
-    { icon: icon.bulb, name: "Concept Clarity", text: "2 topics ready", bg: "linear-gradient(135deg,#ffe07b,#ff9f54)", href: "/ai-tutor" },
-    { icon: icon.quiz, name: "Fast Recall", text: "10 questions", bg: "linear-gradient(135deg,#8be7ff,#4f9bff)", href: "/studio/quiz" },
-    { icon: icon.pencil, name: "Writing Boost", text: "1 short task", bg: "linear-gradient(135deg,#ff9fc5,#e86b9f)", href: "/homework-helper" },
-  ];
+  const skills = (librarySubjects || []).slice(0, 3).map((subject, index) => ({
+    icon: [icon.bulb, icon.quiz, icon.pencil][index],
+    name: subject.subject,
+    text: `${subject.unitCount} units · ${subject.progressPercent || 0}% complete`,
+    bg: ["linear-gradient(135deg,#ffe07b,#ff9f54)", "linear-gradient(135deg,#8be7ff,#4f9bff)", "linear-gradient(135deg,#ff9fc5,#e86b9f)"][index],
+    href: index === 0 ? "/ai-tutor" : index === 1 ? "/studio/quiz" : "/bookRewamp",
+  }));
 
-  const microWins = [
-    { icon: icon.target, title: "Weak Topic", text: "Practice fractions next", bg: "rgba(255,95,153,.15)", href: "/studio/quiz" },
-    { icon: icon.rocket, title: "Quick Start", text: "One 8 min lesson ready", bg: "rgba(39,184,106,.16)", href: "/courses" },
-  ];
+  const microWins = (librarySubjects || []).slice(0, 2).map((subject, index) => ({
+    icon: index === 0 ? icon.target : icon.rocket,
+    title: subject.progressPercent ? "Continue learning" : "Quick start",
+    text: `${subject.subject}: ${subject.progressPercent || 0}% complete`,
+    bg: index === 0 ? "rgba(255,95,153,.15)" : "rgba(39,184,106,.16)",
+    href: "/bookRewamp",
+  }));
 
-  const subjectCards = [
-    { name: "Tamil", image: tamilSubject, progress: 68, bg: "linear-gradient(135deg,#ffcf5a,#ff7b54)" },
-    { name: "English", image: englishSubject, progress: 64, bg: "linear-gradient(135deg,#6ee7f2,#2389ff)" },
-    { name: "Science", image: scienceSubject, progress: Math.round(Number(stats.completionRate || 72)), bg: "linear-gradient(135deg,#83e76d,#27b86a)" },
-    { name: "Social", image: socialSubject, progress: 54, bg: "linear-gradient(135deg,#b48cff,#7e45e8)" },
-    { name: "Maths", image: mathsSubject, progress: Math.round(Number(stats.averageScore || 58)), bg: "linear-gradient(135deg,#ff9f54,#ff5f99)" },
-  ];
+  const subjectCards = (librarySubjects || []).map((subject, index) => ({
+    name: subject.subject,
+    image: getSubjectFallbackImage(subject.subject),
+    progress: Math.round(Number(subject.progressPercent || 0)),
+    bg: ["linear-gradient(135deg,#ffcf5a,#ff7b54)", "linear-gradient(135deg,#6ee7f2,#2389ff)", "linear-gradient(135deg,#83e76d,#27b86a)", "linear-gradient(135deg,#b48cff,#7e45e8)", "linear-gradient(135deg,#ff9f54,#ff5f99)"][index % 5],
+  }));
 
   const unlockedBadges = achievements.filter((a: any) => a.unlocked).slice(0, 4);
+  const qualifiedDates = new Set((dashboard?.dailyActivity || []).filter((row: any) => row.qualifiesForStudyStreak).map((row: any) => row.localDate));
+  const weekDates = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date();
+    date.setDate(date.getDate() - ((date.getDay() + 6) % 7) + index);
+    return date.toLocaleDateString("en-CA");
+  });
 
   return (
     <>
@@ -375,15 +391,15 @@ export default function StudentDashboard({ onStartQuiz }: StudentDashboardProps)
                 <div className="sd-hero-content">
                   <div className="sd-chip">{icon.book} Continue Learning</div>
                   <h1 className="sd-lesson-title">
-                    <span>{heroCourse.title || "Photosynthesis in Plants"}</span>
+                    <span>{heroCourse.title || "No uploaded lessons yet"}</span>
                     {heroImage ? <img src={heroImage} alt="" className="sd-lesson-title-art" onError={() => setHeroImageError(true)} /> : null}
                   </h1>
-                  <div className="sd-lesson-meta">{heroCourse.subject || "Science"} {heroCourse.unit ? `- ${heroCourse.unit}` : "- Chapter 6"}</div>
+                  <div className="sd-lesson-meta">{heroCourse.subject || "Your uploaded subjects will appear here"} {heroCourse.unit ? `- ${heroCourse.unit}` : ""}</div>
                   <div className="sd-progress-line">
-                    <div className="sd-progress-track"><div className="sd-progress-fill" style={{ width: `${Number(heroCourse.progressPercent || 72)}%` }} /></div>
-                    <div className="sd-progress-text">{Number(heroCourse.progressPercent || 72)}% Completed</div>
+                    <div className="sd-progress-track"><div className="sd-progress-fill" style={{ width: `${Number(heroCourse.progressPercent || 0)}%` }} /></div>
+                    <div className="sd-progress-text">{Number(heroCourse.progressPercent || 0)}% Completed</div>
                   </div>
-                  <Link href="/bookExpanded"><button className="sd-primary-btn">Continue Lesson &gt;</button></Link>
+                  <Link href="/bookRewamp"><button className="sd-primary-btn">Continue Lesson &gt;</button></Link>
                 </div>
                 <div className="sd-hero-panel" aria-hidden>
                   <div className="sd-hero-orbit">
@@ -392,14 +408,14 @@ export default function StudentDashboard({ onStartQuiz }: StudentDashboardProps)
                     ) : null}
                   </div>
                   <div className="sd-hero-stats">
-                    <div className="sd-hero-stat"><b>{Number(heroCourse.progressPercent || 72)}%</b><span>Lesson</span></div>
+                    <div className="sd-hero-stat"><b>{Number(heroCourse.progressPercent || 0)}%</b><span>Lesson</span></div>
                     <div className="sd-hero-stat"><b>{streakDays}d</b><span>Streak</span></div>
                   </div>
                 </div>
               </motion.section>
 
               <section className="sd-snapshot-grid">
-                <motion.button className="sd-studio-card" onClick={() => setLocation("/courses")} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: .08, duration: .36 }} whileTap={{ scale: .97 }}>
+                <motion.button className="sd-studio-card" onClick={() => setLocation("/bookRewamp")} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: .08, duration: .36 }} whileTap={{ scale: .97 }}>
                   <div className="sd-studio-title">Learning Studio</div>
                   <div className="sd-studio-text">Jump back into lessons, videos, reading and homework from one place.</div>
                   <img src={learningIsland} alt="" className="sd-studio-art" />
@@ -417,24 +433,25 @@ export default function StudentDashboard({ onStartQuiz }: StudentDashboardProps)
               <section className="sd-card">
                 <div className="sd-section-head"><h2 className="sd-section-title">Today's Plan</h2><Link href="/calendar" className="sd-link">Open calendar &gt;</Link></div>
                 <div className="sd-plan-grid">
-                  {plans.map((plan, index) => (
-                    <motion.button key={plan.title} className="sd-plan" style={{ "--plan-glow": plan.color } as CSSVars} onClick={() => setLocation("/calendar")} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: .08 + index * .04 }} whileTap={{ scale: .97 }}>
+                  {plans.map((plan: any, index: number) => (
+                    <motion.button key={`${plan.title}-${index}`} className="sd-plan" style={{ "--plan-glow": plan.color } as CSSVars} onClick={() => setLocation(plan.route)} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: .08 + index * .04 }} whileTap={{ scale: .97 }}>
                       <div className="sd-plan-time">{plan.time}</div>
                       <div className="sd-plan-title">{plan.title}</div>
                       <div className="sd-plan-meta">{plan.meta}</div>
                     </motion.button>
                   ))}
+                  {!plans.length && <div className="sd-plan-meta">No scheduled items today. Add one in the calendar.</div>}
                 </div>
               </section>
 
               <section>
-                <div className="sd-section-head"><h2 className="sd-section-title">Your Subjects</h2><Link href="/courses" className="sd-link">View all subjects &gt;</Link></div>
+                <div className="sd-section-head"><h2 className="sd-section-title">Your Subjects</h2><Link href="/bookRewamp" className="sd-link">View all subjects &gt;</Link></div>
                 <div className="sd-subject-grid">
                   {subjectCards.map((subject, index) => (
-                      <motion.button key={subject.name} className="sd-subject" style={{ "--subject-bg": subject.bg, "--delay": `${index * -.22}s` } as CSSVars} onClick={() => setLocation("/courses")} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * .05 }} aria-label={`${subject.name} subject`}>
+                      <motion.button key={subject.name} className="sd-subject" style={{ "--subject-bg": subject.bg, "--delay": `${index * -.22}s` } as CSSVars} onClick={() => setLocation("/bookRewamp")} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * .05 }} aria-label={`${subject.name} subject`}>
                         <div className="sd-subject-name">{subject.name}</div>
                         <div className="sd-subject-visual">
-                          <img src={subject.image} alt="" className="sd-subject-art-img" aria-hidden />
+                          {subject.image ? <img src={subject.image} alt="" className="sd-subject-art-img" aria-hidden /> : null}
                         </div>
                         <div className="sd-subject-footer">
                           <div className="sd-subject-progress">{subject.progress}% ready</div>
@@ -460,9 +477,9 @@ export default function StudentDashboard({ onStartQuiz }: StudentDashboardProps)
                 </div>
               </section>
 
-              <section className="sd-card sd-journey-card"><h2 className="sd-section-title" style={{ marginBottom: 16 }}>Your Learning Journey</h2><div className="sd-journey">{[["Learn", "Understand the topic", "linear-gradient(135deg,#b7f29d,#48c987)", "#168b59", "/courses"], ["Practice", "Solve questions & exercises", "linear-gradient(135deg,#9fe7ff,#4b9bff)", "#2474c9", "/studio/quiz"], ["Test", "Take quizzes & test yourself", "linear-gradient(135deg,#ffd77d,#ff9c52)", "#c56b16", "/exam-preparation"], ["Master", "Score high & earn rewards", "linear-gradient(135deg,#ffb2d1,#e671a4)", "#bf4679", "/progress"]].map(([title, text, bg, color, href], index) => <motion.div className="sd-step" key={title} style={{ "--step-bg": bg, "--step-color": color, "--delay": `${index * -.25}s` } as CSSVars} onClick={() => setLocation(href)} role="link" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setLocation(href); }} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: .1 + index * .05 }} whileHover={{ y: -5 }}><div className="sd-step-num">{index + 1}</div><div><b>{title}</b><span>{text}</span></div></motion.div>)}</div></section>
+              <section className="sd-card sd-journey-card"><h2 className="sd-section-title" style={{ marginBottom: 16 }}>Your Learning Journey</h2><div className="sd-journey">{[["Learn", "Understand the topic", "linear-gradient(135deg,#b7f29d,#48c987)", "#168b59", "/bookRewamp"], ["Practice", "Solve questions & exercises", "linear-gradient(135deg,#9fe7ff,#4b9bff)", "#2474c9", "/studio/quiz"], ["Test", "Take quizzes & test yourself", "linear-gradient(135deg,#ffd77d,#ff9c52)", "#c56b16", "/studio/quiz"], ["Master", "Score high & earn rewards", "linear-gradient(135deg,#ffb2d1,#e671a4)", "#bf4679", "/progress"]].map(([title, text, bg, color, href], index) => <motion.div className="sd-step" key={title} style={{ "--step-bg": bg, "--step-color": color, "--delay": `${index * -.25}s` } as CSSVars} onClick={() => setLocation(href)} role="link" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setLocation(href); }} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: .1 + index * .05 }} whileHover={{ y: -5 }}><div className="sd-step-num">{index + 1}</div><div><b>{title}</b><span>{text}</span></div></motion.div>)}</div></section>
 
-              <section><h2 className="sd-section-title" style={{ marginBottom: 14 }}>Recommended For You</h2><div className="sd-rec-grid">{recs.map((rec, index) => <motion.button className="sd-rec" key={rec.title} style={{ "--rec-bg": rec.bg, "--delay": `${index * -.2}s` } as CSSVars} onClick={() => setLocation(rec.href)} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * .035 }} whileTap={{ scale: .97 }}><div className="sd-rec-type">{rec.type}</div><div className="sd-rec-title">{rec.title}</div><div className="sd-rec-meta">{rec.meta}</div><span className="sd-rec-art" aria-hidden>{rec.icon}</span></motion.button>)}</div></section>
+              <section><h2 className="sd-section-title" style={{ marginBottom: 14 }}>Recommended For You</h2><div className="sd-rec-grid">{recs.map((rec, index) => <motion.button className="sd-rec" key={rec.title} style={{ "--rec-bg": rec.bg, "--delay": `${index * -.2}s` } as CSSVars} onClick={() => setLocation(rec.href)} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * .035 }} whileTap={{ scale: .97 }}><div className="sd-rec-type">{rec.type}</div><div className="sd-rec-title">{rec.title}</div><div className="sd-rec-meta">{rec.meta}</div><span className="sd-rec-art" aria-hidden>{rec.icon}</span></motion.button>)}</div>{!recs.length && <div className="sd-plan-meta">Recommendations will appear when subjects are uploaded.</div>}</section>
             </main>
 
             <aside className="sd-rail">
@@ -475,11 +492,11 @@ export default function StudentDashboard({ onStartQuiz }: StudentDashboardProps)
                 <div className="sd-progress-wrap"><div className="sd-progress-overview"><div className="sd-progress-number"><strong><AnimNum target={overallProgress} suffix="%" /></strong><span>Overall completion</span></div><div className="sd-progress-meter"><span style={{ width: `${overallProgress}%` }} /></div><div className="sd-progress-scale"><span>Starting point</span><b>{overallProgress}% complete</b><span>Goal: 100%</span></div></div><div className="sd-progress-summary"><div className="sd-progress-badge">{icon.rocket} Learning lift-off</div><div className="sd-sub-list">{subjectDist.map((subject: any) => <div className="sd-sub-row" key={subject.name}><div className="sd-sub-row-top"><span><i style={{ width: 8, height: 8, borderRadius: 99, background: subject.color, display: "inline-block" }} />{subject.name}</span><b>{subject.value}%</b></div><div className="sd-sub-mini-track"><span style={{ width: `${subject.value}%`, background: subject.color }} /></div></div>)}</div></div></div>
               </section>
 
-              <section className="sd-card"><div className="sd-section-head"><h2 className="sd-section-title" style={{ fontSize: 20 }}>Streak & Rewards</h2><Link href="/achievements" className="sd-link">View all</Link></div><div className="sd-streak-row">{[[icon.fire, streakDays, "Day Streak"], [icon.star, totalPoints.toLocaleString(), "XP Earned"], [icon.gem, badgesEarned, "Gems"]].map(([ico, num, label]) => <div key={label}><div className="sd-pill-ico" style={{ margin: "0 auto 6px" }}>{ico}</div><div className="sd-streak-num">{num}</div><div className="sd-streak-label">{label}</div></div>)}</div><div className="sd-week">{["M", "T", "W", "T", "F", "S", "S"].map((day, index) => <div key={`${day}-${index}`}><div className="sd-day">{day}</div><div className={`sd-day-dot${index === 6 ? " pending" : ""}`}>{index === 5 ? icon.star : icon.check}</div></div>)}</div></section>
+              <section className="sd-card"><div className="sd-section-head"><h2 className="sd-section-title" style={{ fontSize: 20 }}>Streak & Rewards</h2><Link href="/achievements" className="sd-link">View all</Link></div><div className="sd-streak-row">{[[icon.fire, streakDays, "Day Streak"], [icon.star, totalPoints.toLocaleString(), "XP Earned"], [icon.gem, badgesEarned, "Gems"]].map(([ico, num, label]) => <div key={label}><div className="sd-pill-ico" style={{ margin: "0 auto 6px" }}>{ico}</div><div className="sd-streak-num">{num}</div><div className="sd-streak-label">{label}</div></div>)}</div><div className="sd-week">{["M", "T", "W", "T", "F", "S", "S"].map((day, index) => <div key={`${day}-${index}`}><div className="sd-day">{day}</div><div className={`sd-day-dot${qualifiedDates.has(weekDates[index]) ? "" : " pending"}`}>{qualifiedDates.has(weekDates[index]) ? icon.check : "·"}</div></div>)}</div></section>
 
               <section className="sd-card sd-tip-card"><h2 className="sd-section-title" style={{ fontSize: 20 }}>{icon.bulb} Daily Tip</h2><p>Break big topics into small parts. Understand one step at a time.</p><span className="sd-tip-art" aria-hidden>{icon.bulb}</span></section>
 
-              <section className="sd-card"><div className="sd-section-head"><h2 className="sd-section-title" style={{ fontSize: 20 }}>Latest Badges</h2><Link href="/achievements" className="sd-link">View all &gt;</Link></div><div className="sd-badge-grid">{(unlockedBadges.length ? unlockedBadges : [{ title: "Focus Master" }, { title: "Quiz Whiz" }, { title: "Streak Star" }, { title: "Brainy" }]).map((badge: any, index: number) => <div className="sd-badge" key={badge.id || badge.title}><div className="sd-badge-shape" style={{ background: ["#ff6b35", "#f24b73", "#ffb21d", "#7c4dff"][index % 4] }}>{index === 1 ? "?" : icon.star}</div><div className="sd-badge-name">{badge.title}</div></div>)}</div></section>
+              <section className="sd-card"><div className="sd-section-head"><h2 className="sd-section-title" style={{ fontSize: 20 }}>Latest Badges</h2><Link href="/achievements" className="sd-link">View all &gt;</Link></div><div className="sd-badge-grid">{unlockedBadges.map((badge: any, index: number) => <div className="sd-badge" key={badge.id || badge.title}><div className="sd-badge-shape" style={{ background: ["#ff6b35", "#f24b73", "#ffb21d", "#7c4dff"][index % 4] }}>{icon.star}</div><div className="sd-badge-name">{badge.title}</div></div>)}</div>{!unlockedBadges.length && <div className="sd-plan-meta">Complete activities to unlock your first badge.</div>}</section>
             </aside>
           </div>
         </div>

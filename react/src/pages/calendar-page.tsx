@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import Navigation from "../components/navigation";
+import { createCalendarEvent, deleteCalendarEvent, getCalendarEvents, updateCalendarEvent } from "../lib/gradeupApi";
 
 
 const CSS = `
@@ -572,6 +573,9 @@ const TYPE_CONFIG = {
   debate:  { label:"Debate",  icon:"🎤", color:"#f59e0b", bg:"rgba(245,158,11,.1)"  },
   seminar: { label:"Seminar", icon:"📚", color:"#10b981", bg:"rgba(16,185,129,.1)"  },
   exam:    { label:"Exam",    icon:"📝", color:"#ef4444", bg:"rgba(239,68,68,.1)"   },
+  study:   { label:"Study",   icon:"📖", color:"#8b5cf6", bg:"rgba(139,92,246,.1)" },
+  homework:{ label:"Homework",icon:"✍️", color:"#ec4899", bg:"rgba(236,72,153,.1)" },
+  other:   { label:"Other",   icon:"📌", color:"#64748b", bg:"rgba(100,116,139,.1)" },
   other:   { label:"Other",   icon:"📌", color:"#8b5cf6", bg:"rgba(139,92,246,.1)"  },
 };
 
@@ -650,35 +654,26 @@ function isJoinEnabled(ev, dateStr) {
   return now >= evStart - 10 && now <= evEnd;
 }
 
-// ── Seed Events ──────────────────────────────────────────────────────────────
-function seedEvents() {
-  const today = new Date();
-  const y = today.getFullYear(), m = today.getMonth()+1;
-  const pad = n => String(n).padStart(2,"0");
-  const dt = day => `${y}-${pad(m)}-${pad(day)}`;
-  const td = today.getDate();
-  return [
-    {id:"e1",title:"Biology Lecture",type:"class",date:dt(td),startTime:"09:00",endTime:"10:00",color:"#6366f1",location:"Room 101",attendees:"Grade 10",important:false,markExam:false,notifyEmail:true,emailId:"teacher@school.edu"},
-    {id:"e2",title:"Maths Seminar",type:"seminar",date:dt(td),startTime:"11:00",endTime:"12:30",color:"#10b981",location:"Hall B",attendees:"Grade 11 & 12",important:false,markExam:false,notifyEmail:true,emailId:"teacher@school.edu"},
-    {id:"e3",title:"Physics Debate",type:"debate",date:dt(Math.min(td+1,28)),startTime:"14:00",endTime:"15:30",color:"#f59e0b",description:"Newton vs Einstein",important:true,markExam:false,notifyEmail:false,emailId:""},
-    {id:"e4",title:"Staff Meeting",type:"meeting",date:dt(Math.min(td+1,28)),startTime:"10:00",endTime:"11:00",color:"#0ea5e9",location:"Conference Room",attendees:"All Staff",important:false,markExam:false,notifyEmail:true,emailId:"staff@school.edu"},
-    {id:"e5",title:"Chemistry Exam",type:"exam",date:dt(Math.min(td+3,28)),startTime:"09:00",endTime:"11:00",color:"#ef4444",location:"Exam Hall",attendees:"Grade 12",important:true,markExam:true,notifyEmail:true,emailId:"teacher@school.edu"},
-    {id:"e6",title:"Parent-Teacher Meeting",type:"meeting",date:dt(Math.max(td-1,1)),startTime:"15:00",endTime:"17:00",color:"#0ea5e9",location:"Auditorium",important:false,markExam:false,notifyEmail:false,emailId:""},
-    {id:"e7",title:"History Seminar",type:"seminar",date:dt(Math.min(td+5,28)),startTime:"13:00",endTime:"14:30",color:"#10b981",description:"World War II Analysis",important:false,markExam:false,notifyEmail:false,emailId:""},
-    {id:"e8",title:"English Class",type:"class",date:dt(Math.min(td+2,28)),startTime:"08:00",endTime:"09:00",color:"#6366f1",location:"Room 204",important:false,markExam:false,notifyEmail:false,emailId:""},
-  ];
-}
-
-const LS_KEY = "gradeup_cal_events_v3";
-function loadEvents() {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if(raw) return JSON.parse(raw);
-  } catch(e){}
-  return null;
-}
-function saveEvents(evs) {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(evs)); } catch(e){}
+function apiEventToUi(event) {
+  const startsAt = new Date(event.startsAt);
+  const endsAt = new Date(event.endsAt);
+  const metadata = event.metadata || {};
+  return {
+    id: event._id || event.id,
+    title: event.title,
+    type: event.type,
+    date: toDateStr(startsAt),
+    startTime: `${String(startsAt.getHours()).padStart(2,"0")}:${String(startsAt.getMinutes()).padStart(2,"0")}`,
+    endTime: `${String(endsAt.getHours()).padStart(2,"0")}:${String(endsAt.getMinutes()).padStart(2,"0")}`,
+    color: metadata.color || "#6366f1",
+    description: event.description || "",
+    location: event.location || "",
+    attendees: metadata.attendees || "",
+    important: Boolean(metadata.important),
+    markExam: Boolean(metadata.markExam),
+    notifyEmail: (event.reminderMinutes || []).length > 0,
+    emailId: metadata.emailId || "",
+  };
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -689,7 +684,7 @@ export default function CalendarPage() {
   const [role, setRole] = useState("student");
   const [view, setView] = useState("month");
   const [curDate, setCurDate] = useState(new Date());
-  const [events, setEvents] = useState(() => loadEvents() || seedEvents());
+  const [events, setEvents] = useState([]);
   const [modal, setModal] = useState(false);
   const [editEvt, setEditEvt] = useState(null);
   const [detail, setDetail] = useState(null);
@@ -710,20 +705,10 @@ export default function CalendarPage() {
 
   const setF = (k,v) => setFormState(p=>({...p,[k]:v}));
 
-  // Persist events to localStorage
-  useEffect(()=>{ saveEvents(events); },[events]);
   useEffect(()=>{ try{localStorage.setItem("gradeup_notified",JSON.stringify(notifiedIds));}catch{} },[notifiedIds]);
 
   useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === LS_KEY) {
-        setEvents(loadEvents() || []);
-      }
-    };
-    window.addEventListener("storage", handleStorageChange);
-    return () => {
-      window.removeEventListener("storage", handleStorageChange);
-    };
+    getCalendarEvents().then((data) => setEvents((data || []).map(apiEventToUi))).catch(() => setEvents([]));
   }, []);
 
   // ── Notification checker (runs every 30s) ────────────────────────────────
@@ -737,7 +722,7 @@ export default function CalendarPage() {
         // 1hr before
         const id1h = `${ev.id}-1h`;
         if(ev.date === nowStr && Math.abs(evMins - nowMins - 60) <= 1 && !notifiedIds.includes(id1h)){
-          pushNotif({icon:"📧",title:`Reminder: ${ev.title}`,msg:`Starts in 1 hour at ${formatTime(ev.startTime)}. Email sent to ${ev.emailId}`,urgent:false});
+          pushNotif({icon:"🔔",title:`Reminder: ${ev.title}`,msg:`Starts in 1 hour at ${formatTime(ev.startTime)}.`,urgent:false});
           setEmailModal({ev,type:"1h"});
           setNotifiedIds(p=>[...p,id1h]);
         }
@@ -776,22 +761,39 @@ export default function CalendarPage() {
       important:!!ev.important,markExam:!!ev.markExam,notifyEmail:!!ev.notifyEmail,emailId:ev.emailId||""});
     setEditEvt(ev);setDetail(null);setModal(true);
   }
-  function saveEvent() {
+  async function saveEvent() {
     if(!form.title.trim()) return;
-    const ev = {...form,id:editEvt?editEvt.id:`ev-${Date.now()}`};
-    if(editEvt) {
-      setEvents(es=>es.map(e=>e.id===editEvt.id?ev:e));
-    } else {
-      setEvents(es=>[...es,ev]);
-      if(form.notifyEmail && form.emailId) {
-        pushNotif({icon:"📧",title:"Event Created!",msg:`Notification scheduled for "${form.title}" — email to ${form.emailId}`,urgent:false});
+    const payload = {
+      title: form.title,
+      type: form.type,
+      startsAt: new Date(`${form.date}T${form.startTime}:00`).toISOString(),
+      endsAt: new Date(`${form.date}T${form.endTime}:00`).toISOString(),
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+      description: form.description,
+      location: form.location,
+      reminderMinutes: form.notifyEmail ? [60, 0] : [],
+      metadata: { color: form.color, attendees: form.attendees, important: form.important, markExam: form.markExam, emailId: form.emailId },
+    };
+    try {
+      const saved = editEvt ? await updateCalendarEvent(editEvt.id, payload) : await createCalendarEvent(payload);
+      const ev = apiEventToUi(saved);
+      setEvents(es=>editEvt ? es.map(e=>e.id===editEvt.id?ev:e) : [...es,ev]);
+      if(!editEvt && form.notifyEmail && form.emailId) {
+        pushNotif({icon:"📧",title:"Event Created!",msg:`Reminder scheduled for "${form.title}".`,urgent:false});
       }
+      setModal(false);
+    } catch (error) {
+      pushNotif({icon:"⚠️",title:"Could not save event",msg:error instanceof Error ? error.message : "Please try again.",urgent:true});
     }
-    setModal(false);
   }
-  function deleteEvent(id) {
-    setEvents(es=>es.filter(e=>e.id!==id));
-    setDetail(null);setModal(false);
+  async function deleteEvent(id) {
+    try {
+      await deleteCalendarEvent(id);
+      setEvents(es=>es.filter(e=>e.id!==id));
+      setDetail(null);setModal(false);
+    } catch (error) {
+      pushNotif({icon:"⚠️",title:"Could not delete event",msg:error instanceof Error ? error.message : "Please try again.",urgent:true});
+    }
   }
 
   const visibleEvents = filterType==="all"?events:events.filter(e=>e.type===filterType);

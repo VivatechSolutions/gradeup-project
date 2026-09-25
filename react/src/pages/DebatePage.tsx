@@ -15,6 +15,7 @@ import { useAuth } from "../hooks/use-auth";
 import { useSessionState } from "../hooks/useSessionState";
 import {
   createDebateRoom,
+  createScheduledCalendarEvent,
   completeDebateRoomAiStudent,
   completeDebateRoomOpening,
   endDebate,
@@ -2051,6 +2052,7 @@ function ScheduleDebateModal({ config, onSchedule, onClose }: any) {
         unit: config?.unit || "",
         link: config?.roomLink || "",
       };
+      void createScheduledCalendarEvent(ev).catch(() => undefined);
       const ex = JSON.parse(
         localStorage.getItem("gradeup_cal_events_v3") || "[]",
       );
@@ -8381,6 +8383,7 @@ function DebateSetup({
         subject,
         unit,
       };
+      void createScheduledCalendarEvent(ev).catch(() => undefined);
       const ex = JSON.parse(
         localStorage.getItem("gradeup_cal_events_v3") || "[]",
       );

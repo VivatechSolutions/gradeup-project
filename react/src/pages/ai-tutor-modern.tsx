@@ -107,6 +107,7 @@ import {
 } from "../lib/gradeupApi";
 import { realtimeAudioService } from "../lib/realtimeAudioService";
 import { buildApiUrl } from "../lib/apiBase";
+import { useStudySession } from "../hooks/use-study-session";
 
 // ── Typing Markdown Component ──────────────────────────────────────────────────
 function TypingMarkdown({
@@ -1548,6 +1549,14 @@ export default function AITutorModern() {
         ) || null
       : null;
   const candidateContext = getCandidateContext(userHeader);
+  useStudySession({
+    enabled: view === "tutor" && Boolean(selectedUnitId),
+    activityType: "tutor",
+    subjectGroupKey: selectedSubjectData?.value,
+    unitId: selectedUnitId || undefined,
+    sourceId: currentChatId || selectedUnitId || undefined,
+    metadata: { title: selectedUnit, subject: selectedSubjectData?.label },
+  });
   const filteredChatHistory = chatHistory.filter((chat) => {
     if (selectedSubject === 0) return true;
     if (!chat.subject) return false;

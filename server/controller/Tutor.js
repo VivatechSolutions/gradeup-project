@@ -19,6 +19,19 @@ const compression = require('compression');
 
 const QuestionBank = require("../model/QuestionBank");
 const SubjectMetadata = require("../model/SubjectMetadata");
+const { recordProgress } = require("../services/studentDataService");
+const { recordTrustedResult } = require("../services/activityService");
+
+function resultScore(data = {}) {
+  const rawScore = data.correct_answers ?? data.correctAnswers ?? data.score ?? data.points ?? data.result?.correct_answers;
+  const maximumScore = data.total_questions ?? data.totalQuestions ?? data.total ?? data.max_score ?? data.maxScore ?? data.result?.total_questions;
+  const percentage = data.percentage ?? data.percent ?? data.score_percentage ?? data.result?.percentage;
+  return {
+    rawScore: Number.isFinite(Number(rawScore)) ? Number(rawScore) : null,
+    maximumScore: Number.isFinite(Number(maximumScore)) ? Number(maximumScore) : null,
+    normalizedScore: Number.isFinite(Number(percentage)) ? Number(percentage) : null,
+  };
+}
 async function getQuestionBankByFilters(board, classNumber, subject, year, difficulty) {
   try {
     const filter = {
@@ -126,6 +139,18 @@ const controller = {
         userMessage: req.body.query || req.body.message,
         assistantMessage: assistantText,
       });
+      if (req.studentUser?._id) {
+        await recordProgress({
+          userId: req.studentUser._id,
+          activityType: "tutor",
+          subjectGroupKey: unit.subjectGroupKey || null,
+          unitId: unit._id,
+          status: "in_progress",
+          progressPercent: 0,
+          metadata: { title: unit.unitTitle || unit.unitLabel, subject: unit.subject, conversationId: conversation.conversationId },
+          timezone: req.body.timezone || "UTC",
+        }).catch(() => null);
+      }
 
       return res.status(200).json({
         status: true,
@@ -338,6 +363,24 @@ const controller = {
         },
       });
 
+      if (req.studentUser?._id) {
+        const score = resultScore(data);
+        let unit = null;
+        if (req.body.unitId || req.body.subjectGroupKey) {
+          unit = (await resolveLearningPayload(req.body)).unit;
+        }
+        await recordTrustedResult({
+          userId: req.studentUser._id,
+          activityType: "quiz",
+          sourceId: req.body.quizId || req.body.quiz_id,
+          subjectGroupKey: unit?.subjectGroupKey || req.body.subjectGroupKey || null,
+          unitId: unit?._id || req.body.unitId || null,
+          ...score,
+          timezone: req.get("x-timezone") || "UTC",
+          metadata: { title: unit?.unitTitle || "Quiz", subject: unit?.subject, result: data },
+        }).catch(() => null);
+      }
+
       return res.status(200).json({ status: true, data });
     } catch (error) {
       return res.status(error.statusCode || 500).json({
@@ -409,6 +452,24 @@ const controller = {
           answers: req.body.answers || [],
         },
       });
+
+      if (req.studentUser?._id) {
+        const score = resultScore(data);
+        let unit = null;
+        if (req.body.unitId || req.body.subjectGroupKey) {
+          unit = (await resolveLearningPayload(req.body)).unit;
+        }
+        await recordTrustedResult({
+          userId: req.studentUser._id,
+          activityType: "homework",
+          sourceId: req.body.homeworkId || req.body.homework_id,
+          subjectGroupKey: unit?.subjectGroupKey || req.body.subjectGroupKey || null,
+          unitId: unit?._id || req.body.unitId || null,
+          ...score,
+          timezone: req.get("x-timezone") || "UTC",
+          metadata: { title: unit?.unitTitle || "Homework", subject: unit?.subject, result: data },
+        }).catch(() => null);
+      }
 
       return res.status(200).json({ status: true, data });
     } catch (error) {

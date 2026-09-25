@@ -13,7 +13,7 @@ import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area,
 } from "recharts";
-import { getStudentProgressSummary } from "../lib/gradeupApi";
+import { getStudentLeaderboard, getStudentProgressSummary } from "../lib/gradeupApi";
 
 // ── Assets ────────────────────────────────────────────────────────────────────
 import roboImg from "../assets/robo.png";
@@ -598,6 +598,7 @@ interface ProgressStats {
   weeklyProgress: number;
   monthlyGoal: number;
   completionRate: number;
+  averageScore: number;
   studyTimeMinutes: number;
   rank: number;
   totalUsers: number;
@@ -661,7 +662,7 @@ export default function ProgressPage() {
     {
       id: 1,
       from: "ai",
-      text: "Hi there! 👋 I'm your AI Academic Coach. I've analyzed your performance: your streak is strong and you're close to your next level! What progress insights would you like to review?",
+      text: "Hi! 👋 I can explain the live progress, streak, scores, and rewards shown on this page. What would you like to review?",
     },
   ]);
   const [chatInput, setChatInput] = useState("");
@@ -681,20 +682,25 @@ export default function ProgressPage() {
     queryKey: ["/api/v1/student/progress/summary"],
     queryFn: getStudentProgressSummary,
   });
+  const { data: liveLeaderboard } = useQuery<any>({
+    queryKey: ["/api/v1/student/leaderboard", period],
+    queryFn: () => getStudentLeaderboard(period as "week" | "month" | "all"),
+  });
 
   const stats: ProgressStats = {
-    totalPoints: 2450,
-    currentLevel: 4,
-    pointsToNextLevel: 180,
-    totalLessonsCompleted: 38,
-    streakDays: 8,
-    longestStreak: 14,
-    weeklyProgress: 420,
-    monthlyGoal: 3000,
-    completionRate: 78,
-    studyTimeMinutes: 840,
-    rank: 3,
-    totalUsers: 42,
+    totalPoints: 0,
+    currentLevel: 1,
+    pointsToNextLevel: 500,
+    totalLessonsCompleted: 0,
+    streakDays: 0,
+    longestStreak: 0,
+    weeklyProgress: 0,
+    monthlyGoal: 0,
+    completionRate: 0,
+    averageScore: 0,
+    studyTimeMinutes: 0,
+    rank: 0,
+    totalUsers: 0,
     ...(progressSummary?.stats || {}),
   };
 
@@ -703,16 +709,16 @@ export default function ProgressPage() {
     100
   );
 
-  const achievementsList = [
-    { id: 1, title: "Level 4 Scholar", desc: "Reached academic Level 4", icon: "👑", rarity: "epic", unlocked: true, date: "Yesterday", color: "purple" },
-    { id: 2, title: "7-Day Streak Master", desc: "Maintained a continuous 7-day study streak", icon: "🔥", rarity: "rare", unlocked: true, date: "3 days ago", color: "yellow" },
-    { id: 3, title: "Math Whiz", desc: "Completed 15 Calculus & Algebra exercises", icon: "🧮", rarity: "legendary", unlocked: true, date: "May 12", color: "green" },
-    { id: 4, title: "Early Bird", desc: "Completed a lesson before 8:00 AM", icon: "🌅", rarity: "common", unlocked: true, date: "May 08", color: "blue" },
-    { id: 5, title: "Quiz Conqueror", desc: "Scored 100% on 5 consecutive quizzes", icon: "💯", rarity: "epic", unlocked: false, color: "purple" },
-    { id: 6, title: "Science Explorer", desc: "Mastered all Biology cell organelle modules", icon: "🔬", rarity: "rare", unlocked: false, color: "green" },
-    { id: 7, title: "Night Owl", desc: "Studied for 45 minutes after 9:00 PM", icon: "🦉", rarity: "common", unlocked: false, color: "blue" },
-    { id: 8, title: "Leaderboard Champion", desc: "Reach the #1 Global rank in class", icon: "🏆", rarity: "legendary", unlocked: false, color: "yellow" },
-  ];
+  const achievementsList = (progressSummary?.achievements || []).map((item: any) => ({
+    id: item.id,
+    title: item.title,
+    desc: item.description,
+    icon: item.icon === "Flame" ? "🔥" : item.icon === "Crown" ? "👑" : item.icon === "Clock" ? "⏱️" : item.icon === "Target" ? "🎯" : "🏆",
+    rarity: item.tier === "gold" ? "legendary" : item.tier === "silver" ? "rare" : "common",
+    unlocked: Boolean(item.unlocked),
+    date: item.unlockedAt ? new Date(item.unlockedAt).toLocaleDateString() : undefined,
+    color: item.tier === "gold" ? "yellow" : item.tier === "silver" ? "blue" : "green",
+  }));
 
   const filteredAchievements = achievementsList.filter(a => {
     if (achFilter === "all") return true;
@@ -722,58 +728,47 @@ export default function ProgressPage() {
   });
 
   const progressRows = progressSummary?.progress || [];
-  const history = progressRows.length
-    ? progressRows.slice().reverse().map((item: any) => ({
-        date: item.lastActivityAt ? new Date(item.lastActivityAt).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "Recent",
-        points: Number(item.pointsEarned || 0),
-      }))
-    : [
-        { date: "Mon", points: 140 },
-        { date: "Tue", points: 260 },
-        { date: "Wed", points: 180 },
-        { date: "Thu", points: 340 },
-        { date: "Fri", points: 290 },
-        { date: "Sat", points: 410 },
-        { date: "Sun", points: 380 },
-      ];
+  const dailyActivity = progressSummary?.dailyActivity || [];
+  const history = dailyActivity.slice().reverse().map((item: any) => ({
+    date: new Date(`${item.localDate}T00:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+    points: Number(item.earnedPoints || 0),
+  }));
 
   const subjectPalette = ["#6366f1", "#10b981", "#f59e0b", "#ec4899", "#8b5cf6", "#0ea5e9"];
-  const subjectData = progressSummary?.subjectDistribution?.length
-    ? progressSummary.subjectDistribution.map((item: any, index: number) => ({
+  const subjectData = (progressSummary?.subjectDistribution || []).map((item: any, index: number) => ({
         ...item,
         color: subjectPalette[index % subjectPalette.length],
-      }))
-    : [
-        { name: "Mathematics", value: 35, color: "#6366f1" },
-        { name: "Biology", value: 25, color: "#10b981" },
-        { name: "Physics", value: 20, color: "#ec4899" },
-        { name: "History", value: 12, color: "#8b5cf6" },
-        { name: "Comp. Sci", value: 8, color: "#0ea5e9" },
-      ];
+      }));
 
   const weeklyActivity = Array.from({ length: 7 }, (_, offset) => {
     const date = new Date();
     date.setDate(date.getDate() - (6 - offset));
     const dayName = date.toLocaleDateString(undefined, { weekday: "short" });
-    const defaultMins = [45, 60, 35, 90, 75, 110, 85][offset];
-    return { day: dayName, minutes: defaultMins };
+    const key = date.toLocaleDateString("en-CA");
+    const row = dailyActivity.find((item: any) => item.localDate === key);
+    return { day: dayName, minutes: Math.round(Number(row?.activeSeconds || 0) / 60) };
   });
 
-  const syllabusList = [
-    { name: "Mathematics", pct: 78, cls: "math", color: "#6366f1", chapters: "8/10", art: subjectMathsImg },
-    { name: "Biology",     pct: 64, cls: "bio",  color: "#10b981", chapters: "7/11", art: subjectScienceImg },
-    { name: "History",     pct: 85, cls: "hist", color: "#8b5cf6", chapters: "9/11", art: subjectSocialImg },
-    { name: "Physics",     pct: 48, cls: "phys", color: "#ec4899", chapters: "5/10", art: subjectScienceImg },
-    { name: "Comp. Sci.",  pct: 92, cls: "cs",   color: "#0ea5e9", chapters: "11/12", art: subjectEnglishImg },
-  ];
+  const subjectArt = (name: string) => /math/i.test(name) ? subjectMathsImg : /science|physics|chem/i.test(name) ? subjectScienceImg : /social|history/i.test(name) ? subjectSocialImg : subjectEnglishImg;
+  const syllabusList = (progressSummary?.subjects || []).map((subject: any, index: number) => ({
+    name: subject.subject,
+    pct: Number(subject.progressPercent || 0),
+    cls: `subject-${index}`,
+    color: subjectPalette[index % subjectPalette.length],
+    chapters: `${subject.completedActivities || 0}/${subject.unitCount || 0}`,
+    art: subjectArt(subject.subject),
+  }));
 
-  const leaderboardList = [
-    { id: 1, rank: 1, username: "Elena Vance", points: 3420, level: 5, streak: 16, avatar: "👩‍🎓" },
-    { id: 2, rank: 2, username: "Arjun Mehta", points: 2890, level: 4, streak: 12, avatar: "👨‍💻" },
-    { id: 3, rank: 3, username: user?.username || "You (Scholar)", points: stats.totalPoints, level: stats.currentLevel, streak: stats.streakDays, avatar: "🚀", isMe: true },
-    { id: 4, rank: 4, username: "Sarah Jenkins", points: 2180, level: 4, streak: 6, avatar: "🎨" },
-    { id: 5, rank: 5, username: "Marcus Brody", points: 1940, level: 3, streak: 5, avatar: "⚡" },
-  ];
+  const leaderboardList = (liveLeaderboard?.entries || []).map((entry: any) => ({
+    id: entry.userId,
+    rank: entry.rank,
+    username: entry.name,
+    points: entry.points,
+    level: Math.max(1, Math.floor(Number(entry.points || 0) / 500) + 1),
+    streak: entry.isCurrentUser ? stats.streakDays : null,
+    avatar: entry.isCurrentUser ? "🚀" : "🎓",
+    isMe: entry.isCurrentUser,
+  }));
 
   const triggerLevelUpModal = () => {
     setLvlUp(true);
@@ -788,16 +783,18 @@ export default function ProgressPage() {
     setChatMsgs(prev => [...prev, newMsg]);
 
     setTimeout(() => {
-      let reply = "You're making great strides! Consistency is the number one predictor of academic mastery.";
+      let reply = `Your live report currently shows ${stats.studyTimeMinutes} verified study minutes, ${stats.totalLessonsCompleted} completed activities, and ${stats.totalPoints} XP.`;
       const lower = q.toLowerCase();
       if (lower.includes("streak")) {
         reply = `Your current streak is ${stats.streakDays} days! Study for just 15 minutes today to keep your streak burning hot! 🔥`;
       } else if (lower.includes("subject") || lower.includes("attention")) {
-        reply = "Looking at your mastery map, Physics (48%) has the most room for rapid gains. Try completing one Newton's Laws module today! ⚡";
+        const lowest = syllabusList.slice().sort((a: any, b: any) => a.pct - b.pct)[0];
+        reply = lowest ? `${lowest.name} currently has the lowest completion at ${lowest.pct}%. Continue an uploaded unit in that subject next.` : "No subject progress has been recorded yet. Start an uploaded lesson to build your mastery map.";
       } else if (lower.includes("level") || lower.includes("xp")) {
         reply = `You have ${stats.totalPoints} total XP! Only ${stats.pointsToNextLevel} XP needed to reach Level ${stats.currentLevel + 1}! 🚀`;
       } else if (lower.includes("achievement")) {
-        reply = "You're 2 quizzes away from unlocking the 'Quiz Conqueror' Epic achievement! 💯";
+        const next = achievementsList.find((item: any) => !item.unlocked);
+        reply = next ? `Your next available achievement is “${next.title}”: ${next.desc}` : "You have unlocked every currently configured achievement.";
       }
       setChatMsgs(prev => [...prev, { id: Date.now() + 1, from: "ai", text: reply }]);
     }, 700);
@@ -861,7 +858,7 @@ export default function ProgressPage() {
               {[
                 { n: `Lvl ${stats.currentLevel}`, l: "Level" },
                 { n: `${stats.streakDays}d`, l: "Streak 🔥" },
-                { n: `#${stats.rank}`, l: "Rank 🌍" },
+                { n: stats.rank ? `#${stats.rank}` : "—", l: "Cohort Rank" },
                 { n: stats.totalPoints.toLocaleString(), l: "Total XP" },
               ].map((s, i) => (
                 <div className="pg-hstat" key={i}>
@@ -946,11 +943,11 @@ export default function ProgressPage() {
             <div className="pg-scard-icon">
               <Medal size={20} color="#8b5cf6" />
             </div>
-            <div className="pg-scard-n">#{stats.rank}</div>
-            <div className="pg-scard-l">Global Rank</div>
+            <div className="pg-scard-n">{stats.rank ? `#${stats.rank}` : "—"}</div>
+            <div className="pg-scard-l">Cohort Rank</div>
             <div className="pg-scard-sub sub-purple">
               <Users size={13} color="#8b5cf6" />
-              Top {Math.max(1, Math.round((stats.rank / Math.max(stats.totalUsers, 1)) * 100))}% of all learners
+              {stats.rank ? `Top ${Math.max(1, Math.round((stats.rank / Math.max(stats.totalUsers, 1)) * 100))}% of ${stats.totalUsers} learners` : "Earn XP to enter the ranking"}
             </div>
           </motion.div>
         </div>
@@ -1211,44 +1208,17 @@ export default function ProgressPage() {
                   </div>
 
                   <div className="pg-panel-body">
-                    {/* Top 3 Podium */}
                     <div className="pg-podium-wrap">
-                      {/* 2nd Place */}
-                      <div className="pg-podium-card second">
-                        <span className="pg-podium-badge">🥈</span>
-                        <div className="pg-podium-name">{leaderboardList[1].username}</div>
-                        <div className="pg-podium-pts">
-                          <Star size={13} color="#94a3b8" /> {leaderboardList[1].points.toLocaleString()} XP
+                      {leaderboardList.slice(0, 3).map((entry: any, index: number) => (
+                        <div key={entry.id} className={`pg-podium-card ${index === 0 ? "first" : index === 1 ? "second" : "third"}`}>
+                          <span className="pg-podium-badge">{index === 0 ? "👑 🥇" : index === 1 ? "🥈" : "🥉"}</span>
+                          <div className="pg-podium-name">{entry.username}</div>
+                          <div className="pg-podium-pts"><Star size={13} color={index === 0 ? "#f59e0b" : "#94a3b8"} /> {entry.points.toLocaleString()} XP</div>
+                          <div style={{ fontSize: 11, color: "var(--subtle)", marginTop: 4 }}>Rank #{entry.rank}{entry.streak != null ? ` · ${entry.streak}d streak` : ""}</div>
                         </div>
-                        <div style={{ fontSize: 11, color: "var(--subtle)", marginTop: 4 }}>
-                          {leaderboardList[1].streak}d streak
-                        </div>
-                      </div>
-
-                      {/* 1st Place */}
-                      <div className="pg-podium-card first">
-                        <span className="pg-podium-badge">👑 🥇</span>
-                        <div className="pg-podium-name">{leaderboardList[0].username}</div>
-                        <div className="pg-podium-pts" style={{ color: "#f59e0b" }}>
-                          <Star size={14} color="#f59e0b" /> {leaderboardList[0].points.toLocaleString()} XP
-                        </div>
-                        <div style={{ fontSize: 11, color: "#d97706", fontWeight: 700, marginTop: 4 }}>
-                          Rank #1 · {leaderboardList[0].streak}d streak
-                        </div>
-                      </div>
-
-                      {/* 3rd Place */}
-                      <div className="pg-podium-card third">
-                        <span className="pg-podium-badge">🥉</span>
-                        <div className="pg-podium-name">{leaderboardList[2].username}</div>
-                        <div className="pg-podium-pts">
-                          <Star size={13} color="#f97316" /> {leaderboardList[2].points.toLocaleString()} XP
-                        </div>
-                        <div style={{ fontSize: 11, color: "var(--subtle)", marginTop: 4 }}>
-                          {leaderboardList[2].streak}d streak
-                        </div>
-                      </div>
+                      ))}
                     </div>
+                    {!leaderboardList.length && <div style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No ranked learners in this cohort yet.</div>}
 
                     {/* Ranked List */}
                     <div>
@@ -1271,9 +1241,7 @@ export default function ProgressPage() {
                                 Level {entry.level} Scholar
                               </div>
                             </div>
-                            <div className="pg-lb-streak">
-                              <Flame size={14} /> {entry.streak}d
-                            </div>
+                            {entry.streak != null && <div className="pg-lb-streak"><Flame size={14} /> {entry.streak}d</div>}
                             <div className="pg-lb-pts">
                               <Star size={14} color="#f59e0b" /> {entry.points.toLocaleString()}
                             </div>
@@ -1318,18 +1286,18 @@ export default function ProgressPage() {
                       <div className="pg-panel-head">
                         <div>
                           <div className="pg-panel-title">
-                            <Target size={16} color="#10b981" /> Monthly Learning Goals
+                            <Target size={16} color="#10b981" /> Reward Milestones
                           </div>
-                          <div className="pg-panel-sub">Progress towards your monthly milestones</div>
+                          <div className="pg-panel-sub">Live progress towards configured learning rewards</div>
                         </div>
-                        <span className="pg-topbar-pill">May Cycle</span>
+                        <span className="pg-topbar-pill">Current Cycle</span>
                       </div>
                       <div className="pg-panel-body">
                         {[
-                          { label: "Lessons Completed", current: stats.totalLessonsCompleted, target: 50, color: "#6366f1" },
-                          { label: "Active Study Hours", current: Math.floor(stats.studyTimeMinutes / 60), target: 20, color: "#10b981" },
-                          { label: "Total XP Accumulation", current: stats.totalPoints, target: stats.monthlyGoal, color: "#f59e0b" },
-                          { label: "Overall Accuracy Rate", current: stats.completionRate, target: 100, color: "#8b5cf6" },
+                          { label: "Complete 5 learning activities", current: stats.totalLessonsCompleted, target: 5, color: "#6366f1" },
+                          { label: "60 verified study minutes", current: stats.studyTimeMinutes, target: 60, color: "#10b981" },
+                          { label: "Reach the next XP level", current: stats.totalPoints, target: stats.monthlyGoal, color: "#f59e0b" },
+                          { label: "Quiz Whiz score", current: stats.averageScore, target: 90, color: "#8b5cf6" },
                         ].map((g, i) => {
                           const pct = Math.min(Math.round((g.current / g.target) * 100), 100);
                           return (

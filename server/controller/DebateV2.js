@@ -22,7 +22,7 @@ const {
   normalizeTeamKey,
   normalizeTeams,
 } = require("../services/liveSessionService");
-const { recordProgress } = require("../services/studentDataService");
+const { recordTrustedResult } = require("../services/activityService");
 const {
   assertSessionAccess,
   getRequestStudentContext,
@@ -1242,15 +1242,16 @@ console.log
       await saveFeedback(sessionId, data, data);
       const updatedSession = await completeSession(sessionId);
       if (req.studentUser?._id) {
-        await recordProgress({
+        await recordTrustedResult({
           userId: req.studentUser._id,
           activityType: "debate",
+          sourceId: sessionId,
           subjectGroupKey: liveSession?.subjectGroupKey || null,
           unitId: liveSession?.unitId || null,
-          status: "completed",
           progressPercent: 100,
-          score: updatedSession?.scores?.overall || updatedSession?.scores?.student || null,
+          normalizedScore: updatedSession?.scores?.overall || updatedSession?.scores?.student || null,
           timeSpentMinutes: 15,
+          timezone: req.get("x-timezone") || "UTC",
           metadata: {
             title: liveSession?.topic || "Debate",
             subject: liveSession?.subject,
@@ -1287,15 +1288,16 @@ console.log
       });
       const liveSession = await getSession(sessionId);
       if (req.studentUser?._id) {
-        await recordProgress({
+        await recordTrustedResult({
           userId: req.studentUser._id,
           activityType: "debate",
+          sourceId: sessionId,
           subjectGroupKey: liveSession?.subjectGroupKey || null,
           unitId: liveSession?.unitId || null,
-          status: "completed",
           progressPercent: 100,
-          score: updatedSession?.scores?.overall || updatedSession?.scores?.student || null,
+          normalizedScore: updatedSession?.scores?.overall || updatedSession?.scores?.student || null,
           timeSpentMinutes: 20,
+          timezone: req.get("x-timezone") || "UTC",
           metadata: {
             title: liveSession?.topic || "Team debate",
             subject: liveSession?.subject,

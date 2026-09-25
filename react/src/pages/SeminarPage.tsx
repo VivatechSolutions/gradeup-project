@@ -40,6 +40,7 @@ import { useAuth } from "../hooks/use-auth";
 import { useSessionState } from "../hooks/useSessionState";
 import {
   createSeminarAiDocument,
+  createScheduledCalendarEvent,
   createSeminarRoom,
   deleteSeminarAiDocument,
   endSeminarWithTranscript,
@@ -3208,6 +3209,7 @@ function ScheduleSeminarModal({ config, onSchedule, onClose }) {
         unit: config?.unit || "",
         link: config?.roomLink || "",
       };
+      void createScheduledCalendarEvent(ev).catch(() => undefined);
       const ex = JSON.parse(
         localStorage.getItem("gradeup_cal_events_v3") || "[]",
       );
@@ -4921,6 +4923,7 @@ function SeminarSetup({ onBack, onLaunch }) {
                 link: cfg.roomLink,
               };
               try {
+                void createScheduledCalendarEvent(ev).catch(() => undefined);
                 const ex = JSON.parse(
                   localStorage.getItem("gradeup_cal_events_v3") || "[]",
                 );

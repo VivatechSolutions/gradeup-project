@@ -5,6 +5,7 @@ const {
   getPythonLearningContext,
 } = require("../services/learningContextService");
 const { normalizeTerm } = require("../utils/subjectIdentity");
+const { recordTrustedResult } = require("../services/activityService");
 
 function escapeRegExp(value = "") {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -543,6 +544,21 @@ const controller = {
         path: "/avatar/end",
         data: { session_id: sessionId },
       });
+
+      if (req.studentUser?._id && req.body.completed === true && req.body.unitId) {
+        const unit = await resolveSubjectUnit({ unitId: req.body.unitId });
+        const score = data?.percentage ?? data?.score_percentage ?? data?.score ?? null;
+        await recordTrustedResult({
+          userId: req.studentUser._id,
+          activityType: "avatar",
+          sourceId: sessionId,
+          subjectGroupKey: unit.subjectGroupKey || req.body.subjectGroupKey || null,
+          unitId: unit._id,
+          normalizedScore: Number.isFinite(Number(score)) ? Number(score) : null,
+          timezone: req.get("x-timezone") || "UTC",
+          metadata: { title: unit.unitTitle || unit.unitLabel, subject: unit.subject, result: data },
+        }).catch(() => null);
+      }
 
       return res.status(200).json({ status: true, data });
     } catch (error) {

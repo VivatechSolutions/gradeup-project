@@ -1303,6 +1303,8 @@ const QuizPage = ({ params }: { params?: { id?: string } }) => {
         const response = await submitQuiz({
           quizId: quizSessionId,
           candidateId: candidate.candidateId,
+          unitId: quizConfig?.unitId,
+          subjectGroupKey: quizConfig?.subjectId,
           answers: submissionAnswers,
         });
         console.log("Quiz submission response:", response);

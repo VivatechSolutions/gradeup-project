@@ -54,6 +54,7 @@ import {
   generateAvatarFlashcard,
   resumeAvatarSession,
   endAvatarSession,
+  recordStudentProgress,
   type LibrarySubject,
 } from "../../lib/gradeupApi";
 import { buildApiUrl } from "../../lib/apiBase";
@@ -67,6 +68,7 @@ import studyRoboImg from "../../assets/dashboard/study-robo.png";
 import maleTeacherGif from "../../assets/male-teacher.gif";
 import femaleTeacherGif from "../../assets/female-teacher.gif";
 import { SlideContainer } from "./InteractiveSlides/SlideContainer";
+import { useStudySession } from "../../hooks/use-study-session";
 
 const BOOK_SUBJECT_ART: Record<string, string> = {
   tamil: tamilSubject,
@@ -4609,6 +4611,14 @@ const BookContentWindowRewamp = () => {
     };
   }, [selectedBook]);
   const [activeChapter, setActiveChapter] = useState<any>(null);
+  useStudySession({
+    enabled: Boolean(selectedBook && activeChapter && !activeChapter.isUnitIntro),
+    activityType: "book_view",
+    subjectGroupKey: selectedBook?.id,
+    unitId: activeChapter?.id,
+    sourceId: activeChapter?.id,
+    metadata: { title: activeChapter?.title, subject: selectedBook?.subject },
+  });
   const [isTocView, setIsTocView] = useState(false);
   const [isFocus, setIsFocus] = useState(false);
   const [isQuizOpen, setIsQuizOpen] = useState(false);
@@ -5653,6 +5663,20 @@ const BookContentWindowRewamp = () => {
   }, [safeSpreadIndex, displayChapter?.id]);
 
   useEffect(() => {
+    if (!selectedBook || !displayChapter || displayChapter.isUnitIntro || !readerPages.length) return;
+    const viewedPages = Math.min(readerPages.length, visiblePageEndIndex + 1);
+    const progressPercent = Math.round((viewedPages / readerPages.length) * 100);
+    void recordStudentProgress({
+      activityType: "book_view",
+      subjectGroupKey: selectedBook.id,
+      unitId: String(displayChapter.id),
+      status: progressPercent >= 100 ? "completed" : "in_progress",
+      progressPercent,
+      metadata: { title: displayChapter.title, subject: selectedBook.subject },
+    }).catch(() => undefined);
+  }, [selectedBook?.id, displayChapter?.id, safeSpreadIndex, readerPages.length, visiblePageEndIndex]);
+
+  useEffect(() => {
     return () => {
       if (typeof window !== "undefined" && window.speechSynthesis) {
         window.speechSynthesis.cancel();
@@ -5977,7 +6001,7 @@ const BookContentWindowRewamp = () => {
     if (!avatarSessionId || avatarEndCalledRef.current) return;
     avatarEndCalledRef.current = true;
     try {
-      await endAvatarSession({ sessionId: avatarSessionId });
+      await endAvatarSession({ sessionId: avatarSessionId, unitId: activeChapter?.id, subjectGroupKey: selectedBook?.id, completed: true });
     } catch (error: any) {
       setAvatarError(
         error?.message || "Unable to end the avatar session cleanly.",
@@ -6196,7 +6220,7 @@ const BookContentWindowRewamp = () => {
     ) {
       avatarEndCalledRef.current = true;
       try {
-        await endAvatarSession({ sessionId: avatarSessionId });
+        await endAvatarSession({ sessionId: avatarSessionId, unitId: activeChapter?.id, subjectGroupKey: selectedBook?.id, completed: false });
       } catch {}
     }
     setAvatarStatus("idle");

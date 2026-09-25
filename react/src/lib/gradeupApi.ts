@@ -47,6 +47,9 @@ export type LibrarySubject = {
   part?: string | null;
   term?: string | null;
   unitCount: number;
+  progressPercent?: number;
+  completedActivities?: number;
+  averageScore?: number | null;
   visual?: {
     iconKey?: string;
     colorKey?: string;
@@ -65,6 +68,7 @@ async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: {
       ...(isFormDataBody ? {} : { "Content-Type": "application/json" }),
+      "x-timezone": browserTimezone(),
       ...(init?.headers || {}),
     },
     credentials: "include",
@@ -125,15 +129,100 @@ export async function getStudentBooks() {
 }
 
 export async function getStudentDashboard() {
-  return apiFetch<any>("/api/v1/student/dashboard");
+  return apiFetch<any>(`/api/v1/student/dashboard?timezone=${encodeURIComponent(browserTimezone())}`);
 }
 
 export async function getStudentProgressSummary() {
-  return apiFetch<any>("/api/v1/student/progress/summary");
+  return apiFetch<any>(`/api/v1/student/progress/summary?timezone=${encodeURIComponent(browserTimezone())}`);
 }
 
 export async function getStudentAchievements() {
-  return apiFetch<any[]>("/api/v1/student/achievements");
+  return apiFetch<any[]>(`/api/v1/student/achievements?timezone=${encodeURIComponent(browserTimezone())}`);
+}
+
+function browserTimezone() {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
+
+export async function checkInStudent() {
+  return apiFetch<any>("/api/v1/student/activity/check-in", {
+    method: "POST",
+    body: JSON.stringify({ timezone: browserTimezone() }),
+  });
+}
+
+export async function startStudySession(payload: {
+  activityType: string;
+  subjectGroupKey?: string;
+  bookId?: string;
+  unitId?: string;
+  sourceId?: string;
+  metadata?: any;
+}) {
+  return apiFetch<any>("/api/v1/student/activity-sessions", {
+    method: "POST",
+    body: JSON.stringify({ ...payload, timezone: browserTimezone() }),
+  });
+}
+
+export async function heartbeatStudySession(sessionId: string, payload: { sequence: number; active: boolean; visible: boolean }) {
+  return apiFetch<any>(`/api/v1/student/activity-sessions/${encodeURIComponent(sessionId)}/heartbeat`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function completeStudySession(sessionId: string, metadata?: any) {
+  return apiFetch<any>(`/api/v1/student/activity-sessions/${encodeURIComponent(sessionId)}/complete`, {
+    method: "POST",
+    body: JSON.stringify({ metadata }),
+  });
+}
+
+export async function getStudentLeaderboard(period: "week" | "month" | "all" = "week") {
+  return apiFetch<any>(`/api/v1/student/leaderboard?period=${period}`);
+}
+
+export async function getCalendarEvents(from?: string, to?: string) {
+  const params = new URLSearchParams();
+  if (from) params.set("from", from);
+  if (to) params.set("to", to);
+  return apiFetch<any[]>(`/api/v1/student/calendar/events${params.size ? `?${params}` : ""}`);
+}
+
+export async function createCalendarEvent(payload: any) {
+  return apiFetch<any>("/api/v1/student/calendar/events", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function createScheduledCalendarEvent(payload: { title: string; type: string; date: string; startTime: string; subject?: string; unit?: string; link?: string }) {
+  const timeMatch = payload.startTime.trim().match(/^(\d{1,2}):(\d{2})(?:\s*([AP]M))?$/i);
+  let hours = Number(timeMatch?.[1] || 0);
+  const minutes = Number(timeMatch?.[2] || 0);
+  const meridiem = timeMatch?.[3]?.toUpperCase();
+  if (meridiem === "PM" && hours < 12) hours += 12;
+  if (meridiem === "AM" && hours === 12) hours = 0;
+  const normalizedTime = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  const startsAt = new Date(`${payload.date}T${normalizedTime}:00`);
+  if (Number.isNaN(startsAt.valueOf())) throw new Error("Invalid calendar event time");
+  const endsAt = new Date(startsAt.getTime() + 60 * 60 * 1000);
+  return createCalendarEvent({
+    title: payload.title,
+    type: payload.type,
+    startsAt: startsAt.toISOString(),
+    endsAt: endsAt.toISOString(),
+    timezone: browserTimezone(),
+    description: [payload.subject, payload.unit].filter(Boolean).join(" · "),
+    location: payload.link || "",
+    metadata: { subject: payload.subject, unit: payload.unit, joinUrl: payload.link },
+  });
+}
+
+export async function updateCalendarEvent(eventId: string, payload: any) {
+  return apiFetch<any>(`/api/v1/student/calendar/events/${encodeURIComponent(eventId)}`, { method: "PATCH", body: JSON.stringify(payload) });
+}
+
+export async function deleteCalendarEvent(eventId: string) {
+  return apiFetch<void>(`/api/v1/student/calendar/events/${encodeURIComponent(eventId)}`, { method: "DELETE" });
 }
 
 export async function recordStudentProgress(payload: {
@@ -143,13 +232,11 @@ export async function recordStudentProgress(payload: {
   unitId?: string;
   status?: string;
   progressPercent?: number;
-  score?: number;
-  timeSpentMinutes?: number;
   metadata?: any;
 }) {
   return apiFetch<any>("/api/v1/student/progress/content", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, timezone: browserTimezone() }),
   });
 }
 export async function getLibrarySubjectDetail(
@@ -266,6 +353,8 @@ export async function generateQuiz(payload: {
 export async function submitQuiz(payload: {
   quizId: string;
   candidateId: string;
+  unitId?: string;
+  subjectGroupKey?: string;
   answers: Array<{ question_id: string; answer: string }>;
 }) {
   return apiFetch<any>("/api/v1/tutor/quiz/submit", {
@@ -303,6 +392,8 @@ export async function assignHomework(payload: {
 export async function submitHomework(payload: {
   homeworkId: string;
   candidateId: string;
+  unitId?: string;
+  subjectGroupKey?: string;
   answers: Array<{ question_id: string; answer: string }>;
 }) {
   return apiFetch<any>("/api/v1/tutor/homework/submit", {
@@ -1106,7 +1197,7 @@ export async function resumeAvatarSession(payload: { sessionId: string }) {
   });
 }
 
-export async function endAvatarSession(payload: { sessionId: string }) {
+export async function endAvatarSession(payload: { sessionId: string; unitId?: string; subjectGroupKey?: string; completed?: boolean }) {
   return apiFetch<any>("/api/v1/avatar/end", {
     method: "POST",
     body: JSON.stringify(payload),

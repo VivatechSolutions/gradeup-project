@@ -64,7 +64,7 @@ const BookGallery: React.FC = () => {
         variant: "destructive",
       });
     } finally {
-      setLocation(`/bookExpanded?book=${encodeURIComponent(book.id)}`);
+      setLocation(`/bookRewamp?book=${encodeURIComponent(book.id)}`);
     }
   };
 
