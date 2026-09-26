@@ -26,6 +26,7 @@ import {
 } from "./debateMockApi";
 import { useAuth } from "../hooks/use-auth";
 import robotWaving from "../assets/dashboard/15_robot_waving.png";
+import roboImg from "../assets/robo.png";
 
 /**
  * ─────────────────────────────────────────────────────────────────────────
@@ -191,50 +192,617 @@ select.finput{cursor:pointer;appearance:none;background-image:url("data:image/sv
 .debate-loader-bar{height:5px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}
 .debate-loader-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,#6366f1,#8b5cf6,#ec4899);transition:width .35s ease}
 
-/* ── HISTORY SCREEN ────────────────────────────────────────────────────── */
-.dp-history{height:100dvh;overflow-y:auto;background:var(--bg)}
-.hist-hero{background:#060c1a;position:relative;overflow:hidden;padding:clamp(24px,4vw,44px) clamp(18px,4vw,48px) clamp(30px,5vw,54px)}
-.hist-hero-orbs{position:absolute;inset:0;pointer-events:none}
-.hist-hero .dp-orb1{width:320px;height:320px;background:radial-gradient(circle,rgba(99,102,241,.18) 0%,transparent 70%);top:-100px;left:-60px;position:absolute;border-radius:50%;animation:orbFloat 9s ease-in-out infinite}
-.hist-hero .dp-orb2{width:220px;height:220px;background:radial-gradient(circle,rgba(236,72,153,.14) 0%,transparent 70%);top:-40px;right:-40px;position:absolute;border-radius:50%;animation:orbFloat 11s ease-in-out infinite reverse}
-.hist-hero-inner{position:relative;z-index:2;max-width:1180px;margin:0 auto;display:flex;align-items:flex-end;justify-content:space-between;gap:18px;flex-wrap:wrap}
-.hist-logo{display:flex;align-items:center;gap:8px;margin-bottom:14px}
-.hist-logo-ico{width:32px;height:32px;background:var(--grad);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:15px;box-shadow:0 6px 18px rgba(99,102,241,.38)}
-.hist-logo-name{font-size:14px;font-weight:800;background:linear-gradient(90deg,#fff,var(--ind3));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.hist-h1{font-size:clamp(20px,3vw,32px);font-weight:900;letter-spacing:-.6px;color:#fff;margin-bottom:6px}
-.hist-h1 .gt{background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.hist-p{font-size:12.5px;color:rgba(255,255,255,.45);max-width:460px;line-height:1.7}
-.hist-new-btn{flex-shrink:0;padding:13px 22px;border-radius:15px;border:none;cursor:pointer;background:var(--grad);color:#fff;font-size:13.5px;font-weight:800;display:inline-flex;align-items:center;gap:9px;box-shadow:0 8px 26px rgba(99,102,241,.34);transition:all .22s;font-family:var(--font)}
-.hist-new-btn:hover{transform:translateY(-2px);box-shadow:0 12px 32px rgba(99,102,241,.44)}
-.hist-new-ico{width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
+/* ── TEACHER DASHBOARD ANIMATIONS & PARTICLES ─────────────────────────── */
+@keyframes sdFloatBg{from{transform:translate3d(0,0,0) scale(1)}to{transform:translate3d(22px,28px,0) scale(1.08)}}
+@keyframes sdCardIn{from{opacity:0;transform:translateY(12px) scale(.985)}to{opacity:1;transform:none}}
+@keyframes sdShine{0%{transform:translateX(-120%) rotate(18deg)}45%,100%{transform:translateX(220%) rotate(18deg)}}
+@keyframes sdBreathe{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+@keyframes sdPulseSoft{0%,100%{box-shadow:0 0 0 0 rgba(16,185,129,.35)}50%{box-shadow:0 0 0 8px rgba(16,185,129,0)}}
+@keyframes sdDrift{0%,100%{transform:translate3d(0,0,0) rotate(0)}50%{transform:translate3d(18px,-14px,0) rotate(7deg)}}
+@keyframes sdPop3d{0%,100%{transform:translateY(0) rotate(-2deg) scale(1)}50%{transform:translateY(-7px) rotate(3deg) scale(1.05)}}
+@keyframes sdWiggle{0%,100%{transform:rotate(0) scale(1)}35%{transform:rotate(-3deg) scale(1.03)}70%{transform:rotate(3deg) scale(1.03)}}
+@keyframes sdProgressSweep{0%{transform:translateX(-120%) skewX(-20deg)}100%{transform:translateX(220%) skewX(-20deg)}}
 
-.hist-body{max-width:1180px;margin:0 auto;padding:clamp(18px,3vw,32px) clamp(18px,4vw,48px) 60px}
-.hist-stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}
-.hist-stat{background:var(--surf);border:1px solid var(--bdr);border-radius:16px;padding:14px 16px;box-shadow:var(--sh)}
-.hist-stat-val{font-size:22px;font-weight:900;color:var(--t1)}
-.hist-stat-lbl{font-size:10.5px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-top:2px}
-.hist-section-title{font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--t3);margin-bottom:12px;display:flex;align-items:center;gap:8px}
-.hist-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px}
-.hist-card{background:var(--surf);border:1px solid var(--bdr);border-radius:18px;padding:16px;box-shadow:var(--sh);display:flex;flex-direction:column;gap:10px;transition:all .22s;animation:fadeUp .4s ease both}
-.hist-card:hover{transform:translateY(-3px);box-shadow:var(--sh2);border-color:rgba(99,102,241,.25)}
-.hist-card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
-.hist-mode-badge{padding:3px 9px;border-radius:20px;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;flex-shrink:0}
-.hist-mode-badge.ai{background:rgba(139,92,246,.12);color:var(--vio);border:1px solid rgba(139,92,246,.24)}
-.hist-mode-badge.multi{background:rgba(56,189,248,.12);color:#0284c7;border:1px solid rgba(56,189,248,.28)}
-.dark .hist-mode-badge.multi{color:var(--sky)}
-.hist-date{font-size:10.5px;color:var(--t3);font-weight:600;white-space:nowrap}
-.hist-topic{font-size:13.5px;font-weight:800;color:var(--t1);line-height:1.45}
-.hist-meta-row{display:flex;gap:6px;flex-wrap:wrap}
-.hist-chip{padding:3px 9px;border-radius:20px;font-size:10px;font-weight:700;background:var(--surf3);color:var(--t2)}
-.hist-score-row{display:flex;align-items:center;justify-content:space-between;padding-top:8px;border-top:1px solid var(--bdr)}
-.hist-score-val{font-size:19px;font-weight:900;color:var(--ind)}
-.hist-score-lbl{font-size:10px;color:var(--t3);font-weight:700}
-.hist-winner-pill{padding:4px 10px;border-radius:20px;font-size:10.5px;font-weight:800}
-.hist-winner-pill.a{background:rgba(99,102,241,.12);color:#4f46e5}
-.hist-winner-pill.b{background:rgba(236,72,153,.12);color:#db2777}
-.hist-empty{text-align:center;padding:60px 20px;color:var(--t3)}
-.hist-empty-ico{font-size:40px;margin-bottom:12px}
-.hist-loading{display:flex;align-items:center;justify-content:center;gap:10px;color:var(--t2);padding:40px 0;font-weight:700;font-size:13px}
+/* ── HISTORY SCREEN (Teacher Dashboard Aesthetic & Colors) ─────────────── */
+.dp-history{
+  height:100%;
+  min-height:100%;
+  flex:1;
+  overflow-y:auto;
+  overflow-x:hidden;
+  padding:clamp(16px,2.5vw,26px) clamp(16px,3vw,34px) 60px;
+  font-family:'Plus Jakarta Sans',system-ui,sans-serif;
+  color:var(--sd-ink);
+  background:radial-gradient(circle at 14% 9%,rgba(14,165,233,.08),transparent 28%),
+             radial-gradient(circle at 88% 14%,rgba(255,171,64,.12),transparent 26%),
+             radial-gradient(circle at 50% 60%,rgba(16,185,129,.05),transparent 42%),
+             linear-gradient(180deg,var(--sd-page,#fbfcff),var(--sd-page-2,#f5f7ff));
+  --sd-page:#fbfcff;--sd-page-2:#f5f7ff;--sd-card:#ffffff;--sd-card-soft:#f7faff;
+  --sd-ink:#071235;--sd-muted:#68708a;--sd-faint:#8c94aa;
+  --sd-line:rgba(15,23,42,.08);
+  --sd-shadow:0 14px 34px rgba(35,44,87,.10);
+  --sd-shadow-soft:0 8px 20px rgba(35,44,87,.07);
+  position:relative;
+  box-sizing:border-box;
+}
+
+[data-theme="dark"] .dp-history,
+.dark .dp-history{
+  --sd-page:#080d1f;--sd-page-2:#10172d;
+  --sd-card:rgba(23,31,58,.92);--sd-card-soft:rgba(31,42,76,.72);
+  --sd-ink:#f6f7ff;--sd-muted:#b5bfd8;--sd-faint:#7f8aa7;
+  --sd-line:rgba(255,255,255,.12);
+  --sd-shadow:0 20px 54px rgba(0,0,0,.45);
+  --sd-shadow-soft:0 12px 30px rgba(0,0,0,.30);
+  background:radial-gradient(circle at 14% 9%,rgba(35,137,255,.14),transparent 28%),
+             radial-gradient(circle at 88% 14%,rgba(255,107,74,.10),transparent 26%),
+             radial-gradient(circle at 50% 60%,rgba(16,185,129,.08),transparent 42%),
+             linear-gradient(180deg,var(--sd-page),var(--sd-page-2));
+}
+
+.dh-bg-spark{position:absolute;pointer-events:none;z-index:0;border-radius:999px;opacity:.55;animation:sdDrift 9s ease-in-out infinite}
+.dh-bg-spark.s1{left:48%;top:64px;width:9px;height:9px;background:#ffb21d;box-shadow:34px 28px 0 #27b86a,76px -14px 0 #2389ff}
+.dh-bg-spark.s2{right:6%;top:280px;width:8px;height:8px;background:#ff4d8d;box-shadow:-48px 46px 0 #2563eb,-86px -18px 0 #00c6ff;animation-delay:-3s}
+.dh-bg-spark.s3{left:5%;bottom:180px;width:8px;height:8px;background:#27b86a;box-shadow:42px -34px 0 #ff791f,92px 18px 0 #0ea5e9;animation-delay:-5s}
+
+.dh-shell{max-width:1200px;margin:0 auto;position:relative;z-index:1;display:flex;flex-direction:column;gap:18px}
+
+/* ── HERO BANNER (Teacher Dashboard Aesthetic + Robo Mascot + NO PURPLE AI GRADIENT) ── */
+.dh-hero{
+  position:relative;overflow:hidden;border-radius:22px;padding:clamp(20px,3.2vw,28px) clamp(20px,3.8vw,32px);
+  display:grid;grid-template-columns:minmax(0,1fr) 250px;align-items:center;gap:22px;
+  background:linear-gradient(118deg,#dff5ff 0%,#eef2ff 48%,#fff1d6 100%);
+  border:1px solid rgba(35,137,255,.22);
+  box-shadow:0 16px 36px rgba(35,44,87,.09);
+  animation:sdCardIn .45s both;
+}
+.dh-hero::before{
+  content:"";position:absolute;inset:-60px auto auto -60px;width:220px;height:220px;border-radius:50%;
+  background:rgba(255,255,255,.5);animation:sdBreathe 5.5s ease-in-out infinite;pointer-events:none;
+}
+.dh-hero::after{
+  content:"";position:absolute;top:-50px;bottom:-50px;width:80px;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.45),transparent);
+  animation:sdShine 7.5s ease-in-out infinite;pointer-events:none;
+}
+[data-theme="dark"] .dh-hero,
+.dark .dh-hero{
+  background:linear-gradient(118deg,#0e1e38 0%,#17224d 50%,#2e2316 100%);
+  border-color:rgba(56,189,248,.28);
+  box-shadow:0 20px 48px rgba(0,0,0,.55);
+}
+[data-theme="dark"] .dh-hero::before,
+.dark .dh-hero::before{background:rgba(56,189,248,.09)}
+
+.dh-hero-content{position:relative;z-index:2;max-width:640px}
+.dh-chip{
+  display:inline-flex;align-items:center;gap:8px;font-size:11.5px;font-weight:800;padding:5px 13px;border-radius:999px;
+  background:rgba(16,185,129,.14);color:#0f766e;border:1px solid rgba(16,185,129,.28);backdrop-filter:blur(8px);
+}
+[data-theme="dark"] .dh-chip,
+.dark .dh-chip{background:rgba(16,185,129,.20);color:#6ee7b7;border-color:rgba(110,231,183,.32)}
+
+.dh-hero-title{
+  font-size:clamp(22px,2.8vw,32px);line-height:1.2;font-weight:900;letter-spacing:-0.02em;margin:12px 0 8px;color:var(--sd-ink);
+}
+[data-theme="dark"] .dh-hero-title,
+.dark .dh-hero-title{color:#ffffff}
+.dh-hero-title .dh-highlight{
+  background:linear-gradient(135deg,#0284c7,#059669);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+}
+[data-theme="dark"] .dh-hero-title .dh-highlight,
+.dark .dh-hero-title .dh-highlight{
+  background:linear-gradient(135deg,#38bdf8,#34d399);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+}
+.dh-hero-sub{
+  font-size:13px;line-height:1.6;font-weight:600;color:var(--sd-muted);max-width:560px;
+}
+.dh-hero-actions{
+  display:flex;align-items:center;gap:12px;margin-top:18px;flex-wrap:wrap;
+}
+
+/* Emerald Primary Launch Button - NO PURPLE AI GRADIENT */
+.dh-btn-emerald{
+  border:0;border-radius:14px;padding:11px 22px;min-height:42px;
+  background:linear-gradient(135deg,#059669,#10b981);color:#ffffff;
+  font-family:inherit;font-size:13px;font-weight:800;cursor:pointer;
+  box-shadow:0 10px 24px rgba(16,185,129,.35);
+  display:inline-flex;align-items:center;gap:8px;
+  transition:transform .2s ease,box-shadow .2s ease;
+}
+.dh-btn-emerald:hover{
+  transform:translateY(-2px) scale(1.02);
+  box-shadow:0 14px 30px rgba(16,185,129,.48);
+}
+.dh-btn-glass{
+  border:1px solid rgba(15,23,42,.12);border-radius:14px;padding:10px 18px;min-height:42px;
+  background:rgba(255,255,255,.85);backdrop-filter:blur(10px);color:var(--sd-ink);
+  font-family:inherit;font-size:12.5px;font-weight:800;cursor:pointer;
+  display:inline-flex;align-items:center;gap:7px;
+  box-shadow:0 4px 14px rgba(35,44,87,.06);
+  transition:transform .2s ease,background .2s ease,border-color .2s ease;
+}
+.dh-btn-glass:hover{
+  transform:translateY(-2px);background:rgba(255,255,255,.98);border-color:rgba(35,137,255,.35);
+}
+[data-theme="dark"] .dh-btn-glass,
+.dark .dh-btn-glass{
+  background:rgba(255,255,255,.10);border-color:rgba(255,255,255,.18);color:#f6f7ff;
+}
+[data-theme="dark"] .dh-btn-glass:hover,
+.dark .dh-btn-glass:hover{
+  background:rgba(255,255,255,.16);border-color:rgba(56,189,248,.38);
+}
+
+/* Hero Mascot Showcase Panel */
+.dh-hero-panel{
+  position:relative;z-index:2;border-radius:20px;padding:14px;
+  background:rgba(255,255,255,.62);border:1px solid rgba(255,255,255,.85);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.8),0 18px 36px rgba(38,57,116,.14);
+  overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  min-height:196px;
+}
+[data-theme="dark"] .dh-hero-panel,
+.dark .dh-hero-panel{
+  background:rgba(15,23,42,.42);border-color:rgba(255,255,255,.14);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 20px 40px rgba(0,0,0,.45);
+}
+.dh-hero-panel::before{
+  content:"";position:absolute;right:-24px;top:-24px;width:110px;height:110px;border-radius:50%;
+  background:rgba(35,137,255,.2);animation:sdBreathe 4.8s ease-in-out infinite;pointer-events:none;
+}
+.dh-hero-panel::after{
+  content:"";position:absolute;left:-28px;bottom:-32px;width:120px;height:120px;border-radius:50%;
+  background:rgba(255,178,29,.22);animation:sdDrift 7.5s ease-in-out infinite;pointer-events:none;
+}
+.dh-robo-art-wrap{
+  position:relative;z-index:2;width:120px;height:120px;display:grid;place-items:center;
+}
+.dh-robo-art{
+  width:114px;height:114px;object-fit:contain;
+  filter:drop-shadow(0 14px 18px rgba(38,57,116,.24));
+  animation:sdPop3d 4.2s ease-in-out infinite;
+}
+.dh-hero-mini-status{
+  position:relative;z-index:2;display:flex;flex-direction:column;gap:5px;width:100%;margin-top:8px;
+}
+.dh-mini-status-chip{
+  border-radius:10px;padding:6px 10px;background:rgba(255,255,255,.88);
+  border:1px solid rgba(15,23,42,.08);font-size:10.5px;font-weight:800;color:var(--sd-ink);
+  display:flex;align-items:center;justify-content:space-between;
+}
+[data-theme="dark"] .dh-mini-status-chip,
+.dark .dh-mini-status-chip{
+  background:rgba(255,255,255,.09);border-color:rgba(255,255,255,.12);color:#f6f7ff;
+}
+.dh-pulse-dot{
+  width:8px;height:8px;border-radius:50%;background:#10b981;
+  display:inline-block;margin-right:6px;animation:sdPulseSoft 2s ease-in-out infinite;
+}
+
+/* ── COLORFUL STAT CARDS (Teacher Dashboard Palette) ── */
+.dh-stats{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:14px;
+}
+.dh-stat-card{
+  border-radius:18px;padding:16px 18px;position:relative;overflow:hidden;
+  border:1px solid var(--st-border);background:var(--st-bg);
+  box-shadow:var(--sd-shadow-soft);animation:sdCardIn .45s both;
+  transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease;
+  cursor:default;
+}
+.dh-stat-card:hover{
+  transform:translateY(-4px) scale(1.015);box-shadow:var(--sd-shadow);
+}
+.dh-stat-card::after{
+  content:"";position:absolute;right:-24px;bottom:-28px;width:92px;height:92px;border-radius:50%;
+  background:var(--st-glow);pointer-events:none;
+}
+.dh-stat-head{
+  display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;position:relative;z-index:1;
+}
+.dh-stat-icon{
+  width:40px;height:40px;border-radius:12px;display:grid;place-items:center;font-size:20px;
+  background:var(--st-ico-bg);box-shadow:0 6px 14px rgba(35,44,87,.08);
+  animation:sdPop3d 4.4s ease-in-out infinite;animation-delay:var(--delay,0s);
+}
+.dh-stat-card:hover .dh-stat-icon{animation:sdWiggle .65s ease both}
+.dh-stat-badge{
+  font-size:10px;font-weight:800;padding:3px 9px;border-radius:999px;
+  background:var(--st-badge-bg);color:var(--st-badge-color);
+}
+.dh-stat-val{
+  font-size:28px;font-weight:900;line-height:1.1;color:var(--sd-ink);position:relative;z-index:1;
+}
+[data-theme="dark"] .dh-stat-val,
+.dark .dh-stat-val{color:#ffffff}
+.dh-stat-lbl{
+  font-size:11px;font-weight:800;color:var(--sd-muted);text-transform:uppercase;letter-spacing:.06em;margin-top:4px;position:relative;z-index:1;
+}
+.dh-stat-sub{
+  font-size:10.5px;font-weight:600;color:var(--sd-faint);margin-top:2px;position:relative;z-index:1;
+}
+
+.dh-stat-amber{
+  --st-bg:linear-gradient(145deg,#fffdf7 0%,#fff7e6 100%);
+  --st-border:rgba(245,158,11,.24);
+  --st-glow:rgba(245,158,11,.15);
+  --st-ico-bg:#fff0cc;
+  --st-badge-bg:rgba(245,158,11,.15);
+  --st-badge-color:#b45309;
+}
+[data-theme="dark"] .dh-stat-amber,
+.dark .dh-stat-amber{
+  --st-bg:linear-gradient(145deg,rgba(50,35,10,.45) 0%,rgba(30,20,8,.65) 100%);
+  --st-border:rgba(245,158,11,.32);
+  --st-ico-bg:rgba(245,158,11,.2);
+  --st-badge-bg:rgba(245,158,11,.25);
+  --st-badge-color:#fcd34d;
+}
+
+.dh-stat-emerald{
+  --st-bg:linear-gradient(145deg,#f7fdfa 0%,#ecfdf5 100%);
+  --st-border:rgba(16,185,129,.24);
+  --st-glow:rgba(16,185,129,.15);
+  --st-ico-bg:#d1fae5;
+  --st-badge-bg:rgba(16,185,129,.15);
+  --st-badge-color:#047857;
+}
+[data-theme="dark"] .dh-stat-emerald,
+.dark .dh-stat-emerald{
+  --st-bg:linear-gradient(145deg,rgba(6,60,45,.4) 0%,rgba(4,38,28,.65) 100%);
+  --st-border:rgba(16,185,129,.32);
+  --st-ico-bg:rgba(16,185,129,.2);
+  --st-badge-bg:rgba(16,185,129,.25);
+  --st-badge-color:#6ee7b7;
+}
+
+.dh-stat-sky{
+  --st-bg:linear-gradient(145deg,#f7fcff 0%,#f0f9ff 100%);
+  --st-border:rgba(14,165,233,.24);
+  --st-glow:rgba(14,165,233,.15);
+  --st-ico-bg:#e0f2fe;
+  --st-badge-bg:rgba(14,165,233,.15);
+  --st-badge-color:#0284c7;
+}
+[data-theme="dark"] .dh-stat-sky,
+.dark .dh-stat-sky{
+  --st-bg:linear-gradient(145deg,rgba(12,60,95,.4) 0%,rgba(8,38,62,.65) 100%);
+  --st-border:rgba(14,165,233,.32);
+  --st-ico-bg:rgba(14,165,233,.2);
+  --st-badge-bg:rgba(14,165,233,.25);
+  --st-badge-color:#7dd3fc;
+}
+
+.dh-stat-coral{
+  --st-bg:linear-gradient(145deg,#fff8f8 0%,#fff1f2 100%);
+  --st-border:rgba(244,63,94,.24);
+  --st-glow:rgba(244,63,94,.15);
+  --st-ico-bg:#ffe4e6;
+  --st-badge-bg:rgba(244,63,94,.15);
+  --st-badge-color:#e11d48;
+}
+[data-theme="dark"] .dh-stat-coral,
+.dark .dh-stat-coral{
+  --st-bg:linear-gradient(145deg,rgba(80,16,35,.4) 0%,rgba(50,8,20,.65) 100%);
+  --st-border:rgba(244,63,94,.32);
+  --st-ico-bg:rgba(244,63,94,.2);
+  --st-badge-bg:rgba(244,63,94,.25);
+  --st-badge-color:#fda4af;
+}
+
+/* ── TOOLBAR: SEARCH & FILTER TABS ── */
+.dh-toolbar{
+  display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
+  background:var(--sd-card);border:1px solid var(--sd-line);border-radius:18px;
+  padding:10px 14px;box-shadow:var(--sd-shadow-soft);
+}
+[data-theme="dark"] .dh-toolbar,
+.dark .dh-toolbar{
+  background:var(--sd-card);border-color:var(--sd-line);
+}
+.dh-search-wrap{
+  position:relative;flex:1;min-width:240px;max-width:440px;
+}
+.dh-search-icon{
+  position:absolute;left:13px;top:50%;transform:translateY(-50%);font-size:14px;color:var(--sd-faint);pointer-events:none;
+}
+.dh-search-input{
+  width:100%;border-radius:12px;border:1px solid var(--sd-line);padding:9px 12px 9px 36px;
+  background:var(--sd-card-soft);color:var(--sd-ink);font-family:inherit;font-size:12.5px;
+  font-weight:600;outline:none;transition:border-color .18s,box-shadow .18s;
+}
+.dh-search-input:focus{
+  border-color:#10b981;box-shadow:0 0 0 3px rgba(16,185,129,.15);background:var(--sd-card);
+}
+.dh-filters{
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+}
+.dh-filter-btn{
+  border:1px solid var(--sd-line);border-radius:12px;padding:7px 13px;background:var(--sd-card-soft);
+  color:var(--sd-muted);font-family:inherit;font-size:11.5px;font-weight:800;cursor:pointer;
+  display:inline-flex;align-items:center;gap:6px;transition:all .18s ease;
+}
+.dh-filter-btn:hover{
+  color:var(--sd-ink);border-color:rgba(16,185,129,.3);background:var(--sd-card);
+}
+.dh-filter-btn.active{
+  background:linear-gradient(135deg,#059669,#10b981);color:#ffffff;border-color:transparent;
+  box-shadow:0 4px 14px rgba(16,185,129,.28);
+}
+.dh-filter-count{
+  padding:2px 7px;border-radius:999px;font-size:10px;font-weight:900;
+  background:rgba(0,0,0,.08);color:inherit;
+}
+.dh-filter-btn.active .dh-filter-count{
+  background:rgba(255,255,255,.25);color:#ffffff;
+}
+
+/* ── COLORFUL DEBATE HISTORY CARDS GRID ── */
+.dh-cards-grid{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:16px;
+}
+.dh-card{
+  border-radius:18px;position:relative;overflow:hidden;
+  border:1px solid var(--c-border);background:var(--c-bg);
+  box-shadow:var(--sd-shadow-soft);padding:18px;display:flex;flex-direction:column;gap:12px;
+  animation:sdCardIn .45s both;transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease;
+}
+.dh-card:hover{
+  transform:translateY(-5px) scale(1.012);box-shadow:var(--sd-shadow);border-color:var(--c-glow-border);
+}
+.dh-card::before{
+  content:"";position:absolute;top:0;left:0;right:0;height:4px;
+  background:var(--c-top-bar);border-radius:18px 18px 0 0;
+}
+.dh-card::after{
+  content:"";position:absolute;right:-28px;bottom:-28px;width:100px;height:100px;border-radius:50%;
+  background:var(--c-glow);pointer-events:none;
+}
+
+/* Palette 0: Emerald / Mint */
+.dh-card-theme-0{
+  --c-bg:linear-gradient(160deg,#ffffff 65%,#f2fcf6 100%);
+  --c-border:rgba(16,185,129,.22);
+  --c-glow-border:rgba(16,185,129,.45);
+  --c-top-bar:linear-gradient(90deg,#10b981,#059669);
+  --c-glow:rgba(16,185,129,.12);
+  --c-badge-bg:rgba(16,185,129,.14);
+  --c-badge-color:#047857;
+  --c-ico-bg:#dcfce7;
+}
+[data-theme="dark"] .dh-card-theme-0,
+.dark .dh-card-theme-0{
+  --c-bg:linear-gradient(160deg,rgba(23,31,58,.94) 65%,rgba(8,40,30,.7) 100%);
+  --c-border:rgba(16,185,129,.28);
+  --c-glow-border:rgba(16,185,129,.55);
+  --c-badge-bg:rgba(16,185,129,.22);
+  --c-badge-color:#6ee7b7;
+  --c-ico-bg:rgba(16,185,129,.22);
+}
+
+/* Palette 1: Warm Sunshine / Amber */
+.dh-card-theme-1{
+  --c-bg:linear-gradient(160deg,#ffffff 65%,#fffaf0 100%);
+  --c-border:rgba(245,158,11,.22);
+  --c-glow-border:rgba(245,158,11,.45);
+  --c-top-bar:linear-gradient(90deg,#ffb21d,#ff791f);
+  --c-glow:rgba(245,158,11,.12);
+  --c-badge-bg:rgba(245,158,11,.14);
+  --c-badge-color:#b45309;
+  --c-ico-bg:#fef3c7;
+}
+[data-theme="dark"] .dh-card-theme-1,
+.dark .dh-card-theme-1{
+  --c-bg:linear-gradient(160deg,rgba(23,31,58,.94) 65%,rgba(45,30,10,.7) 100%);
+  --c-border:rgba(245,158,11,.28);
+  --c-glow-border:rgba(245,158,11,.55);
+  --c-badge-bg:rgba(245,158,11,.22);
+  --c-badge-color:#fcd34d;
+  --c-ico-bg:rgba(245,158,11,.22);
+}
+
+/* Palette 2: Ocean Sky / Azure */
+.dh-card-theme-2{
+  --c-bg:linear-gradient(160deg,#ffffff 65%,#f0f9ff 100%);
+  --c-border:rgba(14,165,233,.22);
+  --c-glow-border:rgba(14,165,233,.45);
+  --c-top-bar:linear-gradient(90deg,#0ea5e9,#2563eb);
+  --c-glow:rgba(14,165,233,.12);
+  --c-badge-bg:rgba(14,165,233,.14);
+  --c-badge-color:#0284c7;
+  --c-ico-bg:#e0f2fe;
+}
+[data-theme="dark"] .dh-card-theme-2,
+.dark .dh-card-theme-2{
+  --c-bg:linear-gradient(160deg,rgba(23,31,58,.94) 65%,rgba(12,38,65,.7) 100%);
+  --c-border:rgba(14,165,233,.28);
+  --c-glow-border:rgba(14,165,233,.55);
+  --c-badge-bg:rgba(14,165,233,.22);
+  --c-badge-color:#7dd3fc;
+  --c-ico-bg:rgba(14,165,233,.22);
+}
+
+/* Palette 3: Coral Peach */
+.dh-card-theme-3{
+  --c-bg:linear-gradient(160deg,#ffffff 65%,#fff5f5 100%);
+  --c-border:rgba(255,107,74,.22);
+  --c-glow-border:rgba(255,107,74,.45);
+  --c-top-bar:linear-gradient(90deg,#ff6b4a,#ff9436);
+  --c-glow:rgba(255,107,74,.12);
+  --c-badge-bg:rgba(255,107,74,.14);
+  --c-badge-color:#e05638;
+  --c-ico-bg:#ffe4e6;
+}
+[data-theme="dark"] .dh-card-theme-3,
+.dark .dh-card-theme-3{
+  --c-bg:linear-gradient(160deg,rgba(23,31,58,.94) 65%,rgba(55,18,25,.7) 100%);
+  --c-border:rgba(255,107,74,.28);
+  --c-glow-border:rgba(255,107,74,.55);
+  --c-badge-bg:rgba(255,107,74,.22);
+  --c-badge-color:#ff9e87;
+  --c-ico-bg:rgba(255,107,74,.22);
+}
+
+.dh-card-top{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;position:relative;z-index:1;
+}
+.dh-mode-pill{
+  display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;
+  font-size:10px;font-weight:800;letter-spacing:.02em;background:var(--c-badge-bg);color:var(--c-badge-color);
+}
+.dh-date-badge{
+  font-size:11px;font-weight:700;color:var(--sd-muted);display:flex;align-items:center;gap:5px;
+}
+.dh-topic{
+  font-size:14.5px;font-weight:800;line-height:1.45;color:var(--sd-ink);position:relative;z-index:1;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:42px;
+}
+[data-theme="dark"] .dh-topic,
+.dark .dh-topic{color:#ffffff}
+.dh-chips-row{
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap;position:relative;z-index:1;
+}
+.dh-chip-item{
+  font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:999px;
+  background:rgba(15,23,42,.05);color:var(--sd-muted);display:inline-flex;align-items:center;gap:4px;
+}
+[data-theme="dark"] .dh-chip-item,
+.dark .dh-chip-item{
+  background:rgba(255,255,255,.07);color:var(--sd-muted);
+}
+
+.dh-teams-box{
+  background:rgba(15,23,42,.03);border:1px solid var(--sd-line);border-radius:12px;padding:8px 10px;
+  display:flex;align-items:center;justify-content:space-between;gap:8px;position:relative;z-index:1;
+}
+[data-theme="dark"] .dh-teams-box,
+.dark .dh-teams-box{
+  background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.08);
+}
+.dh-team-item{
+  display:flex;align-items:center;gap:5px;font-size:11px;font-weight:700;color:var(--sd-ink);
+}
+[data-theme="dark"] .dh-team-item,
+.dark .dh-team-item{color:#f6f7ff}
+.dh-team-tag{
+  padding:2px 6px;border-radius:6px;font-size:9.5px;font-weight:800;
+}
+.dh-team-tag.a{background:rgba(37,99,235,.12);color:#2563eb}
+.dh-team-tag.b{background:rgba(225,29,72,.12);color:#e11d48}
+[data-theme="dark"] .dh-team-tag.a{background:rgba(59,130,246,.22);color:#93c5fd}
+[data-theme="dark"] .dh-team-tag.b{background:rgba(244,63,94,.22);color:#fca5a5}
+
+.dh-score-footer{
+  margin-top:auto;padding-top:10px;border-top:1px solid var(--sd-line);
+  display:flex;align-items:center;justify-content:space-between;gap:10px;position:relative;z-index:1;
+}
+.dh-score-split{
+  display:flex;align-items:baseline;gap:8px;
+}
+.dh-score-item{
+  display:flex;flex-direction:column;
+}
+.dh-score-num{
+  font-size:16px;font-weight:900;line-height:1;color:var(--sd-ink);
+}
+[data-theme="dark"] .dh-score-num,
+.dark .dh-score-num{color:#ffffff}
+.dh-score-num.hi{color:#059669}
+[data-theme="dark"] .dh-score-num.hi{color:#34d399}
+.dh-score-num.ai{color:#0284c7}
+[data-theme="dark"] .dh-score-num.ai{color:#38bdf8}
+.dh-score-tag{
+  font-size:9.5px;font-weight:800;color:var(--sd-faint);text-transform:uppercase;margin-top:2px;
+}
+.dh-winner-badge{
+  display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;
+  font-size:11px;font-weight:800;
+}
+.dh-winner-badge.team-a{
+  background:rgba(37,99,235,.12);color:#2563eb;border:1px solid rgba(37,99,235,.25);
+}
+.dh-winner-badge.team-b{
+  background:rgba(225,29,72,.12);color:#e11d48;border:1px solid rgba(225,29,72,.25);
+}
+.dh-winner-badge.draw{
+  background:rgba(100,116,139,.12);color:#475569;border:1px solid rgba(100,116,139,.25);
+}
+[data-theme="dark"] .dh-winner-badge.team-a{background:rgba(59,130,246,.2);color:#93c5fd;border-color:rgba(59,130,246,.3)}
+[data-theme="dark"] .dh-winner-badge.team-b{background:rgba(244,63,94,.2);color:#fca5a5;border-color:rgba(244,63,94,.3)}
+[data-theme="dark"] .dh-winner-badge.draw{background:rgba(148,163,184,.15);color:#cbd5e1;border-color:rgba(148,163,184,.25)}
+
+.dh-card-action-btn{
+  border:1px solid var(--sd-line);border-radius:10px;padding:6px 12px;background:rgba(255,255,255,.8);
+  font-family:inherit;font-size:11px;font-weight:800;color:var(--sd-ink);cursor:pointer;
+  transition:all .18s ease;display:inline-flex;align-items:center;gap:4px;
+}
+.dh-card-action-btn:hover{
+  background:var(--sd-card);border-color:#10b981;color:#059669;transform:translateX(2px);
+}
+[data-theme="dark"] .dh-card-action-btn{
+  background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.14);color:#f6f7ff;
+}
+[data-theme="dark"] .dh-card-action-btn:hover{
+  background:rgba(16,185,129,.18);border-color:#10b981;color:#6ee7b7;
+}
+
+/* ── EMPTY & LOADING STATES ── */
+.dh-loading{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
+  padding:60px 20px;color:var(--sd-muted);font-weight:700;font-size:13.5px;
+}
+.dh-spin-circle{
+  width:36px;height:36px;border-radius:50%;border:3px solid rgba(16,185,129,.18);
+  border-top-color:#10b981;animation:spin .8s linear infinite;
+}
+.dh-empty{
+  text-align:center;padding:50px 24px;border-radius:20px;background:var(--sd-card);
+  border:1.5px dashed var(--sd-line);box-shadow:var(--sd-shadow-soft);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
+}
+.dh-empty-ico{
+  width:64px;height:64px;border-radius:20px;display:grid;place-items:center;font-size:32px;
+  background:#fff4d6;box-shadow:0 8px 18px rgba(245,158,11,.16);
+  animation:sdPop3d 4.4s ease-in-out infinite;
+}
+[data-theme="dark"] .dh-empty-ico{
+  background:rgba(245,158,11,.2);
+}
+.dh-empty-title{font-size:16px;font-weight:800;color:var(--sd-ink)}
+[data-theme="dark"] .dh-empty-title{color:#ffffff}
+.dh-empty-sub{font-size:12.5px;font-weight:600;color:var(--sd-muted);max-width:380px;line-height:1.5}
+
+/* ── ALL-DEVICE RESPONSIVENESS MEDIA QUERIES ── */
+@media(max-width:1120px){
+  .dh-stats{grid-template-columns:repeat(2,1fr)}
+  .dh-hero{grid-template-columns:minmax(0,1fr) 220px;padding:22px}
+  .dh-cards-grid{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:768px){
+  .dp-history{padding:14px 12px 64px}
+  .dh-hero{grid-template-columns:1fr;gap:18px;padding:18px}
+  .dh-hero-panel{min-height:160px;flex-direction:row;justify-content:space-around;padding:12px}
+  .dh-robo-art-wrap{width:96px;height:96px}
+  .dh-robo-art{width:90px;height:90px}
+  .dh-hero-mini-status{width:auto;min-width:140px;margin-top:0}
+  .dh-hero-actions{width:100%}
+  .dh-btn-emerald{width:100%;justify-content:center}
+  .dh-btn-glass{width:100%;justify-content:center}
+  .dh-toolbar{flex-direction:column;align-items:stretch;gap:10px}
+  .dh-search-wrap{max-width:none}
+  .dh-cards-grid{grid-template-columns:1fr}
+}
+@media(max-width:540px){
+  .dh-stats{grid-template-columns:1fr 1fr;gap:10px}
+  .dh-stat-card{padding:12px 14px}
+  .dh-stat-val{font-size:22px}
+  .dh-hero-panel{flex-direction:column;min-height:auto}
+  .dh-filters{overflow-x:auto;padding-bottom:4px;width:100%;flex-wrap:nowrap}
+  .dh-filter-btn{white-space:nowrap;flex-shrink:0}
+}
 
 .dp-setup{height:100dvh;display:grid;grid-template-columns:32% 1fr;overflow:hidden}
 .dp-setup{width:100%;flex:1;min-height:0;display:grid;grid-template-columns:32% 1fr;overflow:hidden}
@@ -457,7 +1025,6 @@ select.finput{cursor:pointer;appearance:none;background-image:url("data:image/sv
   .dp-setup-intro .dp-setup-robo{width:140px;max-height:112px}
   .dp-feats-left{display:none}
   .ctx-card{display:none}
-  .hist-stats-row{grid-template-columns:repeat(2,1fr)}
 }
 @media(max-width:768px){
   .submode-grid,.dtype-grid{grid-template-columns:1fr}
@@ -475,11 +1042,8 @@ select.finput{cursor:pointer;appearance:none;background-image:url("data:image/sv
   .fi-row{grid-template-columns:1fr}
   .overlay{align-items:flex-end;padding:0}.modal{border-radius:16px 16px 0 0;max-height:90dvh}
   .vg-3,.vg-4{grid-template-columns:1fr 1fr}
-  .hist-hero-inner{align-items:flex-start}
-  .hist-new-btn{width:100%;justify-content:center}
-  .hist-grid{grid-template-columns:1fr}
 }
-@media(max-width:560px){.cbtn span:last-child{display:none}.cbtn{min-width:32px}.tile{min-height:160px}.team-member-grid{grid-template-columns:1fr}.res-actions{flex-direction:column;align-items:stretch}.hist-stats-row{grid-template-columns:1fr 1fr}}
+@media(max-width:560px){.cbtn span:last-child{display:none}.cbtn{min-width:32px}.tile{min-height:160px}.team-member-grid{grid-template-columns:1fr}.res-actions{flex-direction:column;align-items:stretch}}
 `;
 
 // ─── CONSTANTS ───────────────────────────────────────────────────────────────
@@ -1006,15 +1570,61 @@ function Tile({ p }: { p: Participant }) {
 // ═══════════════════════════════════════════════════════════════════════════
 // HISTORY SCREEN — new landing screen shown before Setup
 // ═══════════════════════════════════════════════════════════════════════════
+interface EnrichedDebateEntry {
+  id: string;
+  topic: string;
+  date: string;
+  formattedDate: string;
+  mode: "ai" | "multi";
+  subject: string;
+  durationLabel: string;
+  participants: number;
+  yourScore?: number;
+  opponentScore?: number;
+  winnerTeam?: string;
+  winner?: string;
+  teamA?: string[];
+  teamB?: string[];
+  themeIndex: number;
+}
+
+function inferDebateSubject(topic: string, explicitSubject?: string): string {
+  if (explicitSubject && explicitSubject !== "General") return explicitSubject;
+  const t = topic.toLowerCase();
+  if (t.includes("ai") || t.includes("tech") || t.includes("job") || t.includes("robot") || t.includes("code")) {
+    return "Technology & AI";
+  }
+  if (t.includes("social") || t.includes("media") || t.includes("harm") || t.includes("ethics")) {
+    return "Digital Ethics";
+  }
+  if (t.includes("nuclear") || t.includes("climate") || t.includes("energy") || t.includes("nature") || t.includes("bio")) {
+    return "Environmental Science";
+  }
+  if (t.includes("history") || t.includes("war") || t.includes("ancient") || t.includes("empire")) {
+    return "Social Studies";
+  }
+  if (t.includes("math") || t.includes("logic") || t.includes("number")) {
+    return "Mathematics";
+  }
+  return "General Debate";
+}
+
 function DebateHistoryScreen({ onNew }: { onNew: () => void }) {
-  const [entries, setEntries] = useState<DebateHistoryEntry[] | null>(null);
+  const [entries, setEntries] = useState<any[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterMode, setFilterMode] = useState<"all" | "ai" | "multi" | "completed">("all");
 
   const load = useCallback(async () => {
     setError(null);
     try {
       const data = await getDebateHistory();
-      setEntries(data);
+      let localDebates: any[] = [];
+      try {
+        localDebates = JSON.parse(localStorage.getItem("gradeup_debate_history_teacher") || "[]");
+      } catch {}
+      const combined = [...localDebates, ...(data || [])];
+      setEntries(combined);
     } catch (err: any) {
       setError(err?.message || "Unable to load debate history.");
       setEntries([]);
@@ -1025,157 +1635,367 @@ function DebateHistoryScreen({ onNew }: { onNew: () => void }) {
     load();
   }, [load]);
 
+  const normalizedEntries = useMemo<EnrichedDebateEntry[]>(() => {
+    if (!entries) return [];
+    return entries.map((entry: any, index: number) => {
+      const isAI = entry.mode === "ai" || (entry.yourScore !== undefined && !entry.teamA);
+      const mode: "ai" | "multi" = isAI ? "ai" : "multi";
+
+      let winnerTeam = entry.winnerTeam;
+      if (!winnerTeam && entry.winner) {
+        if (entry.winner.includes("Team A") || entry.winner === "A") winnerTeam = "A";
+        else if (entry.winner.includes("Team B") || entry.winner === "B") winnerTeam = "B";
+        else if (entry.winner.toLowerCase().includes("draw")) winnerTeam = "Draw";
+      }
+
+      const teamA = Array.isArray(entry.teamA) ? entry.teamA : [];
+      const teamB = Array.isArray(entry.teamB) ? entry.teamB : [];
+      const participants =
+        entry.participants ||
+        (teamA.length + teamB.length > 0 ? teamA.length + teamB.length : (mode === "ai" ? 1 : 4));
+
+      let formattedDate = entry.date;
+      try {
+        const d = new Date(entry.date);
+        if (!isNaN(d.getTime())) {
+          formattedDate = d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+        }
+      } catch {}
+
+      return {
+        id: entry.id || `debate-${index}`,
+        topic: entry.topic || "Untitled Debate Topic",
+        date: entry.date,
+        formattedDate: formattedDate || "Recent",
+        mode,
+        subject: inferDebateSubject(entry.topic || "", entry.subject),
+        durationLabel: entry.durationLabel || (mode === "ai" ? "8 mins" : "15 mins"),
+        participants,
+        yourScore: entry.yourScore ?? (mode === "ai" ? 88 : undefined),
+        opponentScore: entry.opponentScore ?? (mode === "ai" ? 76 : undefined),
+        winnerTeam,
+        winner: entry.winner,
+        teamA: teamA.length > 0 ? teamA : (mode === "multi" ? ["Alice", "Bob"] : undefined),
+        teamB: teamB.length > 0 ? teamB : (mode === "multi" ? ["Charlie", "Dana"] : undefined),
+        themeIndex: index % 4,
+      };
+    });
+  }, [entries]);
+
   const stats = useMemo(() => {
-    const list = entries || [];
-    const completed = list.filter((e) => e.status === "completed");
-    const totalParticipants = list.reduce((s, e) => s + (e.participants || 0), 0);
+    const list = normalizedEntries;
+    const completed = list.length;
     const aiCount = list.filter((e) => e.mode === "ai").length;
     const teamCount = list.filter((e) => e.mode === "multi").length;
-    return { total: list.length, completed: completed.length, aiCount, teamCount, totalParticipants };
-  }, [entries]);
+    const totalStudents = list.reduce((acc, curr) => acc + curr.participants, 0);
+    return { total: list.length, completed, aiCount, teamCount, totalStudents };
+  }, [normalizedEntries]);
+
+  const filteredEntries = useMemo(() => {
+    return normalizedEntries.filter((item) => {
+      if (filterMode === "ai" && item.mode !== "ai") return false;
+      if (filterMode === "multi" && item.mode !== "multi") return false;
+
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const inTopic = item.topic.toLowerCase().includes(q);
+        const inSub = item.subject.toLowerCase().includes(q);
+        const inTeamA = item.teamA?.some((s) => s.toLowerCase().includes(q));
+        const inTeamB = item.teamB?.some((s) => s.toLowerCase().includes(q));
+        if (!inTopic && !inSub && !inTeamA && !inTeamB) return false;
+      }
+      return true;
+    });
+  }, [normalizedEntries, filterMode, searchQuery]);
 
   return (
     <div className="dp-history">
-      <div className="hist-hero">
-        <div className="hist-hero-orbs">
-          <div className="dp-orb1" />
-          <div className="dp-orb2" />
-        </div>
-        <div className="hist-hero-inner">
-          <div>
-            <div className="hist-logo">
-              <div className="hist-logo-ico">⚔️</div>
-              <span className="hist-logo-name">DebateArena</span>
-            </div>
-            <h1 className="hist-h1">
-              Debate <span className="gt">History</span>
+      {/* Animated Background Sparks */}
+      <div className="dh-bg-spark s1" aria-hidden />
+      <div className="dh-bg-spark s2" aria-hidden />
+      <div className="dh-bg-spark s3" aria-hidden />
+
+      <div className="dh-shell">
+        {/* 1. HERO BANNER WITH ANIMATED ROBO MASCOT (NO PURPLE AI GRADIENT) */}
+        <div className="dh-hero">
+          <div className="dh-hero-content">
+            <span className="dh-chip">
+              <span>🎙️</span> Teacher Debate Studio &amp; Evaluation Hub
+            </span>
+            <h1 className="dh-hero-title">
+              Debate <span className="dh-highlight">Sessions &amp; History</span>
             </h1>
-            <p className="hist-p">
-              Review past AI and team debates, then launch a fresh session
-              whenever you're ready.
+            <p className="dh-hero-sub">
+              Review classroom debate rounds, track student speaking performance and scores,
+              or launch interactive AI sparring and multi-student team debates.
             </p>
-          </div>
-          <button className="hist-new-btn" onClick={onNew}>
-            <span className="hist-new-ico">+</span>
-            New Debate
-          </button>
-        </div>
-      </div>
-
-      <div className="hist-body">
-        <div className="hist-stats-row">
-          <div className="hist-stat">
-            <div className="hist-stat-val">{stats.total}</div>
-            <div className="hist-stat-lbl">Total Sessions</div>
-          </div>
-          <div className="hist-stat">
-            <div className="hist-stat-val">{stats.completed}</div>
-            <div className="hist-stat-lbl">Completed</div>
-          </div>
-          <div className="hist-stat">
-            <div className="hist-stat-val">{stats.aiCount}</div>
-            <div className="hist-stat-lbl">1 vs AI</div>
-          </div>
-          <div className="hist-stat">
-            <div className="hist-stat-val">{stats.teamCount}</div>
-            <div className="hist-stat-lbl">Team Debates</div>
-          </div>
-        </div>
-
-        <div className="hist-section-title">Recent Sessions</div>
-
-        {entries === null && (
-          <div className="hist-loading">
-            <span className="loader-spin dark" style={{ width: 18, height: 18 }} />
-            Loading debate history…
-          </div>
-        )}
-
-        {error && entries !== null && entries.length === 0 && (
-          <div className="hist-empty">
-            <div className="hist-empty-ico">⚠️</div>
-            <div>{error}</div>
-          </div>
-        )}
-
-        {entries && entries.length === 0 && !error && (
-          <div className="hist-empty">
-            <div className="hist-empty-ico">🗒️</div>
-            <div style={{ fontWeight: 700, marginBottom: 6 }}>
-              No debates yet
-            </div>
-            <div style={{ fontSize: 12.5 }}>
-              Start your first debate to see it show up here.
-            </div>
-          </div>
-        )}
-
-        {entries && entries.length > 0 && (
-          <div className="hist-grid">
-            {entries.map((entry, idx) => (
-              <div
-                key={entry.id}
-                className="hist-card"
-                style={{ animationDelay: `${Math.min(idx * 0.04, 0.4)}s` }}
+            <div className="dh-hero-actions">
+              <button className="dh-btn-emerald" onClick={onNew}>
+                <span style={{ fontSize: 16 }}>+</span> Launch New Debate
+              </button>
+              <button
+                className="dh-btn-glass"
+                onClick={() => {
+                  setSearchQuery("");
+                  setFilterMode("all");
+                  load();
+                }}
               >
-                <div className="hist-card-top">
-                  <span className={`hist-mode-badge ${entry.mode}`}>
-                    {entry.mode === "ai" ? "1 vs AI" : "Team Debate"}
-                  </span>
-                  <span className="hist-date">
-                    {new Date(entry.date).toLocaleDateString(undefined, {
-                      month: "short",
-                      day: "numeric",
-                    })}
-                  </span>
-                </div>
-                <div className="hist-topic">{entry.topic}</div>
-                <div className="hist-meta-row">
-                  {entry.subject && (
-                    <span className="hist-chip">📚 {entry.subject}</span>
-                  )}
-                  <span className="hist-chip">⏱ {entry.durationLabel}</span>
-                  <span className="hist-chip">
-                    👥 {entry.participants} participant
-                    {entry.participants === 1 ? "" : "s"}
-                  </span>
-                </div>
-                <div className="hist-score-row">
-                  {entry.mode === "ai" ? (
-                    <>
-                      <div>
-                        <div className="hist-score-val">
-                          {entry.yourScore ?? "-"}
-                        </div>
-                        <div className="hist-score-lbl">YOUR SCORE</div>
-                      </div>
-                      <div style={{ textAlign: "right" as const }}>
-                        <div
-                          className="hist-score-val"
-                          style={{ color: "var(--vio)" }}
-                        >
-                          {entry.opponentScore ?? "-"}
-                        </div>
-                        <div className="hist-score-lbl">AI SCORE</div>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <span className="hist-score-lbl">RESULT</span>
-                      {entry.winnerTeam ? (
-                        <span
-                          className={`hist-winner-pill ${entry.winnerTeam.toLowerCase()}`}
-                        >
-                          Team {entry.winnerTeam} won
-                        </span>
-                      ) : (
-                        <span className="hist-chip">Pending</span>
-                      )}
-                    </>
-                  )}
-                </div>
+                <span>🔄</span> Refresh Sessions
+              </button>
+            </div>
+          </div>
+
+          {/* 3D Robot Mascot Panel */}
+          <div className="dh-hero-panel">
+            <div className="dh-robo-art-wrap">
+              <img src={roboImg} alt="Debate Mascot Robo" className="dh-robo-art" />
+            </div>
+            <div className="dh-hero-mini-status">
+              <div className="dh-mini-status-chip">
+                <span><span className="dh-pulse-dot" />AI Moderator</span>
+                <span style={{ color: "#10b981", fontWeight: 800 }}>Ready</span>
               </div>
-            ))}
+              <div className="dh-mini-status-chip">
+                <span>Live Audio &amp; Scoring</span>
+                <span style={{ color: "#0284c7", fontWeight: 800 }}>Active</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 2. STATS ROW (4 Colorful Cards matching Teacher Dashboard) */}
+        <div className="dh-stats">
+          {/* Stat 1: Total Debates (Warm Amber) */}
+          <div className="dh-stat-card dh-stat-amber" style={{ "--delay": "0s" } as any}>
+            <div className="dh-stat-head">
+              <div className="dh-stat-icon">🎯</div>
+              <span className="dh-stat-badge">All Sessions</span>
+            </div>
+            <div className="dh-stat-val">{stats.total}</div>
+            <div className="dh-stat-lbl">Total Debates</div>
+            <div className="dh-stat-sub">Across classroom history</div>
+          </div>
+
+          {/* Stat 2: Completed Rounds (Emerald) */}
+          <div className="dh-stat-card dh-stat-emerald" style={{ "--delay": "-0.2s" } as any}>
+            <div className="dh-stat-head">
+              <div className="dh-stat-icon">🏆</div>
+              <span className="dh-stat-badge">Evaluated</span>
+            </div>
+            <div className="dh-stat-val">{stats.completed}</div>
+            <div className="dh-stat-lbl">Completed Rounds</div>
+            <div className="dh-stat-sub">With score &amp; transcript</div>
+          </div>
+
+          {/* Stat 3: 1 vs AI Sparring (Ocean Sky) */}
+          <div className="dh-stat-card dh-stat-sky" style={{ "--delay": "-0.4s" } as any}>
+            <div className="dh-stat-head">
+              <div className="dh-stat-icon">🤖</div>
+              <span className="dh-stat-badge">1 vs AI</span>
+            </div>
+            <div className="dh-stat-val">{stats.aiCount}</div>
+            <div className="dh-stat-lbl">AI Sparring Sessions</div>
+            <div className="dh-stat-sub">Solo student practice</div>
+          </div>
+
+          {/* Stat 4: Team Debates (Coral Peach) */}
+          <div className="dh-stat-card dh-stat-coral" style={{ "--delay": "-0.6s" } as any}>
+            <div className="dh-stat-head">
+              <div className="dh-stat-icon">👥</div>
+              <span className="dh-stat-badge">Multiplayer</span>
+            </div>
+            <div className="dh-stat-val">{stats.teamCount}</div>
+            <div className="dh-stat-lbl">Team Debates</div>
+            <div className="dh-stat-sub">{stats.totalStudents} total student speakers</div>
+          </div>
+        </div>
+
+        {/* 3. TOOLBAR: SEARCH & FILTER TABS */}
+        <div className="dh-toolbar">
+          <div className="dh-search-wrap">
+            <span className="dh-search-icon">🔍</span>
+            <input
+              type="text"
+              className="dh-search-input"
+              placeholder="Search by topic, subject, or student name..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+
+          <div className="dh-filters">
+            <button
+              className={`dh-filter-btn ${filterMode === "all" ? "active" : ""}`}
+              onClick={() => setFilterMode("all")}
+            >
+              <span>All Debates</span>
+              <span className="dh-filter-count">{stats.total}</span>
+            </button>
+            <button
+              className={`dh-filter-btn ${filterMode === "ai" ? "active" : ""}`}
+              onClick={() => setFilterMode("ai")}
+            >
+              <span>🤖 1 vs AI</span>
+              <span className="dh-filter-count">{stats.aiCount}</span>
+            </button>
+            <button
+              className={`dh-filter-btn ${filterMode === "multi" ? "active" : ""}`}
+              onClick={() => setFilterMode("multi")}
+            >
+              <span>👥 Team Arenas</span>
+              <span className="dh-filter-count">{stats.teamCount}</span>
+            </button>
+            <button
+              className={`dh-filter-btn ${filterMode === "completed" ? "active" : ""}`}
+              onClick={() => setFilterMode("completed")}
+            >
+              <span>🏆 Completed</span>
+              <span className="dh-filter-count">{stats.completed}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* 4. LOADING STATE */}
+        {entries === null && (
+          <div className="dh-loading">
+            <div className="dh-spin-circle" />
+            <span>Loading debate sessions…</span>
+          </div>
+        )}
+
+        {/* 5. ERROR STATE */}
+        {error && entries !== null && entries.length === 0 && (
+          <div className="dh-empty">
+            <div className="dh-empty-ico">⚠️</div>
+            <div className="dh-empty-title">Unable to Load History</div>
+            <div className="dh-empty-sub">{error}</div>
+            <button className="dh-btn-emerald" onClick={load} style={{ marginTop: 8 }}>
+              Try Again
+            </button>
+          </div>
+        )}
+
+        {/* 6. EMPTY STATE */}
+        {entries !== null && filteredEntries.length === 0 && !error && (
+          <div className="dh-empty">
+            <div className="dh-empty-ico">💡</div>
+            <div className="dh-empty-title">
+              {searchQuery ? "No matching debates found" : "No debate sessions yet"}
+            </div>
+            <div className="dh-empty-sub">
+              {searchQuery
+                ? `No sessions matched "${searchQuery}". Try a different keyword or reset filters.`
+                : "Kick off your first interactive AI sparring round or multiplayer classroom debate!"}
+            </div>
+            <button className="dh-btn-emerald" onClick={onNew} style={{ marginTop: 10 }}>
+              <span>+</span> Launch First Debate
+            </button>
+          </div>
+        )}
+
+        {/* 7. COLORFUL DEBATE CARDS GRID */}
+        {entries !== null && filteredEntries.length > 0 && (
+          <div className="dh-cards-grid">
+            {filteredEntries.map((item, idx) => {
+              const themeClass = `dh-card-theme-${item.themeIndex}`;
+              return (
+                <div
+                  key={item.id}
+                  className={`dh-card ${themeClass}`}
+                  style={{ animationDelay: `${Math.min(idx * 0.05, 0.4)}s` }}
+                >
+                  {/* Card Top: Mode Badge & Date */}
+                  <div className="dh-card-top">
+                    <span className="dh-mode-pill">
+                      {item.mode === "ai" ? "🤖 1 vs AI Sparring" : "👥 Team Debate Arena"}
+                    </span>
+                    <span className="dh-date-badge">
+                      <span>📅</span> {item.formattedDate}
+                    </span>
+                  </div>
+
+                  {/* Topic Title */}
+                  <h3 className="dh-topic" title={item.topic}>
+                    {item.topic}
+                  </h3>
+
+                  {/* Metadata Badges */}
+                  <div className="dh-chips-row">
+                    <span className="dh-chip-item">
+                      <span>📚</span> {item.subject}
+                    </span>
+                    <span className="dh-chip-item">
+                      <span>⏱️</span> {item.durationLabel}
+                    </span>
+                    <span className="dh-chip-item">
+                      <span>👥</span> {item.participants} speaker{item.participants === 1 ? "" : "s"}
+                    </span>
+                  </div>
+
+                  {/* Team Rosters for Multiplayer Debates */}
+                  {item.mode === "multi" && (
+                    <div className="dh-teams-box">
+                      <div className="dh-team-item">
+                        <span className="dh-team-tag a">Team A</span>
+                        <span>{item.teamA?.join(", ") || "Speakers"}</span>
+                      </div>
+                      <span style={{ fontSize: 10, fontWeight: 800, color: "var(--sd-faint)" }}>VS</span>
+                      <div className="dh-team-item">
+                        <span className="dh-team-tag b">Team B</span>
+                        <span>{item.teamB?.join(", ") || "Speakers"}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Score & Outcome Footer */}
+                  <div className="dh-score-footer">
+                    {item.mode === "ai" ? (
+                      <div className="dh-score-split">
+                        <div className="dh-score-item">
+                          <span className="dh-score-num hi">{item.yourScore ?? 88}</span>
+                          <span className="dh-score-tag">Student Score</span>
+                        </div>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: "var(--sd-faint)" }}>/</span>
+                        <div className="dh-score-item">
+                          <span className="dh-score-num ai">{item.opponentScore ?? 76}</span>
+                          <span className="dh-score-tag">AI Score</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        {item.winnerTeam ? (
+                          <span
+                            className={`dh-winner-badge ${
+                              item.winnerTeam === "A"
+                                ? "team-a"
+                                : item.winnerTeam === "B"
+                                ? "team-b"
+                                : "draw"
+                            }`}
+                          >
+                            {item.winnerTeam === "Draw"
+                              ? "🤝 Debate Draw"
+                              : `🏆 Team ${item.winnerTeam} Won`}
+                          </span>
+                        ) : (
+                          <span className="dh-chip-item">Completed</span>
+                        )}
+                      </div>
+                    )}
+
+                    <button
+                      className="dh-card-action-btn"
+                      onClick={onNew}
+                      title="Launch similar debate session"
+                    >
+                      <span>Debate Again</span>
+                      <span>→</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

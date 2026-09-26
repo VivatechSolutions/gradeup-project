@@ -7,7 +7,7 @@ const Asset = require('../model/PresentationAsset');
 const User = require('../model/User');
 const { hashToken } = require('../services/presentationDocument');
 const clone = v => v == null ? v : JSON.parse(JSON.stringify(v));
-let stored, shares, pythonCalls;
+let stored, shares, pythonCalls, missingPythonSessionOnce;
 const query = value => ({ lean: async () => clone(value) });
 const base = () => ({ deckId:'python-deck', ownerId:'owner', deckRef:'gradeup:python-deck', pythonSessionId:'python-session', editUrl:'https://gradeup.example/seminar/slides/python-deck', embedUrl:'https://gradeup.example/seminar/slides/python-deck/present', title:'Science', theme:{}, slides:[{id:'s1',title:'One',background:'#ffffff',notes:'',elements:[]},{id:'s2',title:'Two',background:'#ffffff',notes:'',elements:[]}], revision:0, collaborators:[{userId:'viewer',role:'viewer'},{userId:'editor',role:'editor'}],messages:[],proposal:null,aiLock:null,receipts:[],history:[],sessionEnded:false,deletedAt:null });
 function matches(filter) { return stored && (!filter.deckId || stored.deckId === filter.deckId) && (filter.revision === undefined || stored.revision === filter.revision) && !stored.deletedAt; }
@@ -27,6 +27,11 @@ User.findOne = filter => ({ select: () => query(filter._id === '507f1f77bcf86cd7
 require.cache[require.resolve('../middleware/studentAuth')] = { exports:{ requireStudentAuth(req,res,next) { const id=req.headers['x-test-user']; if(!id)return res.status(401).json({status:false,message:'Sign in'});req.studentUser={_id:id};next(); } } };
 require.cache[require.resolve('../services/pythonGateway')] = { exports:{ async callPython({path,data}) {
   pythonCalls.push({path,data:clone(data)});
+  if(missingPythonSessionOnce.has(path)) {
+    missingPythonSessionOnce.delete(path);
+    throw Object.assign(new Error('Unknown session_id — call /ppt/session/start first'), { statusCode:404, source:'python' });
+  }
+  if(path==='/ppt/session/restore')return {status:'restored',session_id:data.session_id};
   if(path==='/ppt/suggest')return {status:'awaiting_approval',proposal_id:'p1',ai_feedback:'Add approved text',operations:[{op:'add_element',slide_id:data.slide_id,element:{id:'e1',type:'text',x:80,y:100,width:500,height:100,text:'AI content'}}]};
   if(path==='/ppt/decide')return {status:'done',proposal_id:data.proposal_id};
   return {status:'ended',session_id:data.session_id};
@@ -35,7 +40,7 @@ const app=express();app.use(express.json());app.use(require('../router/Presentat
 let server,origin;
 test.before(async()=>{server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));origin=`http://127.0.0.1:${server.address().port}`;});
 test.after(()=>new Promise(resolve=>server.close(resolve)));
-test.beforeEach(()=>{stored=base();shares=[];pythonCalls=[];process.env.GRADEUP_INTERNAL_API_KEY='test-internal-key';});
+test.beforeEach(()=>{stored=base();shares=[];pythonCalls=[];missingPythonSessionOnce=new Set();process.env.GRADEUP_INTERNAL_API_KEY='test-internal-key';});
 async function request(path,method='GET',body,identity='owner',shareToken) { const response=await fetch(origin+path,{method,headers:{'Content-Type':'application/json',...(identity?{'x-test-user':identity}:{}),...(shareToken?{'x-presentation-share':shareToken}:{})},body:body===undefined?undefined:JSON.stringify(body)});return {...await response.json(),status:response.status}; }
 const saveBody=()=>({title:stored.title,theme:stored.theme,slides:clone(stored.slides),base_revision:stored.revision,mutation_id:'save-1'});
 test('authentication, owner, collaborator viewer and stranger access',async()=>{
@@ -68,6 +73,17 @@ test('server snapshots selected slide and approval writes exact proposal once',a
   const body={proposal_id:'p1',decision:'approve',base_revision:1,mutation_id:'decision-1'};
   await request('/decks/python-deck/ai/decide','POST',body);assert.equal(stored.slides[1].elements[0].text,'AI content');assert.equal(stored.slides[0].elements.length,0);
   await request('/decks/python-deck/ai/decide','POST',body);assert.equal(stored.slides[1].elements.length,1);assert.equal(pythonCalls.length,2);
+});
+test('restores a missing Python session from the durable deck and retries once',async()=>{
+  missingPythonSessionOnce.add('/ppt/suggest');
+  const response=await request('/decks/python-deck/ai/suggest','POST',{slide_id:'s2',query:'Add content',base_revision:0,mutation_id:'request-recovery'});
+  assert.equal(response.status,200);
+  assert.deepEqual(pythonCalls.map(call=>call.path),['/ppt/suggest','/ppt/session/restore','/ppt/suggest']);
+  const restore=pythonCalls[1];
+  assert.equal(restore.data.session_id,stored.pythonSessionId);
+  assert.equal(restore.data.deck_id,stored.deckId);
+  assert.equal(restore.data.student_id,stored.ownerId);
+  assert.deepEqual(restore.data.initial_slides,base().slides);
 });
 test('manual editing is blocked during a preview and foreign images are rejected',async()=>{
   await request('/decks/python-deck/ai/suggest','POST',{slide_id:'s1',query:'Add content',base_revision:0,mutation_id:'request-1'});

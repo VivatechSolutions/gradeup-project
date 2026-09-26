@@ -51,8 +51,8 @@ const css = `
 
 .ss-root {
   font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
-  color: #071235;
-  background: radial-gradient(circle at 10% 6%,rgba(126,87,255,.12),transparent 25%), radial-gradient(circle at 90% 18%,rgba(255,171,64,.16),transparent 24%), linear-gradient(180deg,#fbfcff,#f5f7ff);
+  color: var(--theme-text-main, #071235);
+  background: radial-gradient(circle at 10% 6%,rgba(126,87,255,.12),transparent 25%), radial-gradient(circle at 90% 18%,rgba(255,171,64,.16),transparent 24%), linear-gradient(180deg,var(--theme-bg-app,#fbfcff),var(--theme-bg-elevated,#f5f7ff));
   flex: 1;
   min-height: 0;
   display: flex;
@@ -70,7 +70,7 @@ const css = `
 @keyframes ssOrbit { from { transform:rotate(0deg) translateX(9px) rotate(0deg); } to { transform:rotate(360deg) translateX(9px) rotate(-360deg); } }
 @keyframes ssArtFloat { 0%,100% { transform:translateY(0) rotate(-2deg); } 50% { transform:translateY(-8px) rotate(3deg); } }
 @keyframes ssCardGlow { 0%,100% { opacity:.3; } 50% { opacity:.65; } }
-.dark .ss-root { color:#f6f7ff; background:radial-gradient(circle at 10% 6%,rgba(126,87,255,.18),transparent 25%),linear-gradient(180deg,#080d1f,#10172d); }
+.dark .ss-root, [data-theme="dark"] .ss-root { color:#f6f7ff; background:radial-gradient(circle at 10% 6%,rgba(126,87,255,.18),transparent 25%),radial-gradient(circle at 90% 18%,rgba(255,171,64,.14),transparent 24%),linear-gradient(180deg,#080d1f,#10172d); }
 .dark .ss-root::before { background:radial-gradient(circle,rgba(46,182,255,.12),transparent 68%); }
 .dark .ss-root::after { background:radial-gradient(circle,rgba(255,95,153,.1),transparent 70%); }
 .dark .ss-hero { background:linear-gradient(135deg,#101b3f 0%,#123326 55%,#392a16 100%); border-color:rgba(110,231,183,.18); }

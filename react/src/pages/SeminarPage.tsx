@@ -4463,18 +4463,6 @@ function SeminarSetup({ onBack, onLaunch }) {
                       Start a room, share your screen, deliver your seminar.
                     </div>
                   </div>
-                  <div
-                    className={`submode-card${sessionSubMode === "observer" ? " sel" : ""}`}
-                    onClick={() => setSessionSubMode("observer")}
-                  >
-                    <div className="submode-ic">
-                      <SeminarIcon name="eye" />
-                    </div>
-                    <div className="submode-title">Join as Observer</div>
-                    <div className="submode-desc">
-                      Watch live seminars, ask questions in chat.
-                    </div>
-                  </div>
                 </div>
               </>
             )}
@@ -4586,15 +4574,6 @@ function SeminarSetup({ onBack, onLaunch }) {
                     onChange={(e) => setName(e.target.value)}
                     maxLength={40}
                   />
-                </div>
-                <div style={{ marginTop: 14, marginBottom: 10 }}>
-                  <button
-                    className="btn-p"
-                    onClick={() => setShowObsConfirm(true)}
-                    disabled={!canJoinObserver || !name.trim()}
-                  >
-                    👁️ Join as Observer
-                  </button>
                 </div>
               </>
             )}
@@ -6123,18 +6102,6 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
                       Start a room, share your screen, deliver your seminar.
                     </div>
                   </div>
-                  <div
-                    className={`submode-card${sessionSubMode === "observer" ? " sel" : ""}`}
-                    onClick={() => setSessionSubMode("observer")}
-                  >
-                    <div className="submode-ic">
-                      <SeminarIcon name="eye" />
-                    </div>
-                    <div className="submode-title">Join as Observer</div>
-                    <div className="submode-desc">
-                      Watch live seminars, ask questions in chat.
-                    </div>
-                  </div>
                 </div>
               </>
             )}
@@ -6258,15 +6225,6 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
                     onChange={(event) => setName(event.target.value)}
                     maxLength={40}
                   />
-                </div>
-                <div style={{ marginTop: 14, marginBottom: 10 }}>
-                  <button
-                    className="btn-p"
-                    onClick={() => setShowConfirm(true)}
-                    disabled={!canJoinObserver || !name.trim()}
-                  >
-                    👁️ Join as Observer
-                  </button>
                 </div>
               </>
             )}
@@ -6737,8 +6695,6 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
                       ) : (
                         "🤖 Start AI Preparation"
                       )
-                    ) : sessionSubMode === "observer" ? (
-                      "👁️ Join as Observer"
                     ) : (
                       "🎙️ Launch Seminar Room"
                     )}

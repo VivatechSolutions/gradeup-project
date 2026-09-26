@@ -71,7 +71,13 @@ import {
 
 import studyRobo from "../assets/dashboard/study-robo.png";
 import askGeni from "../assets/dashboard/ask-geni.gif";
+import FormattedAIContent from "../components/ai/FormattedAIContent";
 
+function normalizeHomeworkResponse(value: string) {
+  return value
+    .replace(/\\\r?\n/g, "\n") // remove trailing \ before line breaks
+    .replace(/\r\n/g, "\n");
+}
 // ─────────────────────────────────────────────────────────────
 // TYPES
 // ─────────────────────────────────────────────────────────────
@@ -466,6 +472,7 @@ const GLOBAL_CSS = `
   overflow: hidden;
   font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   color: var(--sd-ink);
+  color-scheme: light;
   background: radial-gradient(circle at 14% 9%, rgba(126,87,255,.12), transparent 26%),
               radial-gradient(circle at 88% 14%, rgba(255,178,29,.16), transparent 25%),
               linear-gradient(180deg, var(--sd-page), var(--sd-page-2));
@@ -490,6 +497,7 @@ const GLOBAL_CSS = `
 
 [data-theme="dark"] .hh-root,
 .dark .hh-root {
+  color-scheme: dark;
   --sd-page: #080d1f;
   --sd-page-2: #10172d;
   --sd-card: rgba(23, 31, 58, 0.92);
@@ -505,6 +513,26 @@ const GLOBAL_CSS = `
   --sd-accent2: #a855f7;
   --sd-bubble-user: linear-gradient(135deg, #1d4ed8, #4338ca);
   --sd-bubble-ai: rgba(23, 31, 58, 0.95);
+}
+
+.hh-root select {
+  color-scheme: light;
+}
+
+[data-theme="dark"] .hh-root select,
+.dark .hh-root select {
+  color-scheme: dark;
+}
+
+.hh-root select option {
+  background-color: #ffffff;
+  color: #071235;
+}
+
+[data-theme="dark"] .hh-root select option,
+.dark .hh-root select option {
+  background-color: #171f3a;
+  color: #f6f7ff;
 }
 
 .hh-root::before, .hh-root::after {
@@ -969,7 +997,9 @@ function AIBubble({ msg, copiedId, onCopy, onRegen }: AIBubbleProps) {
           WebkitBackdropFilter: "blur(14px)",
         }}
       >
-        <div className="gu-prose" dangerouslySetInnerHTML={{ __html: mdToHtml(renderedText) }} />
+    <div className="gu-prose">
+  <FormattedAIContent value={normalizeHomeworkResponse(renderedText)} />
+</div>
         {shouldAnimate && !done && <span className="gu-cursor" />}
         {showActions && (
           <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap", borderTop: "1px solid var(--sd-line)", paddingTop: 8 }}>
@@ -1409,6 +1439,14 @@ export default function HomeworkHelper() {
   const subj = getSubjectConfig(active?.subject);
   const modeConf = MODES[active?.mode ?? "guided"];
   const hasRequiredContext = Boolean(active?.subjectGroupKey && active?.unitId);
+
+  const selectOptionStyle: CSSProperties = useMemo(
+    () => ({
+      backgroundColor: isDark ? "#171f3a" : "#ffffff",
+      color: isDark ? "#f6f7ff" : "#071235",
+    }),
+    [isDark]
+  );
 
   // ── Persist ───────────────────────────────────────────────
   useEffect(() => {
@@ -2020,6 +2058,7 @@ export default function HomeworkHelper() {
                   border: "none",
                   background: "transparent",
                   color: "var(--sd-ink)",
+                  colorScheme: isDark ? "dark" : "light",
                   font: "700 12px 'Plus Jakarta Sans', system-ui",
                   padding: "0 18px 0 2px",
                   outline: "none",
@@ -2031,9 +2070,9 @@ export default function HomeworkHelper() {
                 }}
                 title="Select Subject"
               >
-                <option value="">{subjectsLoading ? "Loading..." : "Select Subject"}</option>
+                <option value="" style={selectOptionStyle}>{subjectsLoading ? "Loading..." : "Select Subject"}</option>
                 {subjectCatalog.map((subject) => (
-                  <option key={subject.subjectGroupKey} value={subject.subjectGroupKey}>
+                  <option key={subject.subjectGroupKey} value={subject.subjectGroupKey} style={selectOptionStyle}>
                     {subject.title || subject.subject}
                   </option>
                 ))}
@@ -2069,6 +2108,7 @@ export default function HomeworkHelper() {
                   border: "none",
                   background: "transparent",
                   color: !active?.subjectGroupKey ? "var(--sd-muted)" : "var(--sd-ink)",
+                  colorScheme: isDark ? "dark" : "light",
                   font: "600 12px 'Plus Jakarta Sans', system-ui",
                   padding: "0 18px 0 2px",
                   outline: "none",
@@ -2080,11 +2120,11 @@ export default function HomeworkHelper() {
                 }}
                 title="Select Unit / Chapter"
               >
-                <option value="">
+                <option value="" style={selectOptionStyle}>
                   {!active?.subjectGroupKey ? "Select Subject First" : "Select Chapter"}
                 </option>
                 {availableUnits.map((unit) => (
-                  <option key={unit.id} value={unit.id}>
+                  <option key={unit.id} value={unit.id} style={selectOptionStyle}>
                     {getLibraryUnitDisplayLabel(unit)}
                   </option>
                 ))}
@@ -2279,6 +2319,7 @@ export default function HomeworkHelper() {
                 border: "none",
                 background: "transparent",
                 color: "var(--sd-ink)",
+                colorScheme: isDark ? "dark" : "light",
                 font: "700 11.5px 'Plus Jakarta Sans', system-ui",
                 padding: "0 16px 0 0",
                 outline: "none",
@@ -2286,9 +2327,9 @@ export default function HomeworkHelper() {
                 cursor: "pointer",
               }}
             >
-              <option value="">{subjectsLoading ? "Loading..." : "Subject..."}</option>
+              <option value="" style={selectOptionStyle}>{subjectsLoading ? "Loading..." : "Subject..."}</option>
               {subjectCatalog.map((subject) => (
-                <option key={subject.subjectGroupKey} value={subject.subjectGroupKey}>
+                <option key={subject.subjectGroupKey} value={subject.subjectGroupKey} style={selectOptionStyle}>
                   {subject.title || subject.subject}
                 </option>
               ))}
@@ -2333,6 +2374,7 @@ export default function HomeworkHelper() {
                 border: "none",
                 background: "transparent",
                 color: !active?.subjectGroupKey ? "var(--sd-muted)" : "var(--sd-ink)",
+                colorScheme: isDark ? "dark" : "light",
                 font: "600 11.5px 'Plus Jakarta Sans', system-ui",
                 padding: "0 16px 0 0",
                 outline: "none",
@@ -2340,11 +2382,11 @@ export default function HomeworkHelper() {
                 cursor: !active?.subjectGroupKey ? "not-allowed" : "pointer",
               }}
             >
-              <option value="">
+              <option value="" style={selectOptionStyle}>
                 {!active?.subjectGroupKey ? "Select Subject First" : "Chapter..."}
               </option>
               {availableUnits.map((unit) => (
-                <option key={unit.id} value={unit.id}>
+                <option key={unit.id} value={unit.id} style={selectOptionStyle}>
                   {getLibraryUnitDisplayLabel(unit)}
                 </option>
               ))}
@@ -2609,7 +2651,7 @@ export default function HomeworkHelper() {
         <main style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
           {/* Mode banner */}
-          <div style={{
+          {/* <div style={{
             flexShrink: 0, display: "flex", alignItems: "center", gap: 9,
             padding: bp.mobile ? "7px 14px" : "8px 22px",
             borderBottom: `1px solid ${modeConf.color}30`,
@@ -2631,7 +2673,7 @@ export default function HomeworkHelper() {
                 {subj.label}
               </span>
             )}
-          </div>
+          </div> */}
 
           {/* Messages */}
           <div style={{
@@ -2843,7 +2885,7 @@ export default function HomeworkHelper() {
                         >
                           {starter.icon}
                         </span>
-                        <ArrowRight size={14} style={{ color: "var(--sd-muted)" }} />
+                        {/* <ArrowRight size={14} style={{ color: "var(--sd-muted)" }} /> */}
                       </div>
                       <div style={{ marginTop: 2 }}>
                         <strong style={{ display: "block", fontSize: 13.5, fontWeight: 800, color: "var(--sd-ink)", marginBottom: 3 }}>

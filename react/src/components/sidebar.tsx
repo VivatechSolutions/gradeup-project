@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "../hooks/use-auth";
 import { useMediaQuery } from "../hooks/use-media-query";
@@ -112,6 +113,55 @@ const css = `
 @keyframes sbFloat { from { transform: translate3d(0,0,0) scale(1); } to { transform: translate3d(-12px,24px,0) scale(1.12); } }
 /* Desktop-only collapse */
 .sb-root.collapsed { width: var(--sb-cw); }
+.sb-root.collapsed .sb-nav {
+  padding: 8px 0;
+  align-items: center;
+}
+.sb-root.collapsed .sb-iw {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.sb-root.collapsed .sb-item {
+  width: 44px;
+  height: 44px;
+  min-height: 44px !important;
+  max-width: 44px;
+  padding: 0 !important;
+  margin: 2px auto !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0 !important;
+  border-radius: 12px;
+}
+.sb-root.collapsed .sb-item .sb-ico {
+  margin: 0 auto;
+  transform: none;
+}
+.sb-root.collapsed .sb-item:hover .sb-ico {
+  transform: scale(1.08);
+}
+.sb-root.collapsed .sb-label {
+  display: none !important;
+  opacity: 0 !important;
+  max-width: 0 !important;
+  width: 0 !important;
+  visibility: hidden;
+}
+.sb-root.collapsed .sb-dot {
+  display: none !important;
+}
+.sb-root.collapsed .sb-bottom {
+  padding: 8px 0;
+  align-items: center;
+}
+.sb-root.collapsed .sb-bottom .sb-iw {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
 
 /* ── TOP BAR ── */
 .sb-topbar {
@@ -151,7 +201,6 @@ const css = `
 .sb-pname { font-size:13px; font-weight:800; color:var(--sb-ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .sb-prole { font-size:11px; color:var(--sb-muted); text-transform:capitalize; margin-top:1px; }
 .sb-prole.academic { text-transform:none; }
-
 /* ── TOGGLE BUTTON ── */
 .sb-toggle {
   width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
@@ -221,11 +270,72 @@ const css = `
 .sb-iw:nth-child(6) .sb-item { animation-delay: 175ms; }
 .sb-iw:nth-child(7) .sb-item { animation-delay: 210ms; }
 .sb-item.active { background: rgba(99,91,255,.12); border-color: rgba(99,91,255,.24); box-shadow: var(--sb-active-shadow); }
+/* Glassmorphism for selected tab with attractive animation */
+.sb-item.active,
+.sb-root.student .sb-item.active {
+  background: rgba(255, 255, 255, 0.12) !important;
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.22) !important;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28), inset 0 1px 1px rgba(255, 255, 255, 0.38), 0 0 16px rgba(255, 255, 255, 0.08) !important;
+  position: relative;
+  overflow: hidden;
+  animation: sbGlassTabIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.sb-item.active::before,
+.sb-root.student .sb-item.active::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -130%;
+  width: 75%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.22),
+    transparent
+  );
+  transform: skewX(-20deg);
+  animation: sbGlassShimmer 4.5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes sbGlassTabIn {
+  from {
+    opacity: 0.65;
+    transform: translateX(-4px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes sbGlassShimmer {
+  0% { left: -130%; }
+  30%, 100% { left: 220%; }
+}
+
 .sb-root.student .sb-item{min-height:44px;border-radius:12px;padding:8px 10px}
-.sb-root.student .sb-item.active{background:linear-gradient(135deg,#2389ff,#6349ff 52%,#ff4d8d);border-color:transparent;box-shadow:var(--sb-active-shadow);animation: sbActiveIn .35s ease both}
 .sb-root.student .sb-item:hover{background:var(--sb-hover)}
-.sb-root.student .sb-item.active:hover{background:linear-gradient(135deg,#2389ff,#6349ff 52%,#ff4d8d)}
-@keyframes sbActiveIn { from { opacity:.72; transform:translateX(-4px) scale(.98); } to { opacity:1; transform:none; } }
+.sb-item.active:hover,
+.sb-root.student .sb-item.active:hover {
+  background: rgba(255, 255, 255, 0.16) !important;
+  border-color: rgba(255, 255, 255, 0.34) !important;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.32), inset 0 1px 2px rgba(255, 255, 255, 0.48), 0 0 20px rgba(255, 255, 255, 0.12) !important;
+  transform: translateY(-1px);
+}
+
+.sb-root.collapsed .sb-item.active {
+  background: rgba(255, 255, 255, 0.14) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.26) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32), inset 0 1px 1px rgba(255, 255, 255, 0.4) !important;
+}
+
 .sb-iw:nth-child(3n) .sb-ico { animation: sbIconBob 4.8s ease-in-out infinite; }
 @keyframes sbIconBob { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-2px); } }
 @keyframes sbItemIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
@@ -275,6 +385,8 @@ const css = `
   max-width: 160px;
 }
 .sb-item.active .sb-label, .sb-item:hover .sb-label { color: var(--sb-ink); }
+.sb-item.active .sb-label { color: #ffffff !important; font-weight: 700; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3); }
+.sb-item:hover .sb-label { color: var(--sb-ink); }
 .sb-root.collapsed .sb-label { opacity:0; max-width:0; }
 
 /* Active dot */
@@ -283,8 +395,17 @@ const css = `
   background: linear-gradient(135deg,#6366f1,#8b5cf6);
   box-shadow: 0 0 7px rgba(99,102,241,.8); flex-shrink:0;
   animation: dotBlink 2s ease-in-out infinite;
+  margin-left: auto; width:6px; height:6px; border-radius:50%;
+  background: #ffffff;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.95), 0 0 4px #8ea2ff;
+  flex-shrink:0;
+  animation: dotGlow 2.4s ease-in-out infinite;
 }
 @keyframes dotBlink { 0%,100%{opacity:1} 50%{opacity:.35} }
+@keyframes dotGlow {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.85); }
+}
 .sb-root.collapsed .sb-dot { display:none; }
 
 /* ────────────────────────────────────────────────────────
@@ -295,6 +416,7 @@ const css = `
      overflow is clipped on an ancestor
    • Fallback CSS :hover also included for when JS is ready
 ──────────────────────────────────────────────────────── */
+/* ── Tooltip ── */
 .sb-tip {
   position: fixed;           /* escape any overflow:hidden on parent */
   background: var(--sb-surface-strong);
@@ -303,18 +425,35 @@ const css = `
   font-size: 11.5px; font-weight: 600;
   padding: 5px 12px;
   border-radius: 8px;
+  position: fixed;
+  background: rgba(14, 20, 42, 0.96);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #f6f7ff;
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 6px 13px;
+  border-radius: 9px;
   white-space: nowrap;
   box-shadow: 0 12px 26px rgba(38,57,116,.18);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 14px rgba(99, 91, 255, 0.18);
   pointer-events: none;
   opacity: 0;
   transition: opacity .15s, transform .15s;
   z-index: 9999;
   transform: translateX(-4px);
   /* position set by JS via style.left / style.top */
+  z-index: 999999;
+  transform: translateY(-50%) translateX(-4px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
 }
 .sb-tip.visible {
   opacity: 1;
   transform: translateX(0);
+  transform: translateY(-50%) translateX(0);
 }
 .sb-tip::before {
   content: '';
@@ -324,6 +463,7 @@ const css = `
   transform: translateY(-50%);
   border: 5px solid transparent;
   border-right-color: rgba(99,102,241,.45);
+  border-right-color: rgba(255, 255, 255, 0.22);
 }
 
 /* ── Sub-menu ── */
@@ -480,7 +620,7 @@ const STUDENT_MENU: MenuItem[] = [
     { label:"Prep",      href:"/exam-preparation" },
     { label:"Main Exam", href:"/main-exam" },
   ]},
-  { label:"Exam Prep Pro",     href:"/bookGuide",        icon:"grad",     color:"cl" },
+  // { label:"Exam Prep Pro",     href:"/bookGuide",        icon:"grad",     color:"cl" },
   // { label: "Calendar",    href: "/calendar",    icon: "calendar", color:"cc"  }
 ];
 
@@ -491,23 +631,24 @@ const TEACHER_MENU: MenuItem[] = [
   { label:"Curriculum",  href:"/teacher/curriculum-planner", icon:"grad",   color:"ci" },
   { label:"Students",    href:"/students",                 icon:"users",    color:"cb" },
   { label:"Assignments", href:"/teacher/homework",          icon:"clip",     color:"ca" },
-  { label:"Quiz Creator",href:"/teacher/assessment-quiz-creator", icon:"exam", color:"cr" },
+  // { label:"Quiz Creator",href:"/teacher/assessment-quiz-creator", icon:"exam", color:"cr" },
   { label:"Attendance",  href:"/teacher/attendance",       icon:"calendar", color:"ct" },
   { label:"User Management", href:"/teacher/user-management", icon:"users",    color:"cp" },
   { label:"AI Exam Correction", href:"/teacher/exam-correction", icon:"examNew", color:"ci" },
   { section: "Live Sessions" },
   { label:"Seminars",    href:"/teacher/seminars",         icon:"presentation", color:"ct" },
   { label:"Debates",     href:"/teacher/debates",          icon:"debateNew",    color:"ca" },
-  { label:"Meetings",    href:"/teacher/meetings",         icon:"video",        color:"cs" },
+  // { label:"Meetings",    href:"/teacher/meetings",         icon:"video",        color:"cs" },
   { section: "Analytics" },
   { label:"Community",   href:"/community",                icon:"msg",      color:"cp" },
   { label:"Progress",    href:"/analytics",                icon:"barChart", color:"co" },
   { label:"Exam Progress", href:"/teacher/exam-progress",    icon:"exam", color:"cr" },
   { label:"Calendar",    href:"/analytics",                icon:"calendar", color:"ct" },
-  { label:"Upload PDF",  href:"/enhanced-content-manager", icon:"upload",   color:"cc" },
+  // { label:"Upload PDF",  href:"/enhanced-content-manager", icon:"upload",   color:"cc" },
 ];
 
 /* ── Tooltip with JS-driven positioning ──────────────────────────── */
+/* ── Tooltip with React Portal (guaranteed to render outside the sidebar) ── */
 function TooltipItem({
   item,
   collapsed,
@@ -520,22 +661,35 @@ function TooltipItem({
   children: React.ReactNode;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
-  const tipRef  = useRef<HTMLDivElement>(null);
+  const [tipVisible, setTipVisible] = useState(false);
+  const [tipPos, setTipPos] = useState({ top: 0, left: 0 });
 
   const showTip = () => {
-    if (!collapsed || !wrapRef.current || !tipRef.current) return;
+    if (!collapsed || !wrapRef.current) return;
     const rect = wrapRef.current.getBoundingClientRect();
-    tipRef.current.style.top  = `${rect.top + rect.height / 2}px`;
-    tipRef.current.style.left = `${rect.right + 10}px`;
-    tipRef.current.style.transform = "translateY(-50%)";
-    tipRef.current.classList.add("visible");
+    setTipPos({
+      top: rect.top + rect.height / 2,
+      left: rect.right + 12,
+    });
+    setTipVisible(true);
   };
-  const hideTip = () => tipRef.current?.classList.remove("visible");
+  const hideTip = () => setTipVisible(false);
 
   return (
     <div ref={wrapRef} className="sb-iw" onMouseEnter={showTip} onMouseLeave={hideTip}>
       {children}
-      <div ref={tipRef} className="sb-tip">{item.label}</div>
+      {tipVisible && collapsed && typeof document !== "undefined" && createPortal(
+        <div
+          className="sb-tip visible"
+          style={{
+            top: `${tipPos.top}px`,
+            left: `${tipPos.left}px`,
+          }}
+        >
+          {item.label}
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
@@ -580,7 +734,6 @@ export default function Sidebar({
     String(user?.board || "").trim().toUpperCase(),
     formatStandard(user?.grade),
   ].filter(Boolean).join(" | ") || "Learning profile incomplete";
-
   const isActive = (href: string) =>
     location === href || (href === "/dashboard" && (location === "/" || location === "/dashboard"));
 
@@ -623,7 +776,7 @@ export default function Sidebar({
               <div className="sb-ava">{first[0]}{last[0] || ""}</div>
               <div className="sb-profile-text">
                 <div className="sb-pname">{first} {last}</div>
-                <div className={`sb-prole${currentRole === "student" ? " academic" : ""}`}>
+                   <div className={`sb-prole${currentRole === "student" ? " academic" : ""}`}>
                   {currentRole === "student" ? studentAcademicLabel : currentRole}
                 </div>
               </div>

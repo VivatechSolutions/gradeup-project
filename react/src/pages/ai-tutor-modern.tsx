@@ -97,6 +97,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   askTutor,
   clearTutorHistory,
+  createTutorConversation,
   getCandidateContext,
   getLibrarySubjects,
   getLibraryUnitDisplayLabel,
@@ -174,6 +175,7 @@ interface ChatMessage {
   }[];
   audioSrc?: string;
   suggestedQuestions?: string[];
+  status?: "pending" | "completed" | "failed";
 }
 
 export interface ChatHistory {
@@ -184,7 +186,36 @@ export interface ChatHistory {
   lastUpdated: Date;
   subject?: string;
   unit?: string;
+  unitId?: string;
+  subjectGroupKey?: string;
 }
+
+const normalizeTutorConversation = (chat: any): ChatHistory => ({
+  ...chat,
+  createdAt: new Date(chat.createdAt),
+  lastUpdated: new Date(chat.lastUpdated),
+  messages: (chat.messages || []).map((message: any) => ({
+    ...message,
+    timestamp: new Date(message.timestamp),
+  })),
+});
+
+const normalizeSpeechText = (value: string) =>
+  value
+    .replace(/#{1,6}\s+/g, "")
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/\*(.*?)\*/g, "$1")
+    .replace(/`{1,3}(.*?)`{1,3}/g, "$1")
+    .replace(/~~(.*?)~~/g, "$1")
+    .replace(/^\s*[-*+]\s+/gm, "")
+    .replace(/^\s*\d+\.\s+/gm, "")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const createClientId = () =>
+  globalThis.crypto?.randomUUID?.() ||
+  `message-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
 // ── Design tokens ──────────────────────────────────────────────────────────
 const CSS = `
@@ -1479,8 +1510,6 @@ export default function AITutorModern() {
   );
   const [currentRole, setCurrentRole] = useState("student");
   const [chatError, setChatError] = useState<string | null>(null);
-  const pendingFreshChatRef = useRef(false);
-  const pendingConversationIdRef = useRef<string | null>(null);
 
   const panelGroupRef = useRef<ImperativePanelGroupHandle>(null);
   const leftPanelRef = useRef<ImperativePanelHandle>(null);
@@ -1560,12 +1589,7 @@ export default function AITutorModern() {
   });
   const filteredChatHistory = chatHistory.filter((chat) => {
     if (selectedSubject === 0) return true;
-    if (!chat.subject) return false;
-
-    return (
-      chat.subject === selectedSubjectData?.label ||
-      chat.subject === selectedSubjectData?.value
-    );
+    return chat.subjectGroupKey === selectedSubjectData?.value;
   });
   useEffect(() => {
     if (userHeader?.role) setCurrentRole(userHeader.role);
@@ -1639,63 +1663,8 @@ export default function AITutorModern() {
             ? selectedSubjectData.value
             : undefined,
       });
-      const mappedHistory = (history || []).map((chat: any) => ({
-        ...chat,
-        createdAt: new Date(chat.createdAt),
-        lastUpdated: new Date(chat.lastUpdated),
-        messages: (chat.messages || []).map((msg: any) => ({
-          ...msg,
-          timestamp: new Date(msg.timestamp),
-        })),
-      }));
+      const mappedHistory = (history || []).map(normalizeTutorConversation);
       setChatHistory(mappedHistory);
-
-      setCurrentChatId((prev) => {
-        const refId = currentChatIdRef.current;
-        console.log("[loadConversationList] setCurrentChatId called", {
-          prev,
-          refId,
-          pendingFresh: pendingFreshChatRef.current,
-          historyIds: mappedHistory.map((c: ChatHistory) => c.id),
-        });
-
-        // If user clicked New Chat, stay on empty new chat.
-        if (pendingFreshChatRef.current) {
-          pendingFreshChatRef.current = false;
-          console.log(
-            "[loadConversationList] → pendingFresh=true, returning null",
-          );
-          return null;
-        }
-
-        // Use the ref as the source of truth — it holds the ID set by
-        // sendMessage synchronously, even before React flushes state.
-        const activeId = prev ?? refId;
-
-        if (
-          activeId &&
-          mappedHistory.some((chat: ChatHistory) => chat.id === activeId)
-        ) {
-          console.log(
-            "[loadConversationList] → activeId found in history, keeping:",
-            activeId,
-          );
-          return activeId;
-        }
-
-        // If activeId exists but isn't in the list yet (history fetch raced
-        // ahead of the server persisting the new conversation), keep it.
-        if (activeId) {
-          console.warn(
-            "[loadConversationList] ⚠️ activeId NOT in history yet (race?) — keeping anyway:",
-            activeId,
-          );
-          return activeId;
-        }
-
-        console.log("[loadConversationList] → no activeId, returning null");
-        return null;
-      });
 
       return mappedHistory;
     } catch (error) {
@@ -1708,11 +1677,6 @@ export default function AITutorModern() {
         variant: "destructive",
       });
       setChatHistory([]);
-      console.error(
-        "[loadConversationList] ❌ fetch failed — resetting currentChatId → null",
-      );
-      setCurrentChatId(null);
-      currentChatIdRef.current = null;
       return [];
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1766,6 +1730,7 @@ export default function AITutorModern() {
     // to re-fire on every render and wipe live messages with stale server data.
   );
   const handleSubjectSelect = (subjectId: number) => {
+    sendRequestRef.current += 1;
     setIsLoading(true);
     setSelectedSubject(subjectId);
     console.log(
@@ -1838,6 +1803,7 @@ export default function AITutorModern() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const currentChatIdRef = useRef<string | null>(null);
   const conversationLoadRequestRef = useRef(0);
+  const sendRequestRef = useRef(0);
   const recognitionRef = useRef<any>(null);
   const highlightTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -1848,7 +1814,9 @@ export default function AITutorModern() {
     sessionId: string;
     clientSecret: string;
   } | null>(null);
-  const [useRealtimeMode, setUseRealtimeMode] = useState(true); // Feature flag
+  // Read-aloud uses finite-duration TTS audio so word progress can be tracked.
+  // Realtime WebRTC remains available for future live voice conversations.
+  const [useRealtimeMode, setUseRealtimeMode] = useState(false);
   const isInitializingRealtimeRef = useRef(false);
   const currentSpeechIdRef = useRef<string>("");
   const [currentlyPlayingMessageId, setCurrentlyPlayingMessageId] = useState<
@@ -1864,6 +1832,7 @@ export default function AITutorModern() {
 
   const handleUnitChange = (newUnit: string) => {
     if (newUnit === selectedUnitId) return;
+    sendRequestRef.current += 1;
     setIsLoading(Boolean(newUnit));
     setChatError(null);
     console.log(
@@ -1882,8 +1851,7 @@ export default function AITutorModern() {
 
   useEffect(() => {
     if (selectedSubject && selectedSubject !== 0 && selectedSubjectGroup) {
-      setAvailableUnits(
-        (selectedSubjectGroup?.units || []).map((unit, index) => ({
+      const nextUnits = (selectedSubjectGroup?.units || []).map((unit, index) => ({
           id: index + 1,
           name: getLibraryUnitDisplayLabel(unit),
           unitId: unit.id,
@@ -1893,33 +1861,25 @@ export default function AITutorModern() {
           classNumber: unit.standard,
           subject: unit.subject,
           term: unit.term,
-        })),
-      );
+        }));
+      setAvailableUnits(nextUnits);
+      setSelectedUnitId((currentUnitId) => {
+        const currentUnit = nextUnits.find((unit) => unit.unitId === currentUnitId);
+        if (currentUnit) {
+          setSelectedUnit(currentUnit.name);
+          return currentUnitId;
+        }
+        setSelectedUnit("");
+        return "";
+      });
     } else {
       setAvailableUnits([]);
+      setSelectedUnit("");
+      setSelectedUnitId("");
     }
-    setSelectedUnit("");
-    setSelectedUnitId("");
     setIsLoading(false);
   }, [selectedSubject, selectedSubjectGroup]);
 
-  useEffect(() => {
-    if (selectedUnit && selectedSubject && selectedSubject !== 0) {
-      setIsLoading(false);
-      if (messages.length === 0) {
-        setMessages([
-          {
-            id: (Date.now() + 1).toString(),
-            type: "assistant",
-            content: `You're now in ${selectedUnit}. Ask me anything about this unit and I'll answer using the uploaded subject content.`,
-            timestamp: new Date(),
-            subject: selectedSubjectData?.value,
-            unit: selectedUnit,
-          },
-        ]);
-      }
-    }
-  }, [selectedUnit, selectedSubject, availableUnits]);
   // Cleanup blob URLs when component unmounts or messages change
   useEffect(() => {
     return () => {
@@ -2055,8 +2015,10 @@ export default function AITutorModern() {
       highlightTimeoutRef.current = null;
     }
 
-    const words = text.split(/\s+/);
+    const words = normalizeSpeechText(text).split(/\s+/).filter(Boolean);
     if (words.length === 0) return;
+    setResponseWords(words);
+    setCurrentWordIndex(0);
 
     // For TTS audio element
     if (audioRef.current && audioRef.current instanceof HTMLAudioElement) {
@@ -2078,12 +2040,6 @@ export default function AITutorModern() {
 
       // Update highlight every 50ms for smooth progression
       highlightTimeoutRef.current = setInterval(updateHighlight, 50);
-    }
-    // For Realtime/WebRTC audio
-    else if (useRealtimeMode && realtimeAudioService.isConnected()) {
-      // Realtime API handles audio timing, just initialize word tracking
-      setCurrentWordIndex(0);
-      // Could implement more sophisticated timing if OpenAI provides word-level timestamps
     }
   };
   // const highlightTextSync = useCallback(
@@ -2131,8 +2087,9 @@ export default function AITutorModern() {
   const speakText = async (text: any, messageId?: string) => {
     const textStr =
       typeof text === "string" ? text : text?.response || String(text) || "";
+    const spokenText = normalizeSpeechText(textStr);
 
-    if (!textStr.trim()) return;
+    if (!spokenText) return;
 
     // Stop any currently playing audio first
     stopSpeaking();
@@ -2156,46 +2113,18 @@ export default function AITutorModern() {
 
     setIsSpeaking(true);
     setIsSpeechLoading(true);
-    setResponseWords(textStr.split(/\s+/));
+    setResponseWords(spokenText.split(/\s+/).filter(Boolean));
 
     try {
-      // Try realtime if enabled and initialized
-      if (useRealtimeMode && realtimeSession) {
-        console.log("Attempting realtime speech...");
-        await speakTextRealtime(textStr, speechId);
-        // setIsSpeechLoading(false);
-      } else {
-        // Fallback to TTS
-        console.log("Realtime not available, using TTS fallback...");
-        await speakTextTTS(textStr);
-        // setIsSpeechLoading(false);
-      }
+      await speakTextTTS(spokenText);
     } catch (error) {
       console.error("Speech synthesis failed:", error);
-
-      // Fallback to TTS only if realtime never started audio
-      if (useRealtimeMode && currentSpeechIdRef.current === speechId && !isSpeaking) {
-        console.log("Realtime failed, attempting TTS fallback...");
-        try {
-          await speakTextTTS(textStr);
-          setIsSpeechLoading(false);
-        } catch (fallbackError) {
-          console.error("TTS fallback also failed:", fallbackError);
-          setIsSpeaking(false);
-          setIsSpeechLoading(false);
-          setCurrentWordIndex(-1);
-          setResponseWords([]);
-          setCurrentlyPlayingMessageId(null);
-          setSpeakingMessageId(null);
-        }
-      } else {
-        setIsSpeaking(false);
-        setIsSpeechLoading(false);
-        setCurrentWordIndex(-1);
-        setResponseWords([]);
-        setCurrentlyPlayingMessageId(null);
-        setSpeakingMessageId(null);
-      }
+      setIsSpeaking(false);
+      setIsSpeechLoading(false);
+      setCurrentWordIndex(-1);
+      setResponseWords([]);
+      setCurrentlyPlayingMessageId(null);
+      setSpeakingMessageId(null);
     }
   };
 
@@ -2317,21 +2246,33 @@ export default function AITutorModern() {
 
             audioRef.current.onended = () => {
               console.log("TTS audio ended");
+              if (highlightTimeoutRef.current) {
+                clearInterval(highlightTimeoutRef.current);
+                highlightTimeoutRef.current = null;
+              }
               setIsSpeaking(false);
               setIsSpeechLoading(false);
               setCurrentWordIndex(-1);
               setResponseWords([]);
               setCurrentlyPlayingMessageId(null);
+              setSpeakingMessageId(null);
+              audioRef.current = null;
               resolve();
             };
 
             audioRef.current.onerror = () => {
               console.error("TTS audio error");
+              if (highlightTimeoutRef.current) {
+                clearInterval(highlightTimeoutRef.current);
+                highlightTimeoutRef.current = null;
+              }
               setIsSpeaking(false);
               setIsSpeechLoading(false);
               setCurrentWordIndex(-1);
               setResponseWords([]);
               setCurrentlyPlayingMessageId(null);
+              setSpeakingMessageId(null);
+              audioRef.current = null;
               reject(new Error("TTS audio playback failed"));
             };
 
@@ -2376,6 +2317,7 @@ export default function AITutorModern() {
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
+      audioRef.current = null;
     }
 
     if (highlightTimeoutRef.current) {
@@ -2392,6 +2334,7 @@ export default function AITutorModern() {
     setResponseWords([]);
     setCurrentWordIndex(-1);
     setCurrentlyPlayingMessageId(null); // ADDED: Clear message ID
+    setSpeakingMessageId(null);
     currentSpeechIdRef.current = "";
   };
   useEffect(() => {
@@ -2572,10 +2515,11 @@ export default function AITutorModern() {
     const hasText =
       textToSend && typeof textToSend === "string" && textToSend.trim();
     if ((!hasText && !attachedFiles.length) || isLoading) return;
+    const sendRequestId = ++sendRequestRef.current;
     setChatError(null);
 
     const userMsg: ChatMessage = {
-      id: Date.now().toString(),
+      id: createClientId(),
       type: "user",
       content: textToSend,
       timestamp: new Date(),
@@ -2591,6 +2535,7 @@ export default function AITutorModern() {
             dataUrl: URL.createObjectURL(f), // ADD THIS LINE
           }))
         : undefined,
+      status: "pending",
     };
     setMessages((prev) => [...prev, userMsg]);
     if (textOverride === undefined) {
@@ -2652,6 +2597,7 @@ export default function AITutorModern() {
     // Clear files after processing
     setAttachedFiles([]);
     if (fileInputRef.current) fileInputRef.current.value = "";
+    if (sendRequestId !== sendRequestRef.current) return;
 
     try {
       if (!selectedUnitId) {
@@ -2660,13 +2606,20 @@ export default function AITutorModern() {
 
       let sessionId = currentChatIdRef.current || currentChatId;
       if (!sessionId) {
-        sessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-        console.log(
-          "[sendMessage] 🆕 New session — generated client-side id:",
-          sessionId,
-        );
+        const created = await createTutorConversation({
+          unitId: selectedUnitId,
+          candidateId: candidateContext.candidateId,
+          candidateName: candidateContext.candidateName,
+        });
+        const normalized = normalizeTutorConversation(created);
+        if (sendRequestId !== sendRequestRef.current) return;
+        sessionId = normalized.id;
         currentChatIdRef.current = sessionId;
         setCurrentChatId(sessionId);
+        setChatHistory((previous) => [
+          normalized,
+          ...previous.filter((chat) => chat.id !== normalized.id),
+        ]);
       }
 
       console.log("[sendMessage] Sending with conversationId:", sessionId);
@@ -2676,9 +2629,16 @@ export default function AITutorModern() {
         candidateName: candidateContext.candidateName,
         query: userMsg.content,
         conversationId: sessionId,
+        userMessageId: userMsg.id,
         limit: 5,
         image_base64: imageBase64,
       });
+      if (
+        sendRequestId !== sendRequestRef.current ||
+        currentChatIdRef.current !== sessionId
+      ) {
+        return;
+      }
       const assistantText =
         data?.answer ||
         data?.response ||
@@ -2686,7 +2646,7 @@ export default function AITutorModern() {
         data?.content ||
         "I could not generate a response for that question.";
       const assistantMsg: ChatMessage = {
-        id: (Date.now() + 1).toString(),
+        id: data?.assistantMessageId || createClientId(),
         type: "assistant",
         content: assistantText,
         timestamp: new Date(),
@@ -2695,6 +2655,7 @@ export default function AITutorModern() {
             ? selectedSubjectData?.value
             : undefined,
         suggestedQuestions: data?.suggested_questions || undefined,
+        status: "completed",
       };
       // Ensure ref stays set after the await (defensive against any mid-flight reset)
       if (!currentChatIdRef.current) {
@@ -2702,28 +2663,42 @@ export default function AITutorModern() {
         setCurrentChatId(sessionId);
       }
       console.log("[sendMessage] ✅ Session held:", currentChatIdRef.current);
-      setMessages((prev) => [...prev, assistantMsg]);
-      // Refresh sidebar after a short delay — gives the server time to persist
-      // the new conversation before we fetch the list. Avoids the race that
-      // previously caused loadConversationList to not find the new id and reset it.
-      setTimeout(() => loadConversationList(), 1500);
+      setMessages((prev) => [
+        ...prev.map((message) =>
+          message.id === userMsg.id ? { ...message, status: "completed" as const } : message,
+        ),
+        assistantMsg,
+      ]);
+      if (data?.conversation) {
+        const normalized = normalizeTutorConversation(data.conversation);
+        setChatHistory((previous) => [
+          normalized,
+          ...previous.filter((chat) => chat.id !== normalized.id),
+        ]);
+      }
     } catch (err) {
+      if (sendRequestId !== sendRequestRef.current) return;
       // ← KEY FIX: show error inline, do NOT reset chat or start new one
       setChatError(
         err instanceof Error
           ? err.message
           : "Failed to get a response. Please try again.",
       );
+      setMessages((previous) =>
+        previous.map((message) =>
+          message.id === userMsg.id ? { ...message, status: "failed" } : message,
+        ),
+      );
       // Optionally remove the user message if you want clean retry:
       // setMessages((prev) => prev.filter((m) => m.id !== userMsg.id));
     } finally {
-      setIsLoading(false);
+      if (sendRequestId === sendRequestRef.current) setIsLoading(false);
     }
   };
 
-  const startNewChat = () => {
-    pendingFreshChatRef.current = true;
-    pendingConversationIdRef.current = null;
+  const startNewChat = async () => {
+    sendRequestRef.current += 1;
+    const requestId = sendRequestRef.current;
     conversationLoadRequestRef.current += 1;
 
     setIsLoading(false);
@@ -2739,20 +2714,51 @@ export default function AITutorModern() {
     }
 
     stopSpeaking();
+
+    if (!selectedUnitId) return;
+
+    setIsLoading(true);
+    try {
+      const created = await createTutorConversation({
+        unitId: selectedUnitId,
+        candidateId: candidateContext.candidateId,
+        candidateName: candidateContext.candidateName,
+      });
+      const normalized = normalizeTutorConversation(created);
+      if (requestId !== sendRequestRef.current) return;
+      currentChatIdRef.current = normalized.id;
+      setCurrentChatId(normalized.id);
+      setChatHistory((previous) => [
+        normalized,
+        ...previous.filter((chat) => chat.id !== normalized.id),
+      ]);
+    } catch (error) {
+      if (requestId !== sendRequestRef.current) return;
+      setChatError(
+        error instanceof Error ? error.message : "Failed to create a new chat.",
+      );
+    } finally {
+      if (requestId === sendRequestRef.current) setIsLoading(false);
+    }
   };
 
   const loadChat = (chat: ChatHistory) => {
-    pendingConversationIdRef.current = null;
+    sendRequestRef.current += 1;
+    setIsLoading(false);
     conversationLoadRequestRef.current += 1;
+    stopSpeaking();
     console.log("[loadChat] switching to chat id:", chat.id);
     setMessages(chat.messages);
     setCurrentChatId(chat.id);
     currentChatIdRef.current = chat.id;
     setCurrentMessage("");
     setChatError(null);
-    const subj = subjects.find((s) => s.label === chat.subject);
+    const subj = subjects.find(
+      (subject) =>
+        subject.value === chat.subjectGroupKey || subject.label === chat.subject,
+    );
     if (subj) setSelectedSubject(subj.id);
-    else setSelectedSubject(0);
+    if (chat.unitId) setSelectedUnitId(String(chat.unitId));
     setSelectedUnit(chat.unit || "");
   };
 
@@ -2775,17 +2781,18 @@ export default function AITutorModern() {
       return;
     }
     if (currentChatId === chatId) {
+      sendRequestRef.current += 1;
       console.log(
         "[deleteChat] deleted active chat, resetting currentChatId → null",
       );
       setMessages([]);
       setCurrentChatId(null);
       currentChatIdRef.current = null;
-      pendingConversationIdRef.current = null;
     }
   };
 
   const clearAllHistory = async () => {
+    sendRequestRef.current += 1;
     try {
       await clearTutorHistory({
         candidateId: candidateContext.candidateId,
@@ -2795,7 +2802,6 @@ export default function AITutorModern() {
       setMessages([]);
       setCurrentChatId(null);
       currentChatIdRef.current = null;
-      pendingConversationIdRef.current = null;
       toast({
         title: "History cleared",
         description: "All chat history has been deleted.",
@@ -3622,7 +3628,7 @@ export default function AITutorModern() {
                         />
                       ) : message.type === "assistant" &&
                         isSpeaking &&
-                        messages[messages.length - 1]?.id === message.id ? (
+                        currentlyPlayingMessageId === message.id ? (
                         renderHighlightedText(message.content)
                       ) : (
                         <FormattedAIContent value={message.content} />

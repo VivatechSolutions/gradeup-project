@@ -2,6 +2,10 @@ const mongoose = require("mongoose");
 
 const tutorMessageSchema = new mongoose.Schema(
   {
+    messageId: {
+      type: String,
+      trim: true,
+    },
     role: {
       type: String,
       enum: ["user", "assistant"],
@@ -15,6 +19,11 @@ const tutorMessageSchema = new mongoose.Schema(
     createdAt: {
       type: Date,
       default: Date.now,
+    },
+    status: {
+      type: String,
+      enum: ["pending", "completed", "failed"],
+      default: "completed",
     },
   },
   { _id: false },
@@ -79,5 +88,6 @@ const tutorConversationSchema = new mongoose.Schema(
 );
 
 tutorConversationSchema.index({ candidateId: 1, lastActivityAt: -1 });
+tutorConversationSchema.index({ candidateId: 1, conversationId: 1 });
 
 module.exports = mongoose.model("TutorConversation", tutorConversationSchema);

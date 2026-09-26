@@ -29,78 +29,297 @@ const SUBJECT_META = {
   "History":          { color: "#8b5cf6", bg: "rgba(139,92,246,.12)"  },
 };
 
+const MID_TERM_PAPER = {
+  year: "2026",
+  exam_name: "Mid Term Paper",
+  subject: "English",
+  unit_number: 1,
+  document_id: "jeff101",
+  board: "CBSE",
+  class_number: "10",
+  paper_title: "Class 10 English (First Flight) - Unit 1: A Letter to God, Dust of Snow, Fire and Ice - Mid Term Paper",
+  total_marks: 40,
+  duration_minutes: 90,
+  general_instructions: [
+    "This paper has 16 questions in 5 sections.",
+    "Section A: Q1-Q7 are multiple choice questions of 1 mark each.",
+    "Section B: Q8-Q9 are poem extracts of 5 marks each (1 mark per sub-part).",
+    "Section C: Q10-Q11 are grammar and vocabulary questions of 4 marks each.",
+    "Section D: Q12-Q14 are short answer questions of 3 marks each. Answer in 40-50 words.",
+    "Section E: Answer any ONE of Q15 or Q16 (6 marks). Answer in 100-120 words."
+  ],
+  questions: [
+    {
+      section: "A",
+      question_number: 1,
+      question: "In 'A Letter to God', Lencho compared the big raindrops to 'ten cent pieces' because:",
+      marks: 1,
+      type: "mcq",
+      options: [
+        "he wanted to become rich quickly",
+        "the rain promised a good harvest, which would bring him money",
+        "the raindrops shone like silver",
+        "he had lost his coins in the field"
+      ],
+      correct_answer: "the rain promised a good harvest, which would bring him money",
+      is_choice_based: false,
+      questions_to_attempt: 7
+    },
+    {
+      section: "A",
+      question_number: 2,
+      question: "After the hailstorm, Lencho's field looked as if it was:",
+      marks: 1,
+      type: "mcq",
+      options: [
+        "covered with salt",
+        "flooded with water",
+        "eaten by locusts",
+        "burnt by fire"
+      ],
+      correct_answer: "covered with salt",
+      is_choice_based: false,
+      questions_to_attempt: 7
+    },
+    {
+      section: "A",
+      question_number: 3,
+      question: "How much money did Lencho ask God for in his first letter?",
+      marks: 1,
+      type: "mcq",
+      options: [
+        "Fifty pesos",
+        "Seventy pesos",
+        "A hundred pesos",
+        "A thousand pesos"
+      ],
+      correct_answer: "A hundred pesos",
+      is_choice_based: false,
+      questions_to_attempt: 7
+    },
+    {
+      section: "A",
+      question_number: 4,
+      question: "Why did the postmaster decide to answer Lencho's letter?",
+      marks: 1,
+      type: "mcq",
+      options: [
+        "To make fun of Lencho",
+        "It was his official duty",
+        "Lencho had paid extra postage",
+        "So that Lencho's faith in God would not be shaken"
+      ],
+      correct_answer: "So that Lencho's faith in God would not be shaken",
+      is_choice_based: false,
+      questions_to_attempt: 7
+    },
+    {
+      section: "A",
+      question_number: 5,
+      question: "What is ironic about the end of 'A Letter to God'?",
+      marks: 1,
+      type: "mcq",
+      options: [
+        "Lencho thanks the postmaster for the money",
+        "Lencho calls the post office employees, who collected the money for him, 'a bunch of crooks'",
+        "Lencho decides never to write to God again",
+        "The postmaster asks Lencho to return the money"
+      ],
+      correct_answer: "Lencho calls the post office employees, who collected the money for him, 'a bunch of crooks'",
+      is_choice_based: false,
+      questions_to_attempt: 7
+    },
+    {
+      section: "A",
+      question_number: 6,
+      question: "Lencho is described as 'an ox of a man'. Which figure of speech is used here?",
+      marks: 1,
+      type: "mcq",
+      options: [
+        "Simile",
+        "Personification",
+        "Metaphor",
+        "Alliteration"
+      ],
+      correct_answer: "Metaphor",
+      is_choice_based: false,
+      questions_to_attempt: 7
+    },
+    {
+      section: "A",
+      question_number: 7,
+      question: "The postmaster is described as 'amiable'. The word 'amiable' means:",
+      marks: 1,
+      type: "mcq",
+      options: [
+        "friendly and pleasant",
+        "angry and rude",
+        "fat and lazy",
+        "strict and serious"
+      ],
+      correct_answer: "friendly and pleasant",
+      is_choice_based: false,
+      questions_to_attempt: 7
+    },
+    {
+      section: "B",
+      question_number: 8,
+      question: "Read the extract and answer the questions that follow.\n\nThe way a crow\nShook down on me\nThe dust of snow\nFrom a hemlock tree\n\nHas given my heart\nA change of mood\nAnd saved some part\nOf a day I had rued.\n\n(i) What does the poet mean by the 'dust of snow'?\n(ii) Why is the hemlock tree an unusual choice for a poem? What does it usually suggest?\n(iii) Choose the correct meaning of 'rued': (a) enjoyed (b) held in regret (c) forgotten (d) wasted\n(iv) How did the poet's mood change?\n(v) Write the rhyme scheme of the first stanza.",
+      marks: 5,
+      type: "short_answer",
+      options: [],
+      correct_answer: "(i) Fine, powdery particles of snow that fell on the poet when the crow shook the branch of the tree.\n(ii) The hemlock is a poisonous tree. Unlike 'beautiful' trees such as the maple or oak, it suggests sorrow, gloom or death.\n(iii) (b) held in regret\n(iv) His sad, regretful mood changed to a happy one, and the rest of the day was saved from being wasted.\n(v) abab",
+      is_choice_based: false,
+      questions_to_attempt: 2
+    },
+    {
+      section: "B",
+      question_number: 9,
+      question: "Read the extract and answer the questions that follow.\n\nSome say the world will end in fire\nSome say in ice.\nFrom what I've tasted of desire\nI hold with those who favour fire.\n\nBut if it had to perish twice,\nI think I know enough of hate\nTo say that for destruction ice\nIs also great\nAnd would suffice.\n\n(i) According to the poem, what are the two ways in which the world may end?\n(ii) What does 'fire' stand for in the poem?\n(iii) What does 'ice' stand for in the poem?\n(iv) Why does the poet 'hold with those who favour fire'?\n(v) Find the word in the extract that means 'be sufficient'.",
+      marks: 5,
+      type: "short_answer",
+      options: [],
+      correct_answer: "(i) In fire or in ice.\n(ii) Desire - greed, lust, fury and conflict.\n(iii) Hatred - coldness, indifference, intolerance and rigidity.\n(iv) From his own experience of desire, he knows how destructive it can be, so he agrees that the world will end in fire.\n(v) suffice",
+      is_choice_based: false,
+      questions_to_attempt: 2
+    },
+    {
+      section: "C",
+      question_number: 10,
+      question: "Join each pair of sentences using the relative pronoun given in brackets.\n(i) Lencho wrote a letter to God. The letter was full of faith. (which)\n(ii) The postmaster read the letter. He was a kind and cheerful man. (who)\n(iii) Lencho wrote to God. His crops had been destroyed by hail. (whose)\n(iv) The employees gave money for charity. The postmaster had asked them. (whom)",
+      marks: 4,
+      type: "short_answer",
+      options: [],
+      correct_answer: "(i) Lencho wrote a letter to God, which was full of faith.\n(ii) The postmaster, who was a kind and cheerful man, read the letter.\n(iii) Lencho, whose crops had been destroyed by hail, wrote to God.\n(iv) The employees, whom the postmaster had asked, gave money for charity.",
+      is_choice_based: false,
+      questions_to_attempt: 2
+    },
+    {
+      section: "C",
+      question_number: 11,
+      question: "Fill in the blanks with suitable words from the box: gale, whirlwind, cyclone, hurricane, tornado, typhoon\n(i) The ______ over the Bay of Bengal, with winds moving in a circle, forced thousands of people to move to shelters.\n(ii) A ______, with its funnel-shaped cloud, tore through the small town.\n(iii) The fishing boats stayed in the harbour because an extremely strong wind, a ______, was blowing.\n(iv) The ______ that struck the Philippines in the western Pacific brought very strong winds and heavy rain.",
+      marks: 4,
+      type: "fill_in_the_blanks",
+      options: [],
+      correct_answer: "(i) cyclone\n(ii) tornado\n(iii) gale\n(iv) typhoon",
+      is_choice_based: false,
+      questions_to_attempt: 2
+    },
+    {
+      section: "D",
+      question_number: 12,
+      question: "Why did Lencho write a letter to God? What does this tell us about him?",
+      marks: 3,
+      type: "short_answer",
+      options: [],
+      correct_answer: "The hailstorm destroyed Lencho's entire corn crop, and his family faced hunger. He needed a hundred pesos to sow his field again and to live until the next crop. He had complete, unquestioning faith that God sees everything and would help him, so he wrote directly to God. It shows he was simple, hardworking and deeply faithful.",
+      is_choice_based: false,
+      questions_to_attempt: 3
+    },
+    {
+      section: "D",
+      question_number: 13,
+      question: "Why did the postmaster send money to Lencho? Why did he sign the letter 'God'?",
+      marks: 3,
+      type: "short_answer",
+      options: [],
+      correct_answer: "The postmaster was moved by Lencho's faith and did not want it to be shaken. He collected money from his employees and friends and gave part of his own salary as an act of charity. He signed the letter 'God' so that Lencho would believe God had answered him, which shows the postmaster was kind and generous.",
+      is_choice_based: false,
+      questions_to_attempt: 3
+    },
+    {
+      section: "D",
+      question_number: 14,
+      question: "How does Robert Frost present nature in 'Dust of Snow'? Why does he choose a crow and a hemlock tree instead of more 'beautiful' images?",
+      marks: 3,
+      type: "short_answer",
+      options: [],
+      correct_answer: "Frost shows nature as a source of comfort that can change a person's mood. The crow and the hemlock are usually linked with bad omens, gloom and death, yet the snow they shake down lifts the poet's spirits. By choosing them, the poet shows that even ordinary or gloomy things can bring joy, and that a small moment can have a larger significance.",
+      is_choice_based: false,
+      questions_to_attempt: 3
+    },
+    {
+      section: "E",
+      question_number: 15,
+      question: "There are two kinds of conflict in 'A Letter to God': between humans and nature, and between humans themselves. Explain how each conflict is shown in the story.",
+      marks: 6,
+      type: "long_answer",
+      options: [],
+      correct_answer: "Humans and nature: Lencho, a hardworking farmer, hopes for rain to save his ripe corn. The rain comes, but it turns into a hailstorm that destroys the whole crop. Lencho is helpless before nature and his family faces hunger.\nHumans and humans: The post office employees, led by the postmaster, collect money to help Lencho. But when Lencho receives only seventy pesos, he suspects them of stealing the rest and calls them 'a bunch of crooks'. The very people who helped him are the ones he mistrusts.\nConclusion: The first conflict brings Lencho's suffering; the second brings the irony that his faith in God is unshaken while his faith in people is lost.",
+      is_choice_based: true,
+      questions_to_attempt: 1
+    },
+    {
+      section: "E",
+      question_number: 16,
+      question: "Lencho's faith in God was unshakeable, but his faith in people was weak. Discuss this statement with reference to 'A Letter to God', and explain the irony in the ending of the story.",
+      marks: 6,
+      type: "long_answer",
+      options: [],
+      correct_answer: "Faith in God: Lencho believes God sees everything and will surely help him. He writes to God without doubt, and when money arrives he shows not the slightest surprise.\nWeak faith in people: When he counts the money and finds less than he asked for, he never doubts God. Instead he blames the post office employees and calls them crooks.\nIrony: The employees and the postmaster, out of kindness, collected the money themselves to protect his faith. The people he calls thieves are the very people who helped him, and his faith in God, which they tried to protect, makes him insult them.\nConclusion: The story shows that blind faith can make a person ungrateful towards real human kindness.",
+      is_choice_based: true,
+      questions_to_attempt: 1
+    }
+  ]
+};
+
+const getQuestionType = (item) => {
+  if (item.type === "mcq") return "mcq";
+  if (item.type === "long_answer") return "long";
+  if (item.type === "fill_in_the_blanks") return "short";
+  if (item.type === "short_answer" && item.marks >= 5) return "medium";
+  return "short";
+};
+
+const getWordRange = (marks) => {
+  if (marks >= 6) return { minWords: 90, maxWords: 130 };
+  if (marks >= 4) return { minWords: 40, maxWords: 80 };
+  if (marks >= 3) return { minWords: 25, maxWords: 60 };
+  return { minWords: 20, maxWords: 50 };
+};
+
+const normalizePaperQuestion = (item) => {
+  const mappedType = getQuestionType(item);
+  const words = getWordRange(item.marks);
+  const baseQuestion = {
+    id: `q${item.question_number}`,
+    type: mappedType,
+    marks: item.marks,
+    question: item.question,
+    hint: item.type === "short_answer" || item.type === "long_answer" ? "Answer using the lesson text and your own words." : undefined,
+    ...(item.type === "mcq" ? {
+      options: item.options || [],
+      correctOption: item.options ? item.options.indexOf(item.correct_answer) : 0,
+    } : {})
+  };
+
+  if (item.type !== "mcq") {
+    return {
+      ...baseQuestion,
+      ...words,
+      correctAnswer: item.correct_answer,
+    };
+  }
+
+  return baseQuestion;
+};
+
 const MOCK = [
   {
-    id:"hw-001", subject:"Biology", topic:"Cell Discovery & Organelles", grade:"Grade 10",
-    totalMarks:30, timeLimit:45, aiGenerated:true, triggeredBy:"auto",
-    dueDate:"Mar 22", status:"pending", emoji:"🔬", color:["#6366f1","#8b5cf6"],
-    description:"Explore the fundamental building blocks of life — cell theory, organelle functions, and microscopy techniques.",
-    questions:[
-      {id:"q1",type:"mcq",marks:1,question:"Who coined the term 'cell' after observing cork under a microscope?",options:["Anton van Leeuwenhoek","Robert Hooke","Matthias Schleiden","Theodor Schwann"],correctOption:1,hint:"He described cell walls of dead plant tissue in 1665."},
-      {id:"q2",type:"mcq",marks:1,question:"Which organelle is known as the 'powerhouse of the cell'?",options:["Nucleus","Ribosome","Mitochondria","Golgi apparatus"],correctOption:2},
-      {id:"q3",type:"mcq",marks:1,question:"What does the Unified Cell Theory state about all living organisms?",options:["Composed of atoms only","Composed of one or more cells","Reproduce asexually","Require oxygen"],correctOption:1},
-      {id:"q4",type:"short",marks:2,question:"Define cellular respiration and name the organelle where it primarily occurs.",minWords:20,maxWords:60,hint:"Think about where ATP production takes place."},
-      {id:"q5",type:"short",marks:2,question:"Distinguish between prokaryotic and eukaryotic cells with one example each.",minWords:25,maxWords:70},
-      {id:"q6",type:"medium",marks:5,question:"Describe the structure and function of the mitochondria. Why is it central to cellular life?",minWords:80,maxWords:150},
-      {id:"q7",type:"image",marks:3,question:"Upload a labeled diagram of an animal cell showing at least 5 organelles.",hint:"Draw, photograph or scan your diagram and upload here."},
-      {id:"q8",type:"speech",marks:5,question:"Explain the significance of the microscope in developing cell theory. Speak for at least 30 seconds.",hint:"Talk about Hooke, Leeuwenhoek, and how their observations led to cell theory."},
-      {id:"q9",type:"long",marks:10,question:"Write a detailed essay on the Three Pillars of Cell Theory — historical context, each pillar, and a modern medical application.",minWords:200,maxWords:400,hint:"Structure: Introduction → Pillar 1 → Pillar 2 → Pillar 3 → Application → Conclusion."},
-    ],
-  },
-  {
-    id:"hw-002", subject:"Physics", topic:"Newtonian Laws of Motion", grade:"Grade 11",
-    totalMarks:25, timeLimit:40, aiGenerated:true, triggeredBy:"auto",
-    dueDate:"Mar 23", status:"in-progress", emoji:"⚡", color:["#f59e0b","#ef4444"],
-    description:"Master Newton's three fundamental laws and their real-world applications in classical mechanics.",
-    questions:[
-      {id:"q1",type:"mcq",marks:1,question:"Newton's First Law is also known as the Law of:",options:["Gravitation","Inertia","Acceleration","Action-Reaction"],correctOption:1},
-      {id:"q2",type:"mcq",marks:1,question:"If F = 20 N and m = 4 kg, what is the acceleration?",options:["2 m/s²","4 m/s²","5 m/s²","80 m/s²"],correctOption:2},
-      {id:"q3",type:"short",marks:2,question:"State Newton's Third Law and give one everyday example.",minWords:20,maxWords:60},
-      {id:"q4",type:"document",marks:3,question:"Upload your solved force diagram worksheet for the pulley system problem.",hint:"Scan or photograph your handwritten work."},
-      {id:"q5",type:"medium",marks:5,question:"A car of 1000 kg accelerates from 0 to 20 m/s in 5 s. Calculate net force and explain which Newton's Law applies.",minWords:60,maxWords:120},
-      {id:"q6",type:"speech",marks:5,question:"Describe how Newton's Three Laws apply to a rocket launch. Speak for at least 45 seconds."},
-      {id:"q7",type:"long",marks:8,question:"Analyse the impact of Newton's Laws on classical mechanics and modern engineering with examples.",minWords:180,maxWords:350},
-    ],
-  },
-  {
-    id:"hw-003", subject:"Computer Science", topic:"Algorithms & Data Structures", grade:"Grade 12",
-    totalMarks:20, timeLimit:35, aiGenerated:true, triggeredBy:"teacher",
-    dueDate:"Mar 24", status:"submitted", score:17, emoji:"💻", color:["#10b981","#0ea5e9"],
-    description:"Deep dive into fundamental algorithms and data structures — time complexity, sorting, and real-world applications.",
-    questions:[
-      {id:"q1",type:"mcq",marks:1,question:"What is the time complexity of Binary Search?",options:["O(n)","O(log n)","O(n²)","O(1)"],correctOption:1},
-      {id:"q2",type:"short",marks:2,question:"Explain the difference between a Stack and a Queue.",minWords:20,maxWords:60},
-      {id:"q3",type:"image",marks:3,question:"Draw and upload a diagram showing Merge Sort steps on [5,2,8,1,9,3].",hint:"Show each split and merge step clearly."},
-      {id:"q4",type:"medium",marks:5,question:"Explain the Divide and Conquer paradigm using Merge Sort as an example.",minWords:80,maxWords:150},
-      {id:"q5",type:"long",marks:9,question:"Compare linear and non-linear data structures — applications, advantages, limitations, and code examples.",minWords:160,maxWords:300},
-    ],
-  },
-  {
-    id:"hw-004", subject:"Mathematics", topic:"Calculus — Differentiation", grade:"Grade 12",
-    totalMarks:35, timeLimit:60, aiGenerated:false, triggeredBy:"teacher",
-    dueDate:"Mar 25", status:"pending", emoji:"📐", color:["#ec4899","#8b5cf6"],
-    description:"Practice differentiation rules — chain rule, product rule, quotient rule — with real-world application problems.",
-    questions:[
-      {id:"q1",type:"mcq",marks:1,question:"What is the derivative of sin(x)?",options:["cos(x)","-cos(x)","sin(x)","-sin(x)"],correctOption:0},
-      {id:"q2",type:"mcq",marks:1,question:"The chain rule is used when differentiating:",options:["Sum of functions","Product of constants","Composite functions","Simple polynomials"],correctOption:2},
-      {id:"q3",type:"short",marks:2,question:"State the Power Rule and differentiate f(x) = 4x³ + 2x² - 7x + 3.",minWords:20,maxWords:70},
-      {id:"q4",type:"document",marks:4,question:"Upload your completed differentiation worksheet with all working shown.",hint:"Neatly hand-written or typed. Show all steps."},
-      {id:"q5",type:"medium",marks:7,question:"Using the Product Rule, differentiate f(x) = (3x² + 1)(sin x). Show all steps.",minWords:80,maxWords:140},
-      {id:"q6",type:"image",marks:4,question:"Upload a photo of your hand-drawn graph of f(x) = x³ - 3x with critical points marked.",hint:"Label maxima, minima, and inflection points."},
-      {id:"q7",type:"long",marks:16,question:"Explain differentiation in economics: marginal cost, revenue and profit. Solve a worked example for C(x) = 0.01x³ - 0.5x² + 20x + 300.",minWords:200,maxWords:450},
-    ],
-  },
-  {
-    id:"hw-005", subject:"History", topic:"World War II — Key Battles", grade:"Grade 11",
-    totalMarks:20, timeLimit:30, aiGenerated:false, triggeredBy:"teacher",
-    dueDate:"Mar 26", status:"graded", score:18, emoji:"🌍", color:["#8b5cf6","#6366f1"],
-    description:"Analyse the turning points of World War II, focusing on key battles and their strategic significance.",
-    questions:[
-      {id:"q1",type:"mcq",marks:1,question:"Which battle is considered the turning point of WWII on the Eastern Front?",options:["Battle of Britain","Battle of Stalingrad","D-Day Normandy","Battle of Midway"],correctOption:1},
-      {id:"q2",type:"short",marks:2,question:"Why was Operation Overlord (D-Day) strategically significant?",minWords:25,maxWords:70},
-      {id:"q3",type:"medium",marks:5,question:"Compare the Battle of Britain and the Battle of Stalingrad in terms of strategy, outcome, and importance.",minWords:80,maxWords:150},
-      {id:"q4",type:"long",marks:12,question:"Evaluate the role of air power in determining the outcomes of key WWII battles. Use at least three examples.",minWords:200,maxWords:380},
-    ],
+    id: "mid-term-english-001",
+    subject: "English",
+    topic: "Mid Term English Paper - Unit 1",
+    grade: "Grade 10",
+    totalMarks: MID_TERM_PAPER.total_marks,
+    timeLimit: MID_TERM_PAPER.duration_minutes,
+    aiGenerated: true,
+    triggeredBy: "auto",
+    dueDate: "Sep 30",
+    status: "pending",
+    emoji: "📖",
+    color: ["#6366f1", "#8b5cf6"],
+    description: MID_TERM_PAPER.paper_title,
+    questions: MID_TERM_PAPER.questions.map(normalizePaperQuestion),
   },
 ];
 

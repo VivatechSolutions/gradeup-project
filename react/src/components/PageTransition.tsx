@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
+import FunnyLoader from "./ui/FunnyLoader";
 
 /**
  * Route order hierarchy to determine transition direction (forward vs backward).
@@ -176,37 +177,7 @@ export const PageTransition: React.FC<PageTransitionProps> = ({ children }) => {
                 exit={{ opacity: 0, scale: 0.85 }}
                 transition={{ duration: 0.22 }}
               >
-                <div className="morph-loader-card">
-                  {/* Outer & Inner Pulsing Shockwave Rings */}
-                  <div className="morph-loader-ring-outer" />
-                  <div className="morph-loader-ring-inner" />
-
-                  {/* Core Orb inspired by reference loaderAnim */}
-                  <div className="morph-loader-core">
-                    <svg
-                      className="morph-loader-icon"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
-                      <path d="M6 12v5c0 2 3 3 6 3s6-1 6-3v-5" />
-                    </svg>
-                  </div>
-
-                  {/* Bouncing Liquid Dots Row */}
-                  <div className="morph-dots-row">
-                    <span className="morph-dot" />
-                    <span className="morph-dot" />
-                    <span className="morph-dot" />
-                  </div>
-
-                  {/* Shimmering Brand Status Label */}
-                  <div className="morph-loader-text">GradeUp AI</div>
-                </div>
+                <FunnyLoader />
               </motion.div>
             )}
           </AnimatePresence>
@@ -217,9 +188,6 @@ export const PageTransition: React.FC<PageTransitionProps> = ({ children }) => {
       {/* Page Content Stage with Down-to-Top Smooth Entrance Transition */}
       <motion.div
         key={displayLocation}
-        initial={{ opacity: 0.92, scale: 0.99 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.35, ease: PT_EASE_GLIDE }}
         initial={{ opacity: 0, y: 46, scale: 0.985, filter: "blur(6px)" }}
         animate={{
           opacity: 1,

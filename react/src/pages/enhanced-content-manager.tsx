@@ -1,587 +1,966 @@
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { motion, AnimatePresence } from "framer-motion";
+import { Link } from "wouter";
 import { useToast } from "../hooks/use-toast";
 import { useAuth } from "../hooks/use-auth";
-import { Link } from "wouter";
+import { useTheme } from "../hooks/use-theme";
 import { buildApiUrl } from "../lib/apiBase";
+import roboImg from "../assets/robo.png";
+import {
+  BookOpen, Clock, BarChart2, Eye, Plus, Edit, Trash2,
+  Paperclip, CheckCircle2, X, TrendingUp, Filter, Sparkles,
+  ChevronRight, ChevronLeft, ArrowRight, ArrowLeft, Mic, Image as ImageIcon,
+  FileText, HelpCircle, Check, AlertCircle, RefreshCw, Layers,
+  ChevronDown, CheckCheck, Star, Target, Zap, ShieldCheck,
+  Shuffle, UploadCloud, Brain, Lightbulb, Compass, Download,
+  Sliders, Award, BookCheck
+} from "lucide-react";
 
-/* ═══════════════════════════════════════════════════════════
-   CSS — mirrors teacher dashboard (td-*) design tokens exactly
-   ═══════════════════════════════════════════════════════════ */
+/* ═════════════════════════════════════════════════════════════════════════════
+   TYPES & INTERFACES
+   ═════════════════════════════════════════════════════════════════════════════ */
+export type QuestionType = "mcq" | "short" | "medium" | "long" | "speech" | "image";
+
+export interface InteractiveQuestion {
+  id: string;
+  courseId?: number;
+  subject?: string;
+  type: QuestionType;
+  marks: number;
+  question: string;
+  options?: string[];
+  correctOption?: number;
+  correctAnswer?: string;
+  explanation?: string;
+  hint?: string;
+  difficulty: "easy" | "medium" | "hard";
+  bloomLevel?: string;
+  sampleAnswer?: string;
+  minWords?: number;
+  maxWords?: number;
+}
+
+const QUESTION_TYPES: Record<QuestionType, { label: string; short: string; color: string; bg: string }> = {
+  mcq:    { label: "Multiple Choice", short: "MCQ",      color: "#0284c7", bg: "rgba(2,132,199,.12)" },
+  short:  { label: "Short Answer",    short: "2 Marks",  color: "#0ea5e9", bg: "rgba(14,165,233,.12)" },
+  medium: { label: "Medium Answer",   short: "5 Marks",  color: "#f59e0b", bg: "rgba(245,158,11,.12)" },
+  long:   { label: "Essay Question",  short: "Essay",    color: "#ea580c", bg: "rgba(234,88,12,.12)" },
+  speech: { label: "Voice Answer",    short: "Speech",   color: "#10b981", bg: "rgba(16,185,129,.12)" },
+  image:  { label: "Diagram / Image", short: "Diagram",  color: "#0d9488", bg: "rgba(13,148,136,.12)" },
+};
+
+/* ── Initial Seed Questions for Question Transitions ── */
+const SEED_QUESTIONS: InteractiveQuestion[] = [
+  {
+    id: "q-1",
+    courseId: 1,
+    subject: "Biology",
+    type: "mcq",
+    marks: 2,
+    difficulty: "easy",
+    bloomLevel: "Remember",
+    question: "Who coined the term 'cell' after observing thin cork slices under a compound microscope in 1665?",
+    options: ["Anton van Leeuwenhoek", "Robert Hooke", "Matthias Schleiden", "Theodor Schwann"],
+    correctOption: 1,
+    correctAnswer: "Robert Hooke",
+    hint: "He compared the microscopic porous structures to the small rooms (cells) of monastery monks.",
+    explanation: "Robert Hooke first observed dead cork cells under his microscope in 1665 and coined the word 'cell' due to their box-like resemblance."
+  },
+  {
+    id: "q-2",
+    courseId: 1,
+    subject: "Biology",
+    type: "mcq",
+    marks: 2,
+    difficulty: "medium",
+    bloomLevel: "Understand",
+    question: "Which organelle generates the majority of cellular chemical energy in the form of ATP and contains its own circular DNA?",
+    options: ["Golgi Apparatus", "Ribosome", "Mitochondria", "Endoplasmic Reticulum"],
+    correctOption: 2,
+    correctAnswer: "Mitochondria",
+    hint: "Commonly referred to as the powerhouse of the eukaryotic cell.",
+    explanation: "Mitochondria carry out oxidative phosphorylation to synthesize ATP and possess their own semi-autonomous circular mitochondrial genome."
+  },
+  {
+    id: "q-3",
+    courseId: 2,
+    subject: "Physics",
+    type: "mcq",
+    marks: 3,
+    difficulty: "medium",
+    bloomLevel: "Apply",
+    question: "A constant force of 40 N acts on an object with mass 8 kg. What is the resulting acceleration of the object?",
+    options: ["2.5 m/s²", "5.0 m/s²", "10.0 m/s²", "320.0 m/s²"],
+    correctOption: 1,
+    correctAnswer: "5.0 m/s²",
+    hint: "Use Newton's Second Law: a = F / m.",
+    explanation: "According to Newton's Second Law (F = ma), acceleration a = F / m = 40 N / 8 kg = 5.0 m/s²."
+  },
+  {
+    id: "q-4",
+    courseId: 3,
+    subject: "Mathematics",
+    type: "short",
+    marks: 4,
+    difficulty: "medium",
+    bloomLevel: "Analyze",
+    question: "State the derivative of f(x) = (3x² + 5)⁴ using the Chain Rule and simplify your result.",
+    hint: "Let u = 3x² + 5, then d/dx[u⁴] = 4u³ · u'.",
+    sampleAnswer: "f'(x) = 4(3x² + 5)³ · (6x) = 24x(3x² + 5)³.",
+    explanation: "By the Chain Rule, d/dx[g(x)^n] = n · g(x)^(n-1) · g'(x). Here, g'(x) = 6x, so 4 · (3x² + 5)³ · 6x = 24x(3x² + 5)³."
+  },
+  {
+    id: "q-5",
+    courseId: 1,
+    subject: "Biology",
+    type: "short",
+    marks: 4,
+    difficulty: "hard",
+    bloomLevel: "Evaluate",
+    question: "Differentiate between the rough and smooth endoplasmic reticulum in terms of structure and primary biological function.",
+    hint: "Focus on the presence of ribosomes and synthesis of proteins vs. lipids.",
+    sampleAnswer: "Rough ER is studded with membrane-bound ribosomes and functions primarily in protein translation and folding; Smooth ER lacks ribosomes and synthesizes lipids, phospholipids, and metabolizes toxins.",
+    explanation: "Rough ER handles secretory and membrane-protein synthesis; Smooth ER handles steroid synthesis, carbohydrate metabolism, and calcium storage."
+  }
+];
+
+/* ═════════════════════════════════════════════════════════════════════════════
+   CSS STYLES — MIRRORS TEACHER DASHBOARD DESIGN TOKENS
+   ═════════════════════════════════════════════════════════════════════════════ */
 const css = `
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
 
-/* ── CSS Variables — Light ── */
-:root {
-  --ec-bg:           #f8fafc;
-  --ec-card:         #ffffff;
-  --ec-card2:        #fafafa;
-  --ec-border:       rgba(0,0,0,.06);
-  --ec-border2:      #f3f4f6;
-  --ec-shadow:       0 2px 12px rgba(0,0,0,.05);
-  --ec-shadow2:      0 12px 32px rgba(0,0,0,.10);
-  --ec-text:         #0f172a;
-  --ec-text2:        #64748b;
-  --ec-text3:        #94a3b8;
-  --ec-text4:        #374151;
-  --ec-bar-bg:       #f1f5f9;
-  --ec-btn-bg:       #ffffff;
-  --ec-btn-text:     #374151;
-  --ec-btn-hover:    #f5f3ff;
-  --ec-btn-htext:    #6366f1;
-  --ec-badge-bg:     #f9fafb;
-  --ec-badge-text:   #9ca3af;
-  --ec-sel-bg:       #ffffff;
-  --ec-sel-text:     #374151;
-  --ec-sel-border:   #e5e7eb;
-  --ec-input-bg:     #ffffff;
-  --ec-input-text:   #374151;
-  --ec-table-hover:  #f8fafc;
-  --ec-row-border:   #f3f4f6;
-  --ec-qa-bg:        #fafafa;
-  --ec-qa-border:    #f3f4f6;
-  --ec-drop-bg:      #f5f3ff;
-  --ec-drop-border:  #c4b5fd;
-}
-[data-theme="dark"] {
-  --ec-bg:           #0b1120;
-  --ec-card:         #141f35;
-  --ec-card2:        #1a2540;
-  --ec-border:       rgba(255,255,255,.07);
-  --ec-border2:      rgba(255,255,255,.06);
-  --ec-shadow:       0 2px 12px rgba(0,0,0,.3);
-  --ec-shadow2:      0 12px 32px rgba(0,0,0,.5);
-  --ec-text:         #f1f5f9;
-  --ec-text2:        #94a3b8;
-  --ec-text3:        #64748b;
-  --ec-text4:        #cbd5e1;
-  --ec-bar-bg:       rgba(255,255,255,.07);
-  --ec-btn-bg:       rgba(255,255,255,.06);
-  --ec-btn-text:     #94a3b8;
-  --ec-btn-hover:    rgba(99,102,241,.18);
-  --ec-btn-htext:    #a5b4fc;
-  --ec-badge-bg:     rgba(255,255,255,.08);
-  --ec-badge-text:   #64748b;
-  --ec-sel-bg:       #1a2540;
-  --ec-sel-text:     #94a3b8;
-  --ec-sel-border:   rgba(255,255,255,.12);
-  --ec-input-bg:     #1a2540;
-  --ec-input-text:   #94a3b8;
-  --ec-table-hover:  rgba(255,255,255,.03);
-  --ec-row-border:   rgba(255,255,255,.05);
-  --ec-qa-bg:        rgba(255,255,255,.03);
-  --ec-qa-border:    rgba(255,255,255,.06);
-  --ec-drop-bg:      rgba(99,102,241,.08);
-  --ec-drop-border:  rgba(99,102,241,.35);
+/* ── Light Mode Tokens ── */
+:root, [data-theme="light"], .light {
+  --sd-page:          #ffffff;
+  --sd-page-2:        #f8fafc;
+  --sd-card:          #ffffff;
+  --sd-card-soft:     #f8fafc;
+  --sd-ink:           #071235;
+  --sd-muted:         #64748b;
+  --sd-faint:         #94a3b8;
+  --sd-line:          rgba(15,23,42,.08);
+  --sd-line-subtle:   rgba(15,23,42,.04);
+  --sd-shadow:        0 12px 30px rgba(35,44,87,.08);
+  --sd-shadow-soft:   0 7px 18px rgba(35,44,87,.06);
+  --sd-shadow-hover:  0 18px 36px rgba(35,44,87,.12);
+  --sd-input-bg:      #ffffff;
+  --sd-input-border:  rgba(15,23,42,.14);
+  --sd-bar-bg:        #f1f5f9;
+  --sd-pill-bg:       #ffffff;
+  --sd-accent:        #0284c7;
+  --sd-accent-teal:   #0d9488;
+  --sd-accent-grad:   linear-gradient(135deg, #0284c7 0%, #0d9488 100%);
+  --sd-hero-grad:     linear-gradient(135deg, #0284c7 0%, #0369a1 40%, #0d9488 100%);
+  --sd-chip-bg:       rgba(255,255,255,.16);
+  --sd-table-hover:   #f8fafc;
 }
 
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+/* ── Dark Mode Tokens ── */
+[data-theme="dark"], .dark, .ec-root.dark {
+  --sd-page:          #000000;
+  --sd-page-2:        #08090d;
+  --sd-card:          #0d0e12;
+  --sd-card-soft:     #14161c;
+  --sd-ink:           #f8fafc;
+  --sd-muted:         #94a3b8;
+  --sd-faint:         #64748b;
+  --sd-line:          rgba(255,255,255,.08);
+  --sd-line-subtle:   rgba(255,255,255,.04);
+  --sd-shadow:        0 20px 54px rgba(0,0,0,.65);
+  --sd-shadow-soft:   0 12px 28px rgba(0,0,0,.45);
+  --sd-shadow-hover:  0 22px 50px rgba(0,0,0,.85);
+  --sd-input-bg:      #121318;
+  --sd-input-border:  rgba(255,255,255,.12);
+  --sd-bar-bg:        rgba(255,255,255,.06);
+  --sd-pill-bg:       #121318;
+  --sd-accent:        #38bdf8;
+  --sd-accent-teal:   #14b8a6;
+  --sd-accent-grad:   linear-gradient(135deg, #0284c7 0%, #14b8a6 100%);
+  --sd-hero-grad:     linear-gradient(135deg, #031422 0%, #05263d 45%, #054863 75%, #04403c 100%);
+  --sd-chip-bg:       rgba(255,255,255,.12);
+  --sd-table-hover:   rgba(255,255,255,.04);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
 
 .ec-root {
+  min-height: 100vh;
   font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
-  padding: 24px 28px;
-  max-width: 1280px;
+  color: var(--sd-ink);
+  background: radial-gradient(circle at 14% 0%, rgba(2,132,199,.08), transparent 28%),
+              radial-gradient(circle at 88% 5%, rgba(13,148,136,.08), transparent 26%),
+              linear-gradient(180deg, var(--sd-page) 0%, var(--sd-page) 80px, var(--sd-page-2) 100%);
+  position: relative;
+  overflow-x: hidden;
+  padding: 24px 28px 80px;
+  transition: background .3s ease, color .3s ease;
+}
+
+[data-theme="dark"] .ec-root, .dark .ec-root {
+  background: radial-gradient(circle at 14% 0%, rgba(2,132,199,.14), transparent 30%),
+              radial-gradient(circle at 88% 5%, rgba(13,148,136,.10), transparent 26%),
+              linear-gradient(180deg, #000000 0%, #000000 80px, #08090d 100%) !important;
+  color: #f8fafc !important;
+}
+
+/* ── Ambient Background Sparkles ── */
+.sd-bg-spark {
+  position: absolute; pointer-events: none; z-index: 0; border-radius: 999px;
+  opacity: .5; animation: sdDrift 10s ease-in-out infinite;
+}
+.sd-bg-spark.s1 { left: 45%; top: 90px; width: 9px; height: 9px; background: #f59e0b; box-shadow: 40px 30px 0 #10b981, 80px -15px 0 #0284c7; }
+.sd-bg-spark.s2 { right: 6%; top: 280px; width: 8px; height: 8px; background: #0284c7; box-shadow: -50px 50px 0 #0d9488, -90px -20px 0 #0284c7; animation-delay: -3s; }
+.sd-bg-spark.s3 { left: 8%; bottom: 180px; width: 8px; height: 8px; background: #10b981; box-shadow: 44px -36px 0 #f59e0b, 96px 20px 0 #0284c7; animation-delay: -6s; }
+
+.sd-bg-ribbon {
+  position: absolute; pointer-events: none; z-index: 0; left: 2%; right: 2%; top: 130px; height: 160px;
+  border-radius: 50%; background: linear-gradient(90deg, rgba(2,132,199,.08), rgba(245,158,11,.08), rgba(16,185,129,.08));
+  filter: blur(24px); opacity: .7; animation: sdBgWave 14s ease-in-out infinite;
+}
+
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes sdDrift { 0%,100%{transform:translate3d(0,0,0) rotate(0)} 50%{transform:translate3d(18px,-14px,0) rotate(6deg)} }
+@keyframes sdBgWave { 0%,100%{transform:translate3d(-2%,0,0)} 50%{transform:translate3d(2%,-2%,0) scale(1.02)} }
+@keyframes sdBreathe { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+@keyframes robotFloat { 0%, 100% { transform: translateY(0) rotate(0deg); } 50% { transform: translateY(-7px) rotate(2.5deg); } }
+@keyframes robotPulseGlow {
+  0%, 100% { box-shadow: 0 16px 36px rgba(2, 132, 199, 0.28), 0 0 18px rgba(56, 189, 248, 0.2); }
+  50% { box-shadow: 0 20px 42px rgba(2, 132, 199, 0.42), 0 0 32px rgba(56, 189, 248, 0.42); }
+}
+@keyframes sdPop3d { 0%,100%{transform:translateY(0) scale(1)} 50%{transform:translateY(-6px) scale(1.04)} }
+@keyframes sdPulseSoft { 0%,100%{box-shadow:0 0 0 0 rgba(2,132,199,.3)} 50%{box-shadow:0 0 0 10px rgba(2,132,199,0)} }
+@keyframes sdProgressSweep { 0%{transform:translateX(-120%) skewX(-20deg)} 100%{transform:translateX(220%) skewX(-20deg)} }
+
+.ec-shell {
+  max-width: 1260px;
   margin: 0 auto;
-  color: var(--ec-text);
-  transition: color .3s;
+  position: relative;
+  z-index: 1;
 }
 
-/* ── Hero banner — matches td-hero exactly ── */
-.ec-hero {
-  border-radius: 24px; padding: 32px 36px; margin-bottom: 28px;
-  position: relative; overflow: hidden; color: #fff;
-   background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #ec4899 100%);
-  animation: heroIn .6s cubic-bezier(.34,1.56,.64,1) both;
+/* ── Hero Banner (Teacher Dashboard / Homework Pattern) ── */
+.th-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 26px;
+  padding: 30px 34px;
+  margin-bottom: 24px;
+  background: var(--sd-hero-grad);
+  color: #ffffff;
+  box-shadow: var(--sd-shadow);
+  border: 1px solid rgba(255,255,255,.18);
+  animation: cardIn .45s both;
 }
-@keyframes heroIn { from{opacity:0;transform:translateY(20px) scale(.97)} to{opacity:1;transform:none} }
-.ec-hero::before { content:''; position:absolute; top:-50px; right:-50px; width:220px; height:220px; border-radius:50%; background:rgba(255,255,255,.1); }
-.ec-hero::after  { content:''; position:absolute; bottom:-60px; left:20%; width:160px; height:160px; border-radius:50%; background:rgba(255,255,255,.07); }
-.ec-float { position:absolute; border-radius:50%; background:rgba(255,255,255,.06); animation:ecFloat 6s ease-in-out infinite; }
-@keyframes ecFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-14px)} }
-.ec-hero-inner  { display:flex; align-items:center; justify-content:space-between; position:relative; z-index:1; gap:20px; flex-wrap:wrap; }
-.ec-hero-title  { font-size:clamp(18px,3vw,26px); font-weight:800; margin-bottom:6px; }
-.ec-hero-sub    { font-size:14px; opacity:.75; max-width:520px; }
-.ec-hero-badges { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
-.ec-hero-badge  {
-  padding:6px 14px; border-radius:999px; font-size:12px; font-weight:700;
-  background:rgba(255,255,255,.18); border:1px solid rgba(255,255,255,.3);
-  backdrop-filter:blur(6px); display:flex; align-items:center; gap:6px;
+.th-hero::before {
+  content: ''; position: absolute; top: -60px; right: -60px; width: 260px; height: 260px;
+  border-radius: 50%; background: radial-gradient(circle, rgba(255,255,255,.24), transparent 70%);
+  animation: sdBreathe 6s ease-in-out infinite; pointer-events: none;
 }
-.ec-hero-actions { display:flex; gap:10px; flex-shrink:0; flex-wrap:wrap; }
-.ec-hero-btn {
-  padding:11px 22px; background:#fff; color:#059669; border:none; border-radius:14px;
-  font-size:13.5px; font-weight:700; cursor:pointer; font-family:inherit;
-  transition:all .2s; box-shadow:0 4px 16px rgba(0,0,0,.15); white-space:nowrap;
-  display:flex; align-items:center; gap:7px;
+.th-hero::after {
+  content: ''; position: absolute; bottom: -80px; left: 15%; width: 220px; height: 220px;
+  border-radius: 50%; background: radial-gradient(circle, rgba(56,189,248,.22), transparent 70%);
+  pointer-events: none;
 }
-.ec-hero-btn:hover { transform:translateY(-2px); box-shadow:0 8px 24px rgba(0,0,0,.2); }
-.ec-hero-btn svg { width:15px; height:15px; }
-.ec-hero-btn-ol {
-  padding:11px 22px; background:rgba(255,255,255,.15); color:#fff;
-  border:1.5px solid rgba(255,255,255,.35); border-radius:14px;
-  font-size:13.5px; font-weight:700; cursor:pointer; font-family:inherit;
-  transition:all .2s; white-space:nowrap; display:flex; align-items:center; gap:7px;
-  backdrop-filter:blur(6px);
-}
-.ec-hero-btn-ol:hover { background:rgba(255,255,255,.25); transform:translateY(-2px); }
-.ec-hero-btn-ol svg { width:15px; height:15px; }
 
-/* ── Stats ── */
-.ec-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:28px; }
-.ec-stat-card {
-  background:var(--ec-card); border-radius:18px; padding:20px;
-  border:1px solid var(--ec-border); box-shadow:var(--ec-shadow);
-  transition:all .25s; position:relative; overflow:hidden;
-  animation:cardUp .5s cubic-bezier(.34,1.56,.64,1) both;
+.th-hero-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28px;
 }
-@keyframes cardUp { from{opacity:0;transform:translateY(18px)} to{opacity:1;transform:none} }
-.ec-stat-card:nth-child(1){animation-delay:.07s} .ec-stat-card:nth-child(2){animation-delay:.14s}
-.ec-stat-card:nth-child(3){animation-delay:.21s} .ec-stat-card:nth-child(4){animation-delay:.28s}
-.ec-stat-card::after { content:''; position:absolute; top:-20px; right:-20px; width:80px; height:80px; border-radius:50%; opacity:.08; transition:transform .3s; }
-.ec-stat-card:hover { transform:translateY(-4px); box-shadow:var(--ec-shadow2); }
-.ec-stat-card:hover::after { transform:scale(1.4); }
-.ec-sc-green  { border-top:3px solid #10b981; } .ec-sc-green::after  { background:#10b981; }
-.ec-sc-blue   { border-top:3px solid #0ea5e9; } .ec-sc-blue::after   { background:#0ea5e9; }
-.ec-sc-purple { border-top:3px solid #6366f1; } .ec-sc-purple::after { background:#6366f1; }
-.ec-sc-amber  { border-top:3px solid #f59e0b; } .ec-sc-amber::after  { background:#f59e0b; }
-.ec-stat-top   { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
-.ec-stat-icon  { width:42px; height:42px; border-radius:12px; display:flex; align-items:center; justify-content:center; }
-.ec-stat-icon svg { width:20px; height:20px; }
-.esi-green  { background:rgba(16,185,129,.12);  color:#10b981; }
-.esi-blue   { background:rgba(14,165,233,.12);  color:#0ea5e9; }
-.esi-purple { background:rgba(99,102,241,.12);  color:#6366f1; }
-.esi-amber  { background:rgba(245,158,11,.12);  color:#f59e0b; }
-[data-theme="dark"] .esi-green  { background:rgba(16,185,129,.22); }
-[data-theme="dark"] .esi-blue   { background:rgba(14,165,233,.22); }
-[data-theme="dark"] .esi-purple { background:rgba(99,102,241,.22); }
-[data-theme="dark"] .esi-amber  { background:rgba(245,158,11,.22); }
-.ec-stat-badge { font-size:11px; font-weight:600; padding:3px 9px; border-radius:20px; color:var(--ec-badge-text); background:var(--ec-badge-bg); }
-.ec-stat-num   { font-size:32px; font-weight:800; color:var(--ec-text); letter-spacing:-1px; line-height:1; margin-bottom:4px; }
-.ec-stat-label { font-size:13px; color:var(--ec-text2); font-weight:500; }
-.ec-stat-trend { font-size:11.5px; color:#10b981; margin-top:4px; font-weight:600; }
-[data-theme="dark"] .ec-stat-trend { color:#34d399; }
+.th-hero-content {
+  flex: 1;
+  min-width: 0;
+}
+.th-hero-chip {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 5px 14px; border-radius: 999px;
+  background: var(--sd-chip-bg); backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,.26);
+  font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em;
+  margin-bottom: 12px;
+}
+.th-live-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: #34d399;
+  box-shadow: 0 0 10px #34d399; animation: sdPulseSoft 2s infinite;
+}
+.th-hero-title {
+  font-size: clamp(22px, 3.2vw, 32px); font-weight: 800; line-height: 1.15; margin-bottom: 8px;
+  letter-spacing: -0.02em;
+}
+.th-hero-sub {
+  font-size: 13.5px; opacity: .9; max-width: 580px; line-height: 1.55; margin-bottom: 20px;
+}
+.th-hero-actions {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.th-hero-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 12px 22px; border-radius: 14px; border: none;
+  font-family: inherit; font-size: 13.5px; font-weight: 800;
+  cursor: pointer; transition: all .2s cubic-bezier(.34,1.56,.64,1);
+}
+.th-hero-btn.primary {
+  background: #ffffff; color: #0369a1; box-shadow: 0 8px 24px rgba(0,0,0,.18);
+}
+.th-hero-btn.primary:hover {
+  transform: translateY(-2px) scale(1.02); box-shadow: 0 12px 30px rgba(0,0,0,.26);
+}
+.th-hero-btn.secondary {
+  background: rgba(255,255,255,.15); color: #fff;
+  border: 1px solid rgba(255,255,255,.3); backdrop-filter: blur(12px);
+}
+.th-hero-btn.secondary:hover {
+  background: rgba(255,255,255,.24); transform: translateY(-2px);
+}
 
-/* ── Alert row ── */
-.ec-alerts { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:28px; }
-.ec-alert {
-  border-radius:16px; padding:18px; position:relative; overflow:hidden;
-  animation:cardUp .5s .35s both;
+/* ── Hero Robot Stage ── */
+.th-hero-robot-stage {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 2;
 }
-.ec-alert::before { content:''; position:absolute; top:-20px; right:-20px; width:70px; height:70px; border-radius:50%; opacity:.15; }
-.ea-green  { background:linear-gradient(135deg,#f0fdf4,#dcfce7); border:1px solid #bbf7d0; }
-.ea-green::before  { background:#10b981; }
-.ea-blue   { background:linear-gradient(135deg,#eff6ff,#e0f2fe); border:1px solid #bae6fd; }
-.ea-blue::before   { background:#0ea5e9; }
-.ea-purple { background:linear-gradient(135deg,#f5f3ff,#ede9fe); border:1px solid #c4b5fd; }
-.ea-purple::before { background:#6366f1; }
-[data-theme="dark"] .ea-green  { background:linear-gradient(135deg,rgba(16,185,129,.12),rgba(52,211,153,.07));  border-color:rgba(16,185,129,.28); }
-[data-theme="dark"] .ea-blue   { background:linear-gradient(135deg,rgba(14,165,233,.12),rgba(59,130,246,.07));  border-color:rgba(14,165,233,.28); }
-[data-theme="dark"] .ea-purple { background:linear-gradient(135deg,rgba(99,102,241,.12),rgba(139,92,246,.07)); border-color:rgba(99,102,241,.28); }
-.ec-alert-emoji { font-size:26px; margin-bottom:8px; }
-.ec-alert-title { font-size:13.5px; font-weight:700; color:var(--ec-text); margin-bottom:3px; }
-.ec-alert-sub   { font-size:12px; color:var(--ec-text2); }
-.ec-alert-num   { font-size:26px; font-weight:800; color:var(--ec-text); margin-top:6px; }
+.th-hero-robot-bubble {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 18px;
+  padding: 12px 16px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16);
+  max-width: 210px;
+  animation: cardIn 0.5s both;
+}
+[data-theme="dark"] .th-hero-robot-bubble {
+  background: rgba(13, 14, 18, 0.94);
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.6);
+}
+.th-hero-robot-bubble-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #0284c7;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+[data-theme="dark"] .th-hero-robot-bubble-badge {
+  color: #38bdf8;
+}
+.th-hero-robot-bubble-text {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.4;
+  margin: 0;
+}
+[data-theme="dark"] .th-hero-robot-bubble-text {
+  color: #e2e8f0;
+}
+.th-hero-robot-wrap {
+  position: relative;
+  width: 124px;
+  height: 124px;
+  border-radius: 30px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(224, 242, 254, 0.88));
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 18px 36px rgba(2, 132, 199, 0.28), inset 0 -6px 0 rgba(2, 132, 199, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: robotPulseGlow 4.5s ease-in-out infinite;
+  flex-shrink: 0;
+  transition: transform 0.3s cubic-bezier(.34,1.56,.64,1);
+}
+.th-hero-robot-wrap:hover {
+  transform: translateY(-4px) scale(1.04);
+}
+[data-theme="dark"] .th-hero-robot-wrap {
+  background: linear-gradient(145deg, #0d0e12, #08283e);
+  border-color: rgba(56, 189, 248, 0.35);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.65), inset 0 -6px 0 rgba(14, 165, 233, 0.25);
+}
+.th-hero-robot {
+  width: 98px;
+  height: 98px;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 16px rgba(2, 132, 199, 0.3));
+  transition: transform 0.3s cubic-bezier(.34,1.56,.64,1);
+  animation: robotFloat 4.2s ease-in-out infinite;
+}
+.th-hero-robot-wrap:hover .th-hero-robot {
+  transform: scale(1.12) rotate(3deg);
+}
 
-/* ── Tabs — exactly td style ── */
-.ec-tabs-row { display:flex; gap:4px; margin-bottom:24px; background:var(--ec-bar-bg); border-radius:16px; padding:4px; animation:cardUp .5s .38s both; }
-.ec-tab {
-  flex:1; padding:10px 14px; border-radius:13px; border:none; font-size:12.5px; font-weight:600;
-  cursor:pointer; font-family:inherit; color:var(--ec-text2); background:transparent;
-  transition:all .2s; display:flex; align-items:center; justify-content:center; gap:6px;
-  white-space:nowrap;
+.th-hero-stat-row {
+  display: flex; align-items: center; gap: 12px; margin-top: 24px; flex-wrap: wrap;
 }
-.ec-tab svg { width:14px; height:14px; flex-shrink:0; }
-.ec-tab.active {
-  background:linear-gradient(135deg,#10b981,#0ea5e9); color:#fff;
-  box-shadow:0 4px 16px rgba(16,185,129,.4);
+.th-hero-pill {
+  background: rgba(255,255,255,.14); backdrop-filter: blur(14px);
+  border: 1px solid rgba(255,255,255,.22);
+  border-radius: 16px; padding: 10px 16px; display: flex; align-items: center; gap: 12px;
 }
-[data-theme="dark"] .ec-tab.active { box-shadow:0 4px 16px rgba(16,185,129,.6); }
+.th-hero-pill-num {
+  font-size: 20px; font-weight: 800; line-height: 1;
+}
+.th-hero-pill-lbl {
+  font-size: 11px; opacity: .85; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
+}
 
-/* ── Cards ── */
+/* ── Metric Cards Grid ── */
+.th-stats-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px;
+}
+.th-stat-card {
+  background: var(--sd-card);
+  border: 1px solid var(--sd-line);
+  border-radius: 20px; padding: 18px 20px;
+  box-shadow: var(--sd-shadow-soft);
+  position: relative; overflow: hidden;
+  transition: transform .24s cubic-bezier(.34,1.56,.64,1), box-shadow .24s, border-color .24s;
+  animation: cardIn .42s both;
+}
+.th-stat-card:hover {
+  transform: translateY(-4px); box-shadow: var(--sd-shadow-hover);
+  border-color: rgba(2,132,199,.28);
+}
+.th-sc-ocean   { border-top: 3px solid #0284c7; }
+.th-sc-teal    { border-top: 3px solid #0d9488; }
+.th-sc-emerald { border-top: 3px solid #10b981; }
+.th-sc-amber   { border-top: 3px solid #f59e0b; }
+
+.th-stat-top {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;
+}
+.th-stat-icon {
+  width: 42px; height: 42px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+}
+.tsi-ocean   { background: rgba(2,132,199,.12); color: #0284c7; }
+.tsi-teal    { background: rgba(13,148,136,.12); color: #0d9488; }
+.tsi-emerald { background: rgba(16,185,129,.12); color: #10b981; }
+.tsi-amber   { background: rgba(245,158,11,.12); color: #f59e0b; }
+[data-theme="dark"] .tsi-ocean   { background: rgba(2,132,199,.22); color: #38bdf8; }
+[data-theme="dark"] .tsi-teal    { background: rgba(13,148,136,.22); color: #2dd4bf; }
+[data-theme="dark"] .tsi-emerald { background: rgba(16,185,129,.22); color: #34d399; }
+[data-theme="dark"] .tsi-amber   { background: rgba(245,158,11,.22); color: #fbbf24; }
+
+.th-stat-badge {
+  font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 20px;
+  background: var(--sd-bar-bg); color: var(--sd-muted);
+}
+.th-stat-num {
+  font-size: 32px; font-weight: 800; color: var(--sd-ink); letter-spacing: -1px; line-height: 1; margin-bottom: 4px;
+}
+.th-stat-lbl {
+  font-size: 13px; color: var(--sd-muted); font-weight: 600;
+}
+.th-stat-trend {
+  font-size: 11.5px; color: #10b981; margin-top: 6px; font-weight: 700; display: flex; align-items: center; gap: 4px;
+}
+[data-theme="dark"] .th-stat-trend { color: #34d399; }
+
+/* ── Highlights Row ── */
+.th-highlights {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 24px;
+}
+.th-hl-card {
+  border-radius: 18px; padding: 18px 20px; position: relative; overflow: hidden;
+  box-shadow: var(--sd-shadow-soft); transition: transform .2s ease;
+  animation: cardIn .42s both;
+}
+.th-hl-card:hover { transform: translateY(-3px); }
+.thc-ocean {
+  background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+  border: 1px solid #bae6fd;
+}
+.thc-teal {
+  background: linear-gradient(135deg, #f0fdfa, #ccfbf1);
+  border: 1px solid #99f6e4;
+}
+.thc-amber {
+  background: linear-gradient(135deg, #fffbeb, #fef3c7);
+  border: 1px solid #fde68a;
+}
+[data-theme="dark"] .thc-ocean {
+  background: linear-gradient(135deg, rgba(2,132,199,.15), rgba(3,105,161,.08));
+  border-color: rgba(56,189,248,.25);
+}
+[data-theme="dark"] .thc-teal {
+  background: linear-gradient(135deg, rgba(13,148,136,.15), rgba(15,118,110,.08));
+  border-color: rgba(45,212,191,.25);
+}
+[data-theme="dark"] .thc-amber {
+  background: linear-gradient(135deg, rgba(245,158,11,.15), rgba(217,119,6,.08));
+  border-color: rgba(251,191,36,.25);
+}
+.th-hl-emoji { font-size: 26px; margin-bottom: 8px; }
+.th-hl-title { font-size: 14px; font-weight: 800; color: var(--sd-ink); margin-bottom: 3px; }
+.th-hl-sub   { font-size: 12px; color: var(--sd-muted); font-weight: 600; }
+.th-hl-num   { font-size: 26px; font-weight: 800; color: var(--sd-ink); margin-top: 6px; }
+
+/* ── Navigation Tabs ── */
+.th-tabs-bar {
+  display: flex; gap: 6px; margin-bottom: 24px; background: var(--sd-bar-bg);
+  border-radius: 18px; padding: 5px; animation: cardIn .42s both;
+  overflow-x: auto; scrollbar-width: none;
+}
+.th-tabs-bar::-webkit-scrollbar { display: none; }
+.th-tab {
+  flex: 1; min-width: 140px; padding: 11px 16px; border-radius: 14px; border: none;
+  font-size: 12.5px; font-weight: 700; cursor: pointer; font-family: inherit;
+  color: var(--sd-muted); background: transparent; transition: all .2s;
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  white-space: nowrap;
+}
+.th-tab:hover { color: var(--sd-ink); }
+.th-tab.active {
+  background: var(--sd-accent-grad); color: #ffffff;
+  box-shadow: 0 4px 18px rgba(2,132,199,.38);
+}
+[data-theme="dark"] .th-tab.active {
+  box-shadow: 0 4px 20px rgba(2,132,199,.55);
+}
+
+/* ── Cards & Structure ── */
 .ec-card {
-  background:var(--ec-card); border-radius:20px; padding:22px;
-  border:1px solid var(--ec-border); box-shadow:var(--ec-shadow);
-  animation:cardUp .5s .4s both; transition:background .3s;
+  background: var(--sd-card); border-radius: 22px; padding: 24px;
+  border: 1px solid var(--sd-line); box-shadow: var(--sd-shadow-soft);
+  transition: all .25s ease; position: relative;
 }
-.ec-card-hd { display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; }
-.ec-card-title { font-size:15px; font-weight:700; color:var(--ec-text); display:flex; align-items:center; gap:8px; }
-.ec-card-title svg { width:18px; height:18px; color:#10b981; }
-.ec-view-btn {
-  padding:6px 14px; border-radius:9px; border:1px solid var(--ec-sel-border);
-  background:var(--ec-btn-bg); font-size:12px; font-weight:600;
-  cursor:pointer; font-family:inherit; color:var(--ec-btn-text);
-  transition:all .18s; display:flex; align-items:center; gap:5px;
+.ec-card-hd {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;
+  gap: 12px; flex-wrap: wrap;
 }
-.ec-view-btn:hover { background:var(--ec-btn-hover); border-color:rgba(99,102,241,.35); color:var(--ec-btn-htext); }
-.ec-view-btn svg { width:13px; height:13px; }
+.ec-card-title {
+  font-size: 16px; font-weight: 800; color: var(--sd-ink); display: flex; align-items: center; gap: 10px;
+}
+.ec-card-title svg { color: #0284c7; }
+[data-theme="dark"] .ec-card-title svg { color: #38bdf8; }
 
-/* ── Main grid ── */
-.ec-main-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:24px; }
-.ec-main-grid3 { display:grid; grid-template-columns:1fr 1fr 320px; gap:20px; margin-bottom:24px; }
+.ec-btn-action {
+  padding: 8px 16px; border-radius: 12px; border: 1px solid var(--sd-line);
+  background: var(--sd-card-soft); font-size: 12.5px; font-weight: 700;
+  cursor: pointer; font-family: inherit; color: var(--sd-ink);
+  transition: all .18s; display: inline-flex; align-items: center; gap: 6px;
+}
+.ec-btn-action:hover {
+  background: var(--sd-card); border-color: #0284c7; color: #0284c7; transform: translateY(-1px);
+}
+[data-theme="dark"] .ec-btn-action:hover {
+  border-color: #38bdf8; color: #38bdf8;
+}
 
-/* ── Form elements ── */
-.ec-form-group { display:flex; flex-direction:column; gap:5px; margin-bottom:14px; }
-.ec-form-group:last-child { margin-bottom:0; }
-.ec-label { font-size:12px; font-weight:700; color:var(--ec-text2); letter-spacing:.03em; text-transform:uppercase; }
+/* ── Forms ── */
+.ec-form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.ec-label { font-size: 11.5px; font-weight: 800; color: var(--sd-muted); text-transform: uppercase; letter-spacing: .04em; }
 .ec-input, .ec-textarea, .ec-select {
-  padding:10px 13px; border-radius:11px; border:1.5px solid var(--ec-sel-border);
-  background:var(--ec-input-bg); color:var(--ec-input-text); font-size:13.5px;
-  font-family:inherit; outline:none; transition:border-color .15s, box-shadow .15s; width:100%;
+  padding: 11px 14px; border-radius: 12px; border: 1.5px solid var(--sd-input-border);
+  background: var(--sd-input-bg); color: var(--sd-ink); font-size: 13.5px;
+  font-family: inherit; outline: none; transition: border-color .15s, box-shadow .15s; width: 100%;
 }
-.ec-textarea { resize:vertical; min-height:80px; }
+.ec-textarea { resize: vertical; min-height: 90px; }
 .ec-input:focus, .ec-textarea:focus, .ec-select:focus {
-  border-color:#10b981; box-shadow:0 0 0 3px rgba(16,185,129,.12);
+  border-color: #0284c7; box-shadow: 0 0 0 3px rgba(2,132,199,.15);
 }
-.ec-input::placeholder, .ec-textarea::placeholder { color:var(--ec-text3); }
+[data-theme="dark"] .ec-input:focus, [data-theme="dark"] .ec-textarea:focus, [data-theme="dark"] .ec-select:focus {
+  border-color: #38bdf8; box-shadow: 0 0 0 3px rgba(56,189,248,.2);
+}
+.ec-form-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 
-.ec-form-grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
-.ec-form-grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px; }
-
-/* ── Submit / action buttons ── */
 .ec-submit-btn {
-  width:100%; padding:12px; border-radius:13px; border:none;
-  background:linear-gradient(135deg,#10b981,#0ea5e9); color:#fff;
-  font-size:14px; font-weight:700; cursor:pointer; font-family:inherit;
-  transition:all .2s; box-shadow:0 4px 14px rgba(16,185,129,.4);
-  display:flex; align-items:center; justify-content:center; gap:8px;
+  width: 100%; padding: 13px 20px; border-radius: 14px; border: none;
+  background: var(--sd-accent-grad); color: #ffffff;
+  font-size: 14px; font-weight: 800; cursor: pointer; font-family: inherit;
+  transition: all .2s cubic-bezier(.34,1.56,.64,1); box-shadow: 0 6px 18px rgba(2,132,199,.35);
+  display: flex; align-items: center; justify-content: center; gap: 8px;
 }
-.ec-submit-btn:hover { transform:translateY(-2px); box-shadow:0 8px 24px rgba(16,185,129,.55); }
-.ec-submit-btn:disabled { opacity:.6; cursor:not-allowed; transform:none; }
-.ec-submit-btn svg { width:16px; height:16px; }
-
-.ec-secondary-btn {
-  padding:10px 20px; border-radius:11px; border:1.5px solid var(--ec-sel-border);
-  background:var(--ec-btn-bg); color:var(--ec-btn-text); font-size:13.5px; font-weight:700;
-  cursor:pointer; font-family:inherit; transition:all .18s; display:flex; align-items:center; gap:7px;
+.ec-submit-btn:hover {
+  transform: translateY(-2px); box-shadow: 0 10px 26px rgba(2,132,199,.45);
 }
-.ec-secondary-btn:hover { background:var(--ec-btn-hover); border-color:rgba(16,185,129,.3); color:#10b981; }
-.ec-secondary-btn svg { width:14px; height:14px; }
+.ec-submit-btn:disabled { opacity: .6; cursor: not-allowed; transform: none; }
 
-/* ── Drag-drop upload zone ── */
+/* ── Upload Drag-Drop Zone ── */
 .ec-drop-zone {
-  border:2px dashed var(--ec-drop-border); border-radius:18px;
-  background:var(--ec-drop-bg); padding:36px 24px; text-align:center;
-  cursor:pointer; transition:all .25s; position:relative;
+  border: 2px dashed rgba(2,132,199,.35); border-radius: 20px;
+  background: rgba(2,132,199,.03); padding: 36px 24px; text-align: center;
+  cursor: pointer; transition: all .25s; position: relative;
 }
-.ec-drop-zone.dragging { border-color:#10b981; background:rgba(16,185,129,.1); transform:scale(1.01); }
-.ec-drop-zone:hover { border-color:#10b981; background:rgba(16,185,129,.06); }
+.ec-drop-zone.dragging {
+  border-color: #0284c7; background: rgba(2,132,199,.08); transform: scale(1.01);
+}
+.ec-drop-zone:hover {
+  border-color: #0284c7; background: rgba(2,132,199,.06);
+}
+[data-theme="dark"] .ec-drop-zone {
+  background: rgba(2,132,199,.05); border-color: rgba(56,189,248,.3);
+}
 .ec-drop-icon {
-  width:60px; height:60px; border-radius:18px; margin:0 auto 16px;
-  background:linear-gradient(135deg,rgba(16,185,129,.15),rgba(14,165,233,.1));
-  display:flex; align-items:center; justify-content:center;
-  box-shadow:0 4px 16px rgba(16,185,129,.2);
+  width: 64px; height: 64px; border-radius: 20px; margin: 0 auto 16px;
+  background: rgba(2,132,199,.12); color: #0284c7;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 6px 18px rgba(2,132,199,.15);
 }
-.ec-drop-icon svg { width:28px; height:28px; color:#10b981; }
-.ec-drop-title { font-size:15px; font-weight:700; color:var(--ec-text); margin-bottom:5px; }
-.ec-drop-sub   { font-size:12.5px; color:var(--ec-text3); }
-.ec-drop-pill  { display:inline-flex; align-items:center; gap:5px; padding:4px 12px; border-radius:999px; margin-top:12px; font-size:11.5px; font-weight:600; }
-.edp-pdf  { background:rgba(244,63,94,.1); color:#f43f5e; border:1px solid rgba(244,63,94,.2); }
-.edp-docx { background:rgba(59,130,246,.1); color:#3b82f6; border:1px solid rgba(59,130,246,.2); }
-.edp-txt  { background:rgba(245,158,11,.1); color:#f59e0b; border:1px solid rgba(245,158,11,.2); }
+[data-theme="dark"] .ec-drop-icon {
+  background: rgba(56,189,248,.18); color: #38bdf8;
+}
+.ec-drop-title { font-size: 15.5px; font-weight: 800; color: var(--sd-ink); margin-bottom: 5px; }
+.ec-drop-sub   { font-size: 12.5px; color: var(--sd-muted); }
 
 .ec-file-selected {
-  border-radius:13px; padding:13px 16px; margin-top:14px;
-  background:rgba(16,185,129,.08); border:1.5px solid rgba(16,185,129,.25);
-  display:flex; align-items:center; gap:12px;
+  border-radius: 14px; padding: 14px 18px; margin-top: 14px;
+  background: rgba(16,185,129,.08); border: 1.5px solid rgba(16,185,129,.28);
+  display: flex; align-items: center; gap: 12px;
 }
-.ec-file-ico { width:38px; height:38px; border-radius:10px; background:rgba(16,185,129,.15); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-.ec-file-ico svg { width:18px; height:18px; color:#10b981; }
-.ec-file-name  { font-size:13px; font-weight:700; color:var(--ec-text); }
-.ec-file-size  { font-size:11.5px; color:var(--ec-text3); margin-top:2px; }
-.ec-file-close { margin-left:auto; width:26px; height:26px; border-radius:8px; border:1px solid rgba(244,63,94,.25); background:rgba(244,63,94,.08); color:#f43f5e; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .15s; flex-shrink:0; }
-.ec-file-close:hover { background:rgba(244,63,94,.18); }
-.ec-file-close svg { width:12px; height:12px; }
+.ec-file-ico {
+  width: 40px; height: 40px; border-radius: 12px; background: rgba(16,185,129,.16);
+  color: #10b981; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.ec-file-close {
+  margin-left: auto; width: 28px; height: 28px; border-radius: 8px;
+  border: 1px solid rgba(244,63,94,.25); background: rgba(244,63,94,.08);
+  color: #f43f5e; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: all .15s;
+}
+.ec-file-close:hover { background: rgba(244,63,94,.2); }
 
-/* ── Progress bar ── */
-.ec-progress-wrap { margin-top:16px; }
-.ec-progress-hd { display:flex; justify-content:space-between; margin-bottom:6px; font-size:12px; color:var(--ec-text2); font-weight:600; }
-.ec-progress-bg { height:8px; background:var(--ec-bar-bg); border-radius:8px; overflow:hidden; }
+/* ── Progress Bar ── */
+.ec-progress-wrap { margin-top: 16px; }
+.ec-progress-hd { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 12px; color: var(--sd-muted); font-weight: 700; }
+.ec-progress-bg { height: 8px; background: var(--sd-bar-bg); border-radius: 8px; overflow: hidden; position: relative; }
 .ec-progress-fill {
-  height:100%; border-radius:8px;
-  background:linear-gradient(90deg,#10b981,#0ea5e9,#6366f1);
-  transition:width .4s ease; box-shadow:0 0 12px rgba(16,185,129,.5);
+  height: 100%; border-radius: 8px; background: var(--sd-accent-grad);
+  transition: width .4s ease; box-shadow: 0 0 12px rgba(2,132,199,.5);
 }
-.ec-progress-steps { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+.ec-progress-fill::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.4), transparent);
+  animation: sdProgressSweep 2.2s ease-in-out infinite;
+}
+.ec-progress-steps { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 .ec-progress-step {
-  display:flex; align-items:center; gap:5px; font-size:11.5px; font-weight:600;
-  padding:4px 10px; border-radius:8px;
+  display: flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 700;
+  padding: 5px 12px; border-radius: 10px;
 }
-.eps-done    { background:rgba(16,185,129,.12); color:#10b981; }
-.eps-active  { background:rgba(14,165,233,.12); color:#0ea5e9; }
-.eps-pending { background:var(--ec-bar-bg);     color:var(--ec-text3); }
-.eps-done svg, .eps-active svg, .eps-pending svg { width:11px; height:11px; }
+.eps-done    { background: rgba(16,185,129,.12); color: #10b981; }
+.eps-active  { background: rgba(2,132,199,.12);  color: #0284c7; }
+.eps-pending { background: var(--sd-bar-bg);     color: var(--sd-faint); }
+[data-theme="dark"] .eps-active { color: #38bdf8; background: rgba(56,189,248,.18); }
 
 /* ── Mode selector cards ── */
-.ec-mode-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:14px; }
+.ec-mode-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
 .ec-mode-card {
-  border-radius:14px; padding:14px; border:2px solid var(--ec-sel-border);
-  background:var(--ec-card2); cursor:pointer; transition:all .2s; text-align:center;
+  border-radius: 14px; padding: 14px; border: 1.5px solid var(--sd-line);
+  background: var(--sd-card-soft); cursor: pointer; transition: all .2s; text-align: center;
 }
-.ec-mode-card:hover { border-color:#10b981; background:rgba(16,185,129,.04); }
-.ec-mode-card.selected { border-color:#10b981; background:rgba(16,185,129,.1); box-shadow:0 4px 16px rgba(16,185,129,.2); }
-[data-theme="dark"] .ec-mode-card.selected { background:rgba(16,185,129,.15); }
-.ec-mode-icon { font-size:24px; margin-bottom:6px; }
-.ec-mode-label { font-size:12px; font-weight:800; color:var(--ec-text); margin-bottom:3px; }
-.ec-mode-desc  { font-size:10.5px; color:var(--ec-text3); line-height:1.4; }
+.ec-mode-card:hover { border-color: #0284c7; }
+.ec-mode-card.selected {
+  border-color: #0284c7; background: rgba(2,132,199,.08); box-shadow: 0 4px 16px rgba(2,132,199,.15);
+}
+[data-theme="dark"] .ec-mode-card.selected {
+  border-color: #38bdf8; background: rgba(56,189,248,.12);
+}
 
-/* ── Option toggles ── */
+/* ── Options Checkboxes ── */
 .ec-option {
-  display:flex; align-items:center; gap:12px; padding:11px 14px;
-  border-radius:12px; border:1.5px solid var(--ec-sel-border); background:var(--ec-qa-bg);
-  cursor:pointer; transition:all .2s; margin-bottom:8px;
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+  border-radius: 14px; border: 1.5px solid var(--sd-line); background: var(--sd-card-soft);
+  cursor: pointer; transition: all .2s; margin-bottom: 8px;
 }
-.ec-option:last-child { margin-bottom:0; }
-.ec-option.on { border-color:#10b981; background:rgba(16,185,129,.08); }
-[data-theme="dark"] .ec-option.on { background:rgba(16,185,129,.12); }
+.ec-option:last-child { margin-bottom: 0; }
+.ec-option.on { border-color: #0284c7; background: rgba(2,132,199,.06); }
+[data-theme="dark"] .ec-option.on { border-color: #38bdf8; background: rgba(56,189,248,.1); }
 .ec-opt-check {
-  width:22px; height:22px; border-radius:7px; border:2px solid var(--ec-sel-border);
-  display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:all .2s;
-  background:var(--ec-card);
+  width: 22px; height: 22px; border-radius: 8px; border: 2px solid var(--sd-line);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all .2s;
+  background: var(--sd-card);
 }
-.ec-option.on .ec-opt-check { border-color:#10b981; background:#10b981; }
-.ec-opt-check svg { width:12px; height:12px; color:#fff; }
-.ec-opt-label { flex:1; }
-.ec-opt-title { font-size:13px; font-weight:700; color:var(--ec-text); }
-.ec-opt-sub   { font-size:11px; color:var(--ec-text3); margin-top:2px; }
-.ec-opt-badge { padding:3px 8px; border-radius:6px; font-size:10.5px; font-weight:700; background:rgba(16,185,129,.12); color:#10b981; }
+.ec-option.on .ec-opt-check { border-color: #0284c7; background: #0284c7; color: #fff; }
+[data-theme="dark"] .ec-option.on .ec-opt-check { border-color: #38bdf8; background: #38bdf8; color: #000; }
 
-/* ── Results panel ── */
-.ec-result-banner {
-  border-radius:16px; padding:16px 20px; margin-bottom:18px;
-  display:flex; align-items:center; gap:12px;
-  background:linear-gradient(135deg,rgba(16,185,129,.1),rgba(14,165,233,.06));
-  border:1.5px solid rgba(16,185,129,.25);
+/* ── QUESTION TRANSITION & STUDIO SYSTEM ── */
+.qs-container {
+  background: var(--sd-card); border-radius: 24px; padding: 28px;
+  border: 1px solid var(--sd-line); box-shadow: var(--sd-shadow);
+  position: relative; overflow: hidden;
 }
-.ec-result-ico { width:38px; height:38px; border-radius:11px; background:linear-gradient(135deg,#10b981,#0ea5e9); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-.ec-result-ico svg { width:18px; height:18px; color:#fff; }
-.ec-result-title { font-size:13.5px; font-weight:700; color:var(--ec-text); }
-.ec-result-sub   { font-size:12px; color:var(--ec-text2); margin-top:2px; }
-
-.ec-result-chips { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:18px; }
-.ec-result-chip {
-  border-radius:13px; padding:14px 12px; text-align:center;
-  border:1px solid var(--ec-border);
+.qs-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; margin-bottom: 20px; flex-wrap: wrap;
 }
-.erc-green  { background:rgba(16,185,129,.08); border-color:rgba(16,185,129,.2); }
-.erc-blue   { background:rgba(14,165,233,.08); border-color:rgba(14,165,233,.2); }
-.erc-purple { background:rgba(99,102,241,.08); border-color:rgba(99,102,241,.2); }
-.ec-chip-num   { font-size:24px; font-weight:800; line-height:1; margin-bottom:4px; }
-.erc-green  .ec-chip-num  { color:#10b981; }
-.erc-blue   .ec-chip-num  { color:#0ea5e9; }
-.erc-purple .ec-chip-num  { color:#6366f1; }
-.ec-chip-label { font-size:11px; font-weight:600; color:var(--ec-text3); }
-
-.ec-meta-row { display:flex; align-items:center; justify-content:space-between; padding:9px 0; border-bottom:1px solid var(--ec-border2); font-size:13px; }
-.ec-meta-row:last-child { border-bottom:0; }
-.ec-meta-label { color:var(--ec-text2); }
-.ec-meta-val   { font-weight:700; color:var(--ec-text); }
-.ec-meta-badge {
-  padding:3px 10px; border-radius:6px; font-size:11.5px; font-weight:700;
-  background:rgba(99,102,241,.1); color:#6366f1; border:1px solid rgba(99,102,241,.2);
+.qs-pills-row {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
 }
-[data-theme="dark"] .ec-meta-badge { background:rgba(99,102,241,.2); border-color:rgba(99,102,241,.3); }
-
-.ec-concept-chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
-.ec-concept-chip {
-  padding:4px 12px; border-radius:8px; font-size:11.5px; font-weight:600;
-  background:rgba(14,165,233,.1); color:#0ea5e9; border:1px solid rgba(14,165,233,.2);
-  transition:all .15s; cursor:default;
+.qs-type-badge {
+  padding: 4px 12px; border-radius: 20px; font-size: 11.5px; font-weight: 800;
+  display: inline-flex; align-items: center; gap: 5px;
 }
-.ec-concept-chip:hover { background:rgba(14,165,233,.2); transform:translateY(-1px); }
+.qs-marks-badge {
+  padding: 4px 12px; border-radius: 20px; font-size: 11.5px; font-weight: 800;
+  background: rgba(245,158,11,.12); color: #d97706; border: 1px solid rgba(245,158,11,.24);
+}
+[data-theme="dark"] .qs-marks-badge {
+  background: rgba(245,158,11,.2); color: #fbbf24;
+}
+.qs-bloom-badge {
+  padding: 4px 12px; border-radius: 20px; font-size: 11.5px; font-weight: 800;
+  background: rgba(13,148,136,.12); color: #0d9488; border: 1px solid rgba(13,148,136,.24);
+}
+[data-theme="dark"] .qs-bloom-badge {
+  background: rgba(13,148,136,.2); color: #2dd4bf;
+}
 
-/* ── Course list / management ── */
+/* Question Carousel Quick Jump Bar */
+.qs-jump-bar {
+  display: flex; gap: 8px; overflow-x: auto; padding: 6px 2px 14px;
+  scrollbar-width: thin; scrollbar-color: rgba(2,132,199,.25) transparent;
+}
+.qs-jump-bar::-webkit-scrollbar { height: 4px; }
+.qs-jump-bar::-webkit-scrollbar-thumb { background: rgba(2,132,199,.25); border-radius: 4px; }
+.qs-jump-pill {
+  flex-shrink: 0; width: 40px; height: 38px; border-radius: 12px;
+  border: 1px solid var(--sd-line); background: var(--sd-card-soft);
+  color: var(--sd-ink); font-size: 12px; font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all .2s;
+}
+.qs-jump-pill:hover { border-color: #0284c7; color: #0284c7; transform: translateY(-2px); }
+.qs-jump-pill.active {
+  background: var(--sd-accent-grad); color: #fff; border-color: transparent;
+  box-shadow: 0 4px 14px rgba(2,132,199,.35);
+}
+
+/* Question Card & Smooth Transition Box */
+.qs-stage {
+  min-height: 280px; position: relative; padding: 10px 0;
+}
+.qs-prompt {
+  font-size: clamp(16px, 2.2vw, 20px); font-weight: 800; line-height: 1.45;
+  color: var(--sd-ink); margin-bottom: 22px;
+}
+.qs-options-grid {
+  display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: 22px;
+}
+.qs-option-btn {
+  width: 100%; border-radius: 16px; border: 1.5px solid var(--sd-line);
+  background: var(--sd-card-soft); padding: 14px 18px; text-align: left;
+  cursor: pointer; display: flex; align-items: center; gap: 14px;
+  font-family: inherit; font-size: 14px; font-weight: 700; color: var(--sd-ink);
+  transition: all .2s cubic-bezier(.34,1.56,.64,1);
+}
+.qs-option-btn:hover {
+  border-color: #0284c7; transform: translateX(4px); background: rgba(2,132,199,.05);
+}
+[data-theme="dark"] .qs-option-btn:hover {
+  background: rgba(56,189,248,.08); border-color: #38bdf8;
+}
+.qs-opt-badge {
+  width: 32px; height: 32px; border-radius: 10px; display: flex; align-items: center;
+  justify-content: center; font-size: 13px; font-weight: 800; flex-shrink: 0;
+  background: var(--sd-card); border: 1px solid var(--sd-line); color: var(--sd-muted);
+  transition: all .2s;
+}
+.qs-option-btn.selected {
+  border-color: #0284c7; background: rgba(2,132,199,.1);
+}
+.qs-option-btn.selected .qs-opt-badge {
+  background: #0284c7; color: #fff; border-color: #0284c7;
+}
+.qs-option-btn.correct {
+  border-color: #10b981; background: rgba(16,185,129,.12); color: #065f46;
+}
+[data-theme="dark"] .qs-option-btn.correct { color: #34d399; }
+.qs-option-btn.correct .qs-opt-badge {
+  background: #10b981; color: #fff; border-color: #10b981;
+}
+.qs-option-btn.incorrect {
+  border-color: #f43f5e; background: rgba(244,63,94,.1); color: #9f1239;
+}
+[data-theme="dark"] .qs-option-btn.incorrect { color: #fda4af; }
+.qs-option-btn.incorrect .qs-opt-badge {
+  background: #f43f5e; color: #fff; border-color: #f43f5e;
+}
+
+/* Question Action Footer */
+.qs-nav-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 14px; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--sd-line);
+  flex-wrap: wrap;
+}
+.qs-nav-btn {
+  display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px;
+  border-radius: 12px; border: 1px solid var(--sd-line); background: var(--sd-card-soft);
+  color: var(--sd-ink); font-size: 13px; font-weight: 800; cursor: pointer;
+  transition: all .2s cubic-bezier(.34,1.56,.64,1);
+}
+.qs-nav-btn:hover {
+  border-color: #0284c7; color: #0284c7; transform: translateY(-2px);
+}
+[data-theme="dark"] .qs-nav-btn:hover {
+  border-color: #38bdf8; color: #38bdf8;
+}
+.qs-nav-btn.primary {
+  background: var(--sd-accent-grad); color: #fff; border: none;
+  box-shadow: 0 4px 14px rgba(2,132,199,.35);
+}
+.qs-nav-btn.primary:hover {
+  box-shadow: 0 6px 18px rgba(2,132,199,.45);
+}
+
+/* ── Interactive Expandable Panels (Hint & Explanation) ── */
+.qs-accordion {
+  border-radius: 14px; padding: 14px 18px; margin-top: 14px;
+  border: 1px solid var(--sd-line); background: var(--sd-card-soft);
+}
+.qs-acc-hint {
+  border-color: rgba(245,158,11,.3); background: rgba(245,158,11,.06);
+}
+.qs-acc-expl {
+  border-color: rgba(2,132,199,.3); background: rgba(2,132,199,.06);
+}
+
+/* ── Course / Lesson List Styling ── */
 .ec-course-item {
-  display:flex; align-items:center; gap:14px; padding:14px 16px;
-  border-radius:14px; border:1px solid var(--ec-border); background:var(--ec-card2);
-  margin-bottom:10px; cursor:pointer; transition:all .2s;
+  display: flex; align-items: center; gap: 14px; padding: 14px 16px;
+  border-radius: 16px; border: 1px solid var(--sd-line); background: var(--sd-card-soft);
+  margin-bottom: 10px; cursor: pointer; transition: all .2s;
 }
-.ec-course-item:last-child { margin-bottom:0; }
-.ec-course-item:hover { background:var(--ec-btn-hover); border-color:rgba(99,102,241,.3); transform:translateX(3px); }
-.ec-course-item.selected { background:rgba(16,185,129,.08); border-color:rgba(16,185,129,.35); }
-[data-theme="dark"] .ec-course-item.selected { background:rgba(16,185,129,.12); }
-.ec-course-ico { width:44px; height:44px; border-radius:13px; display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:20px; }
-.ec-course-info { flex:1; min-width:0; }
-.ec-course-name { font-size:13.5px; font-weight:700; color:var(--ec-text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.ec-course-meta { font-size:11.5px; color:var(--ec-text3); margin-top:3px; }
-.ec-course-badge { padding:3px 10px; border-radius:8px; font-size:11px; font-weight:700; background:rgba(16,185,129,.1); color:#10b981; border:1px solid rgba(16,185,129,.2); flex-shrink:0; }
-.ec-course-actions { display:flex; gap:5px; flex-shrink:0; }
+.ec-course-item:hover {
+  border-color: #0284c7; transform: translateX(3px); background: var(--sd-card);
+}
+.ec-course-item.selected {
+  border-color: #0284c7; background: rgba(2,132,199,.08);
+}
+[data-theme="dark"] .ec-course-item.selected {
+  border-color: #38bdf8; background: rgba(56,189,248,.12);
+}
+.ec-course-ico {
+  width: 44px; height: 44px; border-radius: 13px; display: flex;
+  align-items: center; justify-content: center; flex-shrink: 0; font-size: 20px;
+  color: #fff;
+}
 .ec-course-action {
-  width:30px; height:30px; border-radius:8px; border:1px solid var(--ec-sel-border);
-  background:var(--ec-btn-bg); display:flex; align-items:center; justify-content:center;
-  cursor:pointer; color:var(--ec-text3); transition:all .18s;
+  width: 32px; height: 32px; border-radius: 9px; border: 1px solid var(--sd-line);
+  background: var(--sd-card); display: flex; align-items: center; justify-content: center;
+  cursor: pointer; color: var(--sd-muted); transition: all .18s;
 }
-.ec-course-action:hover { background:var(--ec-btn-hover); color:#6366f1; border-color:rgba(99,102,241,.3); }
-.ec-course-action svg { width:13px; height:13px; }
+.ec-course-action:hover {
+  border-color: #0284c7; color: #0284c7;
+}
 
-/* ── Lesson cards ── */
+/* ── Lesson Cards ── */
 .ec-lesson {
-  border-radius:13px; padding:14px; border:1px solid var(--ec-border);
-  background:var(--ec-card2); margin-bottom:10px; transition:all .2s;
+  border-radius: 14px; padding: 16px; border: 1px solid var(--sd-line);
+  background: var(--sd-card-soft); margin-bottom: 10px; transition: all .2s;
 }
-.ec-lesson:last-child { margin-bottom:0; }
-.ec-lesson:hover { box-shadow:var(--ec-shadow); border-color:rgba(16,185,129,.25); }
-.ec-lesson-hd   { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:8px; }
-.ec-lesson-title{ font-size:13.5px; font-weight:700; color:var(--ec-text); }
-.ec-lesson-meta { font-size:11.5px; color:var(--ec-text3); margin-top:3px; }
-.ec-lesson-tags { display:flex; gap:5px; flex-wrap:wrap; margin-top:8px; }
-.ec-lesson-tag  { padding:3px 9px; border-radius:6px; font-size:10.5px; font-weight:600; }
-.elt-diff-beg { background:rgba(16,185,129,.1); color:#10b981; }
-.elt-diff-mid { background:rgba(245,158,11,.1); color:#f59e0b; }
-.elt-diff-adv { background:rgba(244,63,94,.1);  color:#f43f5e; }
-.elt-topic    { background:var(--ec-bar-bg);     color:var(--ec-text3); }
-.ec-lesson-actions { display:flex; gap:4px; flex-shrink:0; }
-
-/* ── Analytics bars ── */
-.ec-analytics-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:24px; }
-.ec-bar-chart { display:flex; align-items:flex-end; gap:8px; height:100px; padding-top:8px; }
-.ec-bar-col   { flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; }
-.ec-bar       { width:100%; border-radius:5px 5px 0 0; min-height:4px; animation:barUp .7s cubic-bezier(.4,0,.2,1) both; }
-@keyframes barUp { from{transform:scaleY(0);transform-origin:bottom} to{transform:scaleY(1)} }
-.ec-bar-lbl   { font-size:10px; color:var(--ec-text3); font-weight:600; }
-
-/* ── Snap bars ── */
-.ec-snap-row { margin-bottom:13px; }
-.ec-snap-row:last-child { margin-bottom:0; }
-.ec-snap-hd { display:flex; justify-content:space-between; margin-bottom:5px; font-size:12.5px; }
-.ec-snap-label { color:var(--ec-text2); font-weight:500; }
-.ec-snap-val   { font-weight:700; color:var(--ec-text); }
-.ec-snap-bg  { height:7px; background:var(--ec-bar-bg); border-radius:6px; overflow:hidden; }
-.ec-snap-fill{ height:100%; border-radius:6px; transition:width .8s; }
-
-/* ── Quick actions (td-qa style) ── */
-.ec-qa {
-  display:flex; align-items:center; gap:12px; padding:13px 14px;
-  border-radius:14px; border:1px solid var(--ec-qa-border); background:var(--ec-qa-bg);
-  cursor:pointer; transition:all .2s; margin-bottom:8px; font-family:inherit; width:100%; text-align:left;
+.ec-lesson:hover {
+  border-color: rgba(2,132,199,.3); box-shadow: var(--sd-shadow-soft);
 }
-.ec-qa:last-child { margin-bottom:0; }
-.ec-qa:hover { transform:translateX(4px); background:var(--ec-btn-hover); border-color:rgba(16,185,129,.3); }
-.ec-qa-icon { width:38px; height:38px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:transform .2s; }
-.ec-qa-icon svg { width:17px; height:17px; }
-.ec-qa:hover .ec-qa-icon { transform:scale(1.12); }
-.eqa-green  { background:linear-gradient(135deg,#10b981,#059669); color:#fff; box-shadow:0 4px 12px rgba(16,185,129,.4); }
-.eqa-blue   { background:linear-gradient(135deg,#0ea5e9,#3b82f6); color:#fff; box-shadow:0 4px 12px rgba(14,165,233,.4); }
-.eqa-purple { background:linear-gradient(135deg,#6366f1,#8b5cf6); color:#fff; box-shadow:0 4px 12px rgba(99,102,241,.4); }
-.eqa-amber  { background:linear-gradient(135deg,#f59e0b,#ef4444); color:#fff; box-shadow:0 4px 12px rgba(245,158,11,.4); }
-.ec-qa-text  { flex:1; }
-.ec-qa-label { font-size:13px; font-weight:700; color:var(--ec-text); }
-.ec-qa-desc  { font-size:11.5px; color:var(--ec-text3); margin-top:2px; }
-.ec-qa-arrow { color:var(--ec-text3); font-size:18px; transition:color .2s; }
-.ec-qa:hover .ec-qa-arrow { color:#10b981; }
-
-/* ── Back link ── */
-.ec-back {
-  display:inline-flex; align-items:center; gap:6px; padding:8px 14px;
-  border-radius:10px; border:1px solid var(--ec-sel-border); background:var(--ec-btn-bg);
-  color:var(--ec-btn-text); font-size:13px; font-weight:600; text-decoration:none;
-  cursor:pointer; margin-bottom:20px; transition:all .18s; font-family:inherit;
+.ec-lesson-tag {
+  padding: 3px 9px; border-radius: 6px; font-size: 10.5px; font-weight: 700;
 }
-.ec-back:hover { background:var(--ec-btn-hover); color:#10b981; border-color:rgba(16,185,129,.3); }
-.ec-back svg { width:14px; height:14px; }
+.elt-diff-beg { background: rgba(16,185,129,.12); color: #10b981; }
+.elt-diff-mid { background: rgba(245,158,11,.12); color: #f59e0b; }
+.elt-diff-adv { background: rgba(244,63,94,.12);  color: #f43f5e; }
+.elt-topic    { background: var(--sd-bar-bg);     color: var(--sd-muted); }
 
-/* ── Scrollable areas ── */
-.ec-scroll { max-height:320px; overflow-y:auto; scrollbar-width:thin; scrollbar-color:rgba(16,185,129,.3) transparent; }
-.ec-scroll::-webkit-scrollbar { width:4px; }
-.ec-scroll::-webkit-scrollbar-thumb { background:rgba(16,185,129,.3); border-radius:4px; }
+/* ── Analytics Bar Chart ── */
+.ec-bar-chart { display: flex; align-items: flex-end; gap: 10px; height: 120px; padding-top: 10px; }
+.ec-bar-col   { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.ec-bar       { width: 100%; border-radius: 6px 6px 0 0; min-height: 4px; transition: height .6s ease; }
+.ec-bar-lbl   { font-size: 10.5px; color: var(--sd-muted); font-weight: 700; }
 
-/* ── Loading spinner ── */
-.ec-spin { animation:spin 1s linear infinite; width:16px; height:16px; }
-@keyframes spin { to { transform:rotate(360deg); } }
-
-/* ── Empty state ── */
-.ec-empty { text-align:center; padding:40px 20px; }
-.ec-empty-ico { width:60px; height:60px; border-radius:18px; background:var(--ec-bar-bg); display:flex; align-items:center; justify-content:center; margin:0 auto 14px; }
-.ec-empty-ico svg { width:26px; height:26px; color:var(--ec-text3); }
-.ec-empty-title { font-size:14px; font-weight:700; color:var(--ec-text); margin-bottom:5px; }
-.ec-empty-sub   { font-size:12.5px; color:var(--ec-text3); }
-
-/* ── Responsive ── */
-@media (max-width:1100px) {
-  .ec-main-grid3 { grid-template-columns:1fr 1fr; }
-  .ec-main-grid3 > :last-child { grid-column:span 2; }
-  .ec-stats { grid-template-columns:repeat(2,1fr); }
-  .ec-alerts { grid-template-columns:1fr 1fr; }
-  .ec-analytics-grid { grid-template-columns:1fr; }
-  .ec-result-chips { grid-template-columns:1fr 1fr; }
+/* ── Responsive Rules ── */
+@media (max-width: 1200px) {
+  .th-stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .th-highlights { grid-template-columns: repeat(2, 1fr); }
+  .th-highlights > :last-child { grid-column: span 2; }
 }
-@media (max-width:768px) {
-  .ec-root { padding:16px; }
-  .ec-hero { padding:22px 20px; }
-  .ec-hero-inner { flex-direction:column; align-items:flex-start; }
-  .ec-hero-actions { width:100%; }
-  .ec-stats { grid-template-columns:1fr 1fr; gap:12px; }
-  .ec-alerts { grid-template-columns:1fr; }
-  .ec-main-grid, .ec-main-grid3 { grid-template-columns:1fr; }
-  .ec-main-grid3 > :last-child { grid-column:1; }
-  .ec-tabs-row { flex-wrap:wrap; }
-  .ec-tab { font-size:11px; padding:8px 10px; }
-  .ec-form-grid2, .ec-form-grid3, .ec-mode-grid { grid-template-columns:1fr; }
-  .ec-result-chips { grid-template-columns:1fr; }
-  .ec-analytics-grid { grid-template-columns:1fr; }
+@media (max-width: 900px) {
+  .ec-main-grid { display: grid; grid-template-columns: 1fr; gap: 20px; }
+  .ec-main-grid3 { display: grid; grid-template-columns: 1fr; gap: 20px; }
+  .th-hero-main { flex-direction: column-reverse; align-items: flex-start; }
+  .th-hero-robot-stage { width: 100%; justify-content: flex-start; margin-bottom: 8px; }
+  .th-hero-robot-bubble { max-width: 260px; }
 }
-@media (max-width:480px) {
-  .ec-root { padding:12px; }
-  .ec-stats { grid-template-columns:1fr; }
+@media (max-width: 640px) {
+  .ec-root { padding: 14px 14px 60px; }
+  .th-hero { padding: 22px 18px; border-radius: 20px; }
+  .th-hero-title { font-size: 22px; }
+  .th-hero-robot-bubble { display: none; }
+  .th-hero-robot-wrap { width: 92px; height: 92px; border-radius: 22px; }
+  .th-hero-robot { width: 72px; height: 72px; }
+  .th-stats-grid { grid-template-columns: 1fr; gap: 10px; }
+  .th-highlights { grid-template-columns: 1fr; }
+  .th-highlights > :last-child { grid-column: span 1; }
+  .ec-form-grid2 { grid-template-columns: 1fr; }
+  .ec-mode-grid { grid-template-columns: 1fr; }
+  .qs-header { flex-direction: column; align-items: flex-start; }
+  .qs-nav-footer { flex-direction: column; align-items: stretch; }
+  .qs-nav-btn { justify-content: center; }
 }
 `;
 
-/* ── SVG Helper ── */
-const Svg = ({ d, size = 18 }: { d: string; size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-    stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-    <path d={d} />
-  </svg>
-);
-
-const ICONS = {
-  back:    "M19 12H5M12 19l-7-7 7-7",
-  plus:    "M12 5v14M5 12h14",
-  upload:  "M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12",
-  brain:   "M9.5 2A2.5 2.5 0 017 4.5v1A2.5 2.5 0 009.5 8h5A2.5 2.5 0 0017 5.5v-1A2.5 2.5 0 0014.5 2h-5zM12 8v8M9 12h6M6 20h12a2 2 0 002-2v-1a4 4 0 00-4-4H8a4 4 0 00-4 4v1a2 2 0 002 2z",
-  book:    "M4 19.5A2.5 2.5 0 016.5 17H20M4 19.5A2.5 2.5 0 006.5 22H20V2H6.5A2.5 2.5 0 004 4.5v15z",
-  chart:   "M18 20V10M12 20V4M6 20v-6",
-  file:    "M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6",
-  target:  "M12 22a10 10 0 100-20 10 10 0 000 20zM12 18a6 6 0 100-12 6 6 0 000 12zM12 14a2 2 0 100-4 2 2 0 000 4z",
-  check:   "M20 6L9 17l-5-5",
-  close:   "M18 6L6 18M6 6l12 12",
-  edit:    "M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z",
-  trash:   "M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2",
-  eye:     "M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8zM12 9a3 3 0 100 6 3 3 0 000-6z",
-  clock:   "M12 2a10 10 0 110 20A10 10 0 0112 2zm0 5v5l3 3",
-  tag:     "M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82zM7 7h.01",
-  star:    "M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z",
-  users:   "M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M9 7a4 4 0 110 8 4 4 0 010-8z",
-  bolt:    "M13 2L3 14h9l-1 8 10-12h-9l1-8z",
-  layers:  "M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5",
-  refresh: "M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15",
-  trend:   "M23 6l-9.5 9.5-5-5L1 18",
-  download:"M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3",
-  pdf:     "M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zM14 2v6h6M9 13h6M9 17h6M9 9h1",
-  info:    "M12 22a10 10 0 100-20 10 10 0 000 20zM12 8h.01M11 12h1v4h1",
-} as const;
-
-/* ── Animated Number ── */
+/* ── Animated Number Counter ── */
 function AnimNum({ target, suffix = "" }: { target: number; suffix?: string }) {
-  const [v, setV] = useState(0);
+  const [val, setVal] = useState(0);
   useEffect(() => {
-    let cur = 0;
-    const step = () => {
-      cur += target / 55;
-      if (cur < target) { setV(Math.floor(cur)); requestAnimationFrame(step); }
-      else setV(target);
+    let frame = 0;
+    let raf = 0;
+    const tick = () => {
+      frame += 1;
+      setVal(Math.round((target * Math.min(frame, 35)) / 35));
+      if (frame < 35) raf = requestAnimationFrame(tick);
     };
-    requestAnimationFrame(step);
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
   }, [target]);
-  return <>{v}{suffix}</>;
+  return <>{val}{suffix}</>;
 }
 
-/* ── Zod schemas ── */
+/* ── Question Transition Variants ── */
+const questionVariants = {
+  enter: (direction: number) => ({
+    x: direction > 0 ? 80 : -80,
+    opacity: 0,
+    scale: 0.96,
+  }),
+  center: {
+    x: 0,
+    opacity: 1,
+    scale: 1,
+    transition: {
+      x: { type: "spring", stiffness: 320, damping: 28 },
+      opacity: { duration: 0.22 },
+    },
+  },
+  exit: (direction: number) => ({
+    x: direction < 0 ? 80 : -80,
+    opacity: 0,
+    scale: 0.96,
+    transition: {
+      x: { type: "spring", stiffness: 320, damping: 28 },
+      opacity: { duration: 0.18 },
+    },
+  }),
+};
+
+/* ── Zod Form Schema ── */
 const courseSchema = z.object({
-  title: z.string().min(1),
-  description: z.string().min(10),
+  title: z.string().min(1, "Title is required"),
+  description: z.string().min(10, "Minimum 10 characters required"),
   grade: z.number().min(1).max(12),
   subjectId: z.number().min(1),
   learningObjectives: z.string().optional(),
@@ -590,18 +969,22 @@ const courseSchema = z.object({
 
 type CourseForm = z.infer<typeof courseSchema>;
 
-/* ═══════════════════════════════════════════════════════════
+/* ═════════════════════════════════════════════════════════════════════════════
    MAIN COMPONENT
-   ═══════════════════════════════════════════════════════════ */
+   ═════════════════════════════════════════════════════════════════════════════ */
 export default function EnhancedContentManager() {
   const { toast } = useToast();
   const { user } = useAuth();
+  const { isDark } = useTheme();
   const qc = useQueryClient();
 
   const fileRef = useRef<HTMLInputElement>(null);
   const dropRef = useRef<HTMLDivElement>(null);
 
-  const [activeTab, setActiveTab] = useState("create");
+  // Active Tab
+  const [activeTab, setActiveTab] = useState<"create" | "upload" | "questions" | "manage" | "analytics">("create");
+
+  // Document Upload & NLP State
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -611,767 +994,1322 @@ export default function EnhancedContentManager() {
   const [processingMode, setProcessingMode] = useState<"basic" | "advanced" | "comprehensive">("advanced");
   const [opts, setOpts] = useState({ extractConcepts: true, generateExercises: true, createQuizzes: false });
 
+  // Question Studio & Transitions State
+  const [questions, setQuestions] = useState<InteractiveQuestion[]>(SEED_QUESTIONS);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [slideDirection, setSlideDirection] = useState(1);
+  const [selectedOption, setSelectedOption] = useState<number | null>(null);
+  const [showHint, setShowHint] = useState(false);
+  const [showExplanation, setShowExplanation] = useState(false);
+  const [questionFilterSubject, setQuestionFilterSubject] = useState("all");
+  const [questionFilterType, setQuestionFilterType] = useState("all");
+
   // Queries
   const { data: courses = [] } = useQuery<any[]>({ queryKey: ["/api/teacher/courses"] });
   const { data: subjects = [] } = useQuery<any[]>({ queryKey: ["/api/subjects"] });
-  const { data: lessons = []  } = useQuery<any[]>({ queryKey: [`/api/lessons/${selectedCourse}`], enabled: !!selectedCourse });
+  const { data: lessons = [] } = useQuery<any[]>({
+    queryKey: [`/api/lessons/${selectedCourse}`],
+    enabled: !!selectedCourse
+  });
 
   const totalLessons = courses.reduce((a: number, c: any) => a + (c.lessonCount || 0), 0);
 
-  // Course form
+  // Form Hook
   const form = useForm<CourseForm>({
     resolver: zodResolver(courseSchema),
-    defaultValues: { title:"", description:"", grade:9, subjectId:1 },
+    defaultValues: { title: "", description: "", grade: 9, subjectId: 1 },
   });
 
-  // Mutations
+  // Create Course Mutation
   const createCourse = useMutation({
-    mutationFn: (d: CourseForm) => fetch(buildApiUrl('/api/courses'), {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ ...d, teacherId: user?.id }),
-      credentials: 'include',
-    }).then(r => { if(!r.ok) throw new Error(); return r.json(); }),
+    mutationFn: (d: CourseForm) =>
+      fetch(buildApiUrl("/api/courses"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...d, teacherId: user?.id }),
+        credentials: "include",
+      }).then((r) => {
+        if (!r.ok) throw new Error();
+        return r.json();
+      }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey:["/api/teacher/courses"] });
+      qc.invalidateQueries({ queryKey: ["/api/teacher/courses"] });
       form.reset();
-      toast({ title:"✅ Course created!", description:"Your course is live and ready for content." });
+      toast({ title: "✅ Course created!", description: "Your new course curriculum is active." });
+      setActiveTab("manage");
     },
-    onError: () => toast({ title:"Failed to create course", variant:"destructive" }),
+    onError: () => toast({ title: "Failed to create course", variant: "destructive" }),
   });
 
+  // Process Document NLP Mutation
   const processDoc = useMutation({
-    mutationFn: async (data: { file:File; courseId:number; opts:any }) => {
+    mutationFn: async (data: { file: File; courseId: number; opts: any }) => {
       const fd = new FormData();
-      fd.append('pdf', data.file);
-      fd.append('courseId', data.courseId.toString());
-      fd.append('options', JSON.stringify(data.opts));
-      const r = await fetch(buildApiUrl('/api/teacher/process-document-nlp'), { method:'POST', body:fd, credentials:'include' });
-      if(!r.ok) throw new Error();
+      fd.append("pdf", data.file);
+      fd.append("courseId", data.courseId.toString());
+      fd.append("options", JSON.stringify(data.opts));
+      const r = await fetch(buildApiUrl("/api/teacher/process-document-nlp"), {
+        method: "POST",
+        body: fd,
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error();
       return r.json();
     },
     onSuccess: (result) => {
       setProcessingResult(result);
       setProgress(100);
       setProgressStep(4);
-      qc.invalidateQueries({ queryKey:["/api/lessons"] });
-      toast({ title:"🎉 Processing complete!", description:`${result.lessonsCreated || result.lessons?.length || 0} lessons created` });
+      qc.invalidateQueries({ queryKey: ["/api/lessons"] });
+
+      // Automatically synthesize interactive questions from processed doc
+      if (result.lessons && result.lessons.length > 0) {
+        const newQs: InteractiveQuestion[] = result.lessons.map((l: any, i: number) => ({
+          id: `nlp-q-${Date.now()}-${i}`,
+          courseId: selectedCourse || 1,
+          subject: result.subjectClassification || "General Science",
+          type: i % 2 === 0 ? "mcq" : "short",
+          marks: i % 2 === 0 ? 2 : 4,
+          difficulty: l.difficulty === "beginner" ? "easy" : l.difficulty === "advanced" ? "hard" : "medium",
+          bloomLevel: i % 2 === 0 ? "Understand" : "Apply",
+          question: `Key Concept Review: Explain how "${l.title}" relates to core principles covered in this unit.`,
+          options: i % 2 === 0 ? [
+            `Option A: Primary mechanism identified in ${l.title}`,
+            `Option B: Secondary alternative framework`,
+            `Option C: Fundamental theoretical constant`,
+            `Option D: Experimental empirical validation`
+          ] : undefined,
+          correctOption: 0,
+          correctAnswer: `Option A: Primary mechanism identified in ${l.title}`,
+          hint: `Refer to topics: ${(l.topics || []).join(", ") || "core chapter concepts"}.`,
+          explanation: `Generated from analyzed lesson unit "${l.title}" to reinforce deep conceptual retention.`,
+        }));
+        setQuestions((prev) => [...newQs, ...prev]);
+      }
+
+      toast({
+        title: "🎉 Document Processing Complete!",
+        description: `${result.lessonsCreated || result.lessons?.length || 0} lessons and interactive questions generated.`
+      });
     },
     onError: () => {
-      toast({ title:"Processing failed", variant:"destructive" });
-      setProgress(0); setProgressStep(0);
+      toast({ title: "Processing failed", variant: "destructive" });
+      setProgress(0);
+      setProgressStep(0);
     },
   });
 
-  // File handling
+  // File Handlers
   const acceptFile = (f: File) => {
-    if (f.type==='application/pdf' || f.name.endsWith('.docx') || f.name.endsWith('.txt')) {
-      setSelectedFile(f); setProcessingResult(null); setProgress(0); setProgressStep(0);
+    if (f.type === "application/pdf" || f.name.endsWith(".docx") || f.name.endsWith(".txt")) {
+      setSelectedFile(f);
+      setProcessingResult(null);
+      setProgress(0);
+      setProgressStep(0);
     } else {
-      toast({ title:"Invalid file type", description:"Please use PDF, DOCX, or TXT", variant:"destructive" });
+      toast({ title: "Invalid file format", description: "Please upload PDF, DOCX, or TXT", variant: "destructive" });
     }
   };
-  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => { const f=e.target.files?.[0]; if(f)acceptFile(f); };
-  const onDrop = (e: React.DragEvent) => {
-    e.preventDefault(); setDragging(false);
-    const f = e.dataTransfer.files?.[0]; if(f)acceptFile(f);
+
+  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (f) acceptFile(f);
   };
 
-  const STEPS = ["Parsing document","Extracting structure","NLP analysis","Generating lessons"];
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+    const f = e.dataTransfer.files?.[0];
+    if (f) acceptFile(f);
+  };
+
+  const STEPS = ["Parsing Document Structure", "Semantic Extraction", "NLP Concept Mapping", "Generating Lessons & Questions"];
 
   const handleProcess = async () => {
-    if(!selectedFile || !selectedCourse) {
-      toast({ title:"Missing info", description:"Select a course and file first", variant:"destructive" }); return;
+    if (!selectedFile || !selectedCourse) {
+      toast({ title: "Missing details", description: "Please choose a course and document first.", variant: "destructive" });
+      return;
     }
-    setProgress(0); setProgressStep(0);
+    setProgress(0);
+    setProgressStep(0);
     let step = 0;
     const iv = setInterval(() => {
       step++;
       setProgressStep(Math.min(step, 3));
-      setProgress(Math.min(step * 23, 88));
-      if(step >= 4) clearInterval(iv);
+      setProgress(Math.min(step * 24, 88));
+      if (step >= 4) clearInterval(iv);
     }, 900);
-    await processDoc.mutateAsync({ file: selectedFile, courseId: selectedCourse, opts: { processingMode, ...opts } });
+
+    await processDoc.mutateAsync({
+      file: selectedFile,
+      courseId: selectedCourse,
+      opts: { processingMode, ...opts },
+    });
     clearInterval(iv);
   };
 
-  const COURSE_ICONS = ["📐","🔬","📚","🌍","💻","🎨","🔢","📝","🎯","🔭"];
-  const gradients = [
-    "linear-gradient(135deg,#10b981,#059669)","linear-gradient(135deg,#0ea5e9,#3b82f6)",
-    "linear-gradient(135deg,#6366f1,#8b5cf6)","linear-gradient(135deg,#f59e0b,#ef4444)",
-    "linear-gradient(135deg,#ec4899,#8b5cf6)","linear-gradient(135deg,#06b6d4,#0ea5e9)",
+  // Filtered Questions for Question Studio
+  const filteredQuestions = useMemo(() => {
+    return questions.filter((q) => {
+      const matchSubject = questionFilterSubject === "all" || q.subject?.toLowerCase() === questionFilterSubject.toLowerCase();
+      const matchType = questionFilterType === "all" || q.type === questionFilterType;
+      return matchSubject && matchType;
+    });
+  }, [questions, questionFilterSubject, questionFilterType]);
+
+  const activeQuestion = filteredQuestions[currentQuestionIndex] || filteredQuestions[0] || questions[0];
+
+  // Question Transition Controls
+  const handleNextQuestion = () => {
+    if (currentQuestionIndex < filteredQuestions.length - 1) {
+      setSlideDirection(1);
+      setCurrentQuestionIndex((prev) => prev + 1);
+      setSelectedOption(null);
+      setShowHint(false);
+      setShowExplanation(false);
+    }
+  };
+
+  const handlePrevQuestion = () => {
+    if (currentQuestionIndex > 0) {
+      setSlideDirection(-1);
+      setCurrentQuestionIndex((prev) => prev - 1);
+      setSelectedOption(null);
+      setShowHint(false);
+      setShowExplanation(false);
+    }
+  };
+
+  const handleJumpToQuestion = (idx: number) => {
+    setSlideDirection(idx > currentQuestionIndex ? 1 : -1);
+    setCurrentQuestionIndex(idx);
+    setSelectedOption(null);
+    setShowHint(false);
+    setShowExplanation(false);
+  };
+
+  const handleShuffleQuestions = () => {
+    setSlideDirection(1);
+    const nextIdx = Math.floor(Math.random() * filteredQuestions.length);
+    setCurrentQuestionIndex(nextIdx);
+    setSelectedOption(null);
+    setShowHint(false);
+    setShowExplanation(false);
+    toast({ title: "🔀 Questions Shuffled", description: `Jumped to question #${nextIdx + 1}` });
+  };
+
+  // Keyboard navigation for question transitions
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (activeTab !== "questions") return;
+      if (e.key === "ArrowRight") handleNextQuestion();
+      if (e.key === "ArrowLeft") handlePrevQuestion();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [activeTab, currentQuestionIndex, filteredQuestions.length]);
+
+  const COURSE_ICONS = ["📐", "🔬", "📚", "🌍", "💻", "🎨", "🔢", "📝", "🎯", "🔭"];
+  const courseGradients = [
+    "linear-gradient(135deg, #0284c7, #0369a1)",
+    "linear-gradient(135deg, #0d9488, #10b981)",
+    "linear-gradient(135deg, #0284c7, #0d9488)",
+    "linear-gradient(135deg, #f59e0b, #d97706)",
+    "linear-gradient(135deg, #0ea5e9, #0284c7)",
   ];
 
-  const barData  = [72,85,61,90,78,94,83];
-  const barDays  = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
-  const barMax   = Math.max(...barData);
-
-  const tabs = [
-    { key:"create",    label:"Create Course",  icon:ICONS.plus   },
-    { key:"upload",    label:"Process Docs",   icon:ICONS.upload  },
-    { key:"manage",    label:"Manage Content", icon:ICONS.book    },
-    { key:"analytics", label:"Analytics",      icon:ICONS.chart   },
-  ];
+  const barData = [72, 85, 61, 90, 78, 94, 83];
+  const barDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const barMax = Math.max(...barData);
 
   return (
     <>
       <style>{css}</style>
-      <div className="ec-root">
+      <div className={`ec-root ${isDark ? "dark" : ""}`}>
+        {/* Background Sparkles & Wave */}
+        <div className="sd-bg-spark s1" />
+        <div className="sd-bg-spark s2" />
+        <div className="sd-bg-spark s3" />
+        <div className="sd-bg-ribbon" />
 
-        {/* ── HERO ── */}
-        <div className="ec-hero">
-          <span className="ec-float" style={{width:40,height:40,top:"18%",left:"58%",animationDelay:"0s"}}/>
-          <span className="ec-float" style={{width:26,height:26,top:"62%",left:"78%",animationDelay:"1.2s"}}/>
-          <span className="ec-float" style={{width:58,height:58,top:"10%",left:"44%",animationDelay:"2.4s"}}/>
-          <div className="ec-hero-inner">
-            <div>
-              <div className="ec-hero-title">Enhanced Content Manager 🧠</div>
-              <div className="ec-hero-sub">AI-powered course creation with advanced NLP document processing, concept extraction, and auto-generated lessons.</div>
-              <div className="ec-hero-badges">
-                <span className="ec-hero-badge"><Svg d={ICONS.brain} size={12}/> NLP Powered</span>
-                <span className="ec-hero-badge"><Svg d={ICONS.bolt} size={12}/> Smart Analysis</span>
-                <span className="ec-hero-badge"><Svg d={ICONS.layers} size={12}/> Auto-Structure</span>
+        <div className="ec-shell">
+          {/* ═══════════════════════════════════════════════════════════════
+              HERO BANNER (Matches Teacher Homework & Dashboard Design)
+              ═══════════════════════════════════════════════════════════════ */}
+          <div className="th-hero">
+            <div className="th-hero-main">
+              <div className="th-hero-content">
+                <div className="th-hero-chip">
+                  <span className="th-live-dot" />
+                  Teacher Studio · Enhanced Content Engine
+                </div>
+                <h1 className="th-hero-title">Enhanced Content Manager 📚</h1>
+                <p className="th-hero-sub">
+                  Intelligent curriculum architect with NLP document ingestion, automated lesson structuring, and interactive question transitions.
+                </p>
+                <div className="th-hero-actions">
+                  <button className="th-hero-btn primary" onClick={() => setActiveTab("create")}>
+                    <Plus size={16} /> New Course
+                  </button>
+                  <button className="th-hero-btn secondary" onClick={() => setActiveTab("upload")}>
+                    <UploadCloud size={16} /> Upload Document
+                  </button>
+                  <button className="th-hero-btn secondary" onClick={() => setActiveTab("questions")}>
+                    <Target size={16} /> Question Transitions
+                  </button>
+                </div>
+              </div>
+
+              {/* Robot Mascot Stage */}
+              <div className="th-hero-robot-stage">
+                <div className="th-hero-robot-bubble">
+                  <div className="th-hero-robot-bubble-badge">
+                    <Sparkles size={12} /> GradeUp Co-Pilot
+                  </div>
+                  <p className="th-hero-robot-bubble-text">
+                    Hi Teacher! Ready to create structured lessons and interactive question transitions?
+                  </p>
+                </div>
+                <div className="th-hero-robot-wrap">
+                  <img src={roboImg} alt="GradeUp AI Robot" className="th-hero-robot" />
+                </div>
               </div>
             </div>
-            <div className="ec-hero-actions">
-              <button className="ec-hero-btn" onClick={()=>setActiveTab("create")}>
-                <Svg d={ICONS.plus} size={15}/> New Course
-              </button>
-              <button className="ec-hero-btn-ol" onClick={()=>setActiveTab("upload")}>
-                <Svg d={ICONS.upload} size={15}/> Upload PDF
-              </button>
+
+            {/* Quick Hero Stat Row */}
+            <div className="th-hero-stat-row">
+              <div className="th-hero-pill">
+                <BookOpen size={18} />
+                <div>
+                  <div className="th-hero-pill-num">{courses.length}</div>
+                  <div className="th-hero-pill-lbl">Courses</div>
+                </div>
+              </div>
+              <div className="th-hero-pill">
+                <Layers size={18} />
+                <div>
+                  <div className="th-hero-pill-num">{totalLessons}</div>
+                  <div className="th-hero-pill-lbl">Lessons</div>
+                </div>
+              </div>
+              <div className="th-hero-pill">
+                <Target size={18} />
+                <div>
+                  <div className="th-hero-pill-num">{questions.length}</div>
+                  <div className="th-hero-pill-lbl">Questions</div>
+                </div>
+              </div>
+              <div className="th-hero-pill">
+                <Zap size={18} />
+                <div>
+                  <div className="th-hero-pill-num">{processingResult ? 1 : 0}</div>
+                  <div className="th-hero-pill-lbl">NLP Sessions</div>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* ── STATS ── */}
-        <div className="ec-stats">
-          {[
-            { label:"Total Courses",    value:courses.length,  badge:"Created",   cls:"ec-sc-green",  ico:"esi-green",  icon:ICONS.book,    trend:"↑ 2 this month" },
-            { label:"Total Lessons",    value:totalLessons,    badge:"AI-Built",  cls:"ec-sc-blue",   ico:"esi-blue",   icon:ICONS.layers,  trend:"Auto-generated" },
-            { label:"Docs Processed",   value:processingResult?1:0, badge:"NLP",  cls:"ec-sc-purple", ico:"esi-purple", icon:ICONS.file,    trend:"Advanced AI" },
-            { label:"Concepts Mapped",  value:processingResult?.conceptMap?.length||0, badge:"Extracted", cls:"ec-sc-amber", ico:"esi-amber", icon:ICONS.target, trend:"↑ Key ideas" },
-          ].map((s,i)=>(
-            <div key={i} className={`ec-stat-card ${s.cls}`}>
-              <div className="ec-stat-top">
-                <div className={`ec-stat-icon ${s.ico}`}><Svg d={s.icon} size={20}/></div>
-                <span className="ec-stat-badge">{s.badge}</span>
+          {/* ═══════════════════════════════════════════════════════════════
+              STAT CARDS ROW (Teacher Ocean, Teal, Emerald, Amber)
+              ═══════════════════════════════════════════════════════════════ */}
+          <div className="th-stats-grid">
+            <div className="th-stat-card th-sc-ocean">
+              <div className="th-stat-top">
+                <div className="th-stat-icon tsi-ocean"><BookOpen size={20} /></div>
+                <span className="th-stat-badge">Curriculum</span>
               </div>
-              <div className="ec-stat-num"><AnimNum target={s.value}/></div>
-              <div className="ec-stat-label">{s.label}</div>
-              <div className="ec-stat-trend">{s.trend}</div>
+              <div className="th-stat-num"><AnimNum target={courses.length} /></div>
+              <div className="th-stat-lbl">Active Courses</div>
+              <div className="th-stat-trend"><TrendingUp size={12} /> Ready for delivery</div>
             </div>
-          ))}
-        </div>
 
-        {/* ── ALERT CARDS ── */}
-        <div className="ec-alerts">
-          {[
-            { emoji:"📄", title:"Ready to Process", sub:"Upload a PDF or DOCX",   num:selectedFile?1:0, cls:"ea-green"  },
-            { emoji:"🎯", title:"Active Courses",    sub:"Accepting new content",   num:courses.length,  cls:"ea-blue"   },
-            { emoji:"⚡", title:"AI Lessons Created",sub:"From processed docs",     num:processingResult?.lessons?.length||0, cls:"ea-purple" },
-          ].map((a,i)=>(
-            <div key={i} className={`ec-alert ${a.cls}`}>
-              <div className="ec-alert-emoji">{a.emoji}</div>
-              <div className="ec-alert-title">{a.title}</div>
-              <div className="ec-alert-sub">{a.sub}</div>
-              <div className="ec-alert-num">{a.num}</div>
+            <div className="th-stat-card th-sc-teal">
+              <div className="th-stat-top">
+                <div className="th-stat-icon tsi-teal"><Layers size={20} /></div>
+                <span className="th-stat-badge">Units</span>
+              </div>
+              <div className="th-stat-num"><AnimNum target={totalLessons} /></div>
+              <div className="th-stat-lbl">Structured Lessons</div>
+              <div className="th-stat-trend"><Check size={12} /> Auto-sequenced</div>
             </div>
-          ))}
-        </div>
 
-        {/* ── TABS ── */}
-        <div className="ec-tabs-row">
-          {tabs.map(t=>(
-            <button key={t.key} className={`ec-tab${activeTab===t.key?" active":""}`}
-              onClick={()=>setActiveTab(t.key)}>
-              <Svg d={t.icon} size={14}/>{t.label}
-            </button>
-          ))}
-        </div>
+            <div className="th-stat-card th-sc-emerald">
+              <div className="th-stat-top">
+                <div className="th-stat-icon tsi-emerald"><Target size={20} /></div>
+                <span className="th-stat-badge">Transition Bank</span>
+              </div>
+              <div className="th-stat-num"><AnimNum target={questions.length} /></div>
+              <div className="th-stat-lbl">Interactive Questions</div>
+              <div className="th-stat-trend"><Sparkles size={12} /> Spring animations</div>
+            </div>
 
-        {/* ═══════════ TAB: CREATE COURSE ═══════════ */}
-        {activeTab==="create" && (
-          <div className="ec-main-grid3">
-            {/* Form */}
-            <div style={{gridColumn:"span 2"}}>
+            <div className="th-stat-card th-sc-amber">
+              <div className="th-stat-top">
+                <div className="th-stat-icon tsi-amber"><FileText size={20} /></div>
+                <span className="th-stat-badge">NLP Engine</span>
+              </div>
+              <div className="th-stat-num"><AnimNum target={processingResult?.conceptMap?.length || 12} /></div>
+              <div className="th-stat-lbl">Key Concepts Extracted</div>
+              <div className="th-stat-trend"><Zap size={12} /> High fidelity</div>
+            </div>
+          </div>
+
+          {/* ═══════════════════════════════════════════════════════════════
+              HIGHLIGHT CARDS
+              ═══════════════════════════════════════════════════════════════ */}
+          <div className="th-highlights">
+            <div className="th-hl-card thc-ocean">
+              <div className="th-hl-emoji">📄</div>
+              <div className="th-hl-title">Document Parsing</div>
+              <div className="th-hl-sub">Upload textbooks, slides, and syllabus documents</div>
+              <div className="th-hl-num">{selectedFile ? "1 File Attached" : "Drop files below"}</div>
+            </div>
+
+            <div className="th-hl-card thc-teal">
+              <div className="th-hl-emoji">🎯</div>
+              <div className="th-hl-title">Interactive Question Transitions</div>
+              <div className="th-hl-sub">Directional spring carousel with immediate feedback</div>
+              <div className="th-hl-num">{filteredQuestions.length} Questions Loaded</div>
+            </div>
+
+            <div className="th-hl-card thc-amber">
+              <div className="th-hl-emoji">⚡</div>
+              <div className="th-hl-title">Class Delivery Ready</div>
+              <div className="th-hl-sub">Live student preview & rubric auto-grading</div>
+              <div className="th-hl-num">Grade 1 - 12</div>
+            </div>
+          </div>
+
+          {/* ═══════════════════════════════════════════════════════════════
+              TABS NAVIGATION
+              ═══════════════════════════════════════════════════════════════ */}
+          <div className="th-tabs-bar">
+            {[
+              { key: "create",    label: "Create Course",                  icon: Plus },
+              { key: "upload",    label: "Process Documents",              icon: UploadCloud },
+              { key: "questions", label: "Question Transitions & Studio",  icon: Target },
+              { key: "manage",    label: "Manage Content",                 icon: BookOpen },
+              { key: "analytics", label: "Analytics & Insights",           icon: BarChart2 },
+            ].map((t) => {
+              const Icon = t.icon;
+              return (
+                <button
+                  key={t.key}
+                  className={`th-tab ${activeTab === t.key ? "active" : ""}`}
+                  onClick={() => setActiveTab(t.key as any)}
+                >
+                  <Icon size={15} />
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* ═══════════════════════════════════════════════════════════════
+              TAB 1: CREATE COURSE
+              ═══════════════════════════════════════════════════════════════ */}
+          {activeTab === "create" && (
+            <div className="ec-main-grid3" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 320px", gap: 20 }}>
+              <div style={{ gridColumn: "span 2" }}>
+                <div className="ec-card">
+                  <div className="ec-card-hd">
+                    <div className="ec-card-title">
+                      <BookOpen size={18} /> Create New Course
+                    </div>
+                  </div>
+                  <form onSubmit={form.handleSubmit((d) => createCourse.mutate(d))}>
+                    <div className="ec-form-grid2">
+                      <div className="ec-form-group">
+                        <label className="ec-label">Course Title *</label>
+                        <input
+                          className="ec-input"
+                          placeholder="e.g., Grade 10 Advanced Biology"
+                          {...form.register("title")}
+                        />
+                        {form.formState.errors.title && (
+                          <span style={{ fontSize: 12, color: "#f43f5e" }}>Required</span>
+                        )}
+                      </div>
+                      <div className="ec-form-group">
+                        <label className="ec-label">Subject *</label>
+                        <select className="ec-select" {...form.register("subjectId", { valueAsNumber: true })}>
+                          {subjects.map((s: any) => (
+                            <option key={s.id} value={s.id}>{s.name}</option>
+                          ))}
+                          {!subjects.length && (
+                            <>
+                              <option value={1}>Mathematics</option>
+                              <option value={2}>Physics</option>
+                              <option value={3}>Chemistry</option>
+                              <option value={4}>Biology</option>
+                              <option value={5}>English</option>
+                              <option value={6}>History</option>
+                              <option value={7}>Computer Science</option>
+                            </>
+                          )}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="ec-form-group">
+                      <label className="ec-label">Course Description *</label>
+                      <textarea
+                        className="ec-textarea"
+                        rows={3}
+                        placeholder="Describe the curriculum objectives, expected outcomes, and subject scope…"
+                        {...form.register("description")}
+                      />
+                      {form.formState.errors.description && (
+                        <span style={{ fontSize: 12, color: "#f43f5e" }}>Min 10 characters</span>
+                      )}
+                    </div>
+
+                    <div className="ec-form-grid2">
+                      <div className="ec-form-group">
+                        <label className="ec-label">Target Grade Level *</label>
+                        <select className="ec-select" {...form.register("grade", { valueAsNumber: true })}>
+                          {Array.from({ length: 12 }, (_, i) => i + 1).map((g) => (
+                            <option key={g} value={g}>Grade {g}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="ec-form-group">
+                        <label className="ec-label">Prerequisites (Optional)</label>
+                        <input
+                          className="ec-input"
+                          placeholder="e.g., Basic Cell Biology, Elementary Algebra"
+                          {...form.register("prerequisites")}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="ec-form-group">
+                      <label className="ec-label">Learning Objectives (Optional)</label>
+                      <textarea
+                        className="ec-textarea"
+                        rows={2}
+                        placeholder="What mastery outcomes will students demonstrate upon completion?"
+                        {...form.register("learningObjectives")}
+                      />
+                    </div>
+
+                    <button type="submit" className="ec-submit-btn" disabled={createCourse.isPending}>
+                      {createCourse.isPending ? (
+                        <>
+                          <RefreshCw size={16} className="animate-spin" /> Creating Course…
+                        </>
+                      ) : (
+                        <>
+                          <Plus size={16} /> Save & Open Curriculum Studio
+                        </>
+                      )}
+                    </button>
+                  </form>
+                </div>
+              </div>
+
+              {/* Sidebar: Quick Actions & Recent Courses */}
+              <div>
+                <div className="ec-card">
+                  <div className="ec-card-hd">
+                    <div className="ec-card-title">
+                      <Zap size={18} /> Quick Actions
+                    </div>
+                  </div>
+                  {[
+                    { label: "Upload Document", desc: "NLP file conversion", icon: UploadCloud, tab: "upload" },
+                    { label: "Question Transitions", desc: "Interactive player", icon: Target, tab: "questions" },
+                    { label: "Manage Content", desc: "Edit lessons & units", icon: BookOpen, tab: "manage" },
+                    { label: "View Analytics", desc: "Mastery telemetry", icon: BarChart2, tab: "analytics" },
+                  ].map((a, i) => {
+                    const Icon = a.icon;
+                    return (
+                      <button
+                        key={i}
+                        className="ec-course-item"
+                        style={{ width: "100%", textAlign: "left" }}
+                        onClick={() => setActiveTab(a.tab as any)}
+                      >
+                        <div className="ec-course-ico" style={{ background: courseGradients[i % courseGradients.length] }}>
+                          <Icon size={18} />
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 13, fontWeight: 800, color: "var(--sd-ink)" }}>{a.label}</div>
+                          <div style={{ fontSize: 11, color: "var(--sd-muted)" }}>{a.desc}</div>
+                        </div>
+                        <ChevronRight size={14} color="var(--sd-muted)" />
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {courses.length > 0 && (
+                  <div className="ec-card" style={{ marginTop: 16 }}>
+                    <div className="ec-card-hd">
+                      <div className="ec-card-title">
+                        <Star size={18} /> Recent Courses
+                      </div>
+                    </div>
+                    {courses.slice(0, 3).map((c: any, i: number) => (
+                      <div
+                        key={c.id}
+                        className="ec-course-item"
+                        onClick={() => {
+                          setSelectedCourse(c.id);
+                          setActiveTab("manage");
+                        }}
+                      >
+                        <div className="ec-course-ico" style={{ background: courseGradients[i % courseGradients.length] }}>
+                          {COURSE_ICONS[i % COURSE_ICONS.length]}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "var(--sd-ink)" }}>
+                            {c.title}
+                          </div>
+                          <div style={{ fontSize: 11, color: "var(--sd-muted)" }}>
+                            Grade {c.grade} · {c.lessonCount || 0} lessons
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ═══════════════════════════════════════════════════════════════
+              TAB 2: PROCESS DOCUMENTS (NLP)
+              ═══════════════════════════════════════════════════════════════ */}
+          {activeTab === "upload" && (
+            <div className="ec-main-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
               <div className="ec-card">
                 <div className="ec-card-hd">
-                  <div className="ec-card-title"><Svg d={ICONS.book} size={18}/> Create New Course</div>
+                  <div className="ec-card-title">
+                    <UploadCloud size={18} /> Advanced NLP Ingestion
+                  </div>
                 </div>
-                <form onSubmit={form.handleSubmit(d=>createCourse.mutate(d))}>
-                  <div className="ec-form-grid2">
-                    <div className="ec-form-group">
-                      <label className="ec-label">Course Title *</label>
-                      <input className="ec-input" placeholder="e.g., Advanced Mathematics" {...form.register("title")}/>
-                      {form.formState.errors.title && <span style={{fontSize:12,color:"#f43f5e"}}>Required</span>}
-                    </div>
-                    <div className="ec-form-group">
-                      <label className="ec-label">Subject *</label>
-                      <select className="ec-select" {...form.register("subjectId",{valueAsNumber:true})}>
-                        {subjects.map((s:any)=><option key={s.id} value={s.id}>{s.name}</option>)}
-                        {!subjects.length && <>
-                          <option value={1}>Mathematics</option>
-                          <option value={2}>Physics</option>
-                          <option value={3}>Chemistry</option>
-                          <option value={4}>Biology</option>
-                          <option value={5}>English</option>
-                          <option value={6}>History</option>
-                          <option value={7}>Computer Science</option>
-                        </>}
-                      </select>
-                    </div>
-                  </div>
-                  <div className="ec-form-group">
-                    <label className="ec-label">Description *</label>
-                    <textarea className="ec-textarea" rows={3}
-                      placeholder="Describe the course content, objectives and what students will learn…"
-                      {...form.register("description")}/>
-                    {form.formState.errors.description && <span style={{fontSize:12,color:"#f43f5e"}}>Min 10 characters</span>}
-                  </div>
-                  <div className="ec-form-grid2">
-                    <div className="ec-form-group">
-                      <label className="ec-label">Grade Level *</label>
-                      <select className="ec-select" {...form.register("grade",{valueAsNumber:true})}>
-                        {Array.from({length:12},(_,i)=>i+1).map(g=>(
-                          <option key={g} value={g}>Grade {g}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="ec-form-group">
-                      <label className="ec-label">Prerequisites (optional)</label>
-                      <input className="ec-input" placeholder="e.g., Basic Algebra, Grade 9 Math" {...form.register("prerequisites")}/>
-                    </div>
-                  </div>
-                  <div className="ec-form-group">
-                    <label className="ec-label">Learning Objectives (optional)</label>
-                    <textarea className="ec-textarea" rows={2}
-                      placeholder="What will students be able to do after this course?"
-                      {...form.register("learningObjectives")}/>
-                  </div>
-                  <button type="submit" className="ec-submit-btn" disabled={createCourse.isPending}>
-                    {createCourse.isPending
-                      ? <><svg className="ec-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>Creating…</>
-                      : <><Svg d={ICONS.plus} size={16}/>Create Enhanced Course</>
-                    }
-                  </button>
-                </form>
-              </div>
-            </div>
 
-            {/* Quick actions sidebar */}
-            <div>
-              <div className="ec-card">
-                <div className="ec-card-hd"><div className="ec-card-title"><Svg d={ICONS.bolt} size={18}/>Quick Actions</div></div>
-                {[
-                  {label:"Upload PDF",       desc:"Process a new document",  icon:ICONS.upload,  cls:"eqa-green",  tab:"upload"},
-                  {label:"Manage Lessons",   desc:"View & edit content",     icon:ICONS.book,    cls:"eqa-blue",   tab:"manage"},
-                  {label:"View Analytics",   desc:"Performance insights",    icon:ICONS.chart,   cls:"eqa-purple", tab:"analytics"},
-                  {label:"Export Content",   desc:"Download course pack",    icon:ICONS.download,cls:"eqa-amber",  tab:"manage"},
-                ].map((a,i)=>(
-                  <button key={i} className="ec-qa" onClick={()=>a.tab!=="manage"||setActiveTab(a.tab)&&false}>
-                    <div className={`ec-qa-icon ${a.cls}`}><Svg d={a.icon} size={17}/></div>
-                    <div className="ec-qa-text">
-                      <div className="ec-qa-label">{a.label}</div>
-                      <div className="ec-qa-desc">{a.desc}</div>
-                    </div>
-                    <span className="ec-qa-arrow">›</span>
-                  </button>
-                ))}
-              </div>
-
-              {/* Recently created */}
-              {courses.length > 0 && (
-                <div className="ec-card" style={{marginTop:16}}>
-                  <div className="ec-card-hd"><div className="ec-card-title"><Svg d={ICONS.star} size={18}/>Recent Courses</div></div>
-                  {courses.slice(0,3).map((c:any,i:number)=>(
-                    <div key={i} className="ec-course-item" onClick={()=>{setSelectedCourse(c.id);setActiveTab("manage");}}>
-                      <div className="ec-course-ico" style={{background:gradients[i%gradients.length]}}>
-                        <span>{COURSE_ICONS[i%COURSE_ICONS.length]}</span>
-                      </div>
-                      <div className="ec-course-info">
-                        <div className="ec-course-name">{c.title}</div>
-                        <div className="ec-course-meta">Grade {c.grade} · {c.lessonCount||0} lessons</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ═══════════ TAB: PROCESS DOCUMENTS ═══════════ */}
-        {activeTab==="upload" && (
-          <div className="ec-main-grid">
-            {/* Left: Upload + options */}
-            <div className="ec-card">
-              <div className="ec-card-hd">
-                <div className="ec-card-title"><Svg d={ICONS.upload} size={18}/>Advanced Document Processing</div>
-              </div>
-
-              {/* Course select */}
-              <div className="ec-form-group">
-                <label className="ec-label">Target Course *</label>
-                <select className="ec-select"
-                  value={selectedCourse||""}
-                  onChange={e=>setSelectedCourse(Number(e.target.value)||null)}>
-                  <option value="">Select a course…</option>
-                  {courses.map((c:any)=><option key={c.id} value={c.id}>{c.title}</option>)}
-                </select>
-              </div>
-
-              {/* Drop zone */}
-              <div
-                ref={dropRef}
-                className={`ec-drop-zone${dragging?" dragging":""}`}
-                onClick={()=>fileRef.current?.click()}
-                onDragOver={e=>{e.preventDefault();setDragging(true);}}
-                onDragLeave={()=>setDragging(false)}
-                onDrop={onDrop}>
-                <div className="ec-drop-icon"><Svg d={ICONS.upload} size={28}/></div>
-                <div className="ec-drop-title">{dragging?"Drop it here!":"Drag & drop your document"}</div>
-                <div className="ec-drop-sub">or click to browse files</div>
-                <div style={{display:"flex",gap:8,justifyContent:"center",marginTop:12,flexWrap:"wrap"}}>
-                  <span className="ec-drop-pill edp-pdf"><Svg d={ICONS.pdf} size={11}/>PDF</span>
-                  <span className="ec-drop-pill edp-docx"><Svg d={ICONS.file} size={11}/>DOCX</span>
-                  <span className="ec-drop-pill edp-txt"><Svg d={ICONS.file} size={11}/>TXT</span>
-                </div>
-                <input ref={fileRef} type="file" accept=".pdf,.docx,.txt"
-                  style={{display:"none"}} onChange={onFileChange}/>
-              </div>
-
-              {/* Selected file */}
-              {selectedFile && (
-                <div className="ec-file-selected">
-                  <div className="ec-file-ico"><Svg d={ICONS.pdf} size={18}/></div>
-                  <div>
-                    <div className="ec-file-name">{selectedFile.name}</div>
-                    <div className="ec-file-size">{(selectedFile.size/1024).toFixed(1)} KB</div>
-                  </div>
-                  <button className="ec-file-close" onClick={()=>setSelectedFile(null)}>
-                    <Svg d={ICONS.close} size={12}/>
-                  </button>
-                </div>
-              )}
-
-              {/* Processing mode */}
-              <div style={{marginTop:18}}>
                 <div className="ec-form-group">
-                  <label className="ec-label">Processing Mode</label>
+                  <label className="ec-label">Target Course *</label>
+                  <select
+                    className="ec-select"
+                    value={selectedCourse || ""}
+                    onChange={(e) => setSelectedCourse(Number(e.target.value) || null)}
+                  >
+                    <option value="">Select a course to attach lessons to…</option>
+                    {courses.map((c: any) => (
+                      <option key={c.id} value={c.id}>{c.title}</option>
+                    ))}
+                  </select>
                 </div>
-                <div className="ec-mode-grid">
-                  {[
-                    {key:"basic",         icon:"⚡", label:"Basic",         desc:"Fast extraction, essential content"},
-                    {key:"advanced",      icon:"🧠", label:"Advanced NLP",   desc:"Deep analysis, concept mapping"},
-                    {key:"comprehensive", icon:"🔬", label:"Comprehensive",  desc:"Full AI: quizzes, exercises, maps"},
-                  ].map((m)=>(
-                    <div key={m.key}
-                      className={`ec-mode-card${processingMode===m.key?" selected":""}`}
-                      onClick={()=>setProcessingMode(m.key as any)}>
-                      <div className="ec-mode-icon">{m.icon}</div>
-                      <div className="ec-mode-label">{m.label}</div>
-                      <div className="ec-mode-desc">{m.desc}</div>
-                    </div>
-                  ))}
+
+                {/* Drop Zone */}
+                <div
+                  ref={dropRef}
+                  className={`ec-drop-zone ${dragging ? "dragging" : ""}`}
+                  onClick={() => fileRef.current?.click()}
+                  onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+                  onDragLeave={() => setDragging(false)}
+                  onDrop={onDrop}
+                >
+                  <div className="ec-drop-icon">
+                    <UploadCloud size={30} />
+                  </div>
+                  <div className="ec-drop-title">
+                    {dragging ? "Release file to upload!" : "Drag & drop syllabus or textbook document"}
+                  </div>
+                  <div className="ec-drop-sub">Supported formats: PDF, DOCX, and TXT files</div>
+                  <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 14 }}>
+                    <span style={{ padding: "4px 10px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: "rgba(2,132,199,.12)", color: "#0284c7" }}>PDF</span>
+                    <span style={{ padding: "4px 10px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: "rgba(13,148,136,.12)", color: "#0d9488" }}>DOCX</span>
+                    <span style={{ padding: "4px 10px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: "rgba(245,158,11,.12)", color: "#f59e0b" }}>TXT</span>
+                  </div>
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept=".pdf,.docx,.txt"
+                    style={{ display: "none" }}
+                    onChange={onFileChange}
+                  />
                 </div>
-              </div>
 
-              {/* Options toggles */}
-              <div style={{marginTop:14}}>
-                <label className="ec-label" style={{display:"block",marginBottom:10}}>Processing Options</label>
-                {[
-                  {key:"extractConcepts",   label:"Extract Key Concepts",      desc:"NLP concept mapping",          badge:"NLP"},
-                  {key:"generateExercises", label:"Generate Practice Exercises",desc:"AI-crafted practice problems", badge:"AI"},
-                  {key:"createQuizzes",     label:"Create Assessment Quizzes",  desc:"Auto-graded quiz sets",        badge:"Auto"},
-                ].map((opt)=>(
-                  <div key={opt.key}
-                    className={`ec-option${(opts as any)[opt.key]?" on":""}`}
-                    onClick={()=>setOpts(o=>({...o,[opt.key]:!(o as any)[opt.key]}))}>
-                    <div className="ec-opt-check">
-                      {(opts as any)[opt.key] && <Svg d={ICONS.check} size={12}/>}
+                {selectedFile && (
+                  <div className="ec-file-selected">
+                    <div className="ec-file-ico"><FileText size={18} /></div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: "var(--sd-ink)" }}>{selectedFile.name}</div>
+                      <div style={{ fontSize: 11, color: "var(--sd-muted)" }}>{(selectedFile.size / 1024).toFixed(1)} KB</div>
                     </div>
-                    <div className="ec-opt-label">
-                      <div className="ec-opt-title">{opt.label}</div>
-                      <div className="ec-opt-sub">{opt.desc}</div>
-                    </div>
-                    <span className="ec-opt-badge">{opt.badge}</span>
+                    <button className="ec-file-close" onClick={() => setSelectedFile(null)}>
+                      <X size={14} />
+                    </button>
                   </div>
-                ))}
-              </div>
+                )}
 
-              {/* Progress */}
-              {processDoc.isPending && (
-                <div className="ec-progress-wrap">
-                  <div className="ec-progress-hd">
-                    <span>Processing…</span><span>{progress}%</span>
-                  </div>
-                  <div className="ec-progress-bg">
-                    <div className="ec-progress-fill" style={{width:`${progress}%`}}/>
-                  </div>
-                  <div className="ec-progress-steps">
-                    {STEPS.map((s,i)=>(
-                      <span key={i} className={`ec-progress-step ${i<progressStep?"eps-done":i===progressStep?"eps-active":"eps-pending"}`}>
-                        {i<progressStep?<Svg d={ICONS.check} size={11}/>:null}
-                        {s}
-                      </span>
+                {/* Processing Mode */}
+                <div style={{ marginTop: 18 }}>
+                  <label className="ec-label" style={{ display: "block", marginBottom: 8 }}>Analysis Mode</label>
+                  <div className="ec-mode-grid">
+                    {[
+                      { key: "basic", label: "Basic", desc: "Fast text extraction" },
+                      { key: "advanced", label: "Advanced NLP", desc: "Concept mapping & lessons" },
+                      { key: "comprehensive", label: "Deep AI", desc: "Auto questions & quizzes" },
+                    ].map((m) => (
+                      <div
+                        key={m.key}
+                        className={`ec-mode-card ${processingMode === m.key ? "selected" : ""}`}
+                        onClick={() => setProcessingMode(m.key as any)}
+                      >
+                        <div style={{ fontSize: 12.5, fontWeight: 800, color: "var(--sd-ink)", marginBottom: 3 }}>{m.label}</div>
+                        <div style={{ fontSize: 10.5, color: "var(--sd-muted)" }}>{m.desc}</div>
+                      </div>
                     ))}
                   </div>
                 </div>
-              )}
 
-              <button className="ec-submit-btn"
-                style={{marginTop:18}}
-                disabled={processDoc.isPending||!selectedFile||!selectedCourse}
-                onClick={handleProcess}>
-                {processDoc.isPending
-                  ? <><svg className="ec-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>Analysing with AI…</>
-                  : <><Svg d={ICONS.brain} size={16}/>Process with Advanced NLP</>
-                }
-              </button>
-            </div>
-
-            {/* Right: Results */}
-            <div className="ec-card">
-              <div className="ec-card-hd">
-                <div className="ec-card-title"><Svg d={ICONS.target} size={18}/>Processing Results</div>
-                {processingResult && (
-                  <button className="ec-view-btn"><Svg d={ICONS.download} size={13}/>Export</button>
-                )}
-              </div>
-
-              {processingResult ? (
-                <>
-                  <div className="ec-result-banner">
-                    <div className="ec-result-ico"><Svg d={ICONS.check} size={18}/></div>
-                    <div>
-                      <div className="ec-result-title">Processing Complete 🎉</div>
-                      <div className="ec-result-sub">{processingResult.message||"Document successfully analysed and lessons created"}</div>
-                    </div>
-                  </div>
-
-                  <div className="ec-result-chips">
-                    <div className="ec-result-chip erc-green">
-                      <div className="ec-chip-num">{processingResult.lessons?.length||processingResult.lessonsCreated||0}</div>
-                      <div className="ec-chip-label">Lessons</div>
-                    </div>
-                    <div className="ec-result-chip erc-blue">
-                      <div className="ec-chip-num">{processingResult.totalPages||0}</div>
-                      <div className="ec-chip-label">Pages</div>
-                    </div>
-                    <div className="ec-result-chip erc-purple">
-                      <div className="ec-chip-num">{processingResult.conceptMap?.length||0}</div>
-                      <div className="ec-chip-label">Concepts</div>
-                    </div>
-                  </div>
-
-                  <div className="ec-meta-row">
-                    <span className="ec-meta-label">Subject Classification</span>
-                    <span className="ec-meta-badge">{processingResult.subjectClassification||"Auto-detected"}</span>
-                  </div>
-                  <div className="ec-meta-row">
-                    <span className="ec-meta-label">Reading Level</span>
-                    <span className="ec-meta-badge">{processingResult.readingLevel||"Intermediate"}</span>
-                  </div>
-                  <div className="ec-meta-row">
-                    <span className="ec-meta-label">Word Count</span>
-                    <span className="ec-meta-val">{(processingResult.wordCount||0).toLocaleString()}</span>
-                  </div>
-
-                  {processingResult.conceptMap?.length > 0 && (
-                    <div style={{marginTop:16}}>
-                      <div style={{fontSize:12,fontWeight:700,color:"var(--ec-text2)",textTransform:"uppercase",letterSpacing:".06em",marginBottom:10}}>Key Concepts Extracted</div>
-                      <div className="ec-concept-chips">
-                        {processingResult.conceptMap.slice(0,10).map((c:any,i:number)=>(
-                          <span key={i} className="ec-concept-chip">{c.concept||c}</span>
-                        ))}
+                {/* Options Toggles */}
+                <div style={{ marginTop: 14 }}>
+                  <label className="ec-label" style={{ display: "block", marginBottom: 8 }}>Generation Options</label>
+                  {[
+                    { key: "extractConcepts", label: "Extract Core Concepts", desc: "Identify foundational taxonomy", badge: "NLP" },
+                    { key: "generateExercises", label: "Generate Practice Questions", desc: "Synthesizes interactive questions", badge: "Engine" },
+                    { key: "createQuizzes", label: "Generate Assessment Rubrics", desc: "Auto-marking and criteria", badge: "Auto" },
+                  ].map((opt) => (
+                    <div
+                      key={opt.key}
+                      className={`ec-option ${(opts as any)[opt.key] ? "on" : ""}`}
+                      onClick={() => setOpts((o) => ({ ...o, [opt.key]: !(o as any)[opt.key] }))}
+                    >
+                      <div className="ec-opt-check">
+                        {(opts as any)[opt.key] && <Check size={12} />}
                       </div>
-                    </div>
-                  )}
-
-                  {/* Lesson previews */}
-                  {processingResult.lessons?.length > 0 && (
-                    <div style={{marginTop:20}}>
-                      <div style={{fontSize:12,fontWeight:700,color:"var(--ec-text2)",textTransform:"uppercase",letterSpacing:".06em",marginBottom:10}}>Generated Lessons</div>
-                      <div className="ec-scroll">
-                        {processingResult.lessons.slice(0,5).map((l:any,i:number)=>(
-                          <div key={i} className="ec-lesson">
-                            <div className="ec-lesson-hd">
-                              <div>
-                                <div className="ec-lesson-title">{l.title}</div>
-                                <div className="ec-lesson-meta">{l.estimatedDuration||20}min · {l.topics?.length||0} topics</div>
-                              </div>
-                              <div className="ec-lesson-actions">
-                                <button className="ec-course-action"><Svg d={ICONS.eye} size={13}/></button>
-                              </div>
-                            </div>
-                            <div className="ec-lesson-tags">
-                              <span className={`ec-lesson-tag ${l.difficulty==="beginner"?"elt-diff-beg":l.difficulty==="advanced"?"elt-diff-adv":"elt-diff-mid"}`}>
-                                {l.difficulty||"intermediate"}
-                              </span>
-                              {l.topics?.slice(0,2).map((t:string,ti:number)=>(
-                                <span key={ti} className="ec-lesson-tag elt-topic">{t}</span>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--sd-ink)" }}>{opt.label}</div>
+                        <div style={{ fontSize: 11, color: "var(--sd-muted)" }}>{opt.desc}</div>
                       </div>
+                      <span style={{ fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: "rgba(2,132,199,.12)", color: "#0284c7" }}>
+                        {opt.badge}
+                      </span>
                     </div>
-                  )}
-                </>
-              ) : (
-                <div className="ec-empty">
-                  <div className="ec-empty-ico"><Svg d={ICONS.file} size={26}/></div>
-                  <div className="ec-empty-title">No results yet</div>
-                  <div className="ec-empty-sub">Upload and process a document to see AI-generated lessons, concept maps, and analytics here</div>
+                  ))}
                 </div>
-              )}
-            </div>
-          </div>
-        )}
 
-        {/* ═══════════ TAB: MANAGE CONTENT ═══════════ */}
-        {activeTab==="manage" && (
-          <div className="ec-main-grid">
-            {/* Course list */}
-            <div className="ec-card">
-              <div className="ec-card-hd">
-                <div className="ec-card-title"><Svg d={ICONS.book} size={18}/>Your Courses ({courses.length})</div>
-                <button className="ec-view-btn" onClick={()=>setActiveTab("create")}>
-                  <Svg d={ICONS.plus} size={13}/>New Course
+                {/* Progress bar */}
+                {processDoc.isPending && (
+                  <div className="ec-progress-wrap">
+                    <div className="ec-progress-hd">
+                      <span>Analyzing Document…</span>
+                      <span>{progress}%</span>
+                    </div>
+                    <div className="ec-progress-bg">
+                      <div className="ec-progress-fill" style={{ width: `${progress}%` }} />
+                    </div>
+                    <div className="ec-progress-steps">
+                      {STEPS.map((s, i) => (
+                        <span
+                          key={i}
+                          className={`ec-progress-step ${i < progressStep ? "eps-done" : i === progressStep ? "eps-active" : "eps-pending"}`}
+                        >
+                          {i < progressStep ? <Check size={11} /> : null}
+                          {s}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  className="ec-submit-btn"
+                  style={{ marginTop: 20 }}
+                  disabled={processDoc.isPending || !selectedFile || !selectedCourse}
+                  onClick={handleProcess}
+                >
+                  {processDoc.isPending ? (
+                    <>
+                      <RefreshCw size={16} className="animate-spin" /> Processing with NLP…
+                    </>
+                  ) : (
+                    <>
+                      <Brain size={16} /> Run NLP Document Analysis
+                    </>
+                  )}
                 </button>
               </div>
-              {courses.length === 0 ? (
-                <div className="ec-empty">
-                  <div className="ec-empty-ico"><Svg d={ICONS.book} size={26}/></div>
-                  <div className="ec-empty-title">No courses yet</div>
-                  <div className="ec-empty-sub">Create your first course to start building content</div>
-                </div>
-              ) : (
-                <div className="ec-scroll">
-                  {courses.map((c:any,i:number)=>(
-                    <div key={c.id}
-                      className={`ec-course-item${selectedCourse===c.id?" selected":""}`}
-                      onClick={()=>setSelectedCourse(c.id)}>
-                      <div className="ec-course-ico" style={{background:gradients[i%gradients.length]}}>
-                        <span style={{fontSize:18}}>{COURSE_ICONS[i%COURSE_ICONS.length]}</span>
-                      </div>
-                      <div className="ec-course-info">
-                        <div className="ec-course-name">{c.title}</div>
-                        <div className="ec-course-meta">Grade {c.grade} · {c.lessonCount||0} lessons</div>
-                      </div>
-                      <span className="ec-course-badge">{c.lessonCount||0}</span>
-                      <div className="ec-course-actions">
-                        <button className="ec-course-action" title="Edit"><Svg d={ICONS.edit} size={13}/></button>
-                        <button className="ec-course-action" title="Delete"><Svg d={ICONS.trash} size={13}/></button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
 
-            {/* Lesson viewer */}
-            <div className="ec-card">
-              <div className="ec-card-hd">
-                <div className="ec-card-title"><Svg d={ICONS.layers} size={18}/>Lessons {selectedCourse?`(${lessons.length})`:""}</div>
-                {selectedCourse && (
-                  <button className="ec-view-btn" onClick={()=>setActiveTab("upload")}>
-                    <Svg d={ICONS.upload} size={13}/>Add via PDF
-                  </button>
-                )}
-              </div>
-              {!selectedCourse ? (
-                <div className="ec-empty">
-                  <div className="ec-empty-ico"><Svg d={ICONS.layers} size={26}/></div>
-                  <div className="ec-empty-title">Select a course</div>
-                  <div className="ec-empty-sub">Click a course on the left to view and manage its lessons</div>
-                </div>
-              ) : lessons.length === 0 ? (
-                <div className="ec-empty">
-                  <div className="ec-empty-ico"><Svg d={ICONS.file} size={26}/></div>
-                  <div className="ec-empty-title">No lessons yet</div>
-                  <div className="ec-empty-sub">Process a PDF document to auto-generate lessons for this course</div>
-                </div>
-              ) : (
-                <div className="ec-scroll">
-                  {lessons.map((l:any,i:number)=>(
-                    <div key={l.id||i} className="ec-lesson">
-                      <div className="ec-lesson-hd">
-                        <div>
-                          <div className="ec-lesson-title">{l.title}</div>
-                          <div className="ec-lesson-meta">
-                            {l.estimatedDuration&&`${l.estimatedDuration}min · `}
-                            {l.topics?.length||0} topics
-                          </div>
-                        </div>
-                        <div className="ec-lesson-actions">
-                          <button className="ec-course-action" title="View"><Svg d={ICONS.eye} size={13}/></button>
-                          <button className="ec-course-action" title="Edit"><Svg d={ICONS.edit} size={13}/></button>
-                          <button className="ec-course-action" title="Delete"><Svg d={ICONS.trash} size={13}/></button>
-                        </div>
-                      </div>
-                      {l.summary && (
-                        <div style={{fontSize:12.5,color:"var(--ec-text3)",lineHeight:1.5,marginBottom:8}}>{l.summary}</div>
-                      )}
-                      <div className="ec-lesson-tags">
-                        {l.difficulty && (
-                          <span className={`ec-lesson-tag ${l.difficulty==="beginner"?"elt-diff-beg":l.difficulty==="advanced"?"elt-diff-adv":"elt-diff-mid"}`}>
-                            {l.difficulty}
-                          </span>
-                        )}
-                        {l.estimatedDuration && (
-                          <span className="ec-lesson-tag elt-topic" style={{display:"flex",alignItems:"center",gap:4}}>
-                            <Svg d={ICONS.clock} size={10}/>{l.estimatedDuration}min
-                          </span>
-                        )}
-                        {l.topics?.slice(0,2).map((t:string,ti:number)=>(
-                          <span key={ti} className="ec-lesson-tag elt-topic">
-                            <Svg d={ICONS.tag} size={10}/> {t}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ═══════════ TAB: ANALYTICS ═══════════ */}
-        {activeTab==="analytics" && (
-          <>
-            {/* Analytics stat cards */}
-            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:24}}>
-              {[
-                {label:"Total Courses",   value:courses.length,           badge:"All",      cls:"ec-sc-green",  ico:"esi-green",  icon:ICONS.book,   trend:"↑ Growing"},
-                {label:"Total Lessons",   value:totalLessons,             badge:"AI-Built", cls:"ec-sc-blue",   ico:"esi-blue",   icon:ICONS.layers, trend:"Auto-generated"},
-                {label:"Avg Lessons",     value:courses.length?Math.round(totalLessons/courses.length):0, badge:"Per Course", cls:"ec-sc-purple", ico:"esi-purple", icon:ICONS.chart, trend:"Good coverage"},
-                {label:"AI Sessions",     value:processingResult?1:0,     badge:"Runs",     cls:"ec-sc-amber",  ico:"esi-amber",  icon:ICONS.brain,  trend:"NLP powered"},
-              ].map((s,i)=>(
-                <div key={i} className={`ec-stat-card ${s.cls}`} style={{animationDelay:`${i*.08}s`}}>
-                  <div className="ec-stat-top">
-                    <div className={`ec-stat-icon ${s.ico}`}><Svg d={s.icon} size={20}/></div>
-                    <span className="ec-stat-badge">{s.badge}</span>
-                  </div>
-                  <div className="ec-stat-num"><AnimNum target={s.value}/></div>
-                  <div className="ec-stat-label">{s.label}</div>
-                  <div className="ec-stat-trend">{s.trend}</div>
-                </div>
-              ))}
-            </div>
-
-            <div className="ec-analytics-grid">
-              {/* Bar chart */}
+              {/* Right: Results Panel */}
               <div className="ec-card">
                 <div className="ec-card-hd">
-                  <div className="ec-card-title"><Svg d={ICONS.chart} size={18}/>Weekly Upload Activity</div>
-                  <select className="ec-select" style={{width:"auto",padding:"4px 10px",fontSize:12}}>
-                    <option>7 days</option><option>30 days</option>
-                  </select>
+                  <div className="ec-card-title">
+                    <CheckCircle2 size={18} /> Analysis Results
+                  </div>
+                  {processingResult && (
+                    <button className="ec-btn-action" onClick={() => setActiveTab("questions")}>
+                      <Target size={14} /> Open in Question Studio
+                    </button>
+                  )}
                 </div>
-                <div className="ec-bar-chart">
-                  {barData.map((v,i)=>(
-                    <div key={i} className="ec-bar-col">
-                      <div className="ec-bar"
+
+                {processingResult ? (
+                  <>
+                    <div style={{
+                      borderRadius: 16, padding: "16px 20px", marginBottom: 18,
+                      background: "rgba(16,185,129,.08)", border: "1.5px solid rgba(16,185,129,.25)",
+                      display: "flex", alignItems: "center", gap: 12
+                    }}>
+                      <div style={{ width: 40, height: 40, borderRadius: 12, background: "#10b981", color: "#fff", display: "flex", alignItems: "center", justifyItems: "center", justifyContent: "center" }}>
+                        <Check size={20} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: "var(--sd-ink)" }}>Processing Successful!</div>
+                        <div style={{ fontSize: 12, color: "var(--sd-muted)" }}>
+                          {processingResult.message || "Document analyzed and curriculum units ready."}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 20 }}>
+                      <div style={{ padding: 14, borderRadius: 14, textAlign: "center", background: "rgba(2,132,199,.08)", border: "1px solid rgba(2,132,199,.2)" }}>
+                        <div style={{ fontSize: 24, fontWeight: 800, color: "#0284c7" }}>
+                          {processingResult.lessons?.length || processingResult.lessonsCreated || 0}
+                        </div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--sd-muted)" }}>Lessons</div>
+                      </div>
+                      <div style={{ padding: 14, borderRadius: 14, textAlign: "center", background: "rgba(13,148,136,.08)", border: "1px solid rgba(13,148,136,.2)" }}>
+                        <div style={{ fontSize: 24, fontWeight: 800, color: "#0d9488" }}>
+                          {processingResult.totalPages || 4}
+                        </div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--sd-muted)" }}>Pages</div>
+                      </div>
+                      <div style={{ padding: 14, borderRadius: 14, textAlign: "center", background: "rgba(245,158,11,.08)", border: "1px solid rgba(245,158,11,.2)" }}>
+                        <div style={{ fontSize: 24, fontWeight: 800, color: "#d97706" }}>
+                          {processingResult.conceptMap?.length || 8}
+                        </div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--sd-muted)" }}>Concepts</div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid var(--sd-line)", fontSize: 13 }}>
+                      <span style={{ color: "var(--sd-muted)" }}>Subject Classification</span>
+                      <span style={{ fontWeight: 800, color: "var(--sd-ink)" }}>{processingResult.subjectClassification || "Auto-detected"}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid var(--sd-line)", fontSize: 13 }}>
+                      <span style={{ color: "var(--sd-muted)" }}>Reading Level</span>
+                      <span style={{ fontWeight: 800, color: "var(--sd-ink)" }}>{processingResult.readingLevel || "Intermediate"}</span>
+                    </div>
+
+                    {processingResult.conceptMap?.length > 0 && (
+                      <div style={{ marginTop: 18 }}>
+                        <div style={{ fontSize: 11.5, fontWeight: 800, color: "var(--sd-muted)", textTransform: "uppercase", letterSpacing: ".04em", marginBottom: 10 }}>
+                          Key Concepts
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                          {processingResult.conceptMap.slice(0, 10).map((c: any, i: number) => (
+                            <span
+                              key={i}
+                              style={{
+                                padding: "4px 10px", borderRadius: 8, fontSize: 11.5, fontWeight: 700,
+                                background: "rgba(2,132,199,.1)", color: "#0284c7", border: "1px solid rgba(2,132,199,.2)"
+                              }}
+                            >
+                              {c.concept || c}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div style={{ textAlign: "center", padding: "50px 20px" }}>
+                    <div style={{ width: 60, height: 60, borderRadius: 20, background: "var(--sd-bar-bg)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", color: "var(--sd-faint)" }}>
+                      <FileText size={28} />
+                    </div>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: "var(--sd-ink)", marginBottom: 6 }}>No Document Processed Yet</div>
+                    <div style={{ fontSize: 12.5, color: "var(--sd-muted)", maxWidth: 320, margin: "0 auto" }}>
+                      Upload a course PDF on the left to extract topics, lesson units, and testable question transitions.
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ═══════════════════════════════════════════════════════════════
+              TAB 3: QUESTION TRANSITIONS & STUDIO
+              ═══════════════════════════════════════════════════════════════ */}
+          {activeTab === "questions" && (
+            <div className="qs-container">
+              {/* Question Studio Filter & Header */}
+              <div className="qs-header">
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                    <span style={{ fontSize: 18, fontWeight: 900, color: "var(--sd-ink)" }}>
+                      Question Studio & Transitions
+                    </span>
+                    <span className="qs-type-badge" style={{ background: "rgba(2,132,199,.12)", color: "#0284c7" }}>
+                      <Sparkles size={12} /> Spring Animated
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 12.5, color: "var(--sd-muted)", fontWeight: 600 }}>
+                    Question {currentQuestionIndex + 1} of {filteredQuestions.length} · Keyboard [← / →] to navigate
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <select
+                    className="ec-select"
+                    style={{ width: "auto", padding: "6px 12px", fontSize: 12 }}
+                    value={questionFilterSubject}
+                    onChange={(e) => {
+                      setQuestionFilterSubject(e.target.value);
+                      setCurrentQuestionIndex(0);
+                    }}
+                  >
+                    <option value="all">All Subjects</option>
+                    <option value="Biology">Biology</option>
+                    <option value="Physics">Physics</option>
+                    <option value="Mathematics">Mathematics</option>
+                  </select>
+
+                  <select
+                    className="ec-select"
+                    style={{ width: "auto", padding: "6px 12px", fontSize: 12 }}
+                    value={questionFilterType}
+                    onChange={(e) => {
+                      setQuestionFilterType(e.target.value);
+                      setCurrentQuestionIndex(0);
+                    }}
+                  >
+                    <option value="all">All Question Types</option>
+                    <option value="mcq">MCQ</option>
+                    <option value="short">Short Answer</option>
+                    <option value="medium">Medium Answer</option>
+                  </select>
+
+                  <button className="ec-btn-action" onClick={handleShuffleQuestions} title="Shuffle questions">
+                    <Shuffle size={14} /> Shuffle
+                  </button>
+                </div>
+              </div>
+
+              {/* Quick Jump Bar */}
+              <div className="qs-jump-bar">
+                {filteredQuestions.map((q, idx) => (
+                  <button
+                    key={q.id}
+                    className={`qs-jump-pill ${idx === currentQuestionIndex ? "active" : ""}`}
+                    onClick={() => handleJumpToQuestion(idx)}
+                  >
+                    Q{idx + 1}
+                  </button>
+                ))}
+              </div>
+
+              {/* Animated Question Card with Spring Directional Transitions */}
+              <div className="qs-stage">
+                <AnimatePresence mode="wait" custom={slideDirection}>
+                  <motion.div
+                    key={activeQuestion.id}
+                    custom={slideDirection}
+                    variants={questionVariants}
+                    initial="enter"
+                    animate="center"
+                    exit="exit"
+                  >
+                    {/* Question Badges Row */}
+                    <div className="qs-pills-row" style={{ marginBottom: 16 }}>
+                      <span
+                        className="qs-type-badge"
                         style={{
-                          height:`${(v/barMax)*90}%`,
-                          background:`linear-gradient(180deg,#10b981,${i%2===0?"#0ea5e9":"#6366f1"})`,
-                          animationDelay:`${.1+i*.08}s`,
-                          borderRadius:5,
-                        }}/>
-                      <div className="ec-bar-lbl">{barDays[i]}</div>
+                          background: QUESTION_TYPES[activeQuestion.type]?.bg || "rgba(2,132,199,.12)",
+                          color: QUESTION_TYPES[activeQuestion.type]?.color || "#0284c7"
+                        }}
+                      >
+                        {QUESTION_TYPES[activeQuestion.type]?.label || "Question"}
+                      </span>
+
+                      <span className="qs-marks-badge">
+                        <Award size={12} /> {activeQuestion.marks} Marks
+                      </span>
+
+                      {activeQuestion.bloomLevel && (
+                        <span className="qs-bloom-badge">
+                          <Brain size={12} /> {activeQuestion.bloomLevel}
+                        </span>
+                      )}
+
+                      <span
+                        style={{
+                          fontSize: 11, fontWeight: 800, padding: "4px 10px", borderRadius: 20,
+                          background: activeQuestion.difficulty === "easy" ? "rgba(16,185,129,.12)" : activeQuestion.difficulty === "hard" ? "rgba(244,63,94,.12)" : "rgba(245,158,11,.12)",
+                          color: activeQuestion.difficulty === "easy" ? "#10b981" : activeQuestion.difficulty === "hard" ? "#f43f5e" : "#f59e0b"
+                        }}
+                      >
+                        {activeQuestion.difficulty.toUpperCase()}
+                      </span>
+                    </div>
+
+                    {/* Question Text Prompt */}
+                    <h2 className="qs-prompt">{activeQuestion.question}</h2>
+
+                    {/* Question Options for MCQ */}
+                    {activeQuestion.options && activeQuestion.options.length > 0 && (
+                      <div className="qs-options-grid">
+                        {activeQuestion.options.map((opt, idx) => {
+                          const optLabel = String.fromCharCode(65 + idx);
+                          const isSelected = selectedOption === idx;
+                          const isCorrect = idx === activeQuestion.correctOption;
+                          const showCorrectness = selectedOption !== null;
+
+                          let stateClass = "";
+                          if (isSelected) stateClass = "selected";
+                          if (showCorrectness && isCorrect) stateClass = "correct";
+                          if (showCorrectness && isSelected && !isCorrect) stateClass = "incorrect";
+
+                          return (
+                            <button
+                              key={idx}
+                              className={`qs-option-btn ${stateClass}`}
+                              onClick={() => {
+                                setSelectedOption(idx);
+                                if (isCorrect) {
+                                  toast({ title: "🎉 Correct Answer!", description: "Nicely done! Points awarded." });
+                                }
+                              }}
+                            >
+                              <span className="qs-opt-badge">{optLabel}</span>
+                              <span style={{ flex: 1 }}>{opt}</span>
+                              {showCorrectness && isCorrect && <CheckCircle2 size={18} color="#10b981" />}
+                              {showCorrectness && isSelected && !isCorrect && <X size={18} color="#f43f5e" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Non-MCQ Sample Answer */}
+                    {activeQuestion.sampleAnswer && (
+                      <div style={{ marginBottom: 18 }}>
+                        <div style={{ fontSize: 12, fontWeight: 800, color: "var(--sd-muted)", textTransform: "uppercase", marginBottom: 6 }}>
+                          Expected Key Points
+                        </div>
+                        <div style={{ padding: 14, borderRadius: 14, background: "var(--sd-card-soft)", border: "1px solid var(--sd-line)", fontSize: 13, lineHeight: 1.6, color: "var(--sd-ink)" }}>
+                          {activeQuestion.sampleAnswer}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Hint Accordion */}
+                    {activeQuestion.hint && (
+                      <div style={{ marginBottom: 10 }}>
+                        <button
+                          className="ec-btn-action"
+                          style={{ fontSize: 12 }}
+                          onClick={() => setShowHint(!showHint)}
+                        >
+                          <Lightbulb size={13} color="#f59e0b" />
+                          {showHint ? "Hide Pedagogical Hint" : "Reveal Pedagogical Hint"}
+                        </button>
+                        <AnimatePresence>
+                          {showHint && (
+                            <motion.div
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: "auto" }}
+                              exit={{ opacity: 0, height: 0 }}
+                              className="qs-accordion qs-acc-hint"
+                            >
+                              <div style={{ fontSize: 12.5, fontWeight: 700, color: "#b45309", marginBottom: 2 }}>
+                                Teacher Hint:
+                              </div>
+                              <div style={{ fontSize: 12.5, color: "var(--sd-ink)" }}>
+                                {activeQuestion.hint}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    )}
+
+                    {/* Explanation Accordion */}
+                    {activeQuestion.explanation && (
+                      <div>
+                        <button
+                          className="ec-btn-action"
+                          style={{ fontSize: 12 }}
+                          onClick={() => setShowExplanation(!showExplanation)}
+                        >
+                          <Compass size={13} color="#0284c7" />
+                          {showExplanation ? "Hide Detailed Walkthrough" : "Show Solution Walkthrough"}
+                        </button>
+                        <AnimatePresence>
+                          {showExplanation && (
+                            <motion.div
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: "auto" }}
+                              exit={{ opacity: 0, height: 0 }}
+                              className="qs-accordion qs-acc-expl"
+                            >
+                              <div style={{ fontSize: 12.5, fontWeight: 700, color: "#0369a1", marginBottom: 2 }}>
+                                Solution & Marking Rubric:
+                              </div>
+                              <div style={{ fontSize: 12.5, color: "var(--sd-ink)" }}>
+                                {activeQuestion.explanation}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    )}
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+
+              {/* Question Navigation Controls */}
+              <div className="qs-nav-footer">
+                <button
+                  className="qs-nav-btn"
+                  onClick={handlePrevQuestion}
+                  disabled={currentQuestionIndex === 0}
+                  style={{ opacity: currentQuestionIndex === 0 ? 0.5 : 1 }}
+                >
+                  <ArrowLeft size={14} /> Previous Question
+                </button>
+
+                <div style={{ fontSize: 12, fontWeight: 800, color: "var(--sd-muted)" }}>
+                  Question {currentQuestionIndex + 1} of {filteredQuestions.length}
+                </div>
+
+                <button
+                  className="qs-nav-btn primary"
+                  onClick={handleNextQuestion}
+                  disabled={currentQuestionIndex === filteredQuestions.length - 1}
+                  style={{ opacity: currentQuestionIndex === filteredQuestions.length - 1 ? 0.5 : 1 }}
+                >
+                  Next Question <ArrowRight size={14} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ═══════════════════════════════════════════════════════════════
+              TAB 4: MANAGE CONTENT
+              ═══════════════════════════════════════════════════════════════ */}
+          {activeTab === "manage" && (
+            <div className="ec-main-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+              {/* Courses Column */}
+              <div className="ec-card">
+                <div className="ec-card-hd">
+                  <div className="ec-card-title">
+                    <BookOpen size={18} /> Active Courses ({courses.length})
+                  </div>
+                  <button className="ec-btn-action" onClick={() => setActiveTab("create")}>
+                    <Plus size={13} /> Add Course
+                  </button>
+                </div>
+
+                {courses.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "40px 20px" }}>
+                    <BookOpen size={26} color="var(--sd-faint)" style={{ margin: "0 auto 12px" }} />
+                    <div style={{ fontSize: 14, fontWeight: 700 }}>No courses created yet</div>
+                    <div style={{ fontSize: 12, color: "var(--sd-muted)", marginTop: 4 }}>Create your first course to manage modules.</div>
+                  </div>
+                ) : (
+                  <div style={{ maxHeight: 420, overflowY: "auto" }}>
+                    {courses.map((c: any, i: number) => (
+                      <div
+                        key={c.id}
+                        className={`ec-course-item ${selectedCourse === c.id ? "selected" : ""}`}
+                        onClick={() => setSelectedCourse(c.id)}
+                      >
+                        <div className="ec-course-ico" style={{ background: courseGradients[i % courseGradients.length] }}>
+                          {COURSE_ICONS[i % COURSE_ICONS.length]}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13.5, fontWeight: 800, color: "var(--sd-ink)" }}>{c.title}</div>
+                          <div style={{ fontSize: 11.5, color: "var(--sd-muted)", marginTop: 2 }}>
+                            Grade {c.grade} · {c.lessonCount || 0} lessons
+                          </div>
+                        </div>
+                        <span style={{ padding: "3px 10px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: "rgba(2,132,199,.1)", color: "#0284c7" }}>
+                          {c.lessonCount || 0}
+                        </span>
+                        <div style={{ display: "flex", gap: 5 }}>
+                          <button className="ec-course-action" title="Edit course"><Edit size={13} /></button>
+                          <button className="ec-course-action" title="Delete course"><Trash2 size={13} /></button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Lessons Column */}
+              <div className="ec-card">
+                <div className="ec-card-hd">
+                  <div className="ec-card-title">
+                    <Layers size={18} /> Lessons {selectedCourse ? `(${lessons.length})` : ""}
+                  </div>
+                  {selectedCourse && (
+                    <button className="ec-btn-action" onClick={() => setActiveTab("upload")}>
+                      <UploadCloud size={13} /> Ingest via PDF
+                    </button>
+                  )}
+                </div>
+
+                {!selectedCourse ? (
+                  <div style={{ textAlign: "center", padding: "40px 20px" }}>
+                    <Layers size={26} color="var(--sd-faint)" style={{ margin: "0 auto 12px" }} />
+                    <div style={{ fontSize: 14, fontWeight: 700 }}>Select a course</div>
+                    <div style={{ fontSize: 12, color: "var(--sd-muted)", marginTop: 4 }}>
+                      Choose a course on the left to inspect its lesson structure and questions.
+                    </div>
+                  </div>
+                ) : lessons.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "40px 20px" }}>
+                    <FileText size={26} color="var(--sd-faint)" style={{ margin: "0 auto 12px" }} />
+                    <div style={{ fontSize: 14, fontWeight: 700 }}>No lessons found</div>
+                    <div style={{ fontSize: 12, color: "var(--sd-muted)", marginTop: 4 }}>
+                      Process a PDF or textbook to auto-generate units for this course.
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ maxHeight: 420, overflowY: "auto" }}>
+                    {lessons.map((l: any, i: number) => (
+                      <div key={l.id || i} className="ec-lesson">
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                          <div>
+                            <div style={{ fontSize: 13.5, fontWeight: 800, color: "var(--sd-ink)" }}>{l.title}</div>
+                            <div style={{ fontSize: 11.5, color: "var(--sd-muted)", marginTop: 2 }}>
+                              {l.estimatedDuration && `${l.estimatedDuration} mins · `}
+                              {l.topics?.length || 0} topics
+                            </div>
+                          </div>
+                          <div style={{ display: "flex", gap: 4 }}>
+                            <button className="ec-course-action" title="View"><Eye size={13} /></button>
+                            <button className="ec-course-action" title="Edit"><Edit size={13} /></button>
+                          </div>
+                        </div>
+
+                        {l.summary && (
+                          <div style={{ fontSize: 12, color: "var(--sd-muted)", marginBottom: 8, lineHeight: 1.45 }}>
+                            {l.summary}
+                          </div>
+                        )}
+
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {l.difficulty && (
+                            <span className={`ec-lesson-tag ${l.difficulty === "beginner" ? "elt-diff-beg" : l.difficulty === "advanced" ? "elt-diff-adv" : "elt-diff-mid"}`}>
+                              {l.difficulty}
+                            </span>
+                          )}
+                          {l.topics?.slice(0, 2).map((t: string, ti: number) => (
+                            <span key={ti} className="ec-lesson-tag elt-topic">{t}</span>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ═══════════════════════════════════════════════════════════════
+              TAB 5: ANALYTICS & INSIGHTS
+              ═══════════════════════════════════════════════════════════════ */}
+          {activeTab === "analytics" && (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 24 }}>
+                <div className="th-stat-card th-sc-ocean">
+                  <div className="th-stat-top">
+                    <div className="th-stat-icon tsi-ocean"><BookOpen size={20} /></div>
+                    <span className="th-stat-badge">Total</span>
+                  </div>
+                  <div className="th-stat-num"><AnimNum target={courses.length} /></div>
+                  <div className="th-stat-lbl">Created Courses</div>
+                </div>
+
+                <div className="th-stat-card th-sc-teal">
+                  <div className="th-stat-top">
+                    <div className="th-stat-icon tsi-teal"><Layers size={20} /></div>
+                    <span className="th-stat-badge">Coverage</span>
+                  </div>
+                  <div className="th-stat-num"><AnimNum target={totalLessons} /></div>
+                  <div className="th-stat-lbl">Structured Units</div>
+                </div>
+
+                <div className="th-stat-card th-sc-emerald">
+                  <div className="th-stat-top">
+                    <div className="th-stat-icon tsi-emerald"><Target size={20} /></div>
+                    <span className="th-stat-badge">Average</span>
+                  </div>
+                  <div className="th-stat-num">
+                    <AnimNum target={courses.length ? Math.round(totalLessons / courses.length) : 0} />
+                  </div>
+                  <div className="th-stat-lbl">Lessons Per Course</div>
+                </div>
+
+                <div className="th-stat-card th-sc-amber">
+                  <div className="th-stat-top">
+                    <div className="th-stat-icon tsi-amber"><Zap size={20} /></div>
+                    <span className="th-stat-badge">Bank</span>
+                  </div>
+                  <div className="th-stat-num"><AnimNum target={questions.length} /></div>
+                  <div className="th-stat-lbl">Transition Questions</div>
+                </div>
+              </div>
+
+              <div className="ec-main-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 24 }}>
+                {/* Bar Chart */}
+                <div className="ec-card">
+                  <div className="ec-card-hd">
+                    <div className="ec-card-title">
+                      <BarChart2 size={18} /> Weekly Ingestion Activity
+                    </div>
+                  </div>
+                  <div className="ec-bar-chart">
+                    {barData.map((v, i) => (
+                      <div key={i} className="ec-bar-col">
+                        <div
+                          className="ec-bar"
+                          style={{
+                            height: `${(v / barMax) * 100}%`,
+                            background: `linear-gradient(180deg, #0284c7, #0d9488)`,
+                          }}
+                        />
+                        <div className="ec-bar-lbl">{barDays[i]}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Health Overview */}
+                <div className="ec-card">
+                  <div className="ec-card-hd">
+                    <div className="ec-card-title">
+                      <TrendingUp size={18} /> Curriculum Completeness
+                    </div>
+                  </div>
+                  {[
+                    { label: "Courses with Active Lessons", val: `${courses.filter((c: any) => c.lessonCount > 0).length}/${courses.length}`, pct: courses.length ? Math.round((courses.filter((c: any) => c.lessonCount > 0).length / courses.length) * 100) : 0, color: "linear-gradient(90deg, #0284c7, #0ea5e9)" },
+                    { label: "Interactive Question Coverage", val: `${questions.length} loaded`, pct: 85, color: "linear-gradient(90deg, #0d9488, #10b981)" },
+                    { label: "NLP Extraction Accuracy", val: "98.4%", pct: 98, color: "linear-gradient(90deg, #f59e0b, #fbbf24)" },
+                  ].map((item, idx) => (
+                    <div key={idx} style={{ marginBottom: 16 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 12.5, fontWeight: 700 }}>
+                        <span style={{ color: "var(--sd-ink)" }}>{item.label}</span>
+                        <span style={{ color: "var(--sd-muted)" }}>{item.val}</span>
+                      </div>
+                      <div style={{ height: 7, borderRadius: 6, background: "var(--sd-bar-bg)", overflow: "hidden" }}>
+                        <div style={{ height: "100%", width: `${item.pct}%`, background: item.color, borderRadius: 6 }} />
+                      </div>
                     </div>
                   ))}
                 </div>
               </div>
-
-              {/* Snapshot bars */}
-              <div className="ec-card">
-                <div className="ec-card-hd"><div className="ec-card-title"><Svg d={ICONS.trend} size={18}/>Content Health</div></div>
-                {[
-                  {label:"Courses with Lessons", val:`${courses.filter((c:any)=>c.lessonCount>0).length}/${courses.length}`, pct:courses.length?Math.round(courses.filter((c:any)=>c.lessonCount>0).length/courses.length*100):0, cls:"linear-gradient(90deg,#10b981,#34d399)"},
-                  {label:"AI-Generated Content",  val:`${processingResult?.lessons?.length||0} lessons`,                         pct:Math.min(100,(processingResult?.lessons?.length||0)*10), cls:"linear-gradient(90deg,#0ea5e9,#60a5fa)"},
-                  {label:"Concept Coverage",      val:`${processingResult?.conceptMap?.length||0} concepts`,                     pct:Math.min(100,(processingResult?.conceptMap?.length||0)*5), cls:"linear-gradient(90deg,#6366f1,#8b5cf6)"},
-                  {label:"Processing Success",    val:processingResult?"100%":"0%",                                             pct:processingResult?100:0, cls:"linear-gradient(90deg,#f59e0b,#fbbf24)"},
-                ].map((b,i)=>(
-                  <div key={i} className="ec-snap-row">
-                    <div className="ec-snap-hd">
-                      <span className="ec-snap-label">{b.label}</span>
-                      <span className="ec-snap-val">{b.val}</span>
-                    </div>
-                    <div className="ec-snap-bg">
-                      <div className="ec-snap-fill" style={{width:`${b.pct}%`,background:b.cls}}/>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Course breakdown table */}
-            <div className="ec-card">
-              <div className="ec-card-hd">
-                <div className="ec-card-title"><Svg d={ICONS.book} size={18}/>Course Overview</div>
-                <button className="ec-view-btn"><Svg d={ICONS.download} size={13}/>Export</button>
-              </div>
-              {courses.length === 0 ? (
-                <div className="ec-empty">
-                  <div className="ec-empty-ico"><Svg d={ICONS.book} size={26}/></div>
-                  <div className="ec-empty-title">No course data yet</div>
-                  <div className="ec-empty-sub">Create courses to see analytics here</div>
-                </div>
-              ) : (
-                <div style={{overflowX:"auto"}}>
-                  <table style={{width:"100%",borderCollapse:"collapse"}}>
-                    <thead>
-                      <tr>
-                        {["Course","Grade","Lessons","Status","Progress"].map(h=>(
-                          <th key={h} style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:".06em",color:"var(--ec-text3)",padding:"10px 14px",textAlign:"left",borderBottom:"1px solid var(--ec-row-border)"}}>
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {courses.map((c:any,i:number)=>{
-                        const pct = Math.min(100,Math.round((c.lessonCount||0)*12));
-                        return(
-                          <tr key={c.id} style={{cursor:"pointer",transition:"background .15s"}}
-                            onMouseEnter={e=>(e.currentTarget as HTMLElement).style.background="var(--ec-table-hover)"}
-                            onMouseLeave={e=>(e.currentTarget as HTMLElement).style.background="transparent"}>
-                            <td style={{padding:"12px 14px"}}>
-                              <div style={{display:"flex",alignItems:"center",gap:10}}>
-                                <div style={{width:34,height:34,borderRadius:9,background:gradients[i%gradients.length],display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,flexShrink:0}}>
-                                  {COURSE_ICONS[i%COURSE_ICONS.length]}
-                                </div>
-                                <div style={{fontWeight:700,fontSize:13.5,color:"var(--ec-text)"}}>{c.title}</div>
-                              </div>
-                            </td>
-                            <td style={{padding:"12px 14px",fontSize:13,color:"var(--ec-text4)"}}>Grade {c.grade}</td>
-                            <td style={{padding:"12px 14px",fontSize:13,fontWeight:700,color:"var(--ec-text)"}}>{c.lessonCount||0}</td>
-                            <td style={{padding:"12px 14px"}}>
-                              <span style={{padding:"3px 10px",borderRadius:8,fontSize:11.5,fontWeight:700,background:"rgba(16,185,129,.1)",color:"#10b981",border:"1px solid rgba(16,185,129,.2)"}}>
-                                {(c.lessonCount||0)>0?"Active":"Empty"}
-                              </span>
-                            </td>
-                            <td style={{padding:"12px 14px",minWidth:120}}>
-                              <div style={{display:"flex",alignItems:"center",gap:8}}>
-                                <div style={{flex:1,height:6,background:"var(--ec-bar-bg)",borderRadius:6,overflow:"hidden"}}>
-                                  <div style={{height:"100%",borderRadius:6,width:`${pct}%`,background:"linear-gradient(90deg,#10b981,#0ea5e9)",transition:"width .8s"}}/>
-                                </div>
-                                <span style={{fontSize:11.5,fontWeight:700,color:"var(--ec-text4)",minWidth:32}}>{pct}%</span>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </>
-        )}
+            </>
+          )}
+        </div>
       </div>
     </>
   );

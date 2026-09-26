@@ -56,9 +56,11 @@ export function ChatHistoryPanel({
 
   return (
     <div className="h-[390px] w-full max-w-full md:max-w-[340px] lg:max-w-[380px] mx-auto flex flex-col bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+    <div className="h-[390px] w-full max-w-full md:max-w-[340px] lg:max-w-[380px] mx-auto flex flex-col bg-white dark:bg-[#10172d]/90 dark:backdrop-blur-md rounded-xl border border-slate-200 dark:border-white/10 overflow-hidden shadow-sm">
       
       {/* HEADER */}
       <div className="p-2 px-3 flex flex-row justify-between items-center border-b border-slate-100 dark:border-slate-800 shrink-0 z-20 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md">
+      <div className="p-2 px-3 flex flex-row justify-between items-center border-b border-slate-100 dark:border-white/10 shrink-0 z-20 bg-white/80 dark:bg-[#10172d]/90 backdrop-blur-md">
         <h3 className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">
           History {pinnedIds.length > 0 && `(${pinnedIds.length} Pinned)`}
         </h3>
@@ -97,6 +99,7 @@ export function ChatHistoryPanel({
       <div className="flex-1 min-h-0 relative">
         {isLoading && (
           <div className="absolute inset-0 bg-white/60 dark:bg-slate-950/60 flex items-center justify-center z-30 backdrop-blur-[1px]">
+          <div className="absolute inset-0 bg-white/60 dark:bg-[#10172d]/70 flex items-center justify-center z-30 backdrop-blur-[1px]">
             <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
           </div>
         )}
@@ -114,6 +117,8 @@ export function ChatHistoryPanel({
                       currentChatId === chat.id
                         ? "bg-blue-50/70 dark:bg-blue-900/20 ring-1 ring-blue-100 dark:ring-blue-800/40"
                         : "hover:bg-slate-50 dark:hover:bg-slate-900/40"
+                        ? "bg-blue-50/70 dark:bg-blue-900/30 ring-1 ring-blue-100 dark:ring-blue-800/40"
+                        : "hover:bg-slate-50 dark:hover:bg-white/[0.06]"
                     }`}
                     style={{ minHeight: '44px' }}
                   >

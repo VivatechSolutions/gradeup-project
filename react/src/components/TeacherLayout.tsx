@@ -9,9 +9,14 @@ const css = `
   flex-direction: column;
   height: 100vh;
   overflow: hidden;
-  background: var(--bg-app);
-  color: var(--text-main);
-  transition: background .3s, color .3s;
+  background: var(--theme-bg-app, #ffffff);
+  color: var(--theme-text-main, #172033);
+  transition: background .25s ease, color .25s ease;
+}
+.dark .dash-layout,
+[data-theme="dark"] .dash-layout {
+  background: #000000 !important;
+  color: #f6f7ff !important;
 }
 
 .dash-body {
@@ -19,14 +24,19 @@ const css = `
   flex: 1;
   overflow: hidden;
   position: relative;
+  background: transparent;
 }
 
 .dash-main {
   flex: 1;
   overflow-y: auto;
-  background: var(--bg-app);
+  background: var(--theme-bg-app, #ffffff);
   scroll-behavior: smooth;
-  transition: background .3s;
+  transition: background .25s ease;
+}
+.dark .dash-main,
+[data-theme="dark"] .dash-main {
+  background: #000000 !important;
 }
 
 /* ── Page entrance animation ── */

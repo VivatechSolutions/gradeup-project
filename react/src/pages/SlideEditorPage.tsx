@@ -29,7 +29,7 @@ export default function SlideEditorPage() {
   const dirty = state.generation !== state.savedGeneration;
   const hasDeck = !!deck;
   const slide = doc?.slides.find(s => s.id === selectedSlide) || doc?.slides[0];
-    const previewSlide = deck?.proposal && deck.proposal.slideId === slide?.id ? deck.proposal.preview.slide : null;
+  const previewSlide = deck?.proposal && deck.proposal.slideId === slide?.id ? deck.proposal.preview.slide : null;
   const displayedSlide = previewSlide || slide;
   const previewing = !!previewSlide;
   const editable = !!deck && deck.role !== 'viewer' && !busy && !conflict && !deck.proposal;

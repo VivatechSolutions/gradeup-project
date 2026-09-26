@@ -20,6 +20,52 @@ const token = req => req.headers['x-presentation-share'];
 const user = req => String(req.studentUser._id);
 const auth = (req, needed) => access(req.params.deckId, user(req), token(req), needed);
 const documentOf = deck => ({ title: deck.title, slides: clone(deck.slides), theme: clone(deck.theme || {}) });
+const isMissingPythonSession = error => error?.source === 'python'
+  && error?.statusCode === 404
+  && /unknown session_id/i.test(String(error.message || ''));
+const restorePayload = deck => ({
+  session_id: deck.pythonSessionId,
+  student_id: String(deck.ownerId),
+  deck_id: deck.deckId,
+  deck_ref: deck.deckRef,
+  title: deck.title,
+  board: deck.context?.board,
+  class_number: deck.context?.class_number,
+  chapter: deck.context?.chapter,
+  subject: deck.context?.subject,
+  term: deck.context?.term,
+  theme_spec: clone(deck.theme || {}),
+  initial_slides: clone(deck.slides),
+  edit_url: deck.editUrl,
+  embed_url: deck.embedUrl,
+  pending_proposal: deck.proposal ? {
+    proposal_id: deck.proposal.id,
+    slide_id: deck.proposal.slideId,
+    operations: clone(deck.proposal.operations || []),
+    created_at: deck.proposal.createdAt,
+  } : null,
+});
+async function callPythonForDeck(deck, request) {
+  try {
+    return await callPython(request);
+  } catch (error) {
+    if (!isMissingPythonSession(error)) throw error;
+    const internalKey = process.env.GRADEUP_INTERNAL_API_KEY;
+    if (!internalKey) fail('AI session recovery is not configured', 503);
+    console.warn('[presentation:session-recovery] restoring', { deckId: deck.deckId, sessionId: deck.pythonSessionId });
+    const restored = await callPython({
+      method: 'post',
+      path: '/ppt/session/restore',
+      headers: { 'x-gradeup-internal-key': internalKey },
+      data: restorePayload(deck),
+    });
+    if (restored?.status !== 'restored' || restored?.session_id !== deck.pythonSessionId) {
+      fail('Python did not restore the presentation AI session', 502);
+    }
+    console.info('[presentation:session-recovery] restored', { deckId: deck.deckId, sessionId: deck.pythonSessionId });
+    return callPython(request);
+  }
+}
 function requireInternalKey(req) {
   const expected = process.env.GRADEUP_INTERNAL_API_KEY;
   const supplied = String(req.headers['x-gradeup-internal-key'] || '');
@@ -180,7 +226,7 @@ router.post('/decks/:deckId/ai/suggest', wrap(async (req, res) => withAi(req, re
   const selected = (Array.isArray(req.body.selected_element_ids) ? req.body.selected_element_ids : []).filter(id => slide.elements.some(e => e.id === id));
   const payload = { tool: 'gradeup', session_id: deck.pythonSessionId, deck_ref: deck.deckRef, slide_id: slide.id, slide_index: deck.slides.findIndex(s => s.id === slide.id), base_revision: deck.revision, request_id: requestId, query, slide_snapshot: slide, selected_element_ids: selected, theme_spec: deck.theme, other_slides: deck.slides.filter(s => s.id !== slide.id).map(s => ({ id: s.id, title: s.title, text: s.elements.filter(e => e.type === 'text').map(e => e.text).join('\n').slice(0, 2000) })) };
   console.info('[presentation:suggest] request', { requestId, deckId: deck.deckId, sessionId: deck.pythonSessionId, slideId: slide.id, slideIndex: payload.slide_index, revision: deck.revision, queryLength: query.length });
-  const response = await callPython({ method: 'post', path: '/ppt/suggest', data: payload });
+  const response = await callPythonForDeck(deck, { method: 'post', path: '/ppt/suggest', data: payload });
   if (Buffer.byteLength(JSON.stringify(response)) > 65536) fail('AI response exceeds editor size limit', 502);
   console.info('[presentation:suggest] response', { requestId, status: response.status, intent: response.intent, operations: response.operations?.length || 0, images: response.images?.length || 0 });
   if (process.env.PRESENTATION_DEBUG_LOGS === 'true') console.info('[presentation:suggest] debug', JSON.stringify({ request: payload, response }).slice(0, 16000));
@@ -208,7 +254,7 @@ router.post('/decks/:deckId/ai/decide', wrap(async (req, res) => withAi(req, res
   if (!p || p.id !== req.body.proposal_id) fail('This proposal is no longer pending', 409);
   if (!['approve','reject','skip'].includes(req.body.decision)) fail('Invalid decision');
   if (req.body.decision === 'approve' && p.baseRevision !== deck.revision) fail('The deck changed after this proposal. Ask AI for a fresh proposal.', 409);
-  const response = await callPython({ method: 'post', path: '/ppt/decide', data: { tool: 'gradeup', session_id: deck.pythonSessionId, proposal_id: p.id, decision: req.body.decision, request_id: req.body.mutation_id, base_revision: deck.revision, execution: 'node' } });
+  const response = await callPythonForDeck(deck, { method: 'post', path: '/ppt/decide', data: { tool: 'gradeup', session_id: deck.pythonSessionId, proposal_id: p.id, decision: req.body.decision, request_id: req.body.mutation_id, base_revision: deck.revision, execution: 'node' } });
   if (response.status !== 'done' || response.proposal_id !== p.id) fail('Python did not acknowledge this proposal', 502);
   await auth(req, 'editor');
   // Commit the exact reviewed operations, never a different set returned on approval.
@@ -222,7 +268,7 @@ router.post('/decks/:deckId/ai/decide', wrap(async (req, res) => withAi(req, res
   send(res, publicDeck(await commit(deck, next, user(req), req.body.mutation_id, { messages, proposal: null }), role));
 })));
 router.post('/decks/:deckId/session/end', wrap(async (req, res) => withAi(req, res, async (deck, role) => {
-  const response = await callPython({ method: 'post', path: '/ppt/session/end', data: { session_id: deck.pythonSessionId, tool: 'gradeup', request_id: req.body.mutation_id } });
+  const response = await callPythonForDeck(deck, { method: 'post', path: '/ppt/session/end', data: { session_id: deck.pythonSessionId, tool: 'gradeup', request_id: req.body.mutation_id } });
   if (response.status !== 'ended' || response.session_id !== deck.pythonSessionId) fail('Python did not confirm this session ended', 502);
   send(res, publicDeck(await commit(deck, documentOf(deck), user(req), req.body.mutation_id, { sessionEnded: true, proposal: null }), role));
 }, true)));

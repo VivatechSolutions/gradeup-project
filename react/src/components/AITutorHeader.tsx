@@ -23,6 +23,7 @@ export default function AITutorHeader({
 }: AITutorHeaderProps) {
   return (
     <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 shadow-sm px-3 py-2 sm:px-5 sm:py-3 flex items-center justify-between gap-2 flex-shrink-0 min-w-0">
+    <header className="bg-white dark:bg-[#10172d]/90 dark:backdrop-blur-md border-b border-gray-200 dark:border-white/10 shadow-sm px-3 py-2 sm:px-5 sm:py-3 flex items-center justify-between gap-2 flex-shrink-0 min-w-0">
 
       {/* ── LEFT: back button + brand + breadcrumb ─────────────────── */}
       <div className="flex items-center gap-1.5 sm:gap-3 min-w-0">

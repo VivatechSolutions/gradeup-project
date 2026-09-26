@@ -102,7 +102,7 @@ export default function AskAIPanel({ initialQuestion }: AskAIPanelProps) {
                   className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
                     message.type === 'user'
                       ? 'bg-blue-600 text-white'
-                      : 'bg-gray-100 dark:bg-slate-700'
+                      : 'bg-gray-100 dark:bg-[#171f3a]'
                   }`}
                 >
                   {message.type === 'user' ? <User className="h-4 w-4" /> : <Sparkles className="h-4 w-4 animate-pulse text-indigo-500" />}
@@ -111,7 +111,7 @@ export default function AskAIPanel({ initialQuestion }: AskAIPanelProps) {
                   className={`rounded-lg p-3 ${
                     message.type === 'user'
                       ? 'bg-blue-600 text-white'
-                      : 'bg-gray-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-600'
+                      : 'bg-gray-50 dark:bg-[#171f3a] border border-gray-200 dark:border-white/10'
                   }`}
                 >
                   <div className="text-sm">{message.content}</div>
@@ -121,10 +121,10 @@ export default function AskAIPanel({ initialQuestion }: AskAIPanelProps) {
           ))}
           {isLoading && (
             <div className="flex gap-3 justify-start">
-                <div className="w-8 h-8 rounded-full bg-gray-100 dark:bg-slate-700 flex items-center justify-center flex-shrink-0">
+                <div className="w-8 h-8 rounded-full bg-gray-100 dark:bg-[#171f3a] flex items-center justify-center flex-shrink-0">
                     <Sparkles className="h-4 w-4 animate-pulse text-indigo-500" />
                 </div>
-                <div className="bg-gray-50 dark:bg-slate-700 rounded-lg p-3 border border-gray-200 dark:border-slate-600">
+                <div className="bg-gray-50 dark:bg-[#171f3a] rounded-lg p-3 border border-gray-200 dark:border-white/10">
                     <div className="flex items-center gap-2">
                         <Loader2 className="h-4 w-4 animate-spin" />
                         <span className="text-sm text-muted-foreground">AI is thinking...</span>

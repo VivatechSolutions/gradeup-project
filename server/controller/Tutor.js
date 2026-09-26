@@ -4,11 +4,15 @@ const {
   getPythonLearningContext,
 } = require("../services/learningContextService");
 const {
-  appendMessages,
+  createConversation,
+  appendUserMessage,
+  completeTurn,
+  failUserMessage,
   listConversations,
   getConversation,
   clearConversations,
 } = require("../services/tutorConversationService");
+const crypto = require("crypto");
 const {
   recordHomeworkChatTurn,
   listHomeworkChatSessions,
@@ -95,11 +99,39 @@ async function resolveLearningPayload(source = {}) {
 
 const controller = {
   async askTutor(req, res) {
+    let persistedTurn = null;
     try {
       const { unit, context } = await resolveLearningPayload(req.body);
       const candidate = getCandidatePayload(req.body);
+      const conversationId =
+        req.body.conversationId ||
+        req.body.chatId ||
+        req.body.sessionId ||
+        `tutor-${crypto.randomUUID()}`;
+      const userMessageId = req.body.userMessageId || crypto.randomUUID();
+      const assistantMessageId = crypto.randomUUID();
+      const userMessage = req.body.query || req.body.message || "[Image attached]";
+
+      await createConversation({
+        conversationId,
+        candidateId: candidate.candidate_id,
+        candidateName: candidate.candidate_name,
+        unit,
+      });
+      await appendUserMessage({
+        conversationId,
+        candidateId: candidate.candidate_id,
+        messageId: userMessageId,
+        content: userMessage,
+      });
+      persistedTurn = {
+        conversationId,
+        candidateId: candidate.candidate_id,
+        userMessageId,
+      };
+
       const pythonPayload = {
-        query: req.body.query || req.body.message,
+        query: userMessage,
         board: context.board,
         class_number: context.classNumber,
         subject: context.subject,
@@ -127,16 +159,11 @@ const controller = {
         data?.content ||
         "I could not generate a response for that question.";
 
-      const conversation = await appendMessages({
-        conversationId:
-          req.body.conversationId ||
-          req.body.chatId ||
-          req.body.sessionId ||
-          `tutor-${candidate.candidate_id}-${Date.now()}`,
+      const conversation = await completeTurn({
+        conversationId,
         candidateId: candidate.candidate_id,
-        candidateName: candidate.candidate_name,
-        unit,
-        userMessage: req.body.query || req.body.message,
+        userMessageId,
+        assistantMessageId,
         assistantMessage: assistantText,
       });
       if (req.studentUser?._id) {
@@ -157,6 +184,10 @@ const controller = {
         data: {
           ...data,
           answer: assistantText,
+          conversation,
+          conversationId,
+          userMessageId,
+          assistantMessageId,
         },
         meta: {
           unitId: unit._id,
@@ -165,6 +196,9 @@ const controller = {
         },
       });
     } catch (error) {
+      if (persistedTurn) {
+        await failUserMessage(persistedTurn).catch(() => null);
+      }
       return res.status(error.statusCode || 500).json({
         status: false,
         message: error.message || "Failed to ask tutor",
@@ -604,6 +638,25 @@ const controller = {
         status: false,
         message: error.message || "Failed to send homework chat message",
         details: error.details || null,
+      });
+    }
+  },
+
+  async createTutorConversation(req, res) {
+    try {
+      const { unit } = await resolveLearningPayload(req.body);
+      const candidate = getCandidatePayload(req.body);
+      const conversation = await createConversation({
+        conversationId: req.body.conversationId,
+        candidateId: candidate.candidate_id,
+        candidateName: candidate.candidate_name,
+        unit,
+      });
+      return res.status(201).json({ status: true, data: conversation });
+    } catch (error) {
+      return res.status(error.statusCode || 500).json({
+        status: false,
+        message: error.message || "Failed to create tutor conversation",
       });
     }
   },

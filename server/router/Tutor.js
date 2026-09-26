@@ -8,6 +8,7 @@ const router = express.Router();
 router.use(requireStudentAuth, injectStudentIdentity);
 
 router.post("/ask", controller.askTutor);
+router.post("/conversations", controller.createTutorConversation);
 router.get("/history", controller.getTutorHistory);
 router.delete("/history", controller.clearTutorHistory);
 router.post("/speech/realtime-token", controller.getRealtimeSessionToken);

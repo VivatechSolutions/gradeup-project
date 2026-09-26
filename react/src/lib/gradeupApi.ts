@@ -496,9 +496,24 @@ export async function askTutor(payload: {
   candidateName: string;
   query: string;
   conversationId?: string;
+  userMessageId?: string;
   limit?: number;
+  image_base64?: string;
+  image_mime_type?: string;
 }) {
   return apiFetch<any>("/api/v1/tutor/ask", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createTutorConversation(payload: {
+  unitId: string;
+  candidateId: string;
+  candidateName: string;
+  conversationId?: string;
+}) {
+  return apiFetch<any>("/api/v1/tutor/conversations", {
     method: "POST",
     body: JSON.stringify(payload),
   });

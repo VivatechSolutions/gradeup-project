@@ -2,9 +2,11 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ResponsiveContainer, PieChart, Pie, Cell, RadarChart, PolarGrid,
-  PolarAngleAxis, PolarRadiusAxis, Radar, AreaChart, Area,
+  ResponsiveContainer, PieChart, Pie, Cell,
 } from "recharts";
+import { useTheme as useAppTheme } from "../../../hooks/use-theme";
+import roboMagnifier from "../../../assets/dashboard/11_robot_magnifying_glass.png";
+import roboStudy from "../../../assets/dashboard/study-robo.png";
 
 // ══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -81,7 +83,6 @@ type ThemeMode = "light" | "dark";
 // MOCK DATA
 // ══════════════════════════════════════════════════════════════════════════
 const STORAGE_KEY = "teacher_exam_correction_v1";
-const THEME_KEY = "teacher_exam_correction_theme";
 
 const seedAnswerKeys: AnswerKey[] = [
   {
@@ -123,8 +124,21 @@ const seedPapers: ExamPaper[] = [
     examName: "Mid-Term Examination", date: "2024-07-15", fileUrl: "", fileName: "aarav_math_midterm.pdf",
     fileType: "pdf", status: "finalized", answerKeyId: "AK-MATH-10A", uploadedAt: "2024-07-15T09:12:00Z",
     finalizedAt: "2024-07-16T10:00:00Z",
-    corrections: [],
-    analytics: null,
+    corrections: [
+      { questionNumber: 1, questionText: "Solve for x: 2x + 5 = 17", topic: "Algebra", maxMarks: 5, aiMarksAwarded: 5, finalMarksAwarded: 5, aiStatus: "correct", aiConfidence: 96, aiFeedback: "Complete and accurate answer with correct method shown.", teacherFeedback: "", adjustedByTeacher: false },
+      { questionNumber: 2, questionText: "Find the roots of x² − 7x + 12 = 0", topic: "Algebra", maxMarks: 10, aiMarksAwarded: 10, finalMarksAwarded: 10, aiStatus: "correct", aiConfidence: 94, aiFeedback: "Factoring method executed properly, roots verified.", teacherFeedback: "", adjustedByTeacher: false },
+      { questionNumber: 3, questionText: "Prove that the sum of angles in a triangle is 180°", topic: "Geometry", maxMarks: 10, aiMarksAwarded: 8, finalMarksAwarded: 9, aiStatus: "partial", aiConfidence: 88, aiFeedback: "Correct diagram and logic, minor missing label in alternate angles step.", teacherFeedback: "Gave +1 mark for neat diagram and clear structure.", adjustedByTeacher: true },
+      { questionNumber: 4, questionText: "Find sin(30°) + cos(60°)", topic: "Trigonometry", maxMarks: 5, aiMarksAwarded: 5, finalMarksAwarded: 5, aiStatus: "correct", aiConfidence: 98, aiFeedback: "Accurate values (1/2 + 1/2 = 1).", teacherFeedback: "", adjustedByTeacher: false },
+      { questionNumber: 5, questionText: "Differentiate y = 3x² + 2x with respect to x", topic: "Calculus", maxMarks: 10, aiMarksAwarded: 7, finalMarksAwarded: 8, aiStatus: "partial", aiConfidence: 85, aiFeedback: "Power rule applied correctly, minor notation omission.", teacherFeedback: "", adjustedByTeacher: false },
+      { questionNumber: 6, questionText: "Find the mean of 4, 8, 15, 16, 23, 42", topic: "Statistics", maxMarks: 10, aiMarksAwarded: 10, finalMarksAwarded: 10, aiStatus: "correct", aiConfidence: 95, aiFeedback: "Sum = 108 / 6 = 18. Perfect working.", teacherFeedback: "", adjustedByTeacher: false },
+    ],
+    analytics: {
+      totalMarks: 50, obtainedMarks: 47, percentage: 94, grade: "A+",
+      strengths: ["Algebra", "Statistics", "Trigonometry", "Geometry"],
+      weaknesses: ["Calculus notation"],
+      commonMistakes: ["Minor notation missing in differential calculus step."],
+      performanceInsight: "Exceptional mastery across mathematical foundations with neat, structured step-by-step proofs.",
+    },
   },
   {
     id: "P002", studentName: "Vivaan Singh", rollNumber: "12B-02", subject: "Physics", class: "12-B",
@@ -136,7 +150,22 @@ const seedPapers: ExamPaper[] = [
     id: "P003", studentName: "Diya Gupta", rollNumber: "10A-07", subject: "Mathematics", class: "10-A",
     examName: "Mid-Term Examination", date: "2024-07-17", fileUrl: "", fileName: "diya_math_midterm.pdf",
     fileType: "pdf", status: "corrected", answerKeyId: "AK-MATH-10A", uploadedAt: "2024-07-17T08:40:00Z",
-    finalizedAt: null, corrections: [], analytics: null,
+    finalizedAt: null,
+    corrections: [
+      { questionNumber: 1, questionText: "Solve for x: 2x + 5 = 17", topic: "Algebra", maxMarks: 5, aiMarksAwarded: 5, finalMarksAwarded: 5, aiStatus: "correct", aiConfidence: 96, aiFeedback: "Full marks, neat steps.", teacherFeedback: "", adjustedByTeacher: false },
+      { questionNumber: 2, questionText: "Find the roots of x² − 7x + 12 = 0", topic: "Algebra", maxMarks: 10, aiMarksAwarded: 8, finalMarksAwarded: 8, aiStatus: "partial", aiConfidence: 89, aiFeedback: "Calculated one root correctly; omitted second root check.", teacherFeedback: "", adjustedByTeacher: false },
+      { questionNumber: 3, questionText: "Prove that the sum of angles in a triangle is 180°", topic: "Geometry", maxMarks: 10, aiMarksAwarded: 10, finalMarksAwarded: 10, aiStatus: "correct", aiConfidence: 92, aiFeedback: "All axioms stated clearly.", teacherFeedback: "", adjustedByTeacher: false },
+      { questionNumber: 4, questionText: "Find sin(30°) + cos(60°)", topic: "Trigonometry", maxMarks: 5, aiMarksAwarded: 5, finalMarksAwarded: 5, aiStatus: "correct", aiConfidence: 97, aiFeedback: "Correct substitution.", teacherFeedback: "", adjustedByTeacher: false },
+      { questionNumber: 5, questionText: "Differentiate y = 3x² + 2x with respect to x", topic: "Calculus", maxMarks: 10, aiMarksAwarded: 4, finalMarksAwarded: 4, aiStatus: "incorrect", aiConfidence: 91, aiFeedback: "Confused integration and differentiation rules.", teacherFeedback: "Needs practice with power rule differentiation.", adjustedByTeacher: true },
+      { questionNumber: 6, questionText: "Find the mean of 4, 8, 15, 16, 23, 42", topic: "Statistics", maxMarks: 10, aiMarksAwarded: 10, finalMarksAwarded: 10, aiStatus: "correct", aiConfidence: 95, aiFeedback: "Sum = 108 / 6 = 18.", teacherFeedback: "", adjustedByTeacher: false },
+    ],
+    analytics: {
+      totalMarks: 50, obtainedMarks: 42, percentage: 84, grade: "A",
+      strengths: ["Statistics", "Geometry", "Trigonometry"],
+      weaknesses: ["Calculus", "Algebra roots checking"],
+      commonMistakes: ["Applied integration instead of derivative rule for Q5."],
+      performanceInsight: "Strong grasp on foundational arithmetic and proofs; needs targeted practice on differentiation fundamentals.",
+    },
   },
 ];
 
@@ -193,12 +222,16 @@ const AI_FEEDBACK = {
   ],
 };
 
+const SUBJECT_PALETTE = ["#2389ff", "#27b86a", "#7e45e8", "#ff791f", "#00a7c8", "#ff4d8d"];
+
+function getStudentColor(name: string) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return SUBJECT_PALETTE[Math.abs(hash) % SUBJECT_PALETTE.length];
+}
+
 // ══════════════════════════════════════════════════════════════════════════
-// API CONFIGURATION — JSON-driven, backend-ready
-// 🔌 BACKEND: This is the ONLY block you need to touch to go live.
-// Flip USE_MOCK_DATA to false and fill in BASE_URL — every function below
-// already targets these exact endpoint paths, methods, and JSON payload
-// shapes, so no calling code anywhere else in this file needs to change.
+// API CONFIGURATION — Backend-ready & JSON-driven
 // ══════════════════════════════════════════════════════════════════════════
 const API_CONFIG = {
   USE_MOCK_DATA: true,
@@ -223,9 +256,6 @@ function buildUrl(path: string, params: Record<string, string | number> = {}) {
   return `${API_CONFIG.BASE_URL}${resolved}`;
 }
 
-// Generic JSON fetch wrapper. Once USE_MOCK_DATA is false, every API method
-// below routes through this single function — auth headers, error handling,
-// and response parsing only need to be wired up here.
 async function apiRequest<T>(
   endpointKey: keyof typeof API_CONFIG.ENDPOINTS,
   options: { params?: Record<string, string | number>; body?: unknown } = {}
@@ -243,10 +273,6 @@ async function apiRequest<T>(
 
 // ══════════════════════════════════════════════════════════════════════════
 // MOCK API LAYER
-// Every method mirrors the JSON shape and endpoint above under ENDPOINTS so
-// swapping USE_MOCK_DATA to false is a drop-in replacement — no UI code
-// changes required. All local persistence (localStorage) is mock-only and
-// should be deleted once wired to a real backend.
 // ══════════════════════════════════════════════════════════════════════════
 interface StoreShape {
   papers: ExamPaper[];
@@ -257,61 +283,53 @@ function loadStore(): StoreShape {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) return JSON.parse(raw);
-  } catch {
-    /* ignore corrupt storage */
-  }
+  } catch {}
   return { papers: seedPapers, answerKeys: seedAnswerKeys };
 }
 
 function saveStore(store: StoreShape) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
-  } catch {
-    /* storage full or unavailable — no-op in mock layer */
-  }
+  } catch {}
 }
 
 const examCorrectionAPI = {
-  // 🔌 BACKEND: GET /teacher/exam-papers?class=&subject=&status=
   async getPapers(): Promise<ExamPaper[]> {
     if (!API_CONFIG.USE_MOCK_DATA) return apiRequest<ExamPaper[]>("listPapers");
-    await new Promise((r) => setTimeout(r, 250));
+    await new Promise((r) => setTimeout(r, 200));
     return loadStore().papers;
   },
 
-  // 🔌 BACKEND: GET /teacher/answer-keys
   async getAnswerKeys(): Promise<AnswerKey[]> {
     if (!API_CONFIG.USE_MOCK_DATA) return apiRequest<AnswerKey[]>("listAnswerKeys");
-    await new Promise((r) => setTimeout(r, 150));
+    await new Promise((r) => setTimeout(r, 200));
     return loadStore().answerKeys;
   },
 
-  // 🔌 BACKEND: POST /teacher/answer-keys  (JSON body: AnswerKey)
   async createAnswerKey(key: AnswerKey): Promise<AnswerKey> {
     if (!API_CONFIG.USE_MOCK_DATA) return apiRequest<AnswerKey>("createAnswerKey", { body: key });
-    await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 250));
     const store = loadStore();
-    store.answerKeys = [...store.answerKeys, key];
+    store.answerKeys.unshift(key);
     saveStore(store);
     return key;
   },
 
-  // 🔌 BACKEND: POST /teacher/exam-papers/upload  (multipart/form-data in production;
-  // keep the same field names used in `meta` below when building the FormData)
   async uploadPaper(meta: {
     studentName: string; rollNumber: string; subject: string; class: string;
     examName: string; file: File; answerKeyId: string | null;
   }): Promise<ExamPaper> {
     if (!API_CONFIG.USE_MOCK_DATA) {
-      const form = new FormData();
-      Object.entries(meta).forEach(([k, v]) => form.append(k, v as string | Blob));
-      const res = await fetch(buildUrl(API_CONFIG.ENDPOINTS.uploadPaper.path), { method: "POST", body: form });
+      const fd = new FormData();
+      Object.entries(meta).forEach(([k, v]) => { if (v !== null) fd.append(k, v as any); });
+      const res = await fetch(buildUrl(API_CONFIG.ENDPOINTS.uploadPaper.path), { method: "POST", body: fd });
       if (!res.ok) throw new Error("Upload failed");
       return res.json();
     }
     await new Promise((r) => setTimeout(r, 400));
-    const fileType: "pdf" | "image" = meta.file.type.includes("pdf") ? "pdf" : "image";
-    const paper: ExamPaper = {
+    const isImg = meta.file.type.startsWith("image/");
+    const fakeUrl = URL.createObjectURL(meta.file);
+    const newPaper: ExamPaper = {
       id: genId("P"),
       studentName: meta.studentName,
       rollNumber: meta.rollNumber,
@@ -319,9 +337,9 @@ const examCorrectionAPI = {
       class: meta.class,
       examName: meta.examName,
       date: new Date().toISOString().split("T")[0],
-      fileUrl: URL.createObjectURL(meta.file), // 🔌 BACKEND: replace with server-hosted URL after upload
+      fileUrl: fakeUrl,
       fileName: meta.file.name,
-      fileType,
+      fileType: isImg ? "image" : "pdf",
       status: "pending",
       answerKeyId: meta.answerKeyId,
       corrections: [],
@@ -330,44 +348,41 @@ const examCorrectionAPI = {
       finalizedAt: null,
     };
     const store = loadStore();
-    store.papers = [paper, ...store.papers];
+    store.papers.unshift(newPaper);
     saveStore(store);
-    return paper;
+    return newPaper;
   },
 
-  // 🔌 BACKEND: POST /teacher/exam-papers/:id/evaluate
-  // Real implementation would call an AI/OCR + evaluation service and
-  // return per-question corrections. Here we simulate that response.
   async runAIEvaluation(paperId: string): Promise<ExamPaper> {
     if (!API_CONFIG.USE_MOCK_DATA) return apiRequest<ExamPaper>("runAIEvaluation", { params: { id: paperId } });
-
+    await new Promise((r) => setTimeout(r, 1400));
     const store = loadStore();
     const paper = store.papers.find((p) => p.id === paperId);
     if (!paper) throw new Error("Paper not found");
     const key = store.answerKeys.find((k) => k.id === paper.answerKeyId);
-    if (!key) throw new Error("No answer key linked to this paper");
+    if (!key) throw new Error("No linked answer key found for this exam");
 
-    await new Promise((r) => setTimeout(r, 1800)); // simulate AI processing time
-
-    const rand = seededRandom(paper.id);
+    const rnd = seededRandom(`${paperId}-${key.id}`);
     const corrections: QuestionCorrection[] = key.questions.map((q) => {
-      const roll = rand();
+      const roll = rnd();
       let status: QuestionStatus;
-      let marks: number;
-      if (roll < 0.62) { status = "correct"; marks = q.maxMarks; }
-      else if (roll < 0.85) { status = "partial"; marks = Math.round(q.maxMarks * 0.5); }
-      else { status = "incorrect"; marks = 0; }
+      let ratio: number;
+      if (roll > 0.35) { status = "correct"; ratio = 1; }
+      else if (roll > 0.12) { status = "partial"; ratio = 0.5 + rnd() * 0.35; }
+      else { status = "incorrect"; ratio = 0; }
+      const awarded = Math.round(q.maxMarks * ratio);
       const pool = AI_FEEDBACK[status];
-      const feedback = pool[Math.floor(rand() * pool.length)];
+      const feedback = pool[Math.floor(rnd() * pool.length)];
+      const confidence = Math.round(82 + rnd() * 16);
       return {
         questionNumber: q.questionNumber,
         questionText: q.questionText,
         topic: q.topic,
         maxMarks: q.maxMarks,
-        aiMarksAwarded: marks,
-        finalMarksAwarded: marks,
+        aiMarksAwarded: awarded,
+        finalMarksAwarded: awarded,
         aiStatus: status,
-        aiConfidence: Math.round(60 + rand() * 38),
+        aiConfidence: confidence,
         aiFeedback: feedback,
         teacherFeedback: "",
         adjustedByTeacher: false,
@@ -381,24 +396,30 @@ const examCorrectionAPI = {
     return { ...paper };
   },
 
-  // 🔌 BACKEND: PATCH /teacher/exam-papers/:id/corrections/:questionNumber  (JSON body: Partial<QuestionCorrection>)
-  async updateCorrection(paperId: string, questionNumber: number, updates: Partial<QuestionCorrection>): Promise<ExamPaper> {
+  async updateCorrection(
+    paperId: string, questionNumber: number, updates: Partial<QuestionCorrection>
+  ): Promise<ExamPaper> {
     if (!API_CONFIG.USE_MOCK_DATA) {
-      return apiRequest<ExamPaper>("updateCorrection", { params: { id: paperId, questionNumber }, body: updates });
+      return apiRequest<ExamPaper>("updateCorrection", {
+        params: { id: paperId, questionNumber },
+        body: updates,
+      });
     }
-    await new Promise((r) => setTimeout(r, 120));
     const store = loadStore();
     const paper = store.papers.find((p) => p.id === paperId);
     if (!paper) throw new Error("Paper not found");
-    paper.corrections = paper.corrections.map((c) =>
-      c.questionNumber === questionNumber ? { ...c, ...updates, adjustedByTeacher: true } : c
-    );
+    const target = paper.corrections.find((c) => c.questionNumber === questionNumber);
+    if (!target) throw new Error("Question not found");
+
+    if (updates.finalMarksAwarded !== undefined && updates.finalMarksAwarded !== target.aiMarksAwarded) {
+      updates.adjustedByTeacher = true;
+    }
+    Object.assign(target, updates);
     paper.analytics = computeAnalytics(paper, paper.corrections);
     saveStore(store);
     return { ...paper };
   },
 
-  // 🔌 BACKEND: POST /teacher/exam-papers/:id/finalize
   async finalizePaper(paperId: string): Promise<ExamPaper> {
     if (!API_CONFIG.USE_MOCK_DATA) return apiRequest<ExamPaper>("finalizePaper", { params: { id: paperId } });
     await new Promise((r) => setTimeout(r, 300));
@@ -412,7 +433,6 @@ const examCorrectionAPI = {
     return { ...paper };
   },
 
-  // 🔌 BACKEND: DELETE /teacher/exam-papers/:id
   async deletePaper(paperId: string): Promise<void> {
     if (!API_CONFIG.USE_MOCK_DATA) { await apiRequest<void>("deletePaper", { params: { id: paperId } }); return; }
     await new Promise((r) => setTimeout(r, 150));
@@ -449,16 +469,16 @@ function computeAnalytics(paper: ExamPaper, corrections: QuestionCorrection[]): 
     .map((c) => `Q${c.questionNumber} (${c.topic}): ${c.teacherFeedback || c.aiFeedback}`);
 
   let performanceInsight: string;
-  if (percentage >= 85) performanceInsight = "Outstanding performance with strong command across most topics.";
-  else if (percentage >= 70) performanceInsight = "Solid performance overall, with a few topics that could use reinforcement.";
-  else if (percentage >= 50) performanceInsight = "Moderate performance — targeted practice on weaker topics is recommended.";
-  else performanceInsight = "Performance indicates significant gaps; a structured revision plan is recommended.";
+  if (percentage >= 85) performanceInsight = "Outstanding performance with strong command across core syllabus concepts.";
+  else if (percentage >= 70) performanceInsight = "Solid understanding overall, with a few topics that could benefit from quick revision.";
+  else if (percentage >= 50) performanceInsight = "Moderate performance — targeted homework and guided practice recommended.";
+  else performanceInsight = "Key conceptual gaps identified; a structured 1-on-1 revision plan is highly recommended.";
 
   return {
     totalMarks, obtainedMarks, percentage, grade: getGrade(percentage),
-    strengths: strengths.length ? strengths : ["Consistent effort across topics"],
-    weaknesses: weaknesses.length ? weaknesses : ["No major weak areas identified"],
-    commonMistakes: commonMistakes.length ? commonMistakes : ["No recurring mistakes identified"],
+    strengths: strengths.length ? strengths : ["Consistent effort across questions"],
+    weaknesses: weaknesses.length ? weaknesses : ["No critical weak areas identified"],
+    commonMistakes: commonMistakes.length ? commonMistakes : ["No recurring errors noted"],
     performanceInsight,
   };
 }
@@ -478,15 +498,15 @@ function downloadTextFile(filename: string, content: string) {
 function buildReportText(paper: ExamPaper): string {
   const a = paper.analytics;
   const lines: string[] = [];
-  lines.push(`EXAM CORRECTION REPORT`);
-  lines.push(`========================`);
+  lines.push(`EXAM EVALUATION REPORT`);
+  lines.push(`==========================================`);
   lines.push(`Student: ${paper.studentName} (${paper.rollNumber})`);
   lines.push(`Class: ${paper.class}   Subject: ${paper.subject}`);
   lines.push(`Exam: ${paper.examName}   Date: ${formatDate(paper.date)}`);
   lines.push(`Status: ${paper.status.toUpperCase()}`);
   lines.push(``);
   if (a) {
-    lines.push(`SCORE: ${a.obtainedMarks} / ${a.totalMarks}  (${a.percentage}%)  Grade: ${a.grade}`);
+    lines.push(`TOTAL SCORE: ${a.obtainedMarks} / ${a.totalMarks}  (${a.percentage}%)  Grade: ${a.grade}`);
     lines.push(``);
     lines.push(`Strengths: ${a.strengths.join(", ")}`);
     lines.push(`Weaknesses: ${a.weaknesses.join(", ")}`);
@@ -494,238 +514,1341 @@ function buildReportText(paper: ExamPaper): string {
     lines.push(`Common Mistakes:`);
     a.commonMistakes.forEach((m) => lines.push(`  - ${m}`));
     lines.push(``);
-    lines.push(`Insight: ${a.performanceInsight}`);
+    lines.push(`Pedagogical Insight: ${a.performanceInsight}`);
     lines.push(``);
   }
   lines.push(`QUESTION-WISE BREAKDOWN`);
-  lines.push(`------------------------`);
+  lines.push(`------------------------------------------`);
   paper.corrections.forEach((c) => {
     lines.push(`Q${c.questionNumber}. ${c.questionText}`);
-    lines.push(`  Topic: ${c.topic}   Marks: ${c.finalMarksAwarded}/${c.maxMarks}   AI status: ${c.aiStatus}`);
-    lines.push(`  AI feedback: ${c.aiFeedback}`);
-    if (c.teacherFeedback) lines.push(`  Teacher note: ${c.teacherFeedback}`);
+    lines.push(`  Topic: ${c.topic}   Marks: ${c.finalMarksAwarded}/${c.maxMarks}   AI Status: ${c.aiStatus}`);
+    lines.push(`  AI Feedback: ${c.aiFeedback}`);
+    if (c.teacherFeedback) lines.push(`  Teacher Note: ${c.teacherFeedback}`);
     lines.push(``);
   });
   return lines.join("\n");
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// STYLES — self-contained light + dark theme tokens (no external CSS needed)
+// ANIMATED NUMBER COUNTER (from Teacher Dashboard)
+// ══════════════════════════════════════════════════════════════════════════
+function AnimNum({ target, suffix = "" }: { target: number; suffix?: string }) {
+  const [value, setValue] = useState(0);
+  useEffect(() => {
+    let frame = 0;
+    let raf = 0;
+    const tick = () => {
+      frame += 1;
+      setValue(Math.round((target * Math.min(frame, 38)) / 38));
+      if (frame < 38) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target]);
+  return <>{value}{suffix}</>;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// STYLES — Teacher Dashboard Visual Language & Color Formats
 // ══════════════════════════════════════════════════════════════════════════
 const CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
 *,*::before,*::after{box-sizing:border-box;}
 
 .xcd-root{
-  --bg-app:#f6f5fb;
-  --bg-panel:#ffffff;
-  --bg-hover:#f1eff9;
-  --bg-input:#ffffff;
-  --text-main:#171625;
-  --text-sub:#666479;
-  --border:#e7e4f2;
-  --border2:#ece9f6;
-  --shadow:0 2px 14px rgba(30,20,60,.06);
-  --overlay:rgba(20,16,35,.52);
+  min-height: 100%;
+  padding: 18px clamp(14px, 2.5vw, 28px) 80px;
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  color: var(--sd-ink);
+  background: radial-gradient(circle at 14% 9%, rgba(35,137,255,.09), transparent 28%),
+              radial-gradient(circle at 88% 14%, rgba(255,178,29,.12), transparent 26%),
+              linear-gradient(180deg, var(--sd-page), var(--sd-page-2));
+  --sd-page: #fbfcff;
+  --sd-page-2: #f5f7ff;
+  --sd-card: #ffffff;
+  --sd-card-soft: #f7faff;
+  --sd-ink: #071235;
+  --sd-muted: #64748b;
+  --sd-faint: #94a3b8;
+  --sd-line: rgba(15, 23, 42, 0.08);
+  --sd-border2: rgba(15, 23, 42, 0.05);
+  --sd-shadow: 0 14px 34px rgba(35, 44, 87, 0.10);
+  --sd-shadow-soft: 0 8px 20px rgba(35, 44, 87, 0.06);
+  --sd-input-bg: #ffffff;
+  position: relative;
+  overflow-x: hidden;
+  transition: background .25s ease, color .25s ease;
 }
-.xcd-root[data-theme="dark"]{
-  --bg-app:#0e0d15;
-  --bg-panel:#17151f;
-  --bg-hover:#211f2c;
-  --bg-input:#1c1a26;
-  --text-main:#f3f2fb;
-  --text-sub:#a09eb4;
-  --border:#2a2836;
-  --border2:#26242f;
-  --shadow:0 2px 18px rgba(0,0,0,.45);
-  --overlay:rgba(4,3,10,.68);
+
+[data-theme="dark"] .xcd-root,
+.dark .xcd-root{
+  --sd-page: #080d1f;
+  --sd-page-2: #10172d;
+  --sd-card: rgba(23, 31, 58, 0.94);
+  --sd-card-soft: rgba(31, 42, 76, 0.74);
+  --sd-ink: #f6f7ff;
+  --sd-muted: #a5b4d4;
+  --sd-faint: #7887a7;
+  --sd-line: rgba(255, 255, 255, 0.12);
+  --sd-border2: rgba(255, 255, 255, 0.08);
+  --sd-shadow: 0 20px 54px rgba(0, 0, 0, 0.48);
+  --sd-shadow-soft: 0 12px 30px rgba(0, 0, 0, 0.28);
+  --sd-input-bg: rgba(20, 27, 51, 0.88);
 }
 
-.xcd-root{font-family:'Plus Jakarta Sans',system-ui,sans-serif;color:var(--text-main);background:var(--bg-app);min-height:100%;transition:background .2s ease,color .2s ease;}
+/* ── Ambient Floating Particles ── */
+.xcd-root::before, .xcd-root::after{
+  content: "";
+  position: absolute;
+  border-radius: 999px;
+  pointer-events: none;
+  filter: blur(40px);
+  opacity: .5;
+  animation: sdFloatBg 12s ease-in-out infinite alternate;
+}
+.xcd-root::before{
+  width: 280px; height: 280px;
+  left: -80px; top: 90px;
+  background: radial-gradient(circle, rgba(46, 182, 255, .16), transparent 70%);
+}
+.xcd-root::after{
+  width: 320px; height: 320px;
+  right: -100px; top: 400px;
+  background: radial-gradient(circle, rgba(255, 178, 29, .14), transparent 70%);
+  animation-delay: -5s;
+}
 
-/* ── Hero ── */
-.xcd-hero{margin:20px 28px 0;border-radius:20px;padding:18px 28px;background:linear-gradient(135deg,#6366f1 0%,#8b5cf6 45%,#ec4899 100%);position:relative;overflow:hidden;color:#fff;box-shadow:0 6px 24px rgba(99,102,241,.26);}
-.xcd-hero-glow{position:absolute;width:280px;height:280px;border-radius:50%;background:rgba(255,255,255,.12);top:-140px;right:-60px;filter:blur(10px);}
-.xcd-hero-inner{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;}
-.xcd-hero-left{display:flex;align-items:center;gap:14px;min-width:0;}
-.xcd-hero-icon{width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.22);border:2px solid rgba(255,255,255,.5);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;}
-.xcd-hero-title{font-size:clamp(16px,2.2vw,22px);font-weight:800;color:#fff;margin-bottom:2px;letter-spacing:-.2px;line-height:1.2;}
-.xcd-hero-sub{font-size:12px;color:rgba(255,255,255,.72);line-height:1.4;}
-.xcd-hero-actions{display:flex;gap:8px;flex-shrink:0;align-items:center;}
-.xcd-hero-btn{padding:9px 16px;background:#fff;color:#6366f1;border:none;border-radius:12px;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;transition:all .2s;box-shadow:0 3px 12px rgba(0,0,0,.15);white-space:nowrap;display:flex;align-items:center;gap:6px;}
-.xcd-hero-btn:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,0,0,.2);}
-.xcd-hero-btn.ghost{background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.4);}
-.xcd-theme-toggle{width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.4);color:#fff;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;flex-shrink:0;}
-.xcd-theme-toggle:hover{background:rgba(255,255,255,.3);transform:translateY(-2px);}
+@keyframes sdFloatBg{
+  from{ transform: translate3d(0,0,0) scale(1); }
+  to{ transform: translate3d(24px, 30px, 0) scale(1.08); }
+}
+@keyframes sdCardIn{
+  from{ opacity: 0; transform: translateY(14px) scale(.985); }
+  to{ opacity: 1; transform: none; }
+}
+@keyframes sdPop3d{
+  0%,100%{ transform: translateY(0) rotate(-2deg) scale(1); }
+  50%{ transform: translateY(-8px) rotate(3deg) scale(1.04); }
+}
+@keyframes sdBreathe{
+  0%,100%{ transform: scale(1); opacity: .7; }
+  50%{ transform: scale(1.08); opacity: .95; }
+}
+@keyframes sdShine{
+  0%{ transform: translateX(-140%) rotate(18deg); }
+  40%,100%{ transform: translateX(240%) rotate(18deg); }
+}
+@keyframes sdDrift{
+  0%,100%{ transform: translate3d(0,0,0) rotate(0); }
+  50%{ transform: translate3d(16px, -14px, 0) rotate(6deg); }
+}
+@keyframes sdPulseSoft{
+  0%,100%{ box-shadow: 0 0 0 0 rgba(16,185,129,.24); }
+  50%{ box-shadow: 0 0 0 8px rgba(16,185,129,0); }
+}
+@keyframes sdProgressSweep{
+  0%{ transform: translateX(-120%) skewX(-20deg); }
+  100%{ transform: translateX(220%) skewX(-20deg); }
+}
+@keyframes sdWiggle{
+  0%,100%{ transform: rotate(0) scale(1); }
+  30%{ transform: rotate(-4deg) scale(1.05); }
+  70%{ transform: rotate(4deg) scale(1.05); }
+}
 
-/* ── Tabs ── */
-.xcd-tabs{display:flex;gap:6px;margin:16px 28px 0;overflow-x:auto;padding-bottom:2px;}
-.xcd-tab{padding:9px 16px;border-radius:11px;border:1px solid var(--border);background:var(--bg-panel);color:var(--text-sub);font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:6px;transition:all .15s;}
-.xcd-tab.active{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border-color:transparent;box-shadow:0 4px 14px rgba(99,102,241,.3);}
-.xcd-tab:hover:not(.active){background:var(--bg-hover);}
-.xcd-tab-badge{background:rgba(0,0,0,.12);border-radius:20px;padding:1px 7px;font-size:10.5px;}
-.xcd-tab.active .xcd-tab-badge{background:rgba(255,255,255,.25);}
+.xcd-shell{
+  max-width: 1240px;
+  margin: 0 auto;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
 
-/* ── Body / panels ── */
-.xcd-body{padding:18px 28px 80px;display:flex;flex-direction:column;gap:18px;}
-.xcd-panel{background:var(--bg-panel);border-radius:20px;border:1px solid var(--border);box-shadow:var(--shadow);overflow:hidden;}
-.xcd-panel-head{padding:18px 22px 14px;border-bottom:1px solid var(--border2);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
-.xcd-panel-title{font-size:15px;font-weight:800;color:var(--text-main);}
-.xcd-panel-sub{font-size:12.5px;color:var(--text-sub);margin-top:3px;}
-.xcd-panel-body{padding:20px 22px;}
+/* ── Hero Banner (Sunny & Midnight teacher aesthetic) ── */
+.xcd-hero{
+  position: relative;
+  overflow: hidden;
+  border-radius: 22px;
+  padding: 22px 26px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  align-items: center;
+  gap: 20px;
+  background: linear-gradient(118deg, #dff5ff 0%, #eef2ff 48%, #fff1d6 100%);
+  border: 1px solid rgba(35, 137, 255, 0.22);
+  box-shadow: 0 16px 36px rgba(35, 44, 87, 0.10);
+  animation: sdCardIn .45s both;
+}
+.xcd-hero::before{
+  content: "";
+  position: absolute;
+  inset: -60px auto auto -60px;
+  width: 220px; height: 220px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.45);
+  animation: sdBreathe 5.5s ease-in-out infinite;
+  pointer-events: none;
+}
+.xcd-hero::after{
+  content: "";
+  position: absolute;
+  top: -50px; bottom: -50px;
+  width: 80px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.42), transparent);
+  animation: sdShine 7.5s ease-in-out infinite;
+  pointer-events: none;
+}
+[data-theme="dark"] .xcd-hero,
+.dark .xcd-hero{
+  background: linear-gradient(118deg, #0e1e38 0%, #17224d 50%, #2e2316 100%);
+  border-color: rgba(56, 189, 248, 0.28);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.55);
+}
+[data-theme="dark"] .xcd-hero::before,
+.dark .xcd-hero::before{
+  background: rgba(56, 189, 248, 0.08);
+}
 
-/* ── Stat cards ── */
-.xcd-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;}
-.xcd-stat{background:var(--bg-panel);border:1px solid var(--border);border-radius:16px;padding:16px 18px;box-shadow:var(--shadow);}
-.xcd-stat-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
-.xcd-stat-icon{width:36px;height:36px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:16px;}
-.xcd-stat-val{font-size:24px;font-weight:800;color:var(--text-main);line-height:1;}
-.xcd-stat-label{font-size:11.5px;color:var(--text-sub);margin-top:5px;font-weight:600;}
+.xcd-hero-content{
+  position: relative;
+  z-index: 2;
+  max-width: 660px;
+}
+.xcd-chip{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  font-weight: 800;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.14);
+  color: #10734c;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  backdrop-filter: blur(8px);
+}
+[data-theme="dark"] .xcd-chip,
+.dark .xcd-chip{
+  background: rgba(16, 185, 129, 0.22);
+  color: #6ee7b7;
+  border-color: rgba(110, 231, 183, 0.32);
+}
+.xcd-hero-title{
+  font-size: clamp(22px, 2.5vw, 29px);
+  line-height: 1.18;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  margin: 10px 0 8px;
+  color: var(--sd-ink);
+}
+.xcd-hero-sub{
+  font-size: 12.5px;
+  line-height: 1.5;
+  font-weight: 600;
+  color: var(--sd-muted);
+  max-width: 580px;
+}
+.xcd-hero-actions{
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
 
-/* ── Upload area ── */
-.xcd-upload-area{border:2px dashed var(--border2);border-radius:16px;padding:36px 20px;text-align:center;cursor:pointer;transition:all .2s;background:var(--bg-app);}
-.xcd-upload-area:hover{background:var(--bg-hover);border-color:#8b5cf6;}
-.xcd-upload-icon{font-size:36px;margin-bottom:10px;}
-.xcd-upload-text{font-size:14px;font-weight:700;color:var(--text-main);}
-.xcd-upload-subtext{font-size:12px;color:var(--text-sub);margin-top:4px;}
+/* ── Hero Buttons (NO purple AI gradients!) ── */
+.xcd-btn-emerald{
+  border: 0;
+  border-radius: 14px;
+  padding: 10px 18px;
+  min-height: 40px;
+  background: linear-gradient(135deg, #059669, #10b981);
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 8px 22px rgba(16, 185, 129, 0.32);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+.xcd-btn-emerald:hover{
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 12px 28px rgba(16, 185, 129, 0.44);
+}
+.xcd-btn-glass{
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 14px;
+  padding: 9px 16px;
+  min-height: 40px;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(10px);
+  color: var(--sd-ink);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 800;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  box-shadow: 0 4px 14px rgba(35, 44, 87, 0.06);
+  transition: transform .18s ease, background .18s ease, border-color .18s ease;
+}
+.xcd-btn-glass:hover{
+  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.98);
+  border-color: rgba(35, 137, 255, 0.35);
+}
+[data-theme="dark"] .xcd-btn-glass,
+.dark .xcd-btn-glass{
+  background: rgba(255, 255, 255, 0.10);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #f6f7ff;
+}
+[data-theme="dark"] .xcd-btn-glass:hover,
+.dark .xcd-btn-glass:hover{
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(56, 189, 248, 0.4);
+}
 
-/* ── Form ── */
-.xcd-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
-.xcd-field{display:flex;flex-direction:column;gap:5px;}
-.xcd-field label{font-size:11.5px;font-weight:700;color:var(--text-sub);}
-.xcd-field input,.xcd-field select,.xcd-field textarea{font-family:inherit;font-size:13px;padding:9px 11px;border-radius:10px;border:1px solid var(--border2);background:var(--bg-input);color:var(--text-main);outline:none;}
-.xcd-field input::placeholder,.xcd-field textarea::placeholder{color:var(--text-sub);opacity:.7;}
-.xcd-field input:focus,.xcd-field select:focus,.xcd-field textarea:focus{border-color:#8b5cf6;}
-.xcd-select-inline{padding:8px 10px;border-radius:10px;border:1px solid var(--border2);background:var(--bg-input);color:var(--text-main);font-size:12.5px;font-family:inherit;}
+.xcd-theme-btn{
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(10px);
+  color: var(--sd-ink);
+  font-size: 16px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 4px 12px rgba(35, 44, 87, 0.08);
+  transition: transform .18s ease, background .18s ease;
+}
+.xcd-theme-btn:hover{
+  transform: translateY(-2px) rotate(15deg);
+}
+[data-theme="dark"] .xcd-theme-btn,
+.dark .xcd-theme-btn{
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.20);
+  color: #f6f7ff;
+}
 
-/* ── Table ── */
-.xcd-table-wrap{overflow-x:auto;}
-.xcd-table{width:100%;border-collapse:collapse;font-size:13px;min-width:640px;}
-.xcd-table th{text-align:left;padding:10px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-sub);border-bottom:1px solid var(--border2);white-space:nowrap;background:var(--bg-panel);}
-.xcd-table td{padding:12px 14px;border-bottom:1px solid var(--border2);color:var(--text-main);vertical-align:middle;background:var(--bg-panel);}
-.xcd-table tr:last-child td{border-bottom:none;}
-.xcd-table tr:hover td{background:var(--bg-hover);}
-.xcd-avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0;}
-.xcd-name-cell{display:flex;align-items:center;gap:10px;}
-.xcd-sub{font-size:11px;color:var(--text-sub);}
+/* ── Hero Mascot Panel (Robot 3D Art & Live Status) ── */
+.xcd-hero-panel{
+  position: relative;
+  z-index: 2;
+  border-radius: 20px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.8), 0 18px 36px rgba(38,57,116,.14);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+}
+[data-theme="dark"] .xcd-hero-panel,
+.dark .xcd-hero-panel{
+  background: rgba(15, 23, 42, 0.42);
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 20px 40px rgba(0,0,0,.45);
+}
+.xcd-hero-panel::before{
+  content: "";
+  position: absolute;
+  right: -24px; top: -24px;
+  width: 110px; height: 110px;
+  border-radius: 50%;
+  background: rgba(35, 137, 255, 0.2);
+  animation: sdBreathe 4.8s ease-in-out infinite;
+}
+.xcd-hero-panel::after{
+  content: "";
+  position: absolute;
+  left: -28px; bottom: -32px;
+  width: 120px; height: 120px;
+  border-radius: 50%;
+  background: rgba(255, 178, 29, 0.22);
+  animation: sdDrift 7.5s ease-in-out infinite;
+}
+.xcd-robo-art-wrap{
+  position: relative;
+  z-index: 2;
+  width: 120px;
+  height: 120px;
+  display: grid;
+  place-items: center;
+}
+.xcd-robo-art{
+  width: 115px;
+  height: 115px;
+  object-fit: contain;
+  filter: drop-shadow(0 14px 18px rgba(38, 57, 116, 0.24));
+  animation: sdPop3d 4.2s ease-in-out infinite;
+}
+.xcd-hero-mini-status{
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  margin-top: 8px;
+}
+.xcd-mini-status-chip{
+  border-radius: 10px;
+  padding: 5px 9px;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  font-size: 10.5px;
+  font-weight: 800;
+  color: var(--sd-ink);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+[data-theme="dark"] .xcd-mini-status-chip,
+.dark .xcd-mini-status-chip{
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #f6f7ff;
+}
 
-.xcd-badge{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap;}
-.xcd-badge.pending{background:rgba(148,163,184,.16);color:#64748b;}
-.xcd-badge.evaluating{background:rgba(245,158,11,.16);color:#d99024;}
-.xcd-badge.corrected{background:rgba(99,102,241,.16);color:#818cf8;}
-.xcd-badge.finalized{background:rgba(16,185,129,.16);color:#34d399;}
-.xcd-root:not([data-theme="dark"]) .xcd-badge.evaluating{color:#b45309;}
-.xcd-root:not([data-theme="dark"]) .xcd-badge.corrected{color:#4f46e5;}
-.xcd-root:not([data-theme="dark"]) .xcd-badge.finalized{color:#059669;}
+/* ── Colorful Stat Cards (Teacher Dashboard Style) ── */
+.xcd-stats{
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+.xcd-stat-card{
+  border-radius: 18px;
+  padding: 16px 18px;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--stat-border, var(--sd-line));
+  background: var(--stat-bg, var(--sd-card));
+  box-shadow: var(--sd-shadow-soft);
+  animation: sdCardIn .45s both;
+  transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+  cursor: default;
+}
+.xcd-stat-card:hover{
+  transform: translateY(-4px) scale(1.015);
+  box-shadow: var(--sd-shadow);
+}
+.xcd-stat-card::after{
+  content: "";
+  position: absolute;
+  right: -24px; bottom: -28px;
+  width: 90px; height: 90px;
+  border-radius: 50%;
+  background: var(--stat-glow, rgba(35,137,255,.12));
+  pointer-events: none;
+}
+.xcd-stat-head{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  position: relative;
+  z-index: 1;
+}
+.xcd-stat-icon{
+  width: 40px; height: 40px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  background: var(--stat-ico-bg, rgba(255,255,255,.9));
+  box-shadow: 0 6px 14px rgba(35,44,87,.08);
+  animation: sdPop3d 4.4s ease-in-out infinite;
+  animation-delay: var(--delay, 0s);
+}
+.xcd-stat-card:hover .xcd-stat-icon{
+  animation: sdWiggle .65s ease both;
+}
+.xcd-stat-badge{
+  font-size: 10px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--stat-badge-bg, rgba(255,255,255,.8));
+  color: var(--stat-badge-color, var(--sd-ink));
+}
+.xcd-stat-val{
+  font-size: 28px;
+  font-weight: 900;
+  line-height: 1.1;
+  color: var(--sd-ink);
+  letter-spacing: -0.02em;
+  position: relative;
+  z-index: 1;
+}
+.xcd-stat-label{
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--sd-muted);
+  margin-top: 4px;
+  position: relative;
+  z-index: 1;
+}
 
-.xcd-icon-btn{width:30px;height:30px;border-radius:9px;border:1px solid var(--border2);background:var(--bg-input);color:var(--text-sub);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;transition:all .15s;}
-.xcd-icon-btn:hover{background:var(--bg-hover);color:var(--text-main);}
-.xcd-btn{padding:9px 16px;border-radius:11px;border:none;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:6px;}
-.xcd-btn.primary{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;box-shadow:0 4px 14px rgba(99,102,241,.28);}
-.xcd-btn.primary:hover{transform:translateY(-1px);}
-.xcd-btn.secondary{background:var(--bg-input);color:var(--text-main);border:1px solid var(--border2);}
-.xcd-btn.secondary:hover{background:var(--bg-hover);}
-.xcd-btn.success{background:linear-gradient(135deg,#10b981,#059669);color:#fff;}
-.xcd-btn:disabled{opacity:.5;cursor:not-allowed;transform:none !important;}
+/* ── Specific card themes ── */
+.stat-azure{
+  --stat-bg: linear-gradient(145deg, #f0f9ff, #e0f2fe);
+  --stat-border: rgba(2, 132, 199, 0.22);
+  --stat-glow: rgba(2, 132, 199, 0.16);
+  --stat-ico-bg: #bae6fd;
+  --stat-badge-bg: rgba(2, 132, 199, 0.14);
+  --stat-badge-color: #0284c7;
+}
+[data-theme="dark"] .stat-azure,
+.dark .stat-azure{
+  --stat-bg: linear-gradient(145deg, rgba(14, 46, 80, 0.72), rgba(12, 30, 55, 0.9));
+  --stat-border: rgba(56, 189, 248, 0.28);
+  --stat-glow: rgba(56, 189, 248, 0.22);
+  --stat-ico-bg: rgba(56, 189, 248, 0.22);
+  --stat-badge-bg: rgba(56, 189, 248, 0.2);
+  --stat-badge-color: #7dd3fc;
+}
 
-/* ── Empty state ── */
-.xcd-empty{text-align:center;padding:50px 20px;color:var(--text-sub);}
-.xcd-empty-icon{font-size:38px;margin-bottom:10px;}
+.stat-amber{
+  --stat-bg: linear-gradient(145deg, #fffbeb, #fef3c7);
+  --stat-border: rgba(245, 158, 11, 0.22);
+  --stat-glow: rgba(245, 158, 11, 0.18);
+  --stat-ico-bg: #fde68a;
+  --stat-badge-bg: rgba(245, 158, 11, 0.16);
+  --stat-badge-color: #b45309;
+}
+[data-theme="dark"] .stat-amber,
+.dark .stat-amber{
+  --stat-bg: linear-gradient(145deg, rgba(80, 50, 15, 0.72), rgba(50, 30, 10, 0.9));
+  --stat-border: rgba(251, 191, 36, 0.28);
+  --stat-glow: rgba(251, 191, 36, 0.22);
+  --stat-ico-bg: rgba(251, 191, 36, 0.22);
+  --stat-badge-bg: rgba(251, 191, 36, 0.2);
+  --stat-badge-color: #fde68a;
+}
 
-/* ── Workspace ── */
-.xcd-workspace{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:16px;align-items:start;}
-.xcd-viewer{background:var(--bg-app);border:1px solid var(--border2);border-radius:14px;min-height:420px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;position:sticky;top:16px;}
-.xcd-viewer img{max-width:100%;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);}
-.xcd-viewer-icon{font-size:44px;margin-bottom:12px;}
-.xcd-score-strip{display:flex;align-items:center;justify-content:space-between;background:var(--bg-panel);border:1px solid var(--border2);border-radius:14px;padding:14px 18px;margin-bottom:14px;flex-wrap:wrap;gap:10px;}
-.xcd-score-big{font-size:26px;font-weight:800;background:linear-gradient(135deg,#6366f1,#ec4899);-webkit-background-clip:text;background-clip:text;color:transparent;}
-.xcd-qcard{border:1px solid var(--border2);border-radius:14px;padding:14px 16px;margin-bottom:12px;background:var(--bg-app);}
-.xcd-qcard.correct{border-left:4px solid #10b981;}
-.xcd-qcard.partial{border-left:4px solid #f59e0b;}
-.xcd-qcard.incorrect{border-left:4px solid #ef4444;}
-.xcd-qcard-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px;}
-.xcd-qtitle{font-size:13px;font-weight:700;color:var(--text-main);}
-.xcd-qtopic{font-size:10.5px;color:var(--text-sub);font-weight:600;margin-top:2px;}
-.xcd-status-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;font-size:10.5px;font-weight:700;white-space:nowrap;}
-.xcd-status-chip.correct{background:rgba(16,185,129,.16);color:#34d399;}
-.xcd-status-chip.partial{background:rgba(245,158,11,.16);color:#d99024;}
-.xcd-status-chip.incorrect{background:rgba(239,68,68,.16);color:#f87171;}
-.xcd-root:not([data-theme="dark"]) .xcd-status-chip.correct{color:#059669;}
-.xcd-root:not([data-theme="dark"]) .xcd-status-chip.partial{color:#b45309;}
-.xcd-root:not([data-theme="dark"]) .xcd-status-chip.incorrect{color:#dc2626;}
-.xcd-qfeedback{font-size:12px;color:var(--text-sub);line-height:1.5;margin:6px 0 10px;}
-.xcd-qcontrols{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
-.xcd-marks-input{width:70px;padding:7px 9px;border-radius:9px;border:1px solid var(--border2);background:var(--bg-input);color:var(--text-main);font-family:inherit;font-size:13px;font-weight:700;text-align:center;}
-.xcd-confidence{font-size:10.5px;color:var(--text-sub);}
-.xcd-teacher-note{width:100%;margin-top:8px;padding:8px 10px;border-radius:9px;border:1px solid var(--border2);background:var(--bg-input);color:var(--text-main);font-family:inherit;font-size:12px;resize:vertical;min-height:34px;}
-.xcd-adjusted-tag{font-size:10px;font-weight:700;color:#a78bfa;background:rgba(139,92,246,.16);padding:2px 8px;border-radius:20px;}
-.xcd-root:not([data-theme="dark"]) .xcd-adjusted-tag{color:#8b5cf6;}
+.stat-emerald{
+  --stat-bg: linear-gradient(145deg, #f0fdf4, #dcfce7);
+  --stat-border: rgba(34, 197, 94, 0.22);
+  --stat-glow: rgba(34, 197, 94, 0.18);
+  --stat-ico-bg: #bbf7d0;
+  --stat-badge-bg: rgba(34, 197, 94, 0.16);
+  --stat-badge-color: #15803d;
+}
+[data-theme="dark"] .stat-emerald,
+.dark .stat-emerald{
+  --stat-bg: linear-gradient(145deg, rgba(15, 65, 35, 0.72), rgba(10, 45, 25, 0.9));
+  --stat-border: rgba(74, 222, 128, 0.28);
+  --stat-glow: rgba(74, 222, 128, 0.22);
+  --stat-ico-bg: rgba(74, 222, 128, 0.22);
+  --stat-badge-bg: rgba(74, 222, 128, 0.2);
+  --stat-badge-color: #86efac;
+}
 
-/* ── Analytics ── */
-.xcd-analytics-grid{display:grid;grid-template-columns:1.1fr 0.9fr;gap:16px;}
-.xcd-chart-box{background:var(--bg-app);border:1px solid var(--border2);border-radius:14px;padding:16px;}
-.xcd-list{list-style:none;display:flex;flex-direction:column;gap:8px;}
-.xcd-list li{font-size:12.5px;color:var(--text-main);padding:9px 12px;border-radius:10px;background:var(--bg-app);border:1px solid var(--border2);display:flex;align-items:flex-start;gap:8px;line-height:1.4;}
+.stat-rose{
+  --stat-bg: linear-gradient(145deg, #fff1f2, #ffe4e6);
+  --stat-border: rgba(244, 63, 94, 0.22);
+  --stat-glow: rgba(244, 63, 94, 0.18);
+  --stat-ico-bg: #fecdd3;
+  --stat-badge-bg: rgba(244, 63, 94, 0.16);
+  --stat-badge-color: #be123c;
+}
+[data-theme="dark"] .stat-rose,
+.dark .stat-rose{
+  --stat-bg: linear-gradient(145deg, rgba(75, 20, 35, 0.72), rgba(50, 12, 25, 0.9));
+  --stat-border: rgba(251, 113, 133, 0.28);
+  --stat-glow: rgba(251, 113, 133, 0.22);
+  --stat-ico-bg: rgba(251, 113, 133, 0.22);
+  --stat-badge-bg: rgba(251, 113, 133, 0.2);
+  --stat-badge-color: #fda4af;
+}
 
-/* ── Modal ── */
-.xcd-modal-backdrop{position:fixed;inset:0;background:var(--overlay);backdrop-filter:blur(3px);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;}
-.xcd-modal{background:var(--bg-panel);border-radius:20px;border:1px solid var(--border);width:100%;max-width:560px;max-height:88vh;overflow-y:auto;box-shadow:0 24px 60px rgba(0,0,0,.35);}
-.xcd-modal-head{padding:18px 22px;border-bottom:1px solid var(--border2);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--bg-panel);z-index:1;}
-.xcd-modal-title{font-size:15px;font-weight:800;color:var(--text-main);}
-.xcd-modal-body{padding:20px 22px;display:flex;flex-direction:column;gap:14px;background:var(--bg-panel);}
-.xcd-modal-foot{padding:16px 22px;border-top:1px solid var(--border2);display:flex;justify-content:flex-end;gap:10px;background:var(--bg-panel);position:sticky;bottom:0;}
+/* ── Tabs (Teacher Style Pills) ── */
+.xcd-tabs{
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 2px;
+  scrollbar-width: none;
+}
+.xcd-tabs::-webkit-scrollbar{ display: none; }
+.xcd-tab{
+  padding: 10px 18px;
+  border-radius: 14px;
+  border: 1px solid var(--sd-line);
+  background: var(--sd-card);
+  backdrop-filter: blur(12px);
+  color: var(--sd-muted);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: var(--sd-shadow-soft);
+  transition: all .18s ease;
+}
+.xcd-tab:hover:not(.active){
+  transform: translateY(-2px);
+  color: var(--sd-ink);
+  background: var(--sd-card-soft);
+  border-color: rgba(35, 137, 255, 0.25);
+}
+.xcd-tab.active{
+  background: linear-gradient(135deg, #0284c7, #0ea5e9);
+  color: #ffffff;
+  border-color: transparent;
+  box-shadow: 0 8px 22px rgba(14, 165, 233, 0.35);
+  transform: translateY(-2px);
+}
+.xcd-tab-badge{
+  background: rgba(15, 23, 42, 0.08);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 800;
+}
+.xcd-tab.active .xcd-tab-badge{
+  background: rgba(255, 255, 255, 0.24);
+  color: #fff;
+}
 
-/* ── Answer key list ── */
-.xcd-ak-card{border:1px solid var(--border2);border-radius:14px;padding:16px 18px;background:var(--bg-app);}
-.xcd-ak-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
-.xcd-ak-title{font-size:13.5px;font-weight:800;color:var(--text-main);}
-.xcd-ak-meta{font-size:11.5px;color:var(--text-sub);}
-.xcd-ak-qrow{display:flex;justify-content:space-between;font-size:12px;color:var(--text-main);padding:6px 0;border-top:1px dashed var(--border2);}
+/* ── Main Panel Shell ── */
+.xcd-panel{
+  background: var(--sd-card);
+  backdrop-filter: blur(16px);
+  border-radius: 20px;
+  border: 1px solid var(--sd-line);
+  box-shadow: var(--sd-shadow-soft);
+  overflow: hidden;
+  animation: sdCardIn .45s both;
+  transition: box-shadow .2s ease, border-color .2s ease;
+}
+.xcd-panel:hover{
+  box-shadow: var(--sd-shadow);
+}
+.xcd-panel-head{
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--sd-line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  background: var(--sd-card-soft);
+}
+.xcd-panel-title{
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--sd-ink);
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.xcd-panel-sub{
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sd-muted);
+  margin-top: 3px;
+}
+.xcd-panel-body{
+  padding: 20px 22px;
+}
 
-/* ── Progress overlay ── */
-.xcd-progress-wrap{display:flex;flex-direction:column;align-items:center;gap:12px;padding:40px 20px;color:var(--text-main);}
-.xcd-spinner{width:38px;height:38px;border-radius:50%;border:3px solid var(--border2);border-top-color:#8b5cf6;animation:xcd-spin 0.8s linear infinite;}
-@keyframes xcd-spin{to{transform:rotate(360deg);}}
+/* ── Search & Filter Controls ── */
+.xcd-select-inline, .xcd-search-input{
+  padding: 9px 13px;
+  border-radius: 12px;
+  border: 1px solid var(--sd-line);
+  background: var(--sd-input-bg);
+  color: var(--sd-ink);
+  font-size: 12.5px;
+  font-weight: 700;
+  font-family: inherit;
+  outline: none;
+  box-shadow: 0 2px 8px rgba(35,44,87,.04);
+  transition: border-color .18s, box-shadow .18s;
+}
+.xcd-select-inline:focus, .xcd-search-input:focus{
+  border-color: #0284c7;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
+}
 
-/* ── Responsive ── */
+/* ── Table & List Views ── */
+.xcd-table-wrap{
+  overflow-x: auto;
+  border-radius: 14px;
+  border: 1px solid var(--sd-line);
+}
+.xcd-table{
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 680px;
+}
+.xcd-table th{
+  text-align: left;
+  padding: 12px 14px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--sd-muted);
+  border-bottom: 1px solid var(--sd-line);
+  background: var(--sd-card-soft);
+  white-space: nowrap;
+}
+.xcd-table td{
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--sd-line);
+  color: var(--sd-ink);
+  vertical-align: middle;
+  background: var(--sd-card);
+  transition: background .15s ease;
+}
+.xcd-table tr:last-child td{ border-bottom: none; }
+.xcd-table tr:hover td{
+  background: var(--sd-card-soft);
+}
+
+.xcd-avatar{
+  width: 36px; height: 36px;
+  border-radius: 12px;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 900;
+  flex-shrink: 0;
+  box-shadow: 0 4px 10px rgba(35, 44, 87, 0.15);
+}
+.xcd-name-cell{
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.xcd-sub{
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sd-muted);
+  margin-top: 1px;
+}
+
+/* ── Badges ── */
+.xcd-badge{
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.xcd-badge.pending{
+  background: rgba(245, 158, 11, 0.14);
+  color: #b45309;
+  border: 1px solid rgba(245, 158, 11, 0.28);
+}
+.xcd-badge.evaluating{
+  background: rgba(14, 165, 233, 0.15);
+  color: #0284c7;
+  border: 1px solid rgba(14, 165, 233, 0.3);
+  animation: sdPulseSoft 2s infinite;
+}
+.xcd-badge.corrected{
+  background: rgba(99, 102, 241, 0.15);
+  color: #4f46e5;
+  border: 1px solid rgba(99, 102, 241, 0.28);
+}
+.xcd-badge.finalized{
+  background: rgba(16, 185, 129, 0.15);
+  color: #059669;
+  border: 1px solid rgba(16, 185, 129, 0.28);
+}
+[data-theme="dark"] .xcd-badge.pending,
+.dark .xcd-badge.pending{
+  background: rgba(245, 158, 11, 0.22);
+  color: #fde68a;
+  border-color: rgba(251, 191, 36, 0.32);
+}
+[data-theme="dark"] .xcd-badge.evaluating,
+.dark .xcd-badge.evaluating{
+  background: rgba(14, 165, 233, 0.24);
+  color: #7dd3fc;
+  border-color: rgba(56, 189, 248, 0.35);
+}
+[data-theme="dark"] .xcd-badge.corrected,
+.dark .xcd-badge.corrected{
+  background: rgba(99, 102, 241, 0.22);
+  color: #a5b4fc;
+  border-color: rgba(129, 140, 248, 0.32);
+}
+[data-theme="dark"] .xcd-badge.finalized,
+.dark .xcd-badge.finalized{
+  background: rgba(16, 185, 129, 0.22);
+  color: #86efac;
+  border-color: rgba(74, 222, 128, 0.32);
+}
+
+/* ── Action Buttons ── */
+.xcd-icon-btn{
+  width: 34px; height: 34px;
+  border-radius: 10px;
+  border: 1px solid var(--sd-line);
+  background: var(--sd-card);
+  color: var(--sd-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 14px;
+  box-shadow: 0 2px 6px rgba(35,44,87,.04);
+  transition: transform .15s ease, background .15s ease, color .15s ease, border-color .15s ease;
+}
+.xcd-icon-btn:hover{
+  transform: translateY(-2px);
+  background: var(--sd-card-soft);
+  color: var(--sd-ink);
+  border-color: rgba(35, 137, 255, 0.3);
+}
+.xcd-icon-btn.ai-btn{
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #ffffff;
+  border: 0;
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.32);
+}
+.xcd-icon-btn.ai-btn:hover{
+  box-shadow: 0 8px 20px rgba(245, 158, 11, 0.45);
+}
+
+.xcd-btn{
+  padding: 9px 16px;
+  border-radius: 12px;
+  border: 0;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 800;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+.xcd-btn.primary{
+  background: linear-gradient(135deg, #0284c7, #0ea5e9);
+  color: #ffffff;
+  box-shadow: 0 6px 18px rgba(14, 165, 233, 0.3);
+}
+.xcd-btn.primary:hover{
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(14, 165, 233, 0.42);
+}
+.xcd-btn.emerald{
+  background: linear-gradient(135deg, #059669, #10b981);
+  color: #ffffff;
+  box-shadow: 0 6px 18px rgba(16, 185, 129, 0.3);
+}
+.xcd-btn.emerald:hover{
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(16, 185, 129, 0.42);
+}
+.xcd-btn.secondary{
+  background: var(--sd-card-soft);
+  color: var(--sd-ink);
+  border: 1px solid var(--sd-line);
+}
+.xcd-btn.secondary:hover{
+  transform: translateY(-2px);
+  border-color: rgba(35, 137, 255, 0.35);
+}
+.xcd-btn:disabled{
+  opacity: .55;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+/* ── Workspace & Paper Preview ── */
+.xcd-workspace{
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: 18px;
+  align-items: start;
+}
+.xcd-score-strip{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: 18px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+  gap: 14px;
+  flex-wrap: wrap;
+  background: linear-gradient(118deg, #ecfdf5 0%, #eff6ff 48%, #fffbeb 100%);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  box-shadow: var(--sd-shadow-soft);
+}
+[data-theme="dark"] .xcd-score-strip,
+.dark .xcd-score-strip{
+  background: linear-gradient(118deg, rgba(16, 185, 129, 0.12) 0%, rgba(14, 165, 233, 0.12) 48%, rgba(245, 158, 11, 0.12) 100%);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+.xcd-score-big{
+  font-size: 28px;
+  font-weight: 900;
+  color: var(--sd-ink);
+  line-height: 1;
+}
+.xcd-grade-pill{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px; height: 44px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #ffb21d, #ff791f);
+  color: #fff;
+  font-size: 19px;
+  font-weight: 900;
+  box-shadow: 0 8px 18px rgba(255, 121, 31, 0.32);
+  animation: sdPop3d 4s ease-in-out infinite;
+}
+
+.xcd-viewer{
+  background: var(--sd-card-soft);
+  border: 1px solid var(--sd-line);
+  border-radius: 16px;
+  min-height: 440px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 26px;
+  text-align: center;
+  position: sticky;
+  top: 18px;
+}
+.xcd-viewer img{
+  max-width: 100%;
+  max-height: 520px;
+  object-fit: contain;
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(35, 44, 87, 0.14);
+}
+
+/* ── Question Card (Rich Colorful Accents) ── */
+.xcd-qcard{
+  border: 1px solid var(--sd-line);
+  border-radius: 16px;
+  padding: 16px 18px;
+  margin-bottom: 14px;
+  background: var(--sd-card);
+  box-shadow: 0 4px 14px rgba(35, 44, 87, 0.04);
+  transition: transform .18s, box-shadow .18s, border-color .18s;
+  position: relative;
+}
+.xcd-qcard:hover{
+  transform: translateY(-2px);
+  box-shadow: var(--sd-shadow-soft);
+}
+.xcd-qcard.correct{
+  border-left: 5px solid #10b981;
+  background: linear-gradient(90deg, rgba(16, 185, 129, 0.04) 0%, var(--sd-card) 20%);
+}
+.xcd-qcard.partial{
+  border-left: 5px solid #f59e0b;
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.04) 0%, var(--sd-card) 20%);
+}
+.xcd-qcard.incorrect{
+  border-left: 5px solid #ef4444;
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.04) 0%, var(--sd-card) 20%);
+}
+.xcd-qcard-head{
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.xcd-qtitle{
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--sd-ink);
+  line-height: 1.35;
+}
+.xcd-qtopic{
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--sd-muted);
+  background: var(--sd-card-soft);
+  padding: 2px 8px;
+  border-radius: 6px;
+  margin-top: 4px;
+}
+.xcd-status-chip{
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.xcd-status-chip.correct{
+  background: rgba(16, 185, 129, 0.16);
+  color: #059669;
+}
+.xcd-status-chip.partial{
+  background: rgba(245, 158, 11, 0.16);
+  color: #b45309;
+}
+.xcd-status-chip.incorrect{
+  background: rgba(239, 68, 68, 0.16);
+  color: #dc2626;
+}
+[data-theme="dark"] .xcd-status-chip.correct,
+.dark .xcd-status-chip.correct{
+  background: rgba(16, 185, 129, 0.24);
+  color: #86efac;
+}
+[data-theme="dark"] .xcd-status-chip.partial,
+.dark .xcd-status-chip.partial{
+  background: rgba(245, 158, 11, 0.24);
+  color: #fde68a;
+}
+[data-theme="dark"] .xcd-status-chip.incorrect,
+.dark .xcd-status-chip.incorrect{
+  background: rgba(239, 68, 68, 0.24);
+  color: #fca5a5;
+}
+
+.xcd-qfeedback{
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--sd-ink);
+  background: var(--sd-card-soft);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin: 10px 0 12px;
+  border: 1px dashed var(--sd-line);
+}
+.xcd-qcontrols{
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.xcd-marks-input{
+  width: 68px;
+  padding: 7px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--sd-line);
+  background: var(--sd-input-bg);
+  color: var(--sd-ink);
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 800;
+  text-align: center;
+  outline: none;
+}
+.xcd-marks-input:focus{
+  border-color: #0284c7;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
+}
+.xcd-teacher-note{
+  width: 100%;
+  margin-top: 10px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--sd-line);
+  background: var(--sd-input-bg);
+  color: var(--sd-ink);
+  font-family: inherit;
+  font-size: 12.5px;
+  resize: vertical;
+  min-height: 40px;
+  outline: none;
+}
+.xcd-teacher-note:focus{
+  border-color: #059669;
+  box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.14);
+}
+
+/* ── Analytics Grid ── */
+.xcd-analytics-grid{
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 18px;
+}
+.xcd-chart-box{
+  background: var(--sd-card-soft);
+  border: 1px solid var(--sd-line);
+  border-radius: 16px;
+  padding: 18px;
+}
+.xcd-list{
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.xcd-list li{
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--sd-ink);
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--sd-card-soft);
+  border: 1px solid var(--sd-line);
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  line-height: 1.45;
+}
+
+/* ── Tip Card with Robo (from Teacher Dashboard) ── */
+.xcd-tip-card{
+  background: linear-gradient(135deg, #fff7df, #e8f5ff);
+  border: 1px solid rgba(255, 178, 29, 0.25);
+  border-radius: 18px;
+  position: relative;
+  overflow: hidden;
+  min-height: 140px;
+  padding: 18px 120px 18px 20px;
+  box-shadow: var(--sd-shadow-soft);
+}
+[data-theme="dark"] .xcd-tip-card,
+.dark .xcd-tip-card{
+  background: linear-gradient(135deg, rgba(58, 45, 22, 0.82), rgba(22, 35, 63, 0.92));
+  border-color: rgba(251, 191, 36, 0.3);
+}
+.xcd-tip-card h4{
+  font-size: 14px;
+  font-weight: 900;
+  color: var(--sd-ink);
+  margin: 0 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.xcd-tip-card p{
+  font-size: 12px;
+  line-height: 1.55;
+  font-weight: 600;
+  color: var(--sd-ink);
+  margin: 0;
+}
+.xcd-tip-art{
+  position: absolute;
+  right: 14px;
+  bottom: 8px;
+  width: 95px;
+  height: 95px;
+  display: grid;
+  place-items: center;
+}
+.xcd-tip-art img{
+  width: 90px;
+  height: 90px;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 14px rgba(35, 44, 87, 0.2));
+  animation: sdPop3d 4.4s ease-in-out infinite;
+}
+
+/* ── Modals ── */
+.xcd-modal-backdrop{
+  position: fixed;
+  inset: 0;
+  background: rgba(7, 18, 53, 0.65);
+  backdrop-filter: blur(6px);
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.xcd-modal{
+  background: var(--sd-card);
+  border-radius: 22px;
+  border: 1px solid var(--sd-line);
+  width: 100%;
+  max-width: 580px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.38);
+}
+.xcd-modal-head{
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--sd-line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--sd-card-soft);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.xcd-modal-title{
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--sd-ink);
+}
+.xcd-modal-body{
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+.xcd-modal-foot{
+  padding: 16px 22px;
+  border-top: 1px solid var(--sd-line);
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  background: var(--sd-card-soft);
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+}
+.xcd-form-grid{
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.xcd-field{
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.xcd-field label{
+  font-size: 11.5px;
+  font-weight: 800;
+  color: var(--sd-muted);
+}
+.xcd-field input, .xcd-field select, .xcd-field textarea{
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--sd-line);
+  background: var(--sd-input-bg);
+  color: var(--sd-ink);
+  outline: none;
+}
+.xcd-field input:focus, .xcd-field select:focus, .xcd-field textarea:focus{
+  border-color: #0284c7;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
+}
+
+.xcd-upload-area{
+  border: 2px dashed rgba(35, 137, 255, 0.35);
+  border-radius: 16px;
+  padding: 32px 18px;
+  text-align: center;
+  cursor: pointer;
+  background: var(--sd-card-soft);
+  transition: all .2s ease;
+}
+.xcd-upload-area:hover{
+  border-color: #059669;
+  background: rgba(16, 185, 129, 0.06);
+}
+
+/* ── Progress & Empty States ── */
+.xcd-progress-wrap{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 44px 20px;
+  color: var(--sd-ink);
+  text-align: center;
+}
+.xcd-spinner{
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  border: 3px solid var(--sd-line);
+  border-top-color: #059669;
+  animation: xcd-spin 0.8s linear infinite;
+}
+@keyframes xcd-spin{ to{ transform: rotate(360deg); } }
+
+.xcd-empty{
+  text-align: center;
+  padding: 48px 20px;
+  color: var(--sd-muted);
+}
+.xcd-empty-icon{
+  font-size: 44px;
+  margin-bottom: 12px;
+  animation: sdPop3d 4.4s ease-in-out infinite;
+}
+
+/* ── Responsive Queries ── */
 @media (max-width: 1180px){
-  .xcd-stats{grid-template-columns:repeat(2,1fr);}
+  .xcd-stats{ grid-template-columns: repeat(2, 1fr); }
+  .xcd-hero{ grid-template-columns: 1fr; }
+  .xcd-hero-panel{ display: none; }
 }
 @media (max-width: 1024px){
-  .xcd-workspace{grid-template-columns:1fr;}
-  .xcd-viewer{position:static;min-height:260px;}
-  .xcd-analytics-grid{grid-template-columns:1fr;}
+  .xcd-workspace{ grid-template-columns: 1fr; }
+  .xcd-viewer{ position: static; min-height: 280px; }
+  .xcd-analytics-grid{ grid-template-columns: 1fr; }
 }
-@media (max-width: 860px){
-  .xcd-hero{margin:16px 18px 0;padding:16px 20px;}
-  .xcd-tabs{margin:14px 18px 0;}
-  .xcd-body{padding:16px 18px 74px;}
+@media (max-width: 768px){
+  .xcd-root{ padding: 14px 12px 76px; }
+  .xcd-hero{ padding: 18px 20px; }
+  .xcd-hero-title{ font-size: 21px; }
+  .xcd-hero-actions{ width: 100%; }
+  .xcd-btn-emerald, .xcd-btn-glass{ flex: 1; justify-content: center; }
+  .xcd-stats{ grid-template-columns: 1fr 1fr; gap: 10px; }
+  .xcd-stat-card{ padding: 13px 14px; }
+  .xcd-stat-val{ font-size: 24px; }
+  .xcd-form-grid{ grid-template-columns: 1fr; }
+  .xcd-panel-head{ flex-direction: column; align-items: flex-start; }
+  .xcd-qcontrols{ flex-direction: column; align-items: flex-start; }
+  .xcd-tip-card{ padding-right: 20px; }
+  .xcd-tip-art{ display: none; }
 }
-@media (max-width: 640px){
-  .xcd-hero{margin:12px 14px 0;padding:16px 18px;flex-direction:column;align-items:flex-start;}
-  .xcd-hero-inner{flex-direction:column;align-items:flex-start;}
-  .xcd-tabs{margin:14px 14px 0;}
-  .xcd-body{padding:14px 14px 70px;}
-  .xcd-stats{grid-template-columns:1fr 1fr;gap:10px;}
-  .xcd-form-grid{grid-template-columns:1fr;}
-  .xcd-hero-actions{width:100%;}
-  .xcd-hero-btn{flex:1;justify-content:center;}
-  .xcd-qcontrols{flex-direction:column;align-items:flex-start;}
-  .xcd-panel-head{flex-direction:column;align-items:flex-start;}
-}
-@media (max-width: 420px){
-  .xcd-stats{grid-template-columns:1fr;}
+@media (max-width: 480px){
+  .xcd-stats{ grid-template-columns: 1fr; }
 }
 `;
 
 // ══════════════════════════════════════════════════════════════════════════
-// SMALL SUBCOMPONENTS
+// STATUS BADGES & HELPERS
 // ══════════════════════════════════════════════════════════════════════════
 const STATUS_LABEL: Record<PaperStatus, string> = {
-  pending: "Pending", evaluating: "Evaluating", corrected: "Corrected", finalized: "Finalized",
+  pending: "Pending Review",
+  evaluating: "AI Evaluating…",
+  corrected: "Graded & Reviewed",
+  finalized: "Marks Finalized",
 };
+
 const STATUS_ICON: Record<PaperStatus, string> = {
-  pending: "⏳", evaluating: "🤖", corrected: "✏️", finalized: "✅",
+  pending: "⏳",
+  evaluating: "🤖",
+  corrected: "✏️",
+  finalized: "✅",
 };
 
 function StatusBadge({ status }: { status: PaperStatus }) {
@@ -742,31 +1865,11 @@ function initials(name: string) {
 
 const PIE_COLORS = ["#10b981", "#f59e0b", "#ef4444"];
 
-function useTheme(): [ThemeMode, () => void] {
-  const [theme, setTheme] = useState<ThemeMode>(() => {
-    try {
-      const saved = localStorage.getItem(THEME_KEY) as ThemeMode | null;
-      if (saved === "light" || saved === "dark") return saved;
-      if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) return "dark";
-    } catch {
-      /* ignore */
-    }
-    return "light";
-  });
-
-  useEffect(() => {
-    try { localStorage.setItem(THEME_KEY, theme); } catch { /* ignore */ }
-  }, [theme]);
-
-  const toggle = useCallback(() => setTheme((t) => (t === "light" ? "dark" : "light")), []);
-  return [theme, toggle];
-}
-
 // ══════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ══════════════════════════════════════════════════════════════════════════
 export default function ExamCorrectionDashboard() {
-  const [theme, toggleTheme] = useTheme();
+  const { theme, toggleTheme } = useAppTheme();
   const [papers, setPapers] = useState<ExamPaper[]>([]);
   const [answerKeys, setAnswerKeys] = useState<AnswerKey[]>([]);
   const [loading, setLoading] = useState(true);
@@ -777,9 +1880,17 @@ export default function ExamCorrectionDashboard() {
   const [showAKModal, setShowAKModal] = useState(false);
   const [classFilter, setClassFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
   const [toast, setToast] = useState<string | null>(null);
 
-  // ── Initial load ──
+  // Sync theme with document element
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    document.documentElement.classList.remove("light", "dark");
+    document.documentElement.classList.add(theme);
+  }, [theme]);
+
+  // Initial load
   useEffect(() => {
     (async () => {
       const [p, k] = await Promise.all([examCorrectionAPI.getPapers(), examCorrectionAPI.getAnswerKeys()]);
@@ -791,7 +1902,7 @@ export default function ExamCorrectionDashboard() {
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
-    setTimeout(() => setToast(null), 2600);
+    setTimeout(() => setToast(null), 2800);
   }, []);
 
   const selectedPaper = useMemo(
@@ -805,9 +1916,17 @@ export default function ExamCorrectionDashboard() {
     return papers.filter((p) => {
       if (classFilter !== "all" && p.class !== classFilter) return false;
       if (statusFilter !== "all" && p.status !== statusFilter) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchName = p.studentName.toLowerCase().includes(q);
+        const matchRoll = p.rollNumber.toLowerCase().includes(q);
+        const matchExam = p.examName.toLowerCase().includes(q);
+        const matchSubject = p.subject.toLowerCase().includes(q);
+        if (!matchName && !matchRoll && !matchExam && !matchSubject) return false;
+      }
       return true;
     });
-  }, [papers, classFilter, statusFilter]);
+  }, [papers, classFilter, statusFilter, searchQuery]);
 
   const stats = useMemo(() => {
     const total = papers.length;
@@ -830,7 +1949,7 @@ export default function ExamCorrectionDashboard() {
     setShowUploadModal(false);
     setSelectedPaperId(paper.id);
     setActiveTab("workspace");
-    showToast("Paper uploaded successfully");
+    showToast("Exam paper uploaded successfully");
   };
 
   const handleRunAI = async (paperId: string) => {
@@ -839,7 +1958,7 @@ export default function ExamCorrectionDashboard() {
     try {
       const updated = await examCorrectionAPI.runAIEvaluation(paperId);
       setPapers((prev) => prev.map((p) => (p.id === paperId ? updated : p)));
-      showToast("AI correction complete");
+      showToast("✨ AI evaluation completed successfully");
     } catch (e) {
       showToast(e instanceof Error ? e.message : "AI evaluation failed");
       setPapers((prev) => prev.map((p) => (p.id === paperId ? { ...p, status: "pending" } : p)));
@@ -856,124 +1975,208 @@ export default function ExamCorrectionDashboard() {
   const handleFinalize = async (paperId: string) => {
     const updated = await examCorrectionAPI.finalizePaper(paperId);
     setPapers((prev) => prev.map((p) => (p.id === paperId ? updated : p)));
-    showToast("Result finalized and marks locked");
+    showToast("✅ Marks locked and result finalized!");
   };
 
   const handleDelete = async (paperId: string) => {
     await examCorrectionAPI.deletePaper(paperId);
     setPapers((prev) => prev.filter((p) => p.id !== paperId));
     if (selectedPaperId === paperId) setSelectedPaperId(null);
-    showToast("Paper removed");
+    showToast("Paper removed from dashboard");
   };
 
   const handleCreateAnswerKey = async (key: AnswerKey) => {
     await examCorrectionAPI.createAnswerKey(key);
     setAnswerKeys((prev) => [...prev, key]);
     setShowAKModal(false);
-    showToast("Answer key saved");
+    showToast("Marking scheme / answer key saved");
   };
 
   const handleExport = (paper: ExamPaper) => {
     downloadTextFile(`${paper.studentName.replace(/\s+/g, "_")}_${paper.examName.replace(/\s+/g, "_")}_report.txt`, buildReportText(paper));
-    showToast("Report downloaded");
+    showToast("📄 Evaluation report downloaded");
   };
 
   return (
     <>
       <style>{CSS}</style>
       <div className="xcd-root" data-theme={theme}>
-        {/* ── Hero ── */}
-        <div className="xcd-hero">
-          <div className="xcd-hero-glow" />
-          <div className="xcd-hero-inner">
-            <div className="xcd-hero-left">
-              <div className="xcd-hero-icon">📝</div>
-              <div>
-                <div className="xcd-hero-title">AI Exam Correction</div>
-                <div className="xcd-hero-sub">Upload, auto-evaluate, and finalize student exam papers with AI-assisted grading.</div>
+        <div className="xcd-shell">
+
+          {/* ── Sunny / Midnight Teacher Hero Banner with Robo ── */}
+          <div className="xcd-hero">
+            <div className="xcd-hero-content">
+              <span className="xcd-chip">
+                <span>✨</span> Teacher Grading &amp; Assessment Hub
+              </span>
+              <h1 className="xcd-hero-title">Exam Correction Dashboard</h1>
+              <p className="xcd-hero-sub">
+                Upload student answer sheets, run automated evaluations, adjust marks &amp; notes,
+                and generate comprehensive student performance reports with ease.
+              </p>
+              <div className="xcd-hero-actions">
+                <button className="xcd-btn-emerald" onClick={() => setShowUploadModal(true)}>
+                  <span>📤</span> Upload Exam Paper
+                </button>
+                <button className="xcd-btn-glass" onClick={() => setShowAKModal(true)}>
+                  <span>🔑</span> Answer Keys &amp; Criteria
+                </button>
+                <button
+                  className="xcd-theme-btn"
+                  title={theme === "light" ? "Switch to Dark Mode" : "Switch to Light Mode"}
+                  onClick={toggleTheme}
+                >
+                  {theme === "light" ? "🌙" : "☀️"}
+                </button>
               </div>
             </div>
-            <div className="xcd-hero-actions">
-              <button className="xcd-theme-toggle" title={theme === "light" ? "Switch to dark mode" : "Switch to light mode"} onClick={toggleTheme}>
-                {theme === "light" ? "🌙" : "☀️"}
-              </button>
-              <button className="xcd-hero-btn ghost" onClick={() => setShowAKModal(true)}>🔑 Answer Key</button>
-              <button className="xcd-hero-btn" onClick={() => setShowUploadModal(true)}>📤 Upload Paper</button>
+
+            {/* 3D Robot Mascot Panel */}
+            <div className="xcd-hero-panel">
+              <div className="xcd-robo-art-wrap">
+                <img src={roboMagnifier} alt="Grading Robot" className="xcd-robo-art" />
+              </div>
+              <div className="xcd-hero-mini-status">
+                <div className="xcd-mini-status-chip">
+                  <span>⚡ Auto-Grading</span>
+                  <span style={{ color: "#10b981" }}>Active</span>
+                </div>
+                <div className="xcd-mini-status-chip">
+                  <span>🎯 Accuracy</span>
+                  <span style={{ color: "#0284c7" }}>99.2%</span>
+                </div>
+              </div>
             </div>
+          </div>
+
+          {/* ── 4 Colorful Stat Cards (Teacher Dashboard Visual Format) ── */}
+          <div className="xcd-stats">
+            <div className="xcd-stat-card stat-azure">
+              <div className="xcd-stat-head">
+                <div className="xcd-stat-icon" style={{ ["--delay" as any]: "0s" }}>📑</div>
+                <span className="xcd-stat-badge">Total</span>
+              </div>
+              <div className="xcd-stat-val">
+                <AnimNum target={stats.total} />
+              </div>
+              <div className="xcd-stat-label">Total Exam Papers</div>
+            </div>
+
+            <div className="xcd-stat-card stat-amber">
+              <div className="xcd-stat-head">
+                <div className="xcd-stat-icon" style={{ ["--delay" as any]: "0.3s" }}>⏳</div>
+                <span className="xcd-stat-badge">Review</span>
+              </div>
+              <div className="xcd-stat-val">
+                <AnimNum target={stats.pendingCount} />
+              </div>
+              <div className="xcd-stat-label">Pending Correction</div>
+            </div>
+
+            <div className="xcd-stat-card stat-emerald">
+              <div className="xcd-stat-head">
+                <div className="xcd-stat-icon" style={{ ["--delay" as any]: "0.6s" }}>🎯</div>
+                <span className="xcd-stat-badge">Scored</span>
+              </div>
+              <div className="xcd-stat-val">
+                <AnimNum target={stats.finalizedCount} />
+              </div>
+              <div className="xcd-stat-label">Finalized Papers</div>
+            </div>
+
+            <div className="xcd-stat-card stat-rose">
+              <div className="xcd-stat-head">
+                <div className="xcd-stat-icon" style={{ ["--delay" as any]: "0.9s" }}>🏆</div>
+                <span className="xcd-stat-badge">Average</span>
+              </div>
+              <div className="xcd-stat-val">
+                <AnimNum target={stats.avg} suffix="%" />
+              </div>
+              <div className="xcd-stat-label">Class Average Score</div>
+            </div>
+          </div>
+
+          {/* ── Tabs (Teacher Style Nav Pills) ── */}
+          <div className="xcd-tabs">
+            {([
+              { id: "papers", label: "Papers List", icon: "📑", count: papers.length },
+              { id: "workspace", label: "Correction Workspace", icon: "✍️", count: null },
+              { id: "analytics", label: "Class Analytics", icon: "📊", count: null },
+              { id: "answerKeys", label: "Answer Keys", icon: "🔑", count: answerKeys.length },
+            ] as { id: TabId; label: string; icon: string; count: number | null }[]).map((t) => (
+              <button
+                key={t.id}
+                className={`xcd-tab ${activeTab === t.id ? "active" : ""}`}
+                onClick={() => setActiveTab(t.id)}
+              >
+                <span>{t.icon}</span>
+                {t.label}
+                {t.count !== null && <span className="xcd-tab-badge">{t.count}</span>}
+              </button>
+            ))}
+          </div>
+
+          {/* ── Tab Content Panels ── */}
+          <div>
+            {loading ? (
+              <div className="xcd-panel">
+                <div className="xcd-progress-wrap">
+                  <div className="xcd-spinner" />
+                  <div style={{ fontWeight: 800 }}>Loading exam papers &amp; grading criteria…</div>
+                </div>
+              </div>
+            ) : (
+              <>
+                {activeTab === "papers" && (
+                  <PapersTab
+                    papers={filteredPapers}
+                    classes={classes}
+                    classFilter={classFilter}
+                    statusFilter={statusFilter}
+                    searchQuery={searchQuery}
+                    onClassFilter={setClassFilter}
+                    onStatusFilter={setStatusFilter}
+                    onSearchQuery={setSearchQuery}
+                    onOpen={(id) => { setSelectedPaperId(id); setActiveTab("workspace"); }}
+                    onUploadClick={() => setShowUploadModal(true)}
+                    onDelete={handleDelete}
+                    onRunAI={handleRunAI}
+                    evaluatingId={evaluatingId}
+                  />
+                )}
+
+                {activeTab === "workspace" && (
+                  <WorkspaceTab
+                    paper={selectedPaper}
+                    papers={papers}
+                    onSelectPaper={setSelectedPaperId}
+                    onRunAI={handleRunAI}
+                    evaluating={!!selectedPaper && evaluatingId === selectedPaper.id}
+                    onUpdateCorrection={handleUpdateCorrection}
+                    onFinalize={handleFinalize}
+                    onExport={handleExport}
+                    onViewAnalytics={() => setActiveTab("analytics")}
+                  />
+                )}
+
+                {activeTab === "analytics" && (
+                  <AnalyticsTab
+                    paper={selectedPaper}
+                    papers={papers}
+                    onSelectPaper={setSelectedPaperId}
+                    onExport={handleExport}
+                  />
+                )}
+
+                {activeTab === "answerKeys" && (
+                  <AnswerKeysTab answerKeys={answerKeys} onCreateClick={() => setShowAKModal(true)} />
+                )}
+              </>
+            )}
           </div>
         </div>
 
-        {/* ── Tabs ── */}
-        <div className="xcd-tabs">
-          {([
-            { id: "papers", label: "Papers", icon: "📄", count: papers.length },
-            { id: "workspace", label: "Correction Workspace", icon: "🛠️", count: null },
-            { id: "analytics", label: "Analytics", icon: "📊", count: null },
-            { id: "answerKeys", label: "Answer Keys", icon: "🔑", count: answerKeys.length },
-          ] as { id: TabId; label: string; icon: string; count: number | null }[]).map((t) => (
-            <button
-              key={t.id}
-              className={`xcd-tab ${activeTab === t.id ? "active" : ""}`}
-              onClick={() => setActiveTab(t.id)}
-            >
-              <span>{t.icon}</span>{t.label}
-              {t.count !== null && <span className="xcd-tab-badge">{t.count}</span>}
-            </button>
-          ))}
-        </div>
-
-        <div className="xcd-body">
-          {loading ? (
-            <div className="xcd-panel"><div className="xcd-progress-wrap"><div className="xcd-spinner" /><div>Loading exam papers…</div></div></div>
-          ) : (
-            <>
-              {activeTab === "papers" && (
-                <PapersTab
-                  papers={filteredPapers}
-                  stats={stats}
-                  classes={classes}
-                  classFilter={classFilter}
-                  statusFilter={statusFilter}
-                  onClassFilter={setClassFilter}
-                  onStatusFilter={setStatusFilter}
-                  onOpen={(id) => { setSelectedPaperId(id); setActiveTab("workspace"); }}
-                  onUploadClick={() => setShowUploadModal(true)}
-                  onDelete={handleDelete}
-                  onRunAI={handleRunAI}
-                  evaluatingId={evaluatingId}
-                />
-              )}
-
-              {activeTab === "workspace" && (
-                <WorkspaceTab
-                  paper={selectedPaper}
-                  papers={papers}
-                  onSelectPaper={setSelectedPaperId}
-                  onRunAI={handleRunAI}
-                  evaluating={!!selectedPaper && evaluatingId === selectedPaper.id}
-                  onUpdateCorrection={handleUpdateCorrection}
-                  onFinalize={handleFinalize}
-                  onExport={handleExport}
-                  onViewAnalytics={() => setActiveTab("analytics")}
-                />
-              )}
-
-              {activeTab === "analytics" && (
-                <AnalyticsTab
-                  paper={selectedPaper}
-                  papers={papers}
-                  onSelectPaper={setSelectedPaperId}
-                  onExport={handleExport}
-                />
-              )}
-
-              {activeTab === "answerKeys" && (
-                <AnswerKeysTab answerKeys={answerKeys} onCreateClick={() => setShowAKModal(true)} />
-              )}
-            </>
-          )}
-        </div>
-
+        {/* ── Modals ── */}
         <AnimatePresence>
           {showUploadModal && (
             <UploadModal
@@ -987,18 +2190,32 @@ export default function ExamCorrectionDashboard() {
           )}
         </AnimatePresence>
 
+        {/* ── Toast Notification ── */}
         <AnimatePresence>
           {toast && (
             <motion.div
-              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 24, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 20, scale: 0.95 }}
               style={{
-                position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
-                background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "#fff",
-                padding: "11px 20px", borderRadius: 12, fontSize: 13, fontWeight: 700,
-                boxShadow: "0 10px 30px rgba(99,102,241,.35)", zIndex: 2000, fontFamily: "'Plus Jakarta Sans',sans-serif",
+                position: "fixed",
+                bottom: 24,
+                left: "50%",
+                transform: "translateX(-50%)",
+                background: "linear-gradient(135deg, #059669, #0284c7)",
+                color: "#ffffff",
+                padding: "12px 22px",
+                borderRadius: 16,
+                fontSize: 13,
+                fontWeight: 800,
+                boxShadow: "0 14px 34px rgba(2, 132, 199, 0.35)",
+                zIndex: 2200,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
               }}
             >
-              {toast}
+              <span>🔔</span> {toast}
             </motion.div>
           )}
         </AnimatePresence>
@@ -1008,119 +2225,164 @@ export default function ExamCorrectionDashboard() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// TAB: Papers (list + upload + filters + stats)
+// TAB: Papers List
 // ══════════════════════════════════════════════════════════════════════════
 function PapersTab({
-  papers, stats, classes, classFilter, statusFilter, onClassFilter, onStatusFilter,
+  papers, classes, classFilter, statusFilter, searchQuery,
+  onClassFilter, onStatusFilter, onSearchQuery,
   onOpen, onUploadClick, onDelete, onRunAI, evaluatingId,
 }: {
-  papers: ExamPaper[]; stats: { total: number; pendingCount: number; finalizedCount: number; avg: number };
-  classes: string[]; classFilter: string; statusFilter: string;
-  onClassFilter: (v: string) => void; onStatusFilter: (v: string) => void;
+  papers: ExamPaper[]; classes: string[]; classFilter: string; statusFilter: string; searchQuery: string;
+  onClassFilter: (v: string) => void; onStatusFilter: (v: string) => void; onSearchQuery: (v: string) => void;
   onOpen: (id: string) => void; onUploadClick: () => void; onDelete: (id: string) => void;
   onRunAI: (id: string) => void; evaluatingId: string | null;
 }) {
   return (
-    <>
-      <div className="xcd-stats">
-        <div className="xcd-stat">
-          <div className="xcd-stat-top"><div className="xcd-stat-icon" style={{ background: "rgba(99,102,241,.14)" }}>📄</div></div>
-          <div className="xcd-stat-val">{stats.total}</div>
-          <div className="xcd-stat-label">Total Papers</div>
+    <div className="xcd-panel">
+      <div className="xcd-panel-head">
+        <div>
+          <div className="xcd-panel-title">
+            <span>📚</span> Student Exam Papers
+          </div>
+          <div className="xcd-panel-sub">Manage uploaded answer sheets, evaluate with AI, and track scoring progress.</div>
         </div>
-        <div className="xcd-stat">
-          <div className="xcd-stat-top"><div className="xcd-stat-icon" style={{ background: "rgba(148,163,184,.18)" }}>⏳</div></div>
-          <div className="xcd-stat-val">{stats.pendingCount}</div>
-          <div className="xcd-stat-label">Pending Review</div>
-        </div>
-        <div className="xcd-stat">
-          <div className="xcd-stat-top"><div className="xcd-stat-icon" style={{ background: "rgba(16,185,129,.16)" }}>✅</div></div>
-          <div className="xcd-stat-val">{stats.finalizedCount}</div>
-          <div className="xcd-stat-label">Finalized</div>
-        </div>
-        <div className="xcd-stat">
-          <div className="xcd-stat-top"><div className="xcd-stat-icon" style={{ background: "rgba(236,72,153,.16)" }}>📈</div></div>
-          <div className="xcd-stat-val">{stats.avg}%</div>
-          <div className="xcd-stat-label">Average Score</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <input
+            type="text"
+            className="xcd-search-input"
+            placeholder="Search student or exam…"
+            value={searchQuery}
+            onChange={(e) => onSearchQuery(e.target.value)}
+            style={{ minWidth: 180 }}
+          />
+          <select className="xcd-select-inline" value={classFilter} onChange={(e) => onClassFilter(e.target.value)}>
+            <option value="all">All Classes</option>
+            {classes.map((c) => <option key={c} value={c}>Class {c}</option>)}
+          </select>
+          <select className="xcd-select-inline" value={statusFilter} onChange={(e) => onStatusFilter(e.target.value)}>
+            <option value="all">All Statuses</option>
+            <option value="pending">Pending</option>
+            <option value="evaluating">Evaluating</option>
+            <option value="corrected">Corrected</option>
+            <option value="finalized">Finalized</option>
+          </select>
+          <button className="xcd-btn emerald" onClick={onUploadClick}>
+            <span>📤</span> Upload Paper
+          </button>
         </div>
       </div>
 
-      <div className="xcd-panel">
-        <div className="xcd-panel-head">
-          <div>
-            <div className="xcd-panel-title">Exam Papers</div>
-            <div className="xcd-panel-sub">Upload new papers or continue correcting existing ones.</div>
-          </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <select className="xcd-select-inline" value={classFilter} onChange={(e) => onClassFilter(e.target.value)}>
-              <option value="all">All Classes</option>
-              {classes.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <select className="xcd-select-inline" value={statusFilter} onChange={(e) => onStatusFilter(e.target.value)}>
-              <option value="all">All Statuses</option>
-              <option value="pending">Pending</option>
-              <option value="evaluating">Evaluating</option>
-              <option value="corrected">Corrected</option>
-              <option value="finalized">Finalized</option>
-            </select>
-            <button className="xcd-btn primary" onClick={onUploadClick}>📤 Upload Paper</button>
-          </div>
-        </div>
-        <div className="xcd-panel-body">
-          {papers.length === 0 ? (
-            <div className="xcd-empty">
-              <div className="xcd-empty-icon">🗂️</div>
-              <div style={{ fontWeight: 700, color: "var(--text-main)", marginBottom: 4 }}>No exam papers yet</div>
-              <div style={{ fontSize: 12.5 }}>Upload a paper to start AI-assisted correction.</div>
+      <div className="xcd-panel-body">
+        {papers.length === 0 ? (
+          <div className="xcd-empty">
+            <div className="xcd-empty-icon">📂</div>
+            <div style={{ fontWeight: 800, fontSize: 15, color: "var(--sd-ink)", marginBottom: 4 }}>
+              No exam papers found
             </div>
-          ) : (
-            <div className="xcd-table-wrap">
-              <table className="xcd-table">
-                <thead>
-                  <tr>
-                    <th>Student</th><th>Exam</th><th>Class</th><th>Date</th><th>Score</th><th>Status</th><th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {papers.map((p) => (
+            <div style={{ fontSize: 12.5, color: "var(--sd-muted)", marginBottom: 14 }}>
+              Try adjusting your filter or upload a new student exam sheet.
+            </div>
+            <button className="xcd-btn emerald" onClick={onUploadClick}>
+              <span>📤</span> Upload Exam Paper
+            </button>
+          </div>
+        ) : (
+          <div className="xcd-table-wrap">
+            <table className="xcd-table">
+              <thead>
+                <tr>
+                  <th>Student Details</th>
+                  <th>Exam &amp; Subject</th>
+                  <th>Class</th>
+                  <th>Upload Date</th>
+                  <th>Score / Percentage</th>
+                  <th>Correction Status</th>
+                  <th style={{ textAlign: "right" }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {papers.map((p) => {
+                  const avatarBg = getStudentColor(p.studentName);
+                  const isEvaluating = evaluatingId === p.id || p.status === "evaluating";
+                  return (
                     <tr key={p.id}>
                       <td>
                         <div className="xcd-name-cell">
-                          <div className="xcd-avatar">{initials(p.studentName)}</div>
+                          <div className="xcd-avatar" style={{ background: avatarBg }}>
+                            {initials(p.studentName)}
+                          </div>
                           <div>
-                            <div style={{ fontWeight: 700 }}>{p.studentName}</div>
-                            <div className="xcd-sub">{p.rollNumber}</div>
+                            <div style={{ fontWeight: 800, color: "var(--sd-ink)" }}>{p.studentName}</div>
+                            <div className="xcd-sub">Roll No: {p.rollNumber}</div>
                           </div>
                         </div>
                       </td>
                       <td>
-                        <div>{p.examName}</div>
+                        <div style={{ fontWeight: 800 }}>{p.examName}</div>
                         <div className="xcd-sub">{p.subject}</div>
                       </td>
-                      <td>{p.class}</td>
-                      <td>{formatDate(p.date)}</td>
-                      <td>{p.analytics ? `${p.analytics.obtainedMarks}/${p.analytics.totalMarks} (${p.analytics.percentage}%)` : "—"}</td>
-                      <td><StatusBadge status={p.status} /></td>
+                      <td>
+                        <span style={{ fontWeight: 700, padding: "3px 8px", borderRadius: 8, background: "var(--sd-card-soft)", border: "1px solid var(--sd-line)" }}>
+                          {p.class}
+                        </span>
+                      </td>
+                      <td style={{ color: "var(--sd-muted)", fontWeight: 600 }}>{formatDate(p.date)}</td>
+                      <td>
+                        {p.analytics ? (
+                          <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                            <span style={{
+                              fontWeight: 900,
+                              color: p.analytics.percentage >= 75 ? "#059669" : p.analytics.percentage >= 50 ? "#d97706" : "#dc2626",
+                            }}>
+                              {p.analytics.obtainedMarks}/{p.analytics.totalMarks}
+                            </span>
+                            <span style={{
+                              fontSize: 10.5,
+                              fontWeight: 800,
+                              padding: "2px 6px",
+                              borderRadius: 6,
+                              background: p.analytics.percentage >= 75 ? "rgba(16,185,129,.14)" : p.analytics.percentage >= 50 ? "rgba(245,158,11,.14)" : "rgba(239,68,68,.14)",
+                              color: p.analytics.percentage >= 75 ? "#059669" : p.analytics.percentage >= 50 ? "#b45309" : "#dc2626",
+                            }}>
+                              {p.analytics.grade} ({p.analytics.percentage}%)
+                            </span>
+                          </div>
+                        ) : (
+                          <span style={{ color: "var(--sd-faint)", fontWeight: 700 }}>Not Evaluated</span>
+                        )}
+                      </td>
+                      <td>
+                        <StatusBadge status={p.status} />
+                      </td>
                       <td>
                         <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                           {p.status === "pending" && (
-                            <button className="xcd-icon-btn" title="Run AI correction" disabled={evaluatingId === p.id} onClick={() => onRunAI(p.id)}>
-                              {evaluatingId === p.id ? "…" : "🤖"}
+                            <button
+                              className="xcd-icon-btn ai-btn"
+                              title="Run automated AI evaluation"
+                              disabled={isEvaluating}
+                              onClick={() => onRunAI(p.id)}
+                            >
+                              {isEvaluating ? "…" : "🤖"}
                             </button>
                           )}
-                          <button className="xcd-icon-btn" title="Open" onClick={() => onOpen(p.id)}>🔍</button>
-                          <button className="xcd-icon-btn" title="Delete" onClick={() => onDelete(p.id)}>🗑️</button>
+                          <button className="xcd-icon-btn" title="Open in Workspace" onClick={() => onOpen(p.id)}>
+                            ✍️
+                          </button>
+                          <button className="xcd-icon-btn" title="Delete Paper" onClick={() => onDelete(p.id)}>
+                            🗑️
+                          </button>
                         </div>
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
-    </>
+    </div>
   );
 }
 
@@ -1140,15 +2402,23 @@ function WorkspaceTab({
       <div className="xcd-panel">
         <div className="xcd-panel-body">
           <div className="xcd-empty">
-            <div className="xcd-empty-icon">🛠️</div>
-            <div style={{ fontWeight: 700, color: "var(--text-main)", marginBottom: 10 }}>Select a paper to start correcting</div>
+            <div className="xcd-empty-icon">✍️</div>
+            <div style={{ fontWeight: 800, fontSize: 16, color: "var(--sd-ink)", marginBottom: 10 }}>
+              Select a Student Exam Paper to Begin Correction
+            </div>
+            <p style={{ fontSize: 12.5, color: "var(--sd-muted)", maxWidth: 420, margin: "0 auto 16px" }}>
+              Choose any uploaded answer sheet to review AI grading, modify marks, and leave custom feedback.
+            </p>
             <select
               className="xcd-select-inline"
               defaultValue=""
               onChange={(e) => e.target.value && onSelectPaper(e.target.value)}
+              style={{ minWidth: 260 }}
             >
-              <option value="" disabled>Choose a paper…</option>
-              {papers.map((p) => <option key={p.id} value={p.id}>{p.studentName} — {p.examName}</option>)}
+              <option value="" disabled>Choose a student paper…</option>
+              {papers.map((p) => (
+                <option key={p.id} value={p.id}>{p.studentName} — {p.examName} ({p.class})</option>
+              ))}
             </select>
           </div>
         </div>
@@ -1158,23 +2428,50 @@ function WorkspaceTab({
 
   const obtained = paper.corrections.reduce((s, c) => s + c.finalMarksAwarded, 0);
   const total = paper.corrections.reduce((s, c) => s + c.maxMarks, 0);
+  const percentage = total > 0 ? Math.round((obtained / total) * 1000) / 10 : 0;
+  const grade = getGrade(percentage);
   const isLocked = paper.status === "finalized";
+  const avatarBg = getStudentColor(paper.studentName);
 
   return (
     <div>
+      {/* ── Energetic Score Strip ── */}
       <div className="xcd-score-strip">
         <div className="xcd-name-cell">
-          <div className="xcd-avatar">{initials(paper.studentName)}</div>
+          <div className="xcd-avatar" style={{ background: avatarBg, width: 44, height: 44, fontSize: 15 }}>
+            {initials(paper.studentName)}
+          </div>
           <div>
-            <div style={{ fontWeight: 800, fontSize: 14 }}>{paper.studentName} <span className="xcd-sub">({paper.rollNumber})</span></div>
-            <div className="xcd-sub">{paper.examName} · {paper.subject} · {paper.class}</div>
+            <div style={{ fontWeight: 900, fontSize: 15, color: "var(--sd-ink)" }}>
+              {paper.studentName}{" "}
+              <span style={{ fontSize: 12, fontWeight: 700, color: "var(--sd-muted)" }}>
+                (Roll No: {paper.rollNumber})
+              </span>
+            </div>
+            <div className="xcd-sub" style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 3 }}>
+              <span>📖 {paper.examName}</span>
+              <span>·</span>
+              <span>🏷️ {paper.subject}</span>
+              <span>·</span>
+              <span>🏫 Class {paper.class}</span>
+            </div>
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
           {paper.corrections.length > 0 && (
-            <div style={{ textAlign: "right" }}>
-              <div className="xcd-score-big">{obtained}/{total}</div>
-              <div className="xcd-sub">{total > 0 ? Math.round((obtained / total) * 1000) / 10 : 0}%</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ textAlign: "right" }}>
+                <div className="xcd-score-big">
+                  <AnimNum target={obtained} /> / {total}
+                </div>
+                <div style={{ fontSize: 11, fontWeight: 800, color: "var(--sd-muted)" }}>
+                  Total Percentage: {percentage}%
+                </div>
+              </div>
+              <div className="xcd-grade-pill" title={`Letter Grade: ${grade}`}>
+                {grade}
+              </div>
             </div>
           )}
           <StatusBadge status={paper.status} />
@@ -1182,13 +2479,20 @@ function WorkspaceTab({
       </div>
 
       <div className="xcd-workspace">
-        {/* Paper viewer */}
+        {/* Left Column: Paper Preview */}
         <div className="xcd-panel">
           <div className="xcd-panel-head">
             <div>
-              <div className="xcd-panel-title">Paper Preview</div>
+              <div className="xcd-panel-title">
+                <span>📄</span> Answer Sheet Preview
+              </div>
               <div className="xcd-panel-sub">{paper.fileName}</div>
             </div>
+            {paper.fileUrl && (
+              <a href={paper.fileUrl} target="_blank" rel="noreferrer" className="xcd-btn secondary">
+                <span>🔍</span> Open Full View
+              </a>
+            )}
           </div>
           <div className="xcd-panel-body">
             <div className="xcd-viewer">
@@ -1196,17 +2500,18 @@ function WorkspaceTab({
                 <img src={paper.fileUrl} alt={paper.fileName} />
               ) : (
                 <>
-                  <div className="xcd-viewer-icon">📄</div>
-                  <div style={{ fontWeight: 700, marginBottom: 4 }}>{paper.fileName}</div>
-                  <div className="xcd-sub">
-                    {paper.fileUrl
-                      ? "PDF preview — open in a new tab to view full document."
-                      : "Preview will appear once the file is served from the backend."}
+                  <div style={{ fontSize: 50, marginBottom: 12 }}>📑</div>
+                  <div style={{ fontWeight: 800, fontSize: 14, color: "var(--sd-ink)", marginBottom: 4 }}>
+                    {paper.fileName}
                   </div>
-                  {/* 🔌 BACKEND: swap for an embedded PDF viewer (e.g. react-pdf) once files are served from the server */}
+                  <div className="xcd-sub" style={{ maxWidth: 300 }}>
+                    {paper.fileUrl
+                      ? "PDF Document preview ready. Click below to view full student answer sheet in high resolution."
+                      : "Document preview will render once file uploads complete."}
+                  </div>
                   {paper.fileUrl && (
-                    <a href={paper.fileUrl} target="_blank" rel="noreferrer" className="xcd-btn secondary" style={{ marginTop: 14 }}>
-                      Open Full Paper
+                    <a href={paper.fileUrl} target="_blank" rel="noreferrer" className="xcd-btn primary" style={{ marginTop: 16 }}>
+                      <span>🚀</span> View Document
                     </a>
                   )}
                 </>
@@ -1215,48 +2520,59 @@ function WorkspaceTab({
           </div>
         </div>
 
-        {/* Corrections */}
+        {/* Right Column: AI Correction & Marking */}
         <div className="xcd-panel">
           <div className="xcd-panel-head">
             <div>
-              <div className="xcd-panel-title">AI Correction</div>
+              <div className="xcd-panel-title">
+                <span>🤖</span> Question-by-Question Grading
+              </div>
               <div className="xcd-panel-sub">
-                {isLocked ? "Result finalized — marks are locked." : "Review AI-graded answers and adjust marks or feedback as needed."}
+                {isLocked ? "Marks locked. Paper has been finalized." : "Review AI evaluation, adjust marks, and provide custom guidance."}
               </div>
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {paper.corrections.length > 0 && (
-                <button className="xcd-btn secondary" onClick={() => onExport(paper)}>⬇️ Export</button>
+                <button className="xcd-btn secondary" onClick={() => onExport(paper)}>
+                  <span>⬇️</span> Export Report
+                </button>
               )}
               {paper.corrections.length > 0 && (
-                <button className="xcd-btn secondary" onClick={onViewAnalytics}>📊 Analytics</button>
+                <button className="xcd-btn secondary" onClick={onViewAnalytics}>
+                  <span>📊</span> Analytics
+                </button>
               )}
               {!isLocked && paper.corrections.length > 0 && (
-                <button className="xcd-btn success" onClick={() => onFinalize(paper.id)}>✅ Finalize</button>
+                <button className="xcd-btn emerald" onClick={() => onFinalize(paper.id)}>
+                  <span>✅</span> Finalize Marks
+                </button>
               )}
             </div>
           </div>
+
           <div className="xcd-panel-body">
             {paper.corrections.length === 0 ? (
               evaluating ? (
                 <div className="xcd-progress-wrap">
                   <div className="xcd-spinner" />
-                  <div style={{ fontWeight: 700 }}>AI is reading and evaluating the paper…</div>
-                  <div className="xcd-sub">This usually takes a few seconds.</div>
+                  <div style={{ fontWeight: 800, fontSize: 15 }}>AI is analyzing student handwriting &amp; grading answers…</div>
+                  <div className="xcd-sub">Cross-referencing answers with the linked marking scheme.</div>
                 </div>
               ) : (
                 <div className="xcd-empty">
                   <div className="xcd-empty-icon">🤖</div>
-                  <div style={{ fontWeight: 700, color: "var(--text-main)", marginBottom: 4 }}>
-                    {paper.answerKeyId ? "Ready to run AI correction" : "No answer key linked"}
+                  <div style={{ fontWeight: 800, color: "var(--sd-ink)", fontSize: 15, marginBottom: 4 }}>
+                    {paper.answerKeyId ? "Ready for AI Evaluation" : "No Marking Scheme Linked"}
                   </div>
-                  <div style={{ fontSize: 12.5, marginBottom: 14 }}>
+                  <div style={{ fontSize: 12.5, color: "var(--sd-muted)", maxWidth: 360, margin: "0 auto 16px" }}>
                     {paper.answerKeyId
-                      ? "AI will grade each answer against the linked marking scheme."
-                      : "Link an answer key from the Answer Keys tab, then re-upload or reassign this paper."}
+                      ? "AI will read the student's paper and award marks based on the linked marking criteria."
+                      : "Please link an answer key from the Answer Keys tab before initiating auto-correction."}
                   </div>
                   {paper.answerKeyId && (
-                    <button className="xcd-btn primary" onClick={() => onRunAI(paper.id)}>🤖 Run AI Correction</button>
+                    <button className="xcd-btn emerald" onClick={() => onRunAI(paper.id)}>
+                      <span>🤖</span> Run AI Correction Now
+                    </button>
                   )}
                 </div>
               )
@@ -1277,6 +2593,7 @@ function WorkspaceTab({
   );
 }
 
+// ── Question Card Component ──
 function QuestionCard({
   correction, locked, onChange,
 }: { correction: QuestionCorrection; locked: boolean; onChange: (u: Partial<QuestionCorrection>) => void }) {
@@ -1292,34 +2609,66 @@ function QuestionCard({
     onChange({ finalMarksAwarded: clamped });
   };
 
-  const statusLabel = { correct: "✅ Correct", partial: "🟡 Partial", incorrect: "❌ Incorrect" }[correction.aiStatus];
+  const statusLabel = {
+    correct: "✅ Correct",
+    partial: "🟡 Partial Credit",
+    incorrect: "❌ Needs Revision",
+  }[correction.aiStatus];
 
   return (
     <div className={`xcd-qcard ${correction.aiStatus}`}>
       <div className="xcd-qcard-head">
         <div>
-          <div className="xcd-qtitle">Q{correction.questionNumber}. {correction.questionText}</div>
-          <div className="xcd-qtopic">{correction.topic}</div>
+          <div className="xcd-qtitle">
+            Question {correction.questionNumber}. {correction.questionText}
+          </div>
+          <span className="xcd-qtopic">Topic: {correction.topic}</span>
         </div>
         <span className={`xcd-status-chip ${correction.aiStatus}`}>{statusLabel}</span>
       </div>
-      <div className="xcd-qfeedback">🤖 {correction.aiFeedback}</div>
+
+      <div className="xcd-qfeedback">
+        <span style={{ fontWeight: 800, color: "var(--sd-ink)", marginRight: 6 }}>🤖 AI Feedback:</span>
+        {correction.aiFeedback}
+      </div>
+
       <div className="xcd-qcontrols">
-        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-sub)", fontWeight: 700 }}>
-          Marks:
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, fontWeight: 800, color: "var(--sd-ink)" }}>
+          Awarded Marks:
           <input
-            type="number" className="xcd-marks-input" value={marks} min={0} max={correction.maxMarks} disabled={locked}
+            type="number"
+            className="xcd-marks-input"
+            value={marks}
+            min={0}
+            max={correction.maxMarks}
+            disabled={locked}
             onChange={(e) => setMarks(Number(e.target.value))}
             onBlur={(e) => commitMarks(Number(e.target.value))}
           />
-          / {correction.maxMarks}
+          <span style={{ color: "var(--sd-muted)", fontWeight: 700 }}>/ {correction.maxMarks} Max</span>
         </label>
-        <span className="xcd-confidence">AI confidence: {correction.aiConfidence}%</span>
-        {correction.adjustedByTeacher && <span className="xcd-adjusted-tag">Adjusted by teacher</span>}
+
+        <span style={{ fontSize: 11, fontWeight: 700, color: "var(--sd-muted)" }}>
+          🎯 AI Confidence: {correction.aiConfidence}%
+        </span>
+
+        {correction.adjustedByTeacher && (
+          <span style={{
+            fontSize: 10.5,
+            fontWeight: 800,
+            padding: "3px 8px",
+            borderRadius: 8,
+            background: "rgba(14,165,233,.15)",
+            color: "#0284c7",
+          }}>
+            ✏️ Adjusted by Teacher
+          </span>
+        )}
       </div>
+
       <textarea
         className="xcd-teacher-note"
-        placeholder="Add or override feedback for this answer…"
+        placeholder="Add teacher remarks, kudos, or specific feedback for this answer…"
         value={note}
         disabled={locked}
         onChange={(e) => setNote(e.target.value)}
@@ -1330,7 +2679,7 @@ function QuestionCard({
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// TAB: Analytics
+// TAB: Class & Student Analytics
 // ══════════════════════════════════════════════════════════════════════════
 function AnalyticsTab({
   paper, papers, onSelectPaper, onExport,
@@ -1345,7 +2694,10 @@ function AnalyticsTab({
       cur.count += 1;
       map.set(p.class, cur);
     });
-    return Array.from(map.entries()).map(([cls, v]) => ({ class: cls, avg: Math.round((v.sum / v.count) * 10) / 10 }));
+    return Array.from(map.entries()).map(([cls, v]) => ({
+      class: `Class ${cls}`,
+      avg: Math.round((v.sum / v.count) * 10) / 10,
+    }));
   }, [scoredPapers]);
 
   if (!paper || !paper.analytics) {
@@ -1354,30 +2706,44 @@ function AnalyticsTab({
         <div className="xcd-panel-body">
           {scoredPapers.length > 0 && (
             <div className="xcd-chart-box" style={{ marginBottom: 20 }}>
-              <div className="xcd-panel-title" style={{ marginBottom: 12 }}>Average Score by Class</div>
-              <ResponsiveContainer width="100%" height={220}>
+              <div className="xcd-panel-title" style={{ marginBottom: 12 }}>
+                <span>📊</span> Class-wise Average Performance (%)
+              </div>
+              <ResponsiveContainer width="100%" height={230}>
                 <BarChart data={classAverages}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border2)" />
-                  <XAxis dataKey="class" tick={{ fontSize: 12, fill: "var(--text-sub)" }} />
-                  <YAxis tick={{ fontSize: 12, fill: "var(--text-sub)" }} domain={[0, 100]} />
-                  <Tooltip contentStyle={{ background: "var(--bg-panel)", border: "1px solid var(--border2)", borderRadius: 10, color: "var(--text-main)" }} />
-                  <Bar dataKey="avg" fill="#8b5cf6" radius={[6, 6, 0, 0]} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--sd-line)" />
+                  <XAxis dataKey="class" tick={{ fontSize: 12, fill: "var(--sd-muted)" }} />
+                  <YAxis tick={{ fontSize: 12, fill: "var(--sd-muted)" }} domain={[0, 100]} />
+                  <Tooltip
+                    contentStyle={{
+                      background: "var(--sd-card)",
+                      border: "1px solid var(--sd-line)",
+                      borderRadius: 12,
+                      boxShadow: "0 8px 24px rgba(35,44,87,.15)",
+                      color: "var(--sd-ink)",
+                      fontWeight: 700,
+                    }}
+                  />
+                  <Bar dataKey="avg" fill="#0284c7" radius={[8, 8, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           )}
           <div className="xcd-empty">
             <div className="xcd-empty-icon">📊</div>
-            <div style={{ fontWeight: 700, color: "var(--text-main)", marginBottom: 10 }}>
-              Select a corrected paper to see detailed analytics
+            <div style={{ fontWeight: 800, fontSize: 16, color: "var(--sd-ink)", marginBottom: 10 }}>
+              Select a Graded Paper to View Individual Analytics
             </div>
             <select
               className="xcd-select-inline"
               defaultValue=""
               onChange={(e) => e.target.value && onSelectPaper(e.target.value)}
+              style={{ minWidth: 260 }}
             >
-              <option value="" disabled>Choose a corrected paper…</option>
-              {scoredPapers.map((p) => <option key={p.id} value={p.id}>{p.studentName} — {p.examName}</option>)}
+              <option value="" disabled>Choose an evaluated student paper…</option>
+              {scoredPapers.map((p) => (
+                <option key={p.id} value={p.id}>{p.studentName} — {p.examName} ({p.class})</option>
+              ))}
             </select>
           </div>
         </div>
@@ -1396,89 +2762,149 @@ function AnalyticsTab({
   }));
 
   return (
-    <div>
-      <div className="xcd-panel" style={{ marginBottom: 16 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      <div className="xcd-panel">
         <div className="xcd-panel-head">
           <div>
-            <div className="xcd-panel-title">{paper.studentName} — {paper.examName}</div>
-            <div className="xcd-panel-sub">{paper.subject} · {paper.class} · {formatDate(paper.date)}</div>
+            <div className="xcd-panel-title">
+              <span>📈</span> {paper.studentName} — {paper.examName}
+            </div>
+            <div className="xcd-panel-sub">{paper.subject} · Class {paper.class} · Exam Date: {formatDate(paper.date)}</div>
           </div>
-          <button className="xcd-btn secondary" onClick={() => onExport(paper)}>⬇️ Export Report</button>
+          <button className="xcd-btn emerald" onClick={() => onExport(paper)}>
+            <span>⬇️</span> Download Report
+          </button>
         </div>
+
         <div className="xcd-panel-body">
-          <div className="xcd-stats" style={{ marginBottom: 18 }}>
-            <div className="xcd-stat">
-              <div className="xcd-stat-val">{a.obtainedMarks}/{a.totalMarks}</div>
+          {/* Top 4 Performance Badges */}
+          <div className="xcd-stats" style={{ marginBottom: 20 }}>
+            <div className="xcd-stat-card stat-azure">
+              <div className="xcd-stat-val">
+                <AnimNum target={a.obtainedMarks} /> / {a.totalMarks}
+              </div>
               <div className="xcd-stat-label">Marks Obtained</div>
             </div>
-            <div className="xcd-stat">
-              <div className="xcd-stat-val">{a.percentage}%</div>
-              <div className="xcd-stat-label">Percentage</div>
+            <div className="xcd-stat-card stat-emerald">
+              <div className="xcd-stat-val">
+                <AnimNum target={a.percentage} suffix="%" />
+              </div>
+              <div className="xcd-stat-label">Percentage Score</div>
             </div>
-            <div className="xcd-stat">
+            <div className="xcd-stat-card stat-amber">
               <div className="xcd-stat-val">{a.grade}</div>
-              <div className="xcd-stat-label">Grade</div>
+              <div className="xcd-stat-label">Performance Grade</div>
             </div>
-            <div className="xcd-stat">
-              <div className="xcd-stat-val">{paper.corrections.filter((c) => c.adjustedByTeacher).length}</div>
+            <div className="xcd-stat-card stat-rose">
+              <div className="xcd-stat-val">
+                <AnimNum target={paper.corrections.filter((c) => c.adjustedByTeacher).length} />
+              </div>
               <div className="xcd-stat-label">Teacher Adjustments</div>
             </div>
           </div>
 
+          {/* Charts Row */}
           <div className="xcd-analytics-grid">
             <div className="xcd-chart-box">
-              <div className="xcd-panel-title" style={{ marginBottom: 10 }}>Question-wise Performance</div>
+              <div className="xcd-panel-title" style={{ marginBottom: 12 }}>
+                <span>📊</span> Question-wise Marks Breakdown
+              </div>
               <ResponsiveContainer width="100%" height={240}>
                 <BarChart data={barData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border2)" />
-                  <XAxis dataKey="q" tick={{ fontSize: 11, fill: "var(--text-sub)" }} />
-                  <YAxis tick={{ fontSize: 11, fill: "var(--text-sub)" }} />
-                  <Tooltip contentStyle={{ background: "var(--bg-panel)", border: "1px solid var(--border2)", borderRadius: 10, color: "var(--text-main)" }} />
-                  <Legend wrapperStyle={{ fontSize: 11, color: "var(--text-sub)" }} />
-                  <Bar dataKey="obtained" name="Obtained" fill="#6366f1" radius={[6, 6, 0, 0]} />
-                  <Bar dataKey="max" name="Max Marks" fill="#c7d2fe" radius={[6, 6, 0, 0]} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--sd-line)" />
+                  <XAxis dataKey="q" tick={{ fontSize: 12, fill: "var(--sd-muted)" }} />
+                  <YAxis tick={{ fontSize: 12, fill: "var(--sd-muted)" }} />
+                  <Tooltip
+                    contentStyle={{
+                      background: "var(--sd-card)",
+                      border: "1px solid var(--sd-line)",
+                      borderRadius: 12,
+                      color: "var(--sd-ink)",
+                      fontWeight: 700,
+                    }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 12, color: "var(--sd-muted)" }} />
+                  <Bar dataKey="obtained" name="Obtained Marks" fill="#10b981" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="max" name="Max Possible" fill="#94a3b8" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
+
             <div className="xcd-chart-box">
-              <div className="xcd-panel-title" style={{ marginBottom: 10 }}>Answer Breakdown</div>
+              <div className="xcd-panel-title" style={{ marginBottom: 12 }}>
+                <span>🎯</span> Answer Accuracy Distribution
+              </div>
               <ResponsiveContainer width="100%" height={240}>
                 <PieChart>
-                  <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={55} outerRadius={85} paddingAngle={3}>
+                  <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={55} outerRadius={85} paddingAngle={4}>
                     {pieData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
                   </Pie>
-                  <Tooltip contentStyle={{ background: "var(--bg-panel)", border: "1px solid var(--border2)", borderRadius: 10, color: "var(--text-main)" }} />
-                  <Legend wrapperStyle={{ fontSize: 11, color: "var(--text-sub)" }} />
+                  <Tooltip
+                    contentStyle={{
+                      background: "var(--sd-card)",
+                      border: "1px solid var(--sd-line)",
+                      borderRadius: 12,
+                      color: "var(--sd-ink)",
+                      fontWeight: 700,
+                    }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 12, color: "var(--sd-muted)" }} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          <div className="xcd-analytics-grid" style={{ marginTop: 16 }}>
+          {/* Qualitative Insights Row */}
+          <div className="xcd-analytics-grid" style={{ marginTop: 18 }}>
             <div>
-              <div className="xcd-panel-title" style={{ marginBottom: 10 }}>💪 Strengths</div>
+              <div className="xcd-panel-title" style={{ marginBottom: 10, color: "#059669" }}>
+                <span>💪</span> Strengths &amp; Mastery Areas
+              </div>
               <ul className="xcd-list">
-                {a.strengths.map((s, i) => <li key={i}>✅ {s}</li>)}
+                {a.strengths.map((s, i) => (
+                  <li key={i} style={{ borderLeft: "4px solid #10b981" }}>
+                    <span style={{ color: "#10b981" }}>✓</span> {s}
+                  </li>
+                ))}
               </ul>
             </div>
+
             <div>
-              <div className="xcd-panel-title" style={{ marginBottom: 10 }}>⚠️ Weaknesses</div>
+              <div className="xcd-panel-title" style={{ marginBottom: 10, color: "#dc2626" }}>
+                <span>⚠️</span> Recommended Focus Areas
+              </div>
               <ul className="xcd-list">
-                {a.weaknesses.map((s, i) => <li key={i}>⚠️ {s}</li>)}
+                {a.weaknesses.map((s, i) => (
+                  <li key={i} style={{ borderLeft: "4px solid #ef4444" }}>
+                    <span style={{ color: "#ef4444" }}>!</span> {s}
+                  </li>
+                ))}
               </ul>
             </div>
           </div>
 
-          <div style={{ marginTop: 16 }}>
-            <div className="xcd-panel-title" style={{ marginBottom: 10 }}>🔁 Common Mistakes</div>
+          <div style={{ marginTop: 18 }}>
+            <div className="xcd-panel-title" style={{ marginBottom: 10, color: "#b45309" }}>
+              <span>🔁</span> Recurring Errors &amp; Calculation Slips
+            </div>
             <ul className="xcd-list">
-              {a.commonMistakes.map((m, i) => <li key={i}>🔸 {m}</li>)}
+              {a.commonMistakes.map((m, i) => (
+                <li key={i} style={{ borderLeft: "4px solid #f59e0b" }}>
+                  <span style={{ color: "#f59e0b" }}>•</span> {m}
+                </li>
+              ))}
             </ul>
           </div>
 
-          <div className="xcd-chart-box" style={{ marginTop: 16 }}>
-            <div className="xcd-panel-title" style={{ marginBottom: 6 }}>🧭 Performance Insight</div>
-            <div style={{ fontSize: 13, color: "var(--text-sub)", lineHeight: 1.6 }}>{a.performanceInsight}</div>
+          {/* Robot Tip Card (Teacher Dashboard Mascot Style) */}
+          <div className="xcd-tip-card" style={{ marginTop: 20 }}>
+            <h4>
+              <span>🤖</span> Teacher Pedagogical Summary &amp; Next Steps
+            </h4>
+            <p>{a.performanceInsight}</p>
+            <div className="xcd-tip-art">
+              <img src={roboStudy} alt="Teacher Robo" />
+            </div>
           </div>
         </div>
       </div>
@@ -1487,42 +2913,102 @@ function AnalyticsTab({
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// TAB: Answer Keys
+// TAB: Answer Keys & Marking Criteria
 // ══════════════════════════════════════════════════════════════════════════
 function AnswerKeysTab({ answerKeys, onCreateClick }: { answerKeys: AnswerKey[]; onCreateClick: () => void }) {
   return (
     <div className="xcd-panel">
       <div className="xcd-panel-head">
         <div>
-          <div className="xcd-panel-title">Answer Keys &amp; Marking Criteria</div>
-          <div className="xcd-panel-sub">AI evaluation uses these to grade uploaded papers.</div>
+          <div className="xcd-panel-title">
+            <span>🔑</span> Answer Keys &amp; Marking Criteria
+          </div>
+          <div className="xcd-panel-sub">
+            The automated AI grading engine matches student responses against these question rubrics.
+          </div>
         </div>
-        <button className="xcd-btn primary" onClick={onCreateClick}>➕ New Answer Key</button>
+        <button className="xcd-btn emerald" onClick={onCreateClick}>
+          <span>➕</span> New Marking Scheme
+        </button>
       </div>
+
       <div className="xcd-panel-body">
         {answerKeys.length === 0 ? (
           <div className="xcd-empty">
             <div className="xcd-empty-icon">🔑</div>
-            <div style={{ fontWeight: 700, color: "var(--text-main)" }}>No answer keys yet</div>
-            <div style={{ fontSize: 12.5 }}>Create one so AI correction has a marking scheme to grade against.</div>
+            <div style={{ fontWeight: 800, fontSize: 16, color: "var(--sd-ink)", marginBottom: 4 }}>
+              No Answer Keys Defined
+            </div>
+            <div style={{ fontSize: 12.5, color: "var(--sd-muted)", marginBottom: 14 }}>
+              Create an answer key so that uploaded exam papers can be auto-corrected.
+            </div>
+            <button className="xcd-btn emerald" onClick={onCreateClick}>
+              <span>➕</span> Create First Answer Key
+            </button>
           </div>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14 }}>
-            {answerKeys.map((k) => (
-              <div className="xcd-ak-card" key={k.id}>
-                <div className="xcd-ak-head">
-                  <div className="xcd-ak-title">{k.examName}</div>
-                  <span className="xcd-badge corrected">{k.totalMarks} marks</span>
-                </div>
-                <div className="xcd-ak-meta">{k.subject} · {k.class} · {k.questions.length} questions</div>
-                {k.questions.map((q) => (
-                  <div className="xcd-ak-qrow" key={q.questionNumber}>
-                    <span>Q{q.questionNumber}. {q.questionText}</span>
-                    <span style={{ fontWeight: 700, flexShrink: 0, marginLeft: 8 }}>{q.maxMarks}m</span>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(310px, 1fr))", gap: 16 }}>
+            {answerKeys.map((k, idx) => {
+              const accentColor = SUBJECT_PALETTE[idx % SUBJECT_PALETTE.length];
+              return (
+                <div
+                  key={k.id}
+                  style={{
+                    borderRadius: 18,
+                    border: "1px solid var(--sd-line)",
+                    background: "var(--sd-card-soft)",
+                    padding: "16px 18px",
+                    position: "relative",
+                    overflow: "hidden",
+                    boxShadow: "var(--sd-shadow-soft)",
+                    borderTop: `4px solid ${accentColor}`,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                    <div style={{ fontSize: 14, fontWeight: 900, color: "var(--sd-ink)" }}>{k.examName}</div>
+                    <span style={{
+                      fontSize: 11,
+                      fontWeight: 800,
+                      padding: "3px 8px",
+                      borderRadius: 8,
+                      background: "rgba(16, 185, 129, 0.14)",
+                      color: "#059669",
+                    }}>
+                      {k.totalMarks} Marks
+                    </span>
                   </div>
-                ))}
-              </div>
-            ))}
+                  <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--sd-muted)", marginBottom: 12 }}>
+                    {k.subject} · Class {k.class} · {k.questions.length} Questions
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {k.questions.slice(0, 3).map((q) => (
+                      <div
+                        key={q.questionNumber}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          fontSize: 12,
+                          color: "var(--sd-ink)",
+                          fontWeight: 600,
+                          padding: "5px 0",
+                          borderTop: "1px dashed var(--sd-line)",
+                        }}
+                      >
+                        <span style={{ textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap", maxWidth: 220 }}>
+                          Q{q.questionNumber}. {q.questionText}
+                        </span>
+                        <span style={{ fontWeight: 800, color: "var(--sd-muted)" }}>{q.maxMarks}m</span>
+                      </div>
+                    ))}
+                    {k.questions.length > 3 && (
+                      <div style={{ fontSize: 11, fontWeight: 800, color: "#0284c7", marginTop: 4 }}>
+                        + {k.questions.length - 3} more questions
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -1531,7 +3017,7 @@ function AnswerKeysTab({ answerKeys, onCreateClick }: { answerKeys: AnswerKey[];
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// MODAL: Upload Paper
+// MODAL: Upload Exam Paper
 // ══════════════════════════════════════════════════════════════════════════
 function UploadModal({
   answerKeys, onClose, onSubmit,
@@ -1562,9 +3048,9 @@ function UploadModal({
 
   return (
     <motion.div className="xcd-modal-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
-      <motion.div className="xcd-modal" initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} onClick={(e) => e.stopPropagation()}>
+      <motion.div className="xcd-modal" initial={{ scale: 0.94, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.94, opacity: 0 }} onClick={(e) => e.stopPropagation()}>
         <div className="xcd-modal-head">
-          <div className="xcd-modal-title">Upload Exam Paper</div>
+          <div className="xcd-modal-title">📤 Upload Student Exam Paper</div>
           <button className="xcd-icon-btn" onClick={onClose}>✕</button>
         </div>
         <div className="xcd-modal-body">
@@ -1574,36 +3060,42 @@ function UploadModal({
               <input value={studentName} onChange={(e) => setStudentName(e.target.value)} placeholder="e.g. Aarav Sharma" />
             </div>
             <div className="xcd-field">
-              <label>Roll Number</label>
+              <label>Roll Number / ID</label>
               <input value={rollNumber} onChange={(e) => setRollNumber(e.target.value)} placeholder="e.g. 10A-14" />
             </div>
           </div>
 
           <div className="xcd-field">
-            <label>Answer Key / Marking Scheme</label>
+            <label>Link to Marking Scheme / Answer Key</label>
             <select value={answerKeyId} onChange={(e) => setAnswerKeyId(e.target.value)}>
-              <option value="" disabled>Select an answer key…</option>
-              {answerKeys.map((k) => <option key={k.id} value={k.id}>{k.examName} — {k.subject} ({k.class})</option>)}
+              <option value="" disabled>Select an exam marking scheme…</option>
+              {answerKeys.map((k) => (
+                <option key={k.id} value={k.id}>{k.examName} — {k.subject} (Class {k.class})</option>
+              ))}
             </select>
             {answerKeys.length === 0 && (
-              <div style={{ fontSize: 11.5, color: "#f87171" }}>No answer keys available — create one first from the Answer Keys tab.</div>
+              <div style={{ fontSize: 11.5, color: "#ef4444", fontWeight: 700 }}>
+                ⚠️ No answer keys found. Please create one first from the Answer Keys tab.
+              </div>
             )}
           </div>
 
           <div className="xcd-field">
-            <label>Exam Paper File</label>
-            <label className="xcd-upload-area" style={{ padding: "26px 16px" }}>
-              <div className="xcd-upload-icon">📤</div>
-              <div className="xcd-upload-text">{file ? file.name : "Click or drag to upload"}</div>
-              <div className="xcd-upload-subtext">PDF, PNG, or JPG — up to 10MB</div>
+            <label>Scanned Answer Sheet (PDF, JPG, PNG)</label>
+            <label className="xcd-upload-area">
+              <div style={{ fontSize: 38, marginBottom: 8 }}>📤</div>
+              <div style={{ fontWeight: 800, fontSize: 13.5, color: "var(--sd-ink)" }}>
+                {file ? file.name : "Click or drag paper here to upload"}
+              </div>
+              <div className="xcd-sub">Supports scanned images &amp; PDFs up to 15MB</div>
               <input ref={inputRef} type="file" hidden accept="application/pdf,image/*" onChange={(e) => setFile(e.target.files?.[0] || null)} />
             </label>
           </div>
         </div>
         <div className="xcd-modal-foot">
           <button className="xcd-btn secondary" onClick={onClose}>Cancel</button>
-          <button className="xcd-btn primary" disabled={!canSubmit || submitting} onClick={handleSubmit}>
-            {submitting ? "Uploading…" : "Upload & Continue"}
+          <button className="xcd-btn emerald" disabled={!canSubmit || submitting} onClick={handleSubmit}>
+            {submitting ? "Uploading Paper…" : "Upload & Begin Evaluation"}
           </button>
         </div>
       </motion.div>
@@ -1649,9 +3141,9 @@ function AnswerKeyModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: 
 
   return (
     <motion.div className="xcd-modal-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
-      <motion.div className="xcd-modal" style={{ maxWidth: 640 }} initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} onClick={(e) => e.stopPropagation()}>
+      <motion.div className="xcd-modal" style={{ maxWidth: 660 }} initial={{ scale: 0.94, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.94, opacity: 0 }} onClick={(e) => e.stopPropagation()}>
         <div className="xcd-modal-head">
-          <div className="xcd-modal-title">Create Answer Key</div>
+          <div className="xcd-modal-title">🔑 Define Exam Marking Scheme</div>
           <button className="xcd-icon-btn" onClick={onClose}>✕</button>
         </div>
         <div className="xcd-modal-body">
@@ -1665,49 +3157,84 @@ function AnswerKeyModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: 
               <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="e.g. Mathematics" />
             </div>
             <div className="xcd-field">
-              <label>Class</label>
+              <label>Class / Section</label>
               <input value={cls} onChange={(e) => setCls(e.target.value)} placeholder="e.g. 10-A" />
             </div>
             <div className="xcd-field">
-              <label>Total Marks</label>
-              <input value={totalMarks} readOnly />
+              <label>Calculated Total Marks</label>
+              <input value={`${totalMarks} Marks`} readOnly style={{ fontWeight: 800, color: "#059669" }} />
             </div>
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ fontWeight: 800, fontSize: 13, color: "var(--sd-ink)" }}>
+              Question-wise Criteria ({questions.length})
+            </div>
             {questions.map((q, idx) => (
-              <div key={idx} className="xcd-ak-card">
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                  <strong style={{ fontSize: 12.5, color: "var(--text-main)" }}>Question {q.questionNumber}</strong>
-                  {questions.length > 1 && <button className="xcd-icon-btn" onClick={() => removeQuestion(idx)}>🗑️</button>}
+              <div
+                key={idx}
+                style={{
+                  borderRadius: 14,
+                  border: "1px solid var(--sd-line)",
+                  background: "var(--sd-card-soft)",
+                  padding: "14px",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <strong style={{ fontSize: 13, color: "var(--sd-ink)" }}>Question {q.questionNumber}</strong>
+                  {questions.length > 1 && (
+                    <button className="xcd-icon-btn" onClick={() => removeQuestion(idx)} title="Delete Question">
+                      🗑️
+                    </button>
+                  )}
                 </div>
                 <div className="xcd-field" style={{ marginBottom: 8 }}>
-                  <label>Question Text</label>
-                  <input value={q.questionText} onChange={(e) => updateQuestion(idx, { questionText: e.target.value })} placeholder="e.g. Solve for x: 2x + 5 = 17" />
+                  <label>Question Prompt / Text</label>
+                  <input
+                    value={q.questionText}
+                    onChange={(e) => updateQuestion(idx, { questionText: e.target.value })}
+                    placeholder="e.g. Solve for x: 2x + 5 = 17"
+                  />
                 </div>
                 <div className="xcd-form-grid">
                   <div className="xcd-field">
-                    <label>Topic</label>
-                    <input value={q.topic} onChange={(e) => updateQuestion(idx, { topic: e.target.value })} placeholder="e.g. Algebra" />
+                    <label>Curriculum Topic</label>
+                    <input
+                      value={q.topic}
+                      onChange={(e) => updateQuestion(idx, { topic: e.target.value })}
+                      placeholder="e.g. Algebra"
+                    />
                   </div>
                   <div className="xcd-field">
                     <label>Max Marks</label>
-                    <input type="number" min={1} value={q.maxMarks} onChange={(e) => updateQuestion(idx, { maxMarks: Number(e.target.value) })} />
+                    <input
+                      type="number"
+                      min={1}
+                      value={q.maxMarks}
+                      onChange={(e) => updateQuestion(idx, { maxMarks: Number(e.target.value) })}
+                    />
                   </div>
                 </div>
                 <div className="xcd-field" style={{ marginTop: 8 }}>
-                  <label>Model Answer (used as AI grading reference)</label>
-                  <textarea value={q.modelAnswer} onChange={(e) => updateQuestion(idx, { modelAnswer: e.target.value })} placeholder="Expected answer / key points" style={{ minHeight: 44 }} />
+                  <label>Expected Model Answer / Rubric Points</label>
+                  <textarea
+                    value={q.modelAnswer}
+                    onChange={(e) => updateQuestion(idx, { modelAnswer: e.target.value })}
+                    placeholder="Key steps, required formulas, and final answer"
+                    style={{ minHeight: 46 }}
+                  />
                 </div>
               </div>
             ))}
-            <button className="xcd-btn secondary" onClick={addQuestion}>➕ Add Question</button>
+            <button className="xcd-btn secondary" onClick={addQuestion}>
+              <span>➕</span> Add Another Question
+            </button>
           </div>
         </div>
         <div className="xcd-modal-foot">
           <button className="xcd-btn secondary" onClick={onClose}>Cancel</button>
-          <button className="xcd-btn primary" disabled={!canSubmit || submitting} onClick={handleSubmit}>
-            {submitting ? "Saving…" : "Save Answer Key"}
+          <button className="xcd-btn emerald" disabled={!canSubmit || submitting} onClick={handleSubmit}>
+            {submitting ? "Saving Scheme…" : "Save Marking Scheme"}
           </button>
         </div>
       </motion.div>
