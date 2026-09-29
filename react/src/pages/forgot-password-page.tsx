@@ -1,19 +1,7 @@
-import { useState, useEffect } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { Link, useLocation } from "wouter";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { Link } from "wouter";
 import { apiRequest } from "../lib/queryClient";
-import { useToast } from "../hooks/use-toast";
-import { motion, AnimatePresence } from "framer-motion";
-import {
-  Mail, Shield, RefreshCw, Eye, EyeOff, Lock,
-  Loader2, AlertTriangle, ChevronLeft, Check,
-  GraduationCap, KeyRound, ArrowRight, Sparkles,
-} from "lucide-react";
-
-// ── Design tokens — exact match to all dashboard pages ───────────────────────
+import GoogleRecaptcha from "../components/GoogleRecaptcha";
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -207,457 +195,48 @@ const CSS = `
 }
 `;
 
-// ── Schemas ───────────────────────────────────────────────────────────────────
-const forgotSchema = z.object({
-  email: z.string().email("Please enter a valid email address"),
-  captchaAnswer: z.string().min(1,"Please solve the CAPTCHA"),
-});
 
-const resetSchema = z.object({
-  email: z.string().email("Please enter a valid email address"),
-  verificationCode: z.string().length(6,"Must be 6 digits"),
-  newPassword: z.string().min(8,"At least 8 characters")
-    .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,"Must include uppercase, lowercase & number"),
-  confirmPassword: z.string(),
-  captchaAnswer: z.string().min(1,"Please solve the CAPTCHA"),
-}).refine(d=>d.newPassword===d.confirmPassword,{ message:"Passwords don't match", path:["confirmPassword"] });
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function getPasswordStrength(pw: string) {
-  if (!pw) return null;
-  if (pw.length < 6)  return { level:1, label:"Weak",   cls:"weak"   };
-  if (pw.length < 10) return { level:2, label:"Fair",   cls:"fair"   };
-  if (/[A-Z]/.test(pw) && /[0-9]/.test(pw) && pw.length >= 12)
-                      return { level:4, label:"Strong", cls:"strong" };
-  return              { level:3, label:"Good",   cls:"good"   };
-}
-
-type FP = z.infer<typeof forgotSchema>;
-type RP = z.infer<typeof resetSchema>;
-
-// ── Main component ─────────────────────────────────────────────────────────────
 export default function ForgotPasswordPage() {
-  const [location] = useLocation();
-  const { toast }  = useToast();
-
-  const urlParams  = new URLSearchParams(location.split("?")[1] || "");
-  const tokenFromUrl = urlParams.get("token");
-
-  // Which phase: 'forgot' | 'reset' | 'done'
-  const [phase, setPhase] = useState<"forgot"|"reset"|"done">(tokenFromUrl ? "reset" : "forgot");
-
-  // Shared state
-  const [captchaData,   setCaptchaData]   = useState<{svg:string;sessionId:string}|null>(null);
-  const [captchaLoading,setCaptchaLoading]= useState(false);
-
-  // Forgot form
-  const [fEmail,   setFEmail]   = useState("");
-  const [fCaptcha, setFCaptcha] = useState("");
-  const [fErrors,  setFErrors]  = useState<Record<string,string>>({});
-
-  // Reset form
-  const [rEmail, setREmail]     = useState("");
-  const [rCode,  setRCode]      = useState("");
-  const [rPw,    setRPw]        = useState("");
-  const [rConf,  setRConf]      = useState("");
-  const [rCaptcha,setRCaptcha]  = useState("");
-  const [rErrors, setRErrors]   = useState<Record<string,string>>({});
-  const [showPw,  setShowPw]    = useState(false);
-  const [showConf,setShowConf]  = useState(false);
-
-  const pwStrength = getPasswordStrength(rPw);
-
-  // Token verification
-  const { data: tokenVerification, isLoading: verifyingToken } = useQuery({
-    queryKey: ["/api/reset-password/verify", tokenFromUrl],
-    enabled: !!tokenFromUrl,
-    queryFn: async () => {
-      await new Promise(r=>setTimeout(r,500));
-      return { valid: tokenFromUrl === "mock-reset-token-123" };
-    },
-  });
-
-  // Load captcha
-  const loadCaptcha = async () => {
-    setCaptchaLoading(true);
-    await new Promise(r=>setTimeout(r,400));
-    setCaptchaData({
-      svg:`<svg width="150" height="50" viewBox="0 0 150 50" xmlns="http://www.w3.org/2000/svg"><rect width="150" height="50" fill="#F3F4F6"/><text x="75" y="30" font-family="Arial" font-size="20" fill="#1F2937" text-anchor="middle" dominant-baseline="middle">GRADEUP</text><line x1="10" y1="15" x2="140" y2="35" stroke="#9CA3AF" stroke-width="1"/></svg>`,
-      sessionId:"mock-session-123",
-    });
-    setCaptchaLoading(false);
-  };
-
-  useEffect(() => { loadCaptcha(); }, []);
-
-  // Progress %
-  const progressPct = phase==="forgot" ? 33 : phase==="reset" ? 66 : 100;
-
-  // ── Forgot submit ──
-  const forgotMutation = useMutation({
-    mutationFn: async () => {
-      await new Promise(r=>setTimeout(r,600));
-      if (fCaptcha !== "GRADEUP") throw new Error("Incorrect security verification.");
-      const known = ["student@example.com","teacher@example.com","admin@example.com"];
-      if (!known.includes(fEmail)) throw new Error("No account found with that email. (Mock)");
-    },
-    onSuccess: () => {
-      toast({ title:"Email sent!", description:"Use token: mock-reset-token-123 and code: 123456" });
-      setPhase("reset");
-      setCaptchaData(null);
-      loadCaptcha();
-    },
-    onError: (e:Error) => {
-      toast({ title:"Error", description:e.message, variant:"destructive" });
-      loadCaptcha();
-      setFCaptcha("");
-    },
-  });
-
-  const handleForgotSubmit = () => {
-    const errs: Record<string,string> = {};
-    if (!fEmail) errs.email = "Required";
-    else if (!/\S+@\S+\.\S+/.test(fEmail)) errs.email = "Invalid email";
-    if (!fCaptcha) errs.captcha = "Required";
-    setFErrors(errs);
-    if (Object.keys(errs).length === 0) forgotMutation.mutate();
-  };
-
-  // ── Reset submit ──
-  const resetMutation = useMutation({
-    mutationFn: async () => {
-      await new Promise(r=>setTimeout(r,600));
-      if (rCaptcha !== "GRADEUP") throw new Error("Incorrect security verification.");
-      if ((tokenFromUrl || "reset") !== "mock-reset-token-123") throw new Error("Invalid or expired token.");
-      if (rCode !== "123456") throw new Error("Incorrect verification code.");
-    },
-    onSuccess: () => {
-      setPhase("done");
-    },
-    onError: (e:Error) => {
-      toast({ title:"Error", description:e.message, variant:"destructive" });
-      loadCaptcha();
-      setRCaptcha("");
-    },
-  });
-
-  const handleResetSubmit = () => {
-    const errs: Record<string,string> = {};
-    if (!rEmail) errs.email = "Required";
-    if (!rCode || rCode.length !== 6) errs.code = "Must be 6 digits";
-    if (!rPw || rPw.length < 8) errs.pw = "At least 8 characters";
-    if (rPw !== rConf) errs.conf = "Passwords don't match";
-    if (!rCaptcha) errs.captcha = "Required";
-    setRErrors(errs);
-    if (Object.keys(errs).length === 0) resetMutation.mutate();
-  };
-
-  // Token loading / invalid states
-  if (phase==="reset" && tokenFromUrl && verifyingToken) {
-    return (
-      <>
-        <style>{CSS}</style>
-        <div className="fp-root">
-          <div className="fp-wrap">
-            <div className="fp-logo">
-              <div className="fp-logo-icon"><GraduationCap size={24} color="#fff"/></div>
-              <span className="fp-logo-text">GradeUp!</span>
-            </div>
-            <div className="fp-card">
-              <div className="fp-card-body" style={{textAlign:"center",padding:"40px 28px"}}>
-                <Loader2 size={32} color="#6366f1" style={{animation:"spin 1s linear infinite",margin:"0 auto 14px"}}/>
-                <div style={{fontSize:14,color:"#64748b"}}>Verifying reset link…</div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <style>{`@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}`}</style>
-      </>
-    );
+  const token = new URLSearchParams(window.location.search).get("token");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [recaptchaToken, setRecaptchaToken] = useState("");
+  const [resetKey, setResetKey] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [done, setDone] = useState(false);
+  async function submit(event: React.FormEvent) {
+    event.preventDefault(); setError(""); setMessage("");
+    if (!token && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { setError("Please enter a valid email address"); return; }
+    if (token && (password.length < 8 || new TextEncoder().encode(password).length > 72)) { setError("Use a password of at least 8 characters and at most 72 bytes"); return; }
+    if (token && password !== confirm) { setError("Passwords don't match"); return; }
+    if (!recaptchaToken) { setError("Please complete Google reCAPTCHA"); return; }
+    setBusy(true);
+    try {
+      const response = await apiRequest("POST", token ? "/api/v1/auth/reset-password" : "/api/v1/auth/forgot-password",
+        token ? { token, newPassword: password, recaptchaToken } : { email: email.trim().toLowerCase(), recaptchaToken });
+      const result = await response.json(); setMessage(result.message); if (token) setDone(true);
+    } catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); setRecaptchaToken(""); setResetKey(k => k + 1); }
   }
-
-  if (phase==="reset" && tokenFromUrl && tokenVerification && !tokenVerification.valid) {
-    return (
-      <>
-        <style>{CSS}</style>
-        <div className="fp-root">
-          <div className="fp-bg"><div className="fp-bg-blob1"/><div className="fp-bg-blob2"/></div>
-          <div className="fp-wrap">
-            <div className="fp-logo">
-              <div className="fp-logo-icon"><GraduationCap size={24} color="#fff"/></div>
-              <span className="fp-logo-text">GradeUp!</span>
-            </div>
-            <div className="fp-card">
-              <div className="fp-card-body">
-                <div className="fp-invalid">
-                  <div className="fp-invalid-icon"><AlertTriangle size={30} color="#dc2626"/></div>
-                  <div className="fp-invalid-title">Invalid Reset Link</div>
-                  <div className="fp-invalid-sub">This password reset link is invalid or has expired. Please request a new one.</div>
-                  <Link href="/forgot-password">
-                    <button className="fp-btn">Request New Link <ArrowRight size={16}/></button>
-                  </Link>
-                </div>
-              </div>
-            </div>
-            <div className="fp-footer">
-              <Link href="/auth"><ChevronLeft size={13}/> Back to sign in</Link>
-            </div>
-          </div>
-        </div>
-      </>
-    );
-  }
-
-  return (
-    <>
-      <style>{CSS}</style>
-      <div className="fp-root">
-        <div className="fp-bg"><div className="fp-bg-blob1"/><div className="fp-bg-blob2"/></div>
-
-        <div className="fp-wrap">
-          <div className="fp-logo">
-            <div className="fp-logo-icon"><GraduationCap size={24} color="#fff"/></div>
-            <span className="fp-logo-text">GradeUp!</span>
-          </div>
-
-          <AnimatePresence mode="wait">
-            <motion.div key={phase}
-              initial={{opacity:0,y:12}} animate={{opacity:1,y:0}} exit={{opacity:0,y:-8}} transition={{duration:.2}}>
-
-              <div className="fp-card">
-                {/* Progress bar */}
-                <div className="fp-progress">
-                  <div className="fp-progress-fill" style={{width:`${progressPct}%`}}/>
-                </div>
-
-                {/* ── FORGOT phase ── */}
-                {phase==="forgot" && (
-                  <>
-                    <div className="fp-card-head">
-                      <div className="fp-head-icon blue"><KeyRound size={24} color="#6366f1"/></div>
-                      <div className="fp-card-title">Forgot Password?</div>
-                      <div className="fp-card-sub">Enter your email and we'll send you reset instructions.</div>
-                    </div>
-                    <div className="fp-divider"/>
-                    <div className="fp-card-body">
-
-                      {/* Step breadcrumb */}
-                      <div className="fp-breadcrumb">
-                        <div className="fp-crumb active"><span>1</span> Email</div>
-                        <span className="fp-crumb-sep">›</span>
-                        <div className="fp-crumb pending"><span>2</span> Reset</div>
-                        <span className="fp-crumb-sep">›</span>
-                        <div className="fp-crumb pending"><span>3</span> Done</div>
-                      </div>
-
-                      <div className="fp-field">
-                        <label className="fp-field-label">Email Address</label>
-                        <div className="fp-input-wrap">
-                          <span className="fp-input-icon"><Mail size={15}/></span>
-                          <input className="fp-input with-icon" type="email" placeholder="you@example.com"
-                            value={fEmail} onChange={e=>setFEmail(e.target.value)}/>
-                        </div>
-                        {fErrors.email && <div className="fp-field-error"><AlertTriangle size={11}/>{fErrors.email}</div>}
-                      </div>
-
-                      <div className="fp-field">
-                        <label className="fp-field-label">Security Verification</label>
-                        <div className="fp-captcha">
-                          {captchaData ? (
-                            <>
-                              <div className="fp-captcha-img" dangerouslySetInnerHTML={{__html:captchaData.svg}}/>
-                              <div className="fp-captcha-row">
-                                <input className="fp-input" style={{flex:1,textAlign:"center"}}
-                                  placeholder="Enter the text above"
-                                  value={fCaptcha} onChange={e=>setFCaptcha(e.target.value)}/>
-                                <button className="fp-captcha-refresh" type="button" onClick={loadCaptcha} disabled={captchaLoading}>
-                                  <RefreshCw size={15} style={{animation:captchaLoading?"spin 1s linear infinite":"none"}}/>
-                                </button>
-                              </div>
-                            </>
-                          ) : (
-                            <button className="fp-btn fp-btn-outline" type="button" onClick={loadCaptcha} style={{marginTop:0}}>
-                              {captchaLoading ? <><Loader2 size={14} style={{animation:"spin 1s linear infinite"}}/> Loading…</> : <><Shield size={14}/> Load Verification</>}
-                            </button>
-                          )}
-                        </div>
-                        {fErrors.captcha && <div className="fp-field-error"><AlertTriangle size={11}/>{fErrors.captcha}</div>}
-                      </div>
-
-                      <button className="fp-btn" onClick={handleForgotSubmit} disabled={forgotMutation.isPending}>
-                        {forgotMutation.isPending
-                          ? <><Loader2 size={15} style={{animation:"spin 1s linear infinite"}}/> Sending…</>
-                          : <>Send Reset Instructions <ArrowRight size={16}/></>}
-                      </button>
-
-                      <div className="fp-security-note">
-                        <Shield size={14} color="#94a3b8" style={{flexShrink:0,marginTop:1}}/>
-                        <div className="fp-security-text">Protected by CAPTCHA verification and rate limiting. Resets expire after 15 minutes.</div>
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                {/* ── RESET phase ── */}
-                {phase==="reset" && (
-                  <>
-                    <div className="fp-card-head">
-                      <div className="fp-head-icon blue"><Lock size={24} color="#6366f1"/></div>
-                      <div className="fp-card-title">Reset Password</div>
-                      <div className="fp-card-sub">Enter the verification code from your email and create a new password.</div>
-                    </div>
-                    <div className="fp-divider"/>
-                    <div className="fp-card-body">
-
-                      <div className="fp-breadcrumb">
-                        <div className="fp-crumb done"><Check size={11}/> Email</div>
-                        <span className="fp-crumb-sep">›</span>
-                        <div className="fp-crumb active"><span>2</span> Reset</div>
-                        <span className="fp-crumb-sep">›</span>
-                        <div className="fp-crumb pending"><span>3</span> Done</div>
-                      </div>
-
-                      <div className="fp-alert info">
-                        <Sparkles size={14} color="#4f46e5" style={{flexShrink:0,marginTop:1}}/>
-                        <div className="fp-alert-text"><strong>Demo hint:</strong> Use token <code>mock-reset-token-123</code> and code <code>123456</code></div>
-                      </div>
-
-                      <div className="fp-field">
-                        <label className="fp-field-label">Email Address</label>
-                        <div className="fp-input-wrap">
-                          <span className="fp-input-icon"><Mail size={15}/></span>
-                          <input className="fp-input with-icon" type="email" placeholder="you@example.com"
-                            value={rEmail} onChange={e=>setREmail(e.target.value)}/>
-                        </div>
-                        {rErrors.email && <div className="fp-field-error"><AlertTriangle size={11}/>{rErrors.email}</div>}
-                      </div>
-
-                      <div className="fp-field">
-                        <label className="fp-field-label">6-Digit Verification Code</label>
-                        <input className="fp-input code" type="text" maxLength={6} placeholder="· · · · · ·"
-                          value={rCode} onChange={e=>setRCode(e.target.value.replace(/\D/g,"").slice(0,6))}/>
-                        {rErrors.code && <div className="fp-field-error"><AlertTriangle size={11}/>{rErrors.code}</div>}
-                        <div className="fp-field-hint">Check your email inbox for the verification code.</div>
-                      </div>
-
-                      <div className="fp-field">
-                        <label className="fp-field-label">New Password</label>
-                        <div className="fp-input-wrap">
-                          <input className="fp-input with-eye" type={showPw?"text":"password"}
-                            placeholder="Min 8 chars with upper, lower & number"
-                            value={rPw} onChange={e=>setRPw(e.target.value)}/>
-                          <button type="button" className="fp-input-eye" onClick={()=>setShowPw(!showPw)}>
-                            {showPw?<EyeOff size={15}/>:<Eye size={15}/>}
-                          </button>
-                        </div>
-                        {pwStrength && (
-                          <div className="fp-pw-strength">
-                            <div className="fp-pw-bars">
-                              {[1,2,3,4].map(i=>(
-                                <div key={i} className={`fp-pw-bar${i<=pwStrength.level?" "+pwStrength.cls:""}`}/>
-                              ))}
-                            </div>
-                            <span className={`fp-pw-label ${pwStrength.cls}`}>{pwStrength.label}</span>
-                          </div>
-                        )}
-                        {rErrors.pw && <div className="fp-field-error"><AlertTriangle size={11}/>{rErrors.pw}</div>}
-                      </div>
-
-                      <div className="fp-field">
-                        <label className="fp-field-label">Confirm New Password</label>
-                        <div className="fp-input-wrap">
-                          <input className="fp-input with-eye" type={showConf?"text":"password"}
-                            placeholder="Re-enter password"
-                            value={rConf} onChange={e=>setRConf(e.target.value)}/>
-                          <button type="button" className="fp-input-eye" onClick={()=>setShowConf(!showConf)}>
-                            {showConf?<EyeOff size={15}/>:<Eye size={15}/>}
-                          </button>
-                        </div>
-                        {rErrors.conf && <div className="fp-field-error"><AlertTriangle size={11}/>{rErrors.conf}</div>}
-                      </div>
-
-                      <div className="fp-field">
-                        <label className="fp-field-label">Security Verification</label>
-                        <div className="fp-captcha">
-                          {captchaData ? (
-                            <>
-                              <div className="fp-captcha-img" dangerouslySetInnerHTML={{__html:captchaData.svg}}/>
-                              <div className="fp-captcha-row">
-                                <input className="fp-input" style={{flex:1,textAlign:"center"}}
-                                  placeholder="Enter the text above"
-                                  value={rCaptcha} onChange={e=>setRCaptcha(e.target.value)}/>
-                                <button className="fp-captcha-refresh" type="button" onClick={loadCaptcha} disabled={captchaLoading}>
-                                  <RefreshCw size={15} style={{animation:captchaLoading?"spin 1s linear infinite":"none"}}/>
-                                </button>
-                              </div>
-                            </>
-                          ) : (
-                            <button className="fp-btn fp-btn-outline" type="button" onClick={loadCaptcha} style={{marginTop:0}}>
-                              {captchaLoading ? <><Loader2 size={14} style={{animation:"spin 1s linear infinite"}}/> Loading…</> : <><Shield size={14}/> Load Verification</>}
-                            </button>
-                          )}
-                        </div>
-                        {rErrors.captcha && <div className="fp-field-error"><AlertTriangle size={11}/>{rErrors.captcha}</div>}
-                      </div>
-
-                      <div className="fp-btn-row">
-                        <button className="fp-btn fp-btn-outline" onClick={()=>{ setPhase("forgot"); loadCaptcha(); }}>
-                          <ChevronLeft size={15}/> Back
-                        </button>
-                        <button className="fp-btn" onClick={handleResetSubmit} disabled={resetMutation.isPending}>
-                          {resetMutation.isPending
-                            ? <><Loader2 size={15} style={{animation:"spin 1s linear infinite"}}/> Resetting…</>
-                            : <>Reset Password <Check size={16}/></>}
-                        </button>
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                {/* ── DONE phase ── */}
-                {phase==="done" && (
-                  <>
-                    <div className="fp-card-head">
-                      <div className="fp-head-icon green" style={{background:"rgba(16,185,129,.1)"}}>
-                        <Check size={24} color="#10b981"/>
-                      </div>
-                      <div className="fp-card-title">Password Reset!</div>
-                      <div className="fp-card-sub">Your password has been updated successfully.</div>
-                    </div>
-                    <div className="fp-divider"/>
-                    <div className="fp-card-body">
-
-                      <div className="fp-breadcrumb">
-                        <div className="fp-crumb done"><Check size={11}/> Email</div>
-                        <span className="fp-crumb-sep">›</span>
-                        <div className="fp-crumb done"><Check size={11}/> Reset</div>
-                        <span className="fp-crumb-sep">›</span>
-                        <div className="fp-crumb active"><Check size={11}/> Done</div>
-                      </div>
-
-                      <div className="fp-success">
-                        <div className="fp-success-ring"><Check size={36} color="#fff"/></div>
-                        <div className="fp-success-title">All done! 🎉</div>
-                        <div className="fp-success-sub">Your account password has been updated. Sign in with your new password to continue learning.</div>
-                        <Link href="/login">
-                          <button className="fp-btn">Go to Sign In <ArrowRight size={16}/></button>
-                        </Link>
-                      </div>
-                    </div>
-                  </>
-                )}
-
-              </div>
-            </motion.div>
-          </AnimatePresence>
-
-          <div className="fp-footer">
-            <Link href="/auth"><ChevronLeft size={13}/> Back to sign in</Link>
-          </div>
-        </div>
-      </div>
-
-      <style>{`@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}`}</style>
-    </>
-  );
+  return <><style>{CSS}</style><main className="fp-root"><div className="fp-wrap">
+    <div className="fp-logo"><span className="fp-logo-text">GradeUp!</span></div>
+    <div className="fp-card"><div className="fp-card-head"><h1 className="fp-card-title">{done ? "Password updated" : token ? "Reset Password" : "Forgot Password?"}</h1>
+    <p className="fp-card-sub">{token ? "Choose your new account password." : "Enter your email and we'll send you a reset link."}</p></div>
+    <form className="fp-card-body" onSubmit={submit}>
+      {error && <p className="fp-alert danger" role="alert">{error}</p>}
+      {message && <p className="fp-alert success" role="status">{message}</p>}
+      {!done && <>
+        {!token ? <div className="fp-field"><label htmlFor="reset-email" className="fp-field-label">Email Address</label><input id="reset-email" className="fp-input" type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} /></div> : <>
+          <div className="fp-field"><label htmlFor="reset-password" className="fp-field-label">New password</label><input id="reset-password" className="fp-input" type="password" autoComplete="new-password" required minLength={8} value={password} onChange={e => setPassword(e.target.value)} /></div>
+          <div className="fp-field"><label htmlFor="reset-confirm" className="fp-field-label">Confirm password</label><input id="reset-confirm" className="fp-input" type="password" autoComplete="new-password" required value={confirm} onChange={e => setConfirm(e.target.value)} /></div>
+        </>}
+        <div className="fp-field"><GoogleRecaptcha onChange={setRecaptchaToken} resetKey={resetKey}/></div>
+        <button className="fp-btn" disabled={busy || !recaptchaToken} type="submit">{busy ? "Please wait…" : token ? "Reset Password" : "Send Reset Instructions"}</button>
+        <p className="fp-security-note">Protected by Google reCAPTCHA. Reset links expire after 15 minutes.</p>
+      </>}
+    </form></div><div className="fp-footer"><Link href="/auth">Back to sign in</Link>{token && !done && <p><a href="/forgot-password">Request a new reset link</a></p>}</div>
+  </div></main></>;
 }

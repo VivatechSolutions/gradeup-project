@@ -158,6 +158,7 @@ function AppWithAuth() {
           {user ? <Redirect to="/dashboard" /> : <AuthPage />}
         </Route>
         <Route path="/forgot-password" component={ForgotPasswordPage} />
+        <Route path="/reset-password" component={ForgotPasswordPage} />
         <ProtectedRoute path="/enhanced-view" component={EnhancedView} />
         <ProtectedRoute path="/avatar-genius" component={AvatarGeniusView} />
         {/* <ProtectedRoute path="/bookExpanded" component={BookContentWindow} /> */}

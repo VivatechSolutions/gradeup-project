@@ -1184,10 +1184,11 @@ console.log
       const apiKey = process.env.LIVEKIT_API_KEY;
       const apiSecret = process.env.LIVEKIT_API_SECRET;
 
-      if (!apiKey || !apiSecret) {
-        return res.status(500).json({
+      const livekitUrl = process.env.LIVEKIT_URL?.trim();
+      if (!apiKey || !apiSecret || !livekitUrl || !/^wss?:\/\/[^/]+/.test(livekitUrl)) {
+        return res.status(503).json({
           status: false,
-          message: "Livekit is not configured on the server",
+          message: "LiveKit requires LIVEKIT_URL (ws:// or wss://), LIVEKIT_API_KEY and LIVEKIT_API_SECRET on the server",
         });
       }
 
@@ -1212,7 +1213,7 @@ console.log
         status: true,
         data: {
           token: jwt,
-          livekitUrl: process.env.LIVEKIT_URL,
+          livekitUrl,
           room: sessionId,
         },
       });

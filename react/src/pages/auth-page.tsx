@@ -1,3 +1,4 @@
+import GoogleRecaptcha from "../components/GoogleRecaptcha";
 import { useState, useEffect } from "react";
 import { useAuth } from "../hooks/use-auth";
 import { Link } from "wouter";
@@ -1243,7 +1244,6 @@ const CSS = `
 const LOGIN_STEPS = [
   { id: 1, label: "Role" },
   { id: 2, label: "Credentials" },
-  { id: 3, label: "Verify" },
 ];
 const REGISTER_STEPS = [
   { id: 1, label: "Role" },
@@ -1387,11 +1387,10 @@ export default function AuthPage() {
   // ── Login state ──
   const [loginStep, setLoginStep] = useState(1);
   const [loginRole, setLoginRole] = useState<"student" | "teacher" | "">("");
-  const [loginForm, setLoginForm] = useState({ email: "", password: "", captchaAnswer: "" });
+  const [loginForm, setLoginForm] = useState({ email: "", password: "" });
+  const [recaptchaToken, setRecaptchaToken] = useState("");
+  const [captchaResetKey, setCaptchaResetKey] = useState(0);
   const [showPw, setShowPw] = useState(false);
-  const [captchaData, setCaptchaData] = useState<{ svg: string; sessionId: string } | null>(null);
-  const [captchaLoading, setCaptchaLoading] = useState(false);
-  const [requiresCaptcha, setRequiresCaptcha] = useState(false);
   const [loginErrors, setLoginErrors] = useState<Record<string, string>>({});
 
   // ── Register state ──
@@ -1409,28 +1408,13 @@ export default function AuthPage() {
   // ── Handle login error (captcha trigger) ──
   useEffect(() => {
     if (loginMutation.isError && loginMutation.error) {
+      setCaptchaResetKey(k => k + 1);
       const err = loginMutation.error as any;
-      if (err?.requiresCaptcha) {
-        setRequiresCaptcha(true);
-        loadCaptcha();
-        setLoginStep(3);
-        setLoginErrors({ captcha: "Security verification required. Please complete the CAPTCHA below." });
-      } else {
+
         setLoginErrors({ form: err?.message || "Invalid credentials. Please try again." });
-      }
     }
   }, [loginMutation.isError, loginMutation.error]);
 
-  // ── CAPTCHA loader ──
-  const loadCaptcha = async () => {
-    setCaptchaLoading(true);
-    await new Promise(r => setTimeout(r, 400));
-    setCaptchaData({
-      svg: `<svg width="150" height="44" viewBox="0 0 150 44" xmlns="http://www.w3.org/2000/svg"><rect width="150" height="44" rx="8" fill="#F0F4FF"/><text x="75" y="27" font-family="Plus Jakarta Sans, sans-serif" font-weight="800" font-size="20" fill="#2563EB" text-anchor="middle" letter-spacing="4">GRADEUP</text><line x1="10" y1="14" x2="140" y2="30" stroke="#93C5FD" stroke-width="2"/></svg>`,
-      sessionId: "mock-session-123",
-    });
-    setCaptchaLoading(false);
-  };
 
   // ── Login validation ──
   const validateLoginStep = (): boolean => {
@@ -1441,16 +1425,16 @@ export default function AuthPage() {
     } else if (loginStep === 2) {
       if (!loginForm.email.trim()) {
         errs.email = "Email is required";
-      } else if (!/\S+@\S+\.\S+/.test(loginForm.email)) {
+      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(loginForm.email.trim())) {
         errs.email = "Please enter a valid email address";
       }
+      if (!recaptchaToken) errs.captcha = "Please complete Google reCAPTCHA";
       if (!loginForm.password) {
         errs.password = "Password is required";
       } else if (loginForm.password.length < 8) {
         errs.password = "Password must be at least 8 characters";
       }
-    } else if (loginStep === 3 && requiresCaptcha) {
-      if (!loginForm.captchaAnswer.trim()) errs.captcha = "Please complete the security verification";
+
     }
 
     setLoginErrors(errs);
@@ -1464,18 +1448,12 @@ export default function AuthPage() {
       setLoginStep(2);
     } else if (loginStep === 2) {
       loginMutation.mutate({
-        email: loginForm.email,
+        email: loginForm.email.trim().toLowerCase(),
+        recaptchaToken,
         password: loginForm.password,
         role: loginRole,
       });
-    } else if (loginStep === 3 && requiresCaptcha) {
-      loginMutation.mutate({
-        email: loginForm.email,
-        password: loginForm.password,
-        role: loginRole,
-        captchaAnswer: loginForm.captchaAnswer,
-        captchaSessionId: captchaData?.sessionId,
-      });
+
     }
   };
 
@@ -1489,10 +1467,10 @@ export default function AuthPage() {
   const resetLoginForm = () => {
     setLoginStep(1);
     setLoginRole("");
-    setLoginForm({ email: "", password: "", captchaAnswer: "" });
+    setLoginForm({ email: "", password: "" });
     setLoginErrors({});
-    setRequiresCaptcha(false);
-    setCaptchaData(null);
+    setRecaptchaToken("");
+    setCaptchaResetKey(k => k + 1);
     setShowPw(false);
   };
 
@@ -1860,12 +1838,10 @@ export default function AuthPage() {
                       <h2 className="sd-card-title">
                         {loginStep === 1 && "Choose Your Role"}
                         {loginStep === 2 && "Welcome Back"}
-                        {loginStep === 3 && "Security Check"}
                       </h2>
                       <p className="sd-card-sub">
                         {loginStep === 1 && "Select how you will use GradeUp"}
                         {loginStep === 2 && "Sign in to continue your learning"}
-                        {loginStep === 3 && "Complete verification to proceed"}
                       </p>
                     </div>
 
@@ -2029,6 +2005,8 @@ export default function AuthPage() {
                                   <span style={{ fontSize: "11.5px", fontWeight: 700, color: "var(--sd-muted)", textDecoration: "none" }}>Forgot password?</span>
                                 </Link>
                               </div>
+                              <div className="sd-field"><GoogleRecaptcha onChange={setRecaptchaToken} resetKey={captchaResetKey} />
+                              {loginErrors.captcha && <p role="alert">{loginErrors.captcha}</p>}</div>
 
                               <div className="sd-step-actions">
                                 <button
@@ -2053,103 +2031,6 @@ export default function AuthPage() {
                                   ) : (
                                     <>
                                       Sign In <ChevronRight size={15} />
-                                    </>
-                                  )}
-                                </button>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Login Step 3 — CAPTCHA Security Check */}
-                          {loginStep === 3 && (
-                            <div>
-                              {loginErrors.captcha && (
-                                <div className="sd-alert">
-                                  <AlertTriangle size={15} color="#ef4444" style={{ flexShrink: 0, marginTop: 1 }} />
-                                  <div className="sd-alert-text">{loginErrors.captcha}</div>
-                                </div>
-                              )}
-
-                              <div className="sd-field">
-                                <label className="sd-label">
-                                  <Shield size={13} /> Security Verification
-                                </label>
-                                <div className="sd-captcha-card">
-                                  {captchaData ? (
-                                    <>
-                                      <div
-                                        className="sd-captcha-view"
-                                        dangerouslySetInnerHTML={{ __html: captchaData.svg }}
-                                      />
-                                      <div className="sd-captcha-input-row">
-                                        <input
-                                          className={`sd-input${loginErrors.captcha ? " is-error" : ""}`}
-                                          style={{ textAlign: "center", letterSpacing: "2px", fontWeight: 800 }}
-                                          placeholder="Enter security code"
-                                          value={loginForm.captchaAnswer}
-                                          onChange={e => {
-                                            setLoginForm(f => ({ ...f, captchaAnswer: e.target.value }));
-                                            setLoginErrors(p => ({ ...p, captcha: "" }));
-                                          }}
-                                        />
-                                        <button
-                                          type="button"
-                                          className="sd-captcha-refresh-btn"
-                                          onClick={loadCaptcha}
-                                          disabled={captchaLoading}
-                                          title="Get new code"
-                                        >
-                                          <RefreshCw
-                                            size={15}
-                                            style={{ animation: captchaLoading ? "spin 1s linear infinite" : "none" }}
-                                          />
-                                        </button>
-                                      </div>
-                                    </>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      className="sd-btn sd-btn-outline"
-                                      onClick={loadCaptcha}
-                                      disabled={captchaLoading}
-                                    >
-                                      {captchaLoading ? (
-                                        <>
-                                          <Loader2 size={15} style={{ animation: "spin 1s linear infinite" }} />
-                                          Loading Code…
-                                        </>
-                                      ) : (
-                                        <>
-                                          <Shield size={15} /> Load Verification Code
-                                        </>
-                                      )}
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-
-                              <div className="sd-step-actions">
-                                <button
-                                  type="button"
-                                  className="sd-btn sd-btn-outline"
-                                  onClick={handleLoginBack}
-                                >
-                                  <ChevronLeft size={15} /> Back
-                                </button>
-                                <button
-                                  type="button"
-                                  className="sd-btn"
-                                  onClick={handleLoginNext}
-                                  disabled={loginMutation.isPending}
-                                >
-                                  {loginMutation.isPending ? (
-                                    <>
-                                      <Loader2 size={15} style={{ animation: "spin 1s linear infinite" }} />
-                                      Verifying…
-                                    </>
-                                  ) : (
-                                    <>
-                                      Verify <ChevronRight size={15} />
                                     </>
                                   )}
                                 </button>

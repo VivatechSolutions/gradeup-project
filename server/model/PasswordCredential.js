@@ -9,6 +9,8 @@ const passwordCredentialSchema = new mongoose.Schema(
       unique: true,
       index: true,
     },
+    resetTokenHash: { type: String, index: true },
+    resetExpiresAt: { type: Date },
     passwordHash: { type: String, required: true },
     bcryptCost: { type: Number, required: true },
     mustChangePassword: { type: Boolean, default: false },

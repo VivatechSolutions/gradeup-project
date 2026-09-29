@@ -28,6 +28,7 @@ type LoginData = {
   email: string;
   password: string;
   role?: string;
+  recaptchaToken?: string;
   captchaAnswer?: string;
   captchaSessionId?: string;
 };
@@ -166,20 +167,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   const logoutMutation = useMutation({
+    onError: (error: Error) => { toast({ title: "Logout failed", description: error.message + ". Please try again.", variant: "destructive" }); },
     mutationFn: async () => {
       await apiRequest("POST", "/api/v1/auth/logout");
     },
-    onSettled: (_data, error) => {
+    onSuccess: async () => {
+      await queryClient.cancelQueries();
       clearClientAuthState();
       toast({ title: "Logged out", description: "You have been successfully logged out." });
       setLocation("/auth");
-      if (error) {
-        console.warn("Server logout failed after clearing client auth state:", error);
-      }
+
     },
   });
 
-  const user = apiUser ? unwrapUser(apiUser) : null;
+  const candidate = apiUser ? unwrapUser(apiUser) : null;
+  const user = candidate && (candidate.id || candidate._id) ? candidate : null;
 
   return (
     <AuthContext.Provider

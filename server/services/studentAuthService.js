@@ -71,8 +71,9 @@ function setAuthCookies(res, { accessToken, refreshToken }) {
 }
 
 function clearAuthCookies(res) {
-  res.clearCookie(ACCESS_COOKIE, { path: "/" });
-  res.clearCookie(REFRESH_COOKIE, { path: "/" });
+  const { maxAge, ...options } = cookieOptions(0);
+  res.clearCookie(ACCESS_COOKIE, options);
+  res.clearCookie(REFRESH_COOKIE, options);
 }
 
 function signAccessToken(user) {
@@ -206,6 +207,9 @@ async function registerIndependentStudent(payload, req) {
 
 async function loginStudent(payload, req) {
   const email = normalizeEmail(payload.email);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    const error = new Error("Please enter a valid email address"); error.statusCode = 400; throw error;
+  }
   const user = await User.findOne({ normalizedEmail: email, deletedAt: null });
   if (!user || user.status !== "active") {
     const error = new Error("Invalid credentials");
@@ -248,6 +252,8 @@ async function resolveAccessUser(req) {
   if (decoded.tokenType !== "access") return null;
   const user = await User.findById(decoded.userId);
   if (!user || user.status !== "active" || user.deletedAt) return null;
+  const credential = await PasswordCredential.findOne({ userId: user._id });
+  if (credential?.passwordChangedAt && decoded.iat < Math.floor(credential.passwordChangedAt.getTime() / 1000)) return null;
   return user;
 }
 

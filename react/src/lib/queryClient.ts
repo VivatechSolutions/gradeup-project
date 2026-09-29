@@ -32,9 +32,10 @@ export function getQueryFn<T>(options: {
   on401: UnauthorizedBehavior;
 }): QueryFunction<T> {
   const { on401: unauthorizedBehavior } = options;
-  return async ({ queryKey }) => {
+  return async ({ queryKey, signal }) => {
     const res = await fetch(buildApiUrl(queryKey[0] as string), {
       credentials: "include",
+      signal,
     });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {

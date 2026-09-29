@@ -107,55 +107,79 @@
         line-height: 1.6;
       }
       
-      /* Funny loading screen */
+      /* Initial loading screen mirrors the app's shared FunnyLoader */
       .loading-container {
         position: fixed;
-        top: 0;
-        left: 0;
+        inset: 0;
         width: 100%;
         height: 100%;
-        background-color: #3498db;
+        background-color: #fafaf9;
         display: flex;
         flex-direction: column;
         justify-content: center;
         align-items: center;
+        gap: 20px;
         z-index: 9999;
-        color: white;
+        color: #3b82f6;
         text-align: center;
       }
-      
-      .loading-container h1 {
-        font-size: 2rem;
-        margin-bottom: 20px;
-      }
 
-      .loading-dots {
+      .loading-logo {
+        width: 60px;
+        height: 60px;
+        border-radius: 16px;
         display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 28px;
+        background: linear-gradient(135deg, #00c37a, #2d9cdb);
+        box-shadow: 0 0 40px rgba(0,195,122,0.35);
+        animation: loaderPulse 1.4s ease-in-out infinite;
       }
 
-      .loading-dot {
-        width: 20px;
-        height: 20px;
-        margin: 0 10px;
-        background-color: white;
-        border-radius: 50%;
-        animation: bounce 1.4s infinite ease-in-out both;
+      .loading-container h1 {
+        color: #3b82f6;
+        font-size: 15px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        line-height: 1.4;
+        margin: 0;
       }
 
-      .loading-dot:nth-child(1) {
-        animation-delay: -0.32s;
+      .loading-bar {
+        width: 200px;
+        height: 3px;
+        background: #e7e5e4;
+        border-radius: 999px;
+        overflow: hidden;
+        position: relative;
       }
 
-      .loading-dot:nth-child(2) {
-        animation-delay: -0.16s;
+      .loading-bar::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        border-radius: 999px;
+        background: linear-gradient(135deg, #00c37a, #2d9cdb);
+        animation: loaderBar 1.5s ease-in-out infinite;
       }
 
-      @keyframes bounce {
-        0%, 80%, 100% {
-          transform: scale(0);
-        }
-        40% {
+      @keyframes loaderPulse {
+        0%, 100% {
           transform: scale(1);
+        }
+        50% {
+          transform: scale(1.08);
+        }
+      }
+
+      @keyframes loaderBar {
+        0% {
+          transform: translateX(-100%);
+        }
+        100% {
+          transform: translateX(100%);
         }
       }
       
@@ -180,12 +204,9 @@
   <body class="animated-background">
     <!-- Loading spinner shown while app initializes -->
     <div class="loading-container">
-      <h1>GradeUp! is preparing your awesome learning adventure...</h1>
-      <div class="loading-dots">
-        <div class="loading-dot"></div>
-        <div class="loading-dot"></div>
-        <div class="loading-dot"></div>
-      </div>
+      <div class="loading-logo">🎓</div>
+      <h1>Loading...</h1>
+      <div class="loading-bar"></div>
     </div>
     
     <!-- Main app container -->
