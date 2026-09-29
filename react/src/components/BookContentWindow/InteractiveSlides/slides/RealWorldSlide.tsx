@@ -58,7 +58,7 @@ export const RealWorldSlide: React.FC<RealWorldSlideProps> = ({
               <motion.div
                 initial={{ opacity: 0, x: -18 }}
                 animate={{ opacity: 1, x: 0 }}
-                className="rounded-xl border border-cyan-300/30 bg-cyan-400/10 p-3 text-xs font-bold leading-relaxed text-cyan-50 md:text-sm"
+                className="rounded-xl border border-cyan-200 bg-cyan-50/80 p-3 text-xs font-bold leading-relaxed text-cyan-900 dark:border-cyan-300/30 dark:bg-cyan-400/10 dark:text-cyan-50 md:text-sm"
               >
                 {revealText}
               </motion.div>

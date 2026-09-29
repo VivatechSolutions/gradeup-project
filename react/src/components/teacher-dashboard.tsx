@@ -36,7 +36,7 @@ const CSS = `
 .sd-root::before,.sd-root::after{content:"";position:absolute;border-radius:999px;pointer-events:none;filter:blur(.2px);opacity:.55;animation:sdFloatBg 12s ease-in-out infinite alternate}.sd-root::before{width:250px;height:250px;left:-90px;top:80px;background:radial-gradient(circle,rgba(46,182,255,.18),transparent 68%)}.sd-root::after{width:290px;height:290px;right:-110px;top:360px;background:radial-gradient(circle,rgba(255,95,153,.14),transparent 70%);animation-delay:-5s}
 @keyframes sdFloatBg{from{transform:translate3d(0,0,0) scale(1)}to{transform:translate3d(22px,28px,0) scale(1.08)}}
 @keyframes sdCardIn{from{opacity:0;transform:translateY(12px) scale(.985)}to{opacity:1;transform:none}}
-@keyframes sdShine{0%{transform:translateX(-120%) rotate(18deg)}45%,100%{transform:translateX(220%) rotate(18deg)}}
+@keyframes sdShine{from{transform:translateX(-120%) skewX(-18deg)}to{transform:translateX(460%) skewX(-18deg)}}
 @keyframes sdBreathe{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
 @keyframes sdPulseSoft{0%,100%{box-shadow:0 0 0 0 rgba(99,91,255,.22)}50%{box-shadow:0 0 0 8px rgba(99,91,255,0)}}
 @keyframes sdDrift{0%,100%{transform:translate3d(0,0,0) rotate(0)}50%{transform:translate3d(18px,-14px,0) rotate(7deg)}}
@@ -70,7 +70,8 @@ const CSS = `
 
 .sd-hero{position:relative;overflow:hidden;min-height:220px;padding:18px;border-radius:16px;gap:14px;display:grid;grid-template-columns:minmax(0,1fr) 218px;align-items:center;background:linear-gradient(118deg,#dff5ff 0%,#eef2ff 48%,#fff1d6 100%);border:1px solid rgba(35,137,255,.2);box-shadow:var(--sd-shadow);animation:sdCardIn .45s both}
 .sd-hero::before{content:"";position:absolute;inset:-80px auto auto -80px;width:210px;height:210px;border-radius:50%;background:rgba(255,255,255,.45);animation:sdBreathe 5s ease-in-out infinite}
-.sd-hero::after{content:"";position:absolute;top:-50px;bottom:-50px;width:70px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.36),transparent);animation:sdShine 7s ease-in-out infinite}
+.sd-hero::after{content:"";position:absolute;top:-50px;bottom:-50px;left:-42%;width:34%;z-index:1;pointer-events:none;background:linear-gradient(90deg,transparent,rgba(255,249,224,.38),rgba(245,158,11,.12),transparent);animation:sdShine 7s linear infinite}
+[data-theme="dark"] .sd-hero::after{background:linear-gradient(90deg,transparent,rgba(255,255,255,.2),rgba(255,255,255,.08),transparent)}
 [data-theme="dark"] .sd-hero{background:linear-gradient(118deg,#102b43 0%,#20264f 52%,#49321c 100%);border-color:rgba(116,190,255,.24)}
 .sd-hero-content{position:relative;z-index:2;max-width:460px}
 .sd-chip{display:inline-flex;align-items:center;gap:8px;font-size:11.5px;font-weight:800;color:#10734c}

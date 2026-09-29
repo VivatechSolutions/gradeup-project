@@ -140,8 +140,8 @@ export const TryItSlide: React.FC<TryItSlideProps> = ({
       </div>
 
       {hasOptions && (
-        <div className="space-y-3 rounded-2xl border border-cyan-300/30 bg-cyan-400/5 p-4">
-          <h4 className="text-sm font-extrabold text-white">{slide.question || slide.callout?.text}</h4>
+        <div className="space-y-3 rounded-2xl border border-cyan-200 bg-cyan-50/80 p-4 dark:border-cyan-300/30 dark:bg-cyan-400/5">
+          <h4 className="text-sm font-extrabold text-slate-900 dark:text-white">{slide.question || slide.callout?.text}</h4>
           <div className="grid gap-2 sm:grid-cols-2">
             {slide.options?.map((option) => {
               const isSelected = taskState.selectedOptionIds.includes(option.id);
@@ -155,17 +155,17 @@ export const TryItSlide: React.FC<TryItSlideProps> = ({
                   onClick={() => onSelectOption(option.id)}
                   className={`flex items-start gap-3 rounded-xl border px-4 py-3 text-left text-sm font-bold transition ${
                     isWrong
-                      ? "border-rose-400/70 bg-rose-500/10 text-rose-100"
+                      ? "border-rose-300 bg-rose-50 text-rose-900 dark:border-rose-400/70 dark:bg-rose-500/10 dark:text-rose-100"
                       : isCorrect
-                        ? "border-emerald-400/70 bg-emerald-500/10 text-emerald-100"
-                        : "border-white/15 bg-white/5 text-slate-200 hover:border-cyan-300/60"
+                        ? "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-400/70 dark:bg-emerald-500/10 dark:text-emerald-100"
+                        : "border-slate-200/90 bg-white text-slate-800 hover:border-cyan-400 dark:border-white/15 dark:bg-white/5 dark:text-slate-200 dark:hover:border-cyan-300/60"
                   }`}
                 >
-                  {isWrong ? <XCircle className="mt-0.5 h-4 w-4 shrink-0" /> : isCorrect ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <span className="grid h-5 w-5 shrink-0 place-items-center rounded-md bg-white/10 text-[11px]">{option.label}</span>}
+                  {isWrong ? <XCircle className="mt-0.5 h-4 w-4 shrink-0" /> : isCorrect ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <span className="grid h-5 w-5 shrink-0 place-items-center rounded-md bg-slate-100 text-slate-700 dark:bg-white/10 dark:text-white text-[11px]">{option.label}</span>}
                   <span>
                     {option.title}
                     {taskState.isCompleted && isSelected && option.explanation && (
-                      <span className="mt-1 block text-xs font-semibold text-slate-300">{option.explanation}</span>
+                      <span className="mt-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">{option.explanation}</span>
                     )}
                   </span>
                 </button>
@@ -190,7 +190,7 @@ export const TryItSlide: React.FC<TryItSlideProps> = ({
         <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
-          className="rounded-2xl border border-emerald-300/40 bg-emerald-400/10 p-4 text-sm font-bold leading-relaxed text-emerald-50"
+          className="rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 text-sm font-bold leading-relaxed text-emerald-900 dark:border-emerald-300/40 dark:bg-emerald-400/10 dark:text-emerald-50"
         >
           {slide.completionNarration.find((cue) => cue.text)?.text}
         </motion.div>

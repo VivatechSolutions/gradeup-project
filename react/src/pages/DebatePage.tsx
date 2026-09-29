@@ -114,7 +114,7 @@ button,input,select,textarea{font-family:var(--font)}
 .finput::placeholder{color:var(--t3)}
 .finput:disabled{opacity:.45;cursor:not-allowed}
 select.finput{cursor:pointer;appearance:none;background-color:var(--surf);color:var(--t1);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 11px center;padding-right:30px}
-select.finput option{background:#fff;color:#0f172a}
+select.finput option, select.finput optgroup{background:var(--surf2);color:var(--t1)}
 .fi-row{display:grid;grid-template-columns:1fr 1fr;gap:9px}
 
 .btn-p{padding:11px 20px;border-radius:13px;border:none;cursor:pointer;background:var(--grad);color:#fff;font-size:13px;font-weight:700;transition:all .22s;box-shadow:0 5px 18px rgba(99,102,241,.28);display:inline-flex;align-items:center;justify-content:center;gap:8px;font-family:var(--font);width:100%}

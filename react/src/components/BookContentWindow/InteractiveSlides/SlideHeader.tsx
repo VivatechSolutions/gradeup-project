@@ -1,6 +1,8 @@
 import React from "react";
 import { ArrowLeft, Check, GraduationCap, Lock, Medal, Moon, Sparkles, Sun, UserRound } from "lucide-react";
 import { useTheme } from "../../../hooks/use-theme";
+import logoDark from "../../../assets/logo-dark.png";
+import logoWhite from "../../../assets/logo-white.png";
 
 interface SlideHeaderProps {
   lessonTitle: string;
@@ -11,6 +13,7 @@ interface SlideHeaderProps {
   avatarType: "male" | "female";
   onAvatarTypeChange: (type: "male" | "female") => void;
   onBackToUnits: () => void;
+  onBackToLibrary?: () => void;
 }
 
 export const SlideHeader: React.FC<SlideHeaderProps> = ({
@@ -22,6 +25,7 @@ export const SlideHeader: React.FC<SlideHeaderProps> = ({
   avatarType,
   onAvatarTypeChange,
   onBackToUnits,
+  onBackToLibrary,
 }) => {
   const { theme, setTheme } = useTheme();
   const isDark = theme === "dark";
@@ -32,21 +36,20 @@ export const SlideHeader: React.FC<SlideHeaderProps> = ({
       <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3">
         <div className="flex items-center gap-3">
           <button
-            onClick={onBackToUnits}
+            onClick={onBackToLibrary ?? onBackToUnits}
             className="inline-flex items-center gap-2 px-3 sm:px-4 py-1.5 rounded-2xl text-xs sm:text-sm font-extrabold text-blue-700 dark:text-cyan-50 bg-white/80 dark:bg-[#0d2b50]/90 border border-blue-100 dark:border-cyan-300/35 shadow-sm shadow-slate-900/5 dark:shadow-[0_0_18px_rgba(34,211,238,.12)] hover:-translate-y-0.5 hover:bg-white dark:hover:bg-[#123860] transition-all"
-            title="Return to Units List"
+            title={onBackToLibrary ? "Return to the book library" : "Return to Units List"}
           >
             <ArrowLeft className="w-4 h-4" />
-            <span className="hidden sm:inline">Units</span>
+            <span className="inline">{onBackToLibrary ? "Refer Book" : "Units"}</span>
           </button>
 
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-2xl bg-gradient-to-tr from-[#1232a3] via-[#2367ff] to-[#00c896] flex items-center justify-center text-white shadow-lg shadow-blue-500/20 dark:shadow-cyan-400/25">
-              <GraduationCap className="w-5 h-5" />
-            </div>
-            <span className="font-extrabold text-lg sm:text-xl tracking-normal hidden md:inline dark:drop-shadow-[0_8px_18px_rgba(56,189,248,.20)]">
-              Grade<span className="text-emerald-500">Up</span>
-            </span>
+            <img
+              src={isDark ? logoWhite : logoDark}
+              alt="GradeUp logo"
+              className="h-8 w-auto max-w-[110px] object-contain sm:h-9"
+            />
           </div>
         </div>
 
@@ -128,23 +131,23 @@ export const SlideHeader: React.FC<SlideHeaderProps> = ({
                 key={index}
                 className={`relative h-7 w-7 sm:h-8 sm:w-8 shrink-0 rounded-full border flex items-center justify-center text-[11px] sm:text-xs font-extrabold transition-all duration-500 ${
                   isCurrent
-                    ? "animate-[guActiveStep_1.7s_ease-in-out_infinite] bg-gradient-to-br from-amber-300 via-orange-500 to-fuchsia-500 text-white border-amber-100 shadow-lg shadow-orange-400/30 scale-110 dark:from-amber-300 dark:via-orange-500 dark:to-fuchsia-500 dark:border-amber-100 dark:text-white dark:shadow-[0_0_26px_rgba(251,146,60,.72),inset_0_1px_0_rgba(255,255,255,.35)]"
+                    ? "animate-[guActiveStep_1.7s_ease-in-out_infinite] bg-gradient-to-br from-amber-300 via-orange-500 to-fuchsia-500 text-white border-white/80 shadow-lg shadow-orange-400/30 scale-110 dark:border-amber-100 dark:shadow-[0_0_26px_rgba(251,146,60,.72),inset_0_1px_0_rgba(255,255,255,.35)]"
                     : isDone
-                      ? "bg-orange-50 text-orange-600 border-orange-200 dark:bg-[#17305e] dark:text-cyan-50 dark:border-cyan-200/35 dark:shadow-[0_0_16px_rgba(34,211,238,.16),inset_0_1px_0_rgba(255,255,255,.14)]"
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-200 shadow-sm shadow-emerald-500/10 dark:bg-[#173b45] dark:text-emerald-100 dark:border-emerald-300/40 dark:shadow-[0_0_16px_rgba(45,212,191,.18)]"
                       : isNewlyUnlocked
-                        ? "animate-[guUnlockStep_.9s_ease-out] bg-gradient-to-br from-emerald-300 via-cyan-300 to-sky-500 text-[#061431] border-cyan-100 shadow-[0_0_26px_rgba(34,211,238,.50)] dark:text-[#061431]"
-                        : "bg-white/80 text-[#071b4d] border-slate-200 shadow-sm shadow-slate-900/5 dark:bg-[#121936]/92 dark:text-cyan-100/45 dark:border-cyan-200/14 dark:shadow-[inset_0_1px_0_rgba(255,255,255,.06),0_10px_22px_rgba(0,0,0,.22)]"
+                        ? "animate-[guUnlockStep_.9s_ease-out] bg-gradient-to-br from-emerald-300 via-cyan-300 to-sky-500 text-[#061431] border-cyan-100 shadow-[0_0_26px_rgba(34,211,238,.50)] dark:border-cyan-200/50 dark:text-[#061431]"
+                        : "bg-slate-100 text-slate-700 border-slate-300 shadow-sm shadow-slate-900/5 dark:bg-[#1f2c4f] dark:text-sky-50 dark:border-sky-200/25 dark:shadow-[inset_0_1px_0_rgba(255,255,255,.06),0_10px_22px_rgba(0,0,0,.22)]"
                 }`}
               >
                 {isNewlyUnlocked && (
                   <span className="absolute inset-[-8px] rounded-full border border-cyan-200/60 opacity-0 animate-[guUnlockRipple_.9s_ease-out]" aria-hidden="true" />
                 )}
                 {isLocked ? (
-                  <Lock className="h-3.5 w-3.5" />
+                  <Lock className="h-3.5 w-3.5 text-slate-600 drop-shadow-[0_0_8px_rgba(255,255,255,0.5)] dark:text-sky-50 dark:drop-shadow-[0_0_10px_rgba(125,211,252,0.65)]" />
                 ) : isDone ? (
                   <Check className="h-3.5 w-3.5 stroke-[3]" />
                 ) : (
-                  index + 1
+                  <span className="text-slate-700 dark:text-sky-50">{index + 1}</span>
                 )}
               </div>
             );

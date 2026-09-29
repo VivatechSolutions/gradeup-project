@@ -53,6 +53,7 @@ export const AvatarTeacher: React.FC<AvatarTeacherProps> = ({
   showVoiceControls = true,
 }) => {
   const [isBubbleVisible, setIsBubbleVisible] = useState(false);
+  const [isControlsVisible, setIsControlsVisible] = useState(false);
   const isVoiceActive = isSpeaking && !isPaused;
   const messageLength = message?.trim().length || 0;
   const bubbleWidthClass =
@@ -73,6 +74,8 @@ export const AvatarTeacher: React.FC<AvatarTeacherProps> = ({
     event.stopPropagation();
     action?.();
   };
+
+  const canShowControls = (showControls || showTypeControls || showVoiceControls) && isControlsVisible;
 
   return (
     <div
@@ -108,7 +111,14 @@ export const AvatarTeacher: React.FC<AvatarTeacherProps> = ({
       <motion.div
         whileHover={{ scale: 1.04 }}
         whileTap={{ scale: 0.96 }}
-        onClick={onAvatarClick || (() => setIsBubbleVisible((prev) => !prev))}
+        onClick={() => {
+          setIsBubbleVisible(false);
+          if (onAvatarClick) {
+            onAvatarClick();
+          } else {
+            setIsControlsVisible((prev) => !prev);
+          }
+        }}
         className="relative group cursor-pointer flex flex-col items-center"
       >
         {/* Glow halo behind teacher */}
@@ -171,7 +181,7 @@ export const AvatarTeacher: React.FC<AvatarTeacherProps> = ({
                 }}
                 onClick={(event) => {
                   event.stopPropagation();
-                  setIsBubbleVisible(true);
+                  setIsBubbleVisible((prev) => !prev);
                 }}
                 className="absolute right-3 top-4 z-30 grid h-9 w-9 place-items-center rounded-full border border-white/75 bg-gradient-to-br from-cyan-400 via-blue-500 to-violet-500 text-white shadow-[0_0_24px_rgba(56,189,248,.42)] transition hover:brightness-110 dark:border-cyan-100/50 dark:shadow-[0_0_26px_rgba(34,211,238,.58)]"
                 title="Show teacher message"
@@ -185,8 +195,15 @@ export const AvatarTeacher: React.FC<AvatarTeacherProps> = ({
 
       </motion.div>
 
-      {showControls && (showTypeControls || showVoiceControls) && (
-        <div className="mt-1.5 flex flex-col items-center gap-1.5 rounded-[22px] border border-cyan-100/80 dark:border-cyan-200/35 bg-cyan-50/90 dark:bg-[linear-gradient(145deg,rgba(8,15,38,.98),rgba(24,29,76,.94))] p-2 shadow-xl shadow-cyan-900/10 dark:shadow-[0_18px_38px_rgba(0,0,0,.52),0_0_28px_-8px_rgba(34,211,238,.55),inset_0_1px_0_rgba(255,255,255,.12)] backdrop-blur-md transition-colors">
+      <AnimatePresence>
+        {canShowControls && (
+          <motion.div
+            initial={{ opacity: 0, y: 8, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.96 }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
+            className="mt-1.5 flex flex-col items-center gap-1.5 rounded-[22px] border border-cyan-100/80 dark:border-cyan-200/35 bg-cyan-50/90 dark:bg-[linear-gradient(145deg,rgba(8,15,38,.98),rgba(24,29,76,.94))] p-2 shadow-xl shadow-cyan-900/10 dark:shadow-[0_18px_38px_rgba(0,0,0,.52),0_0_28px_-8px_rgba(34,211,238,.55),inset_0_1px_0_rgba(255,255,255,.12)] backdrop-blur-md transition-colors"
+          >
         {showTypeControls && (
         <div className="grid grid-cols-2 gap-1 w-full">
           {(["male", "female"] as const).map((type) => {
@@ -250,8 +267,9 @@ export const AvatarTeacher: React.FC<AvatarTeacherProps> = ({
           </button>
         </div>
         )}
-      </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

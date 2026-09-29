@@ -988,8 +988,8 @@ const formattedSubjects: {
   color: string;
   id: number;
   emoji: string;
-  standard: string;
-  board: string;
+  standard?: string;
+  board?: string;
 }[] = [
   {
     value: "all",
@@ -1508,7 +1508,7 @@ export default function AITutorModern() {
   const [view, setView] = useState<"subject-selection" | "tutor">(
     "subject-selection",
   );
-  const [currentRole, setCurrentRole] = useState("student");
+  const [currentRole, setCurrentRole] = useState<"student" | "teacher">("student");
   const [chatError, setChatError] = useState<string | null>(null);
 
   const panelGroupRef = useRef<ImperativePanelGroupHandle>(null);
@@ -1592,7 +1592,8 @@ export default function AITutorModern() {
     return chat.subjectGroupKey === selectedSubjectData?.value;
   });
   useEffect(() => {
-    if (userHeader?.role) setCurrentRole(userHeader.role);
+    if (userHeader?.role)
+      setCurrentRole(userHeader.role as "student" | "teacher");
   }, [userHeader]);
 
   useEffect(() => {
@@ -1765,7 +1766,8 @@ export default function AITutorModern() {
   }, []);
 
   useEffect(() => {
-    if (userHeader?.role) setCurrentRole(userHeader.role);
+    if (userHeader?.role)
+      setCurrentRole(userHeader.role as "student" | "teacher");
   }, [userHeader]);
 
   const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(false);
@@ -3180,6 +3182,7 @@ export default function AITutorModern() {
             subject={selectedSubjectData?.value || ""}
             unit={selectedUnit}
             unitId={selectedUnitId}
+            isDark={isDark}
             onBack={() => setRightPanelView("studio")}
           />
         </div>

@@ -6809,11 +6809,12 @@ const BookContentWindowRewamp = () => {
           className="reader-avatar-explanation no-select"
           style={{
             padding: "16px",
-            background: "var(--bg-panel2)",
+            background: "var(--bg-panel2, #f8fafc)",
             border: "1px solid var(--indigo, #6366f1)",
             borderLeft: "4px solid var(--indigo, #6366f1)",
             borderRadius: "6px",
             marginBottom: "16px",
+            color: "var(--text, var(--text-main, #0f172a))",
           }}
         >
           {item.title && (
@@ -6856,7 +6857,7 @@ const BookContentWindowRewamp = () => {
                       style={{
                         padding: "16px",
                         background:
-                          "linear-gradient(135deg, var(--bg-panel2), rgba(99,102,241,0.05))",
+                          "linear-gradient(135deg, var(--bg-panel2, #f8fafc), rgba(99,102,241,0.05))",
                         border: "2px solid var(--indigo, #6366f1)",
                         borderRadius: "8px",
                         marginBottom: "16px",
@@ -6882,7 +6883,7 @@ const BookContentWindowRewamp = () => {
                         style={{
                           fontSize: "14px",
                           fontWeight: "600",
-                          color: "var(--text)",
+                          color: "var(--text, var(--text-main, #0f172a))",
                           marginBottom: "12px",
                         }}
                       >
@@ -6895,7 +6896,7 @@ const BookContentWindowRewamp = () => {
                           style={{
                             fontSize: "13px",
                             fontStyle: "italic",
-                            color: "var(--text-muted, #8891aa)",
+                            color: "var(--text-muted, #64748b)",
                             marginBottom: "12px",
                             paddingLeft: "12px",
                             borderLeft: "4px solid var(--indigo, #6366f1)",
@@ -6910,7 +6911,7 @@ const BookContentWindowRewamp = () => {
 
                       {/* Q&A Section */}
                       <div>
-                        <div style={{ marginBottom: "10px" }}>
+                        <div style={{ marginBottom: "10px", color: "var(--text, var(--text-main, #0f172a))" }}>
                           <strong style={{ color: "var(--indigo, #6366f1)" }}>
                             Q:
                           </strong>{" "}
@@ -6946,6 +6947,7 @@ const BookContentWindowRewamp = () => {
                                 marginLeft: "8px",
                                 paddingLeft: "8px",
                                 borderLeft: "2px solid var(--indigo, #6366f1)",
+                                color: "var(--text, var(--text-main, #0f172a))",
                               }}
                             >
                               <strong
@@ -6981,7 +6983,7 @@ const BookContentWindowRewamp = () => {
                         style={{
                           fontSize: "14px",
                           lineHeight: "1.6",
-                          color: "var(--text)",
+                          color: "var(--text, var(--text-main, #0f172a))",
                         }}
                       >
                         <FormattedAIContent value={segmentText} />
@@ -7011,7 +7013,7 @@ const BookContentWindowRewamp = () => {
               })}
             </div>
           ) : (
-            <p style={{ color: "var(--text-muted)" }}>No segments available.</p>
+            <p style={{ color: "var(--text-muted, #64748b)" }}>No segments available.</p>
           )}
         </div>
       );
@@ -7661,7 +7663,7 @@ const BookContentWindowRewamp = () => {
                     clearReaderState();
                   }}
                 >
-                  ← Library
+                  ← Refer Book
                 </button>
               </div>
             </div>
@@ -7768,14 +7770,17 @@ const BookContentWindowRewamp = () => {
     <SlideContainer
       book={selectedBook}
       chapter={activeChapter}
-      onBackToUnits={() => setIsTocView(true)}
-      onBackToLibrary={() => {
-        setSelectedBook(null);
+      onBackToUnits={() => {
         setActiveChapter(null);
-        setIsTocView(false);
+        setIsTocView(true);
+      }}
+      onBackToLibrary={() => {
+        setActiveChapter(null);
+        setIsTocView(true);
       }}
       onLessonFinish={() => {
         setIsTocView(true);
+        setActiveChapter(null);
         pushToast({
           title: "Unit Completed! 🎉",
           description: `Great job completing ${activeChapter?.unitTitle || activeChapter?.title || "this unit"}!`,
@@ -8070,12 +8075,14 @@ const libStyles = `
   animation:libHeroOrbit 12s linear infinite;
 }
 .lib-hero::after {
-  content:''; position:absolute; inset:auto -10% -72px 34%; height:130px;
-  background:linear-gradient(90deg,transparent,rgba(70,216,214,.24),transparent);
-  transform:rotate(-8deg); filter:blur(12px); animation:libHeroSweep 7s ease-in-out infinite;
+  content:''; position:absolute; top:-35%; bottom:-35%; left:-42%; width:36%;
+  background:linear-gradient(90deg,transparent,rgba(255,249,224,.36),rgba(245,158,11,.13),transparent);
+  transform:translateX(-120%) skewX(-18deg); filter:blur(8px); animation:libHeroSweep 7s linear infinite;
+  pointer-events:none; z-index:0;
 }
 @keyframes libHeroOrbit { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
-@keyframes libHeroSweep { 0%,100% { opacity:.35; transform:translateX(-8%) rotate(-8deg); } 50% { opacity:.8; transform:translateX(8%) rotate(-8deg); } }
+@keyframes libHeroSweep { from { opacity:.45; transform:translateX(-120%) skewX(-18deg); } to { opacity:.65; transform:translateX(460%) skewX(-18deg); } }
+.dark .lib-hero::after { background:linear-gradient(90deg,transparent,rgba(255,255,255,.2),rgba(70,216,214,.12),transparent); }
 .lib-hero-inner  { display:flex; align-items:center; justify-content:space-between; position:relative; z-index:1; gap:16px; }
 .lib-hero-art { position:absolute; z-index:2; left:50%; bottom:-8px; width:clamp(110px,13vw,160px); transform:translateX(-50%); filter:drop-shadow(0 16px 18px rgba(4,13,47,.28)); pointer-events:none; }
 .lib-hero-art img { display:block; width:100%; height:auto; }
@@ -8438,6 +8445,7 @@ const readerStyles = `
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
 :root {
   --bg-app:#fcfcfd; --text-main:#0f172a; --text-muted:#64748b;
+  --text:#0f172a; --bg-panel2:#f8fafc;
   --card-bg:rgba(255,255,255,0.8); --border:#f1f5f9; --accent:#6366f1;
   --shadow:0 10px 30px -10px rgba(0,0,0,0.04);
   --book-bg:#fff; --book-page-bg-left:#fdfdfd; --book-page-bg-right:#ffffff;
@@ -8450,6 +8458,7 @@ const readerStyles = `
 }
 .dark {
   --bg-app:#050816; --text-main:#f8fafc; --text-muted:#cbd5e1;
+  --text:#f8fafc; --bg-panel2:#162040;
   --card-bg:rgba(30,41,59,0.92); --border:rgba(226,232,240,.16);
   --shadow:0 10px 40px -15px rgba(0,0,0,0.4);
   --book-bg:#111827; --book-page-bg-left:#111827; --book-page-bg-right:#0f172a;
@@ -8849,7 +8858,7 @@ const readerStyles = `
   position: absolute;
   inset: 1px;
   border-radius: inherit;
-  background: linear-gradient(120deg, transparent 0%, rgba(255,255,255,.22) 35%, transparent 62%);
+  background: linear-gradient(120deg, transparent 0%, rgba(255,250,226,.32) 35%, rgba(245,158,11,.12) 52%, transparent 70%);
   transform: translateX(-120%);
   animation: geniusShine 4.2s ease-in-out infinite;
   pointer-events: none;
@@ -8938,8 +8947,11 @@ const readerStyles = `
   border-color: rgba(129,140,248,.2);
 }
 @keyframes geniusShine {
-  0%, 56% { transform: translateX(-120%); }
-  72%, 100% { transform: translateX(120%); }
+  from { transform: translateX(-120%); }
+  to { transform: translateX(120%); }
+}
+.dark .bk-float-genius::after {
+  background: linear-gradient(120deg, transparent 0%, rgba(255,255,255,.22) 35%, transparent 62%);
 }
 
 .bk-page-arrow {
@@ -9389,12 +9401,12 @@ mark.reader-highlight:hover { filter: brightness(1.15); }
 .dark .reader-list,
 .dark .reader-list li,
 .dark .reader-formula {
-  color:#f8fafc;
+  color:#ffff;
 }
 .dark .reader-h1,
 .dark .bk-ch-title,
 .dark .bk-unit-label {
-  color:#f8fafc;
+  color:#ffff;
 }
 .dark .reader-h2,
 .dark .reader-h3 {
@@ -11452,21 +11464,21 @@ mark.reader-highlight:hover { filter: brightness(1.15); }
 .dark .reader-list li, [data-theme="dark"] .bk-page-inner,
 [data-theme="dark"] .reader-paragraph, [data-theme="dark"] .reader-list,
 [data-theme="dark"] .reader-list li {
-  color: #cbd5e1;
+  color: #ffff;
 }
 .dark .reader-paragraph strong, .dark .reader-list strong, .dark b,
 [data-theme="dark"] .reader-paragraph strong, [data-theme="dark"] .reader-list strong, [data-theme="dark"] b {
-  color: #f8fafc !important;
+  color: #fff !important;
 }
 .dark .reader-h1, [data-theme="dark"] .reader-h1 {
-  color: #f8fafc;
+  color: #fff;
 }
 .dark .reader-h2, [data-theme="dark"] .reader-h2 {
   color: #e2e8f0;
 }
 .dark .reader-h3, .dark .bk-ch-title,
 [data-theme="dark"] .reader-h3, [data-theme="dark"] .bk-ch-title {
-  color: #f8fafc;
+  color: #fff;
 }
 .dark .bk-topbar-breadcrumb, [data-theme="dark"] .bk-topbar-breadcrumb {
   color: #94a3b8;

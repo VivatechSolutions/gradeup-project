@@ -7914,68 +7914,6 @@ const BookContentWindowDemo = () => {
                               </span>
                             )}
                           </button> */}
-                    <motion.button
-                      className={`bk-float-btn bk-float-thunder ${!canUseAvatarGenius ? "locked" : ""}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!canUseAvatarGenius) {
-                          pushToast({
-                            title: "Genius Mode unavailable",
-                            description:
-                              geniusUnavailableReason ||
-                              "Open a section page to use Genius Mode.",
-                            variant: "destructive",
-                          });
-                          return;
-                        }
-                        handleAvatarGeniusStart();
-                      }}
-                      disabled={!canUseAvatarGenius || isAvatarStarting}
-                      title={
-                        canUseAvatarGenius
-                          ? "Open Genius Mode"
-                          : geniusUnavailableReason
-                      }
-                      // High-voltage animations
-                      whileHover={
-                        canUseAvatarGenius
-                          ? {
-                              scale: 1.05,
-                              x: [0, -1, 1, -1, 1, 0], // Subtle "electric vibration"
-                              transition: {
-                                x: { repeat: Infinity, duration: 0.1 },
-                              },
-                            }
-                          : {}
-                      }
-                      whileTap={{ scale: 0.95 }}
-                    >
-                      <div className="bolt-container">
-                        <div className="bolt bolt-1" />
-                        <div className="bolt bolt-2" />
-                      </div>
-
-                      <Sparkles className="sparkle-icon" size={14} />
-                      <span>
-                        {isAvatarStarting
-                          ? "Preparing Genius Mode..."
-                          : "Try with Genius Mode"}
-                      </span>
-
-                      {!canUseAvatarGenius && (
-                        <span className="bk-float-lock">🔒</span>
-                      )}
-                    </motion.button>
-
-                  </div>
-                </div>
-
-                <div className="genius-top-strip">
-                  <div className="genius-top-copy">
-                    <span className="genius-top-eyebrow">Genius Mode</span>
-                    <strong>
-                      Start the avatar teacher for the current section
-                    </strong>
                   </div>
                 </div>
 
@@ -11005,12 +10943,12 @@ mark.reader-highlight:hover { filter: brightness(1.15); }
 .dark .reader-list,
 .dark .reader-list li,
 .dark .reader-formula {
-  color:#f8fafc;
+  color:#fff;
 }
 .dark .reader-h1,
 .dark .bk-ch-title,
 .dark .bk-unit-label {
-  color:#f8fafc;
+  color:#fff;
 }
 .dark .reader-h2,
 .dark .reader-h3 {
@@ -13068,11 +13006,11 @@ mark.reader-highlight:hover { filter: brightness(1.15); }
 .dark .reader-list li, [data-theme="dark"] .bk-page-inner,
 [data-theme="dark"] .reader-paragraph, [data-theme="dark"] .reader-list,
 [data-theme="dark"] .reader-list li {
-  color: #cbd5e1;
+  color: #ffff;
 }
 .dark .reader-paragraph strong, .dark .reader-list strong, .dark b,
 [data-theme="dark"] .reader-paragraph strong, [data-theme="dark"] .reader-list strong, [data-theme="dark"] b {
-  color: #f8fafc !important;
+  color: #ffff !important;
 }
 .dark .reader-h1, [data-theme="dark"] .reader-h1 {
   color: #f8fafc;

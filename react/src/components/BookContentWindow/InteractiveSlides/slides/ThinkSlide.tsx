@@ -155,7 +155,7 @@ export const ThinkSlide: React.FC<ThinkSlideProps> = ({
         <motion.div
           initial={{ opacity: 0, x: -18 }}
           animate={{ opacity: 1, x: 0 }}
-          className={`rounded-2xl border border-cyan-300/35 bg-cyan-400/10 p-4 text-sm font-bold leading-relaxed text-cyan-50 ${isHookMcq ? "lg:col-start-1" : ""}`}
+          className={`rounded-2xl border border-cyan-200 bg-cyan-50/80 p-4 text-sm font-bold leading-relaxed text-cyan-900 dark:border-cyan-300/35 dark:bg-cyan-400/10 dark:text-cyan-50 ${isHookMcq ? "lg:col-start-1" : ""}`}
         >
           {slide.completionNarration.find((cue) => cue.text)?.text}
         </motion.div>

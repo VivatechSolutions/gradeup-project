@@ -248,7 +248,7 @@ button,input,select,textarea{font-family:var(--font)}
 .finput:focus{border-color:var(--em);box-shadow:0 0 0 3px rgba(0,195,122,.1)}
 .finput::placeholder{color:var(--t3)}.finput:disabled{opacity:.4;cursor:not-allowed}
 select.finput{cursor:pointer;appearance:none;background-color:var(--surf);color:var(--t1);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%238a95a3' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px}
-select.finput option{background:#fff;color:#111827}
+select.finput option, select.finput optgroup{background:var(--surf2);color:var(--t1)}
 .fi-row{display:grid;grid-template-columns:1fr 1fr;gap:9px}
 .btn-p{padding:10px 20px;border-radius:10px;border:none;cursor:pointer;background:var(--grad);color:#fff;font-size:13.5px;font-weight:700;transition:all .2s;box-shadow:0 4px 16px rgba(0,195,122,.24);display:inline-flex;align-items:center;justify-content:center;gap:7px;font-family:var(--font);width:100%}
 .btn-p:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 7px 24px rgba(0,195,122,.34)}

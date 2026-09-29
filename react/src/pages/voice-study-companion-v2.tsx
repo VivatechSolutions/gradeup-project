@@ -124,7 +124,7 @@ const AIChatInterface = ({ aIMessages, onSendMessage, isPending }) => {
     return (
         <Card className="w-full max-w-2xl mx-auto h-[70vh] flex flex-col bg-card">
             <CardHeader>
-                <CardTitle className="flex items-center"><Sparkles className="animate-pulse text-indigo-500" className="mr-2"/> AI Tutor</CardTitle>
+                <CardTitle className="flex items-center"><Sparkles className="animate-pulse text-indigo-500 mr-2"/> AI Tutor</CardTitle>
             </CardHeader>
             <CardContent className="flex-1 p-0">
                  <ScrollArea className="h-full p-4">

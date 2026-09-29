@@ -41,10 +41,10 @@ export const ExplanationSlide: React.FC<ExplanationSlideProps> = ({
     <div className="flex h-full min-h-0 w-full max-w-6xl flex-col text-left">
       <div className="mb-3 flex shrink-0 items-center justify-between gap-4">
         <div>
-          <div className="text-xs font-black uppercase text-blue-300">Explanation</div>
-          <h2 className="mt-1 text-xl font-extrabold text-white md:text-2xl">{slide.title}</h2>
+          <div className="text-xs font-black uppercase text-blue-600 dark:text-blue-300">Explanation</div>
+          <h2 className="mt-1 text-xl font-extrabold text-slate-900 dark:text-white md:text-2xl">{slide.title}</h2>
         </div>
-        <div className="shrink-0 text-xs font-bold text-slate-300">
+        <div className="shrink-0 text-xs font-bold text-slate-500 dark:text-slate-300">
           {segments.length} parts
         </div>
       </div>
@@ -67,30 +67,30 @@ export const ExplanationSlide: React.FC<ExplanationSlideProps> = ({
               transition={{ duration: 0.42, ease: [0.25, 1, 0.5, 1] }}
               className={`rounded-xl border px-4 py-3 transition-colors md:px-5 ${
                 isActive
-                  ? "border-cyan-300/65 bg-cyan-400/10 shadow-[0_0_22px_rgba(34,211,238,.12)]"
-                  : "border-white/10 bg-white/[0.035]"
+                  ? "border-cyan-400 bg-cyan-50/80 shadow-sm dark:border-cyan-300/65 dark:bg-cyan-400/10 dark:shadow-[0_0_22px_rgba(34,211,238,.12)]"
+                  : "border-slate-200/90 bg-white/70 dark:border-white/10 dark:bg-white/[0.035]"
               }`}
             >
               <div className="mb-2 flex items-center gap-2">
                 <span
                   className={`grid h-6 w-6 shrink-0 place-items-center rounded-md text-[11px] font-black ${
-                    isActive ? "bg-cyan-400 text-[#071126]" : "bg-white/10 text-slate-300"
+                    isActive ? "bg-cyan-500 text-white dark:bg-cyan-400 dark:text-[#071126]" : "bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-slate-300"
                   }`}
                 >
                   {index + 1}
                 </span>
-                <span className="text-[11px] font-black uppercase text-slate-300">
+                <span className="text-[11px] font-black uppercase text-slate-500 dark:text-slate-300">
                   {segment.type === "think" ? "Quick check" : "Key idea"}
                 </span>
-                {hasImage && <ImageIcon className="h-3.5 w-3.5 text-cyan-300" />}
-                {isActive && <span className="ml-auto text-[11px] font-bold text-cyan-300">Now playing</span>}
+                {hasImage && <ImageIcon className="h-3.5 w-3.5 text-cyan-600 dark:text-cyan-300" />}
+                {isActive && <span className="ml-auto text-[11px] font-bold text-cyan-700 dark:text-cyan-300">Now playing</span>}
               </div>
 
               <div className={hasImage ? "grid items-center gap-4 md:grid-cols-[minmax(0,1fr)_240px]" : ""}>
                 <div className="min-w-0">
                   {segment.type === "think" ? (
                     <>
-                      <p className="text-sm font-extrabold leading-relaxed text-white">
+                      <p className="text-sm font-extrabold leading-relaxed text-slate-900 dark:text-white">
                         {segment.question || segment.title}
                       </p>
                       <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -106,10 +106,10 @@ export const ExplanationSlide: React.FC<ExplanationSlideProps> = ({
                               onClick={() => onSelectOption(index, option.id)}
                               className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-left text-xs font-bold transition ${
                                 isWrong
-                                  ? "border-rose-400/70 bg-rose-500/10 text-rose-100"
+                                  ? "border-rose-300 bg-rose-50 text-rose-900 dark:border-rose-400/70 dark:bg-rose-500/10 dark:text-rose-100"
                                   : showCorrect || (isSelected && state.isCorrect)
-                                    ? "border-emerald-400/70 bg-emerald-500/10 text-emerald-100"
-                                    : "border-white/15 bg-white/5 text-slate-200 hover:border-cyan-300/60"
+                                    ? "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-400/70 dark:bg-emerald-500/10 dark:text-emerald-100"
+                                    : "border-slate-200/90 bg-white text-slate-800 hover:border-cyan-400 dark:border-white/15 dark:bg-white/5 dark:text-slate-200 dark:hover:border-cyan-300/60"
                               }`}
                             >
                               {isWrong ? (
@@ -126,9 +126,9 @@ export const ExplanationSlide: React.FC<ExplanationSlideProps> = ({
                       </div>
                     </>
                   ) : (
-                    <div className="space-y-1.5 text-sm font-semibold leading-relaxed text-slate-200 md:text-[15px]">
+                    <div className="space-y-1.5 text-sm font-semibold leading-relaxed text-slate-800 dark:text-slate-200 md:text-[15px]">
                       {segment.description && <p>{segment.description}</p>}
-                      {segment.content && <p className="text-slate-300">{segment.content}</p>}
+                      {segment.content && <p className="text-slate-600 dark:text-slate-300">{segment.content}</p>}
                     </div>
                   )}
                 </div>
@@ -139,7 +139,7 @@ export const ExplanationSlide: React.FC<ExplanationSlideProps> = ({
                     category="general-science"
                     alt={segment.images?.caption || segment.title}
                     aspectRatio="16/9"
-                    className="w-full max-w-[240px] justify-self-center bg-white/5"
+                    className="w-full max-w-[240px] justify-self-center bg-white dark:bg-white/5"
                     imageClassName="object-contain"
                   />
                 )}
@@ -150,7 +150,7 @@ export const ExplanationSlide: React.FC<ExplanationSlideProps> = ({
         </AnimatePresence>
 
         {hasMoreSegments && (
-          <div className="sticky bottom-0 flex justify-end bg-gradient-to-t from-[#0c1530] via-[#0c1530]/95 to-transparent pb-1 pt-5">
+          <div className="sticky bottom-0 flex justify-end bg-gradient-to-t from-white via-white/95 to-transparent dark:from-[#0c1530] dark:via-[#0c1530]/95 pb-1 pt-5">
             <button
               type="button"
               onClick={onRevealNext}
@@ -167,3 +167,4 @@ export const ExplanationSlide: React.FC<ExplanationSlideProps> = ({
     </div>
   );
 };
+

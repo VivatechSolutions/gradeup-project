@@ -3412,7 +3412,7 @@ const BookContentWindow = () => {
                   className="lib-hero-btn"
                   onClick={() => { setSelectedBook(null); setIsTocView(false); clearReaderState(); }}
                 >
-                  ← Library
+                  ← Refer Book
                 </button>
               </div>
             </div>

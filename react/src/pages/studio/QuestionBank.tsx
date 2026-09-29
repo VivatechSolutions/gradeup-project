@@ -1,12 +1,11 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useLocation } from "wouter";
 import { pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import { useAuth } from "../../hooks/use-auth";
 import Navigation from "../../components/navigation";
-import { PARTS } from "../../lib/mock-paper-data";
-// TEMP DEMO CHANGE: Local Science Class 10 question paper until DB JSON upload is available.
+import { motion, AnimatePresence } from "framer-motion";
 import {
   mathsQuestionBankDemo,
   scienceQuestionBankDemo,
@@ -19,7 +18,6 @@ import {
   Search,
   X,
   Printer,
-  Timer,
   Bookmark,
   ArrowUp,
   Sparkles,
@@ -31,7 +29,19 @@ import {
   GraduationCap,
   BookOpen,
   List,
+  CheckCircle2,
+  Calendar,
+  Layers,
+  Award,
+  Filter,
 } from "lucide-react";
+import studyRoboImg from "../../assets/dashboard/study-robo.png";
+import roboImg from "../../assets/robo.png";
+import tamilSubject from "../../assets/dashboard/subject-tamil.png";
+import englishSubject from "../../assets/dashboard/subject-english.png";
+import scienceSubject from "../../assets/dashboard/subject-science.png";
+import socialSubject from "../../assets/dashboard/subject-social.png";
+import mathsSubject from "../../assets/dashboard/subject-maths.png";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -73,7 +83,7 @@ interface QuestionBankResponse {
   };
 }
 
-// TEMP DEMO CHANGE: Keep backend response shape same as API data, so existing paper UI is reused.
+// Demo fallback data
 const DEMO_SCIENCE_QUESTION_BANK: QuestionBankResponse["data"] = scienceQuestionBankDemo;
 const DEMO_MATHS_QUESTION_BANK: QuestionBankResponse["data"] = mathsQuestionBankDemo;
 const DEMO_SOCIAL_QUESTION_BANK: QuestionBankResponse["data"] = socialQuestionBankDemo;
@@ -105,527 +115,1108 @@ const findDemoQuestionBank = (
   return null;
 };
 
+// ── COLOR THEMES MATCHING STUDENT DASHBOARD EXPLORE & PLAY ──
+interface CardTheme {
+  gradient: string;
+  accent: string;
+  badgeBg: string;
+  badgeColor: string;
+  btnGrad: string;
+  btnShadow: string;
+  art: string;
+}
+
+const CARD_THEMES: Record<string, CardTheme> = {
+  science: {
+    gradient: "linear-gradient(135deg, #10b981 0%, #0d9488 100%)",
+    accent: "#10b981",
+    badgeBg: "rgba(16,185,129,.14)",
+    badgeColor: "#059669",
+    btnGrad: "linear-gradient(135deg, #10b981, #059669)",
+    btnShadow: "0 8px 18px rgba(16,185,129,.28)",
+    art: scienceSubject,
+  },
+  math: {
+    gradient: "linear-gradient(135deg, #ff9c1a 0%, #ff6c00 100%)",
+    accent: "#ff9c1a",
+    badgeBg: "rgba(255,156,26,.14)",
+    badgeColor: "#d97706",
+    btnGrad: "linear-gradient(135deg, #ff9c1a, #ea580c)",
+    btnShadow: "0 8px 18px rgba(255,156,26,.28)",
+    art: mathsSubject,
+  },
+  social: {
+    gradient: "linear-gradient(135deg, #00b9b4 0%, #00a7e8 100%)",
+    accent: "#00a7e8",
+    badgeBg: "rgba(0,185,180,.14)",
+    badgeColor: "#0284c7",
+    btnGrad: "linear-gradient(135deg, #00b9b4, #0284c7)",
+    btnShadow: "0 8px 18px rgba(0,185,180,.28)",
+    art: socialSubject,
+  },
+  english: {
+    gradient: "linear-gradient(135deg, #ff5f99 0%, #ff9f54 100%)",
+    accent: "#ff5f99",
+    badgeBg: "rgba(255,95,153,.14)",
+    badgeColor: "#e11d48",
+    btnGrad: "linear-gradient(135deg, #ff5f99, #f43f5e)",
+    btnShadow: "0 8px 18px rgba(255,95,153,.28)",
+    art: englishSubject,
+  },
+  tamil: {
+    gradient: "linear-gradient(135deg, #83e76d 0%, #27b86a 100%)",
+    accent: "#27b86a",
+    badgeBg: "rgba(39,184,106,.14)",
+    badgeColor: "#15803d",
+    btnGrad: "linear-gradient(135deg, #83e76d, #27b86a)",
+    btnShadow: "0 8px 18px rgba(39,184,106,.28)",
+    art: tamilSubject,
+  },
+};
+
+const PALETTE_FALLBACKS: CardTheme[] = [
+  {
+    gradient: "linear-gradient(135deg, #ff5f99 0%, #ff9f54 100%)",
+    accent: "#ff5f99",
+    badgeBg: "rgba(255,95,153,.14)",
+    badgeColor: "#e11d48",
+    btnGrad: "linear-gradient(135deg, #ff5f99, #ff7b54)",
+    btnShadow: "0 8px 18px rgba(255,95,153,.25)",
+    art: englishSubject,
+  },
+  {
+    gradient: "linear-gradient(135deg, #00b9b4 0%, #00a7e8 100%)",
+    accent: "#00a7e8",
+    badgeBg: "rgba(0,185,180,.14)",
+    badgeColor: "#0284c7",
+    btnGrad: "linear-gradient(135deg, #00b9b4, #0284c7)",
+    btnShadow: "0 8px 18px rgba(0,185,180,.25)",
+    art: socialSubject,
+  },
+  {
+    gradient: "linear-gradient(135deg, #ff9c1a 0%, #ff6c00 100%)",
+    accent: "#ff9c1a",
+    badgeBg: "rgba(255,156,26,.14)",
+    badgeColor: "#d97706",
+    btnGrad: "linear-gradient(135deg, #ff9c1a, #ea580c)",
+    btnShadow: "0 8px 18px rgba(255,156,26,.25)",
+    art: mathsSubject,
+  },
+  {
+    gradient: "linear-gradient(135deg, #83e76d 0%, #27b86a 100%)",
+    accent: "#27b86a",
+    badgeBg: "rgba(39,184,106,.14)",
+    badgeColor: "#15803d",
+    btnGrad: "linear-gradient(135deg, #83e76d, #27b86a)",
+    btnShadow: "0 8px 18px rgba(39,184,106,.25)",
+    art: tamilSubject,
+  },
+  {
+    gradient: "linear-gradient(135deg, #ffcf5a 0%, #ff7b54 100%)",
+    accent: "#ff7b54",
+    badgeBg: "rgba(255,123,84,.14)",
+    badgeColor: "#c2410c",
+    btnGrad: "linear-gradient(135deg, #ffcf5a, #ff7b54)",
+    btnShadow: "0 8px 18px rgba(255,123,84,.25)",
+    art: mathsSubject,
+  },
+];
+
+function getCardTheme(subject: string, index: number): CardTheme {
+  const s = (subject || "").toLowerCase();
+  if (s.includes("sci") || s.includes("phy") || s.includes("chem") || s.includes("bio")) return CARD_THEMES.science;
+  if (s.includes("math")) return CARD_THEMES.math;
+  if (s.includes("soc") || s.includes("hist") || s.includes("geo")) return CARD_THEMES.social;
+  if (s.includes("eng")) return CARD_THEMES.english;
+  if (s.includes("tam")) return CARD_THEMES.tamil;
+  return PALETTE_FALLBACKS[index % PALETTE_FALLBACKS.length];
+}
+
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
-.qb *, .qb *::before, .qb *::after { box-sizing:border-box; margin:0; padding:0; }
-.qb { font-family:'Plus Jakarta Sans',system-ui,sans-serif; background:#f8fafc; min-height:100vh; }
-.qb ::-webkit-scrollbar { width:4px; height:4px; }
-.qb ::-webkit-scrollbar-thumb { background:rgba(99,102,241,.2); border-radius:99px; }
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
 
-/* ── HERO ── */
+/* ── ROOT MATCHING STUDENT DASHBOARD DESIGN SYSTEM ── */
+.qb {
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  color: #071235;
+  background: radial-gradient(circle at 14% 9%,rgba(39,184,106,.10),transparent 28%),
+              radial-gradient(circle at 88% 14%,rgba(255,171,64,.14),transparent 26%),
+              radial-gradient(circle at 50% 80%,rgba(0,185,180,.08),transparent 30%),
+              linear-gradient(180deg,#fbfcff,#f4f7fc);
+  min-height: 100vh;
+  position: relative;
+  overflow-x: hidden;
+}
+
+.dark .qb, [data-theme="dark"] .qb {
+  color: #f6f7ff;
+  background: radial-gradient(circle at 14% 9%,rgba(39,184,106,.15),transparent 28%),
+              radial-gradient(circle at 88% 14%,rgba(255,171,64,.12),transparent 26%),
+              linear-gradient(180deg,#080d1f,#10172d);
+}
+
+.qb ::-webkit-scrollbar { width: 5px; height: 5px; }
+.qb ::-webkit-scrollbar-thumb { background: rgba(39,184,106,.3); border-radius: 99px; }
+
+/* Background decorative sparks */
+.qb-bg-spark {
+  position: absolute; pointer-events: none; z-index: 0;
+  border-radius: 999px; opacity: .45; animation: qbDrift 9s ease-in-out infinite;
+}
+.qb-bg-spark.s1 { left: 52%; top: 78px; width: 9px; height: 9px; background: #ffb21d; box-shadow: 34px 28px 0 #27b86a, 76px -14px 0 #00a7e8; }
+.qb-bg-spark.s2 { right: 8%; top: 260px; width: 7px; height: 7px; background: #ff4d8d; box-shadow: -48px 46px 0 #ff9c1a, -86px -18px 0 #00a7e8; animation-delay: -3s; }
+.qb-bg-spark.s3 { left: 6%; bottom: 160px; width: 8px; height: 8px; background: #27b86a; box-shadow: 42px -34px 0 #ff791f, 92px 18px 0 #00b9b4; animation-delay: -5s; }
+
+@keyframes qbDrift {
+  0%, 100% { transform: translate3d(0,0,0) rotate(0); }
+  50% { transform: translate3d(16px,-12px,0) rotate(6deg); }
+}
+@keyframes qbBreathe {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-7px); }
+}
+@keyframes qbShine {
+  0% { transform: translateX(-120%) rotate(18deg); }
+  45%, 100% { transform: translateX(220%) rotate(18deg); }
+}
+@keyframes qbPop3d {
+  0%, 100% { transform: translateY(0) rotate(-3deg) scale(1); }
+  50% { transform: translateY(-7px) rotate(4deg) scale(1.06); }
+}
+@keyframes qbCardIn {
+  from { opacity: 0; transform: translateY(14px) scale(.985); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ── HERO BANNER: FRESH LEARNING GARDEN (NO PURPLE/BLUE AI GRADIENT) ── */
 .qb-hero {
-  background:linear-gradient(135deg,#6366f1 0%,#8b5cf6 50%,#ec4899 100%);
-  border-radius:24px; padding:36px 40px; position:relative; overflow:hidden;
-  color:#fff; animation:heroIn .5s cubic-bezier(.34,1.56,.64,1) both;
-  margin-bottom:28px;
+  position: relative;
+  overflow: hidden;
+  min-height: 190px;
+  border-radius: 24px;
+  padding: 24px 30px;
+  background: linear-gradient(135deg, #d9f5c7 0%, #ecfccb 42%, #ffffff 100%);
+  border: 1.5px solid rgba(84,166,83,.24);
+  box-shadow: 0 14px 34px rgba(39,184,106,.12);
+  margin-bottom: 24px;
+  animation: qbCardIn .45s both;
 }
-@keyframes heroIn { from{opacity:0;transform:translateY(18px)} to{opacity:1;transform:none} }
-.qb-hero::before { content:''; position:absolute; top:-60px; right:-60px; width:260px; height:260px; border-radius:50%; background:rgba(255,255,255,.1); }
-.qb-hero::after  { content:''; position:absolute; bottom:-80px; left:30%; width:200px; height:200px; border-radius:50%; background:rgba(255,255,255,.07); }
-.qb-hero-inner { position:relative; z-index:1; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:20px; }
-.qb-hero-badge { display:inline-flex; align-items:center; gap:6px; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; background:rgba(255,255,255,.18); padding:5px 12px; border-radius:20px; margin-bottom:12px; border:1px solid rgba(255,255,255,.25); }
-.qb-hero-title { font-size:clamp(22px,3.5vw,34px); font-weight:800; letter-spacing:-.5px; margin-bottom:6px; }
-.qb-hero-sub   { font-size:14px; opacity:.75; max-width:400px; line-height:1.5; }
-.qb-hero-right { display:flex; align-items:center; gap:20px; flex-shrink:0; }
-.qb-hero-stat  { text-align:center; }
-.qb-hero-sv    { font-size:28px; font-weight:800; line-height:1; }
-.qb-hero-sl    { font-size:11px; opacity:.65; margin-top:2px; }
-.qb-hero-div   { width:1px; height:44px; background:rgba(255,255,255,.2); }
-
-/* ── CARD ── */
-.qb-card {
-  background:#fff; border-radius:20px;
-  border:1px solid rgba(0,0,0,.06); box-shadow:0 2px 12px rgba(0,0,0,.05);
+.qb-hero::before {
+  content: '';
+  position: absolute;
+  inset: -80px auto auto -80px;
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.45);
+  animation: qbBreathe 5s ease-in-out infinite;
 }
-
-/* ── FILTERS ROW ── */
-.qb-filters {
-  display:flex; align-items:center; gap:10px;
-  flex-wrap:nowrap; margin-bottom:24px;
-}
-
-/* Search */
-.qb-search-wrap { position:relative; flex:1; min-width:0; max-width:380px; }
-.qb-search-ico  { position:absolute; left:12px; top:50%; transform:translateY(-50%); color:#94a3b8; pointer-events:none; }
-.qb-search-inp  {
-  width:100%; height:42px; border-radius:14px; padding:0 14px 0 38px;
-  border:1.5px solid #f1f5f9; background:#fff; font-family:'Plus Jakarta Sans',system-ui,sans-serif;
-  font-size:13.5px; color:#0f172a; outline:none; transition:all .2s;
-  box-shadow:0 2px 8px rgba(0,0,0,.04);
-}
-.qb-search-inp:focus { border-color:#6366f1; box-shadow:0 0 0 3px rgba(99,102,241,.1); }
-.qb-search-inp::placeholder { color:#94a3b8; }
-
-/* ── YEAR DROPDOWN ── */
-.qb-year-wrap {
-  position:relative; flex-shrink:0;
-}
-.qb-year-btn {
-  height:42px; padding:0 14px 0 14px;
-  display:flex; align-items:center; gap:7px;
-  border-radius:14px; border:1.5px solid #f1f5f9; background:#fff;
-  font-family:'Plus Jakarta Sans',system-ui,sans-serif;
-  font-size:13px; font-weight:600; color:#374151; cursor:pointer;
-  transition:all .2s; white-space:nowrap;
-  box-shadow:0 2px 8px rgba(0,0,0,.04);
-  user-select:none;
-}
-.qb-year-btn:hover { border-color:#c7d2fe; color:#6366f1; }
-.qb-year-btn.open  { border-color:#6366f1; color:#6366f1; box-shadow:0 0 0 3px rgba(99,102,241,.1); }
-.qb-year-btn.has-filter {
-  background:linear-gradient(135deg,#6366f1,#8b5cf6);
-  color:#fff; border-color:transparent;
-  box-shadow:0 4px 12px rgba(99,102,241,.3);
-}
-.qb-year-btn.has-filter:hover { box-shadow:0 6px 18px rgba(99,102,241,.38); }
-.qb-year-btn .qb-chev {
-  transition:transform .2s; flex-shrink:0;
-}
-.qb-year-btn.open .qb-chev { transform:rotate(180deg); }
-.qb-year-btn.has-filter .qb-chev { opacity:.8; }
-
-/* Dropdown menu */
-.qb-year-menu {
-  position:absolute; top:calc(100% + 7px); right:0; z-index:100;
-  background:#fff; border-radius:16px;
-  border:1.5px solid rgba(0,0,0,.07);
-  box-shadow:0 12px 36px rgba(0,0,0,.14);
-  overflow:hidden; min-width:160px;
-  animation:menuIn .18s cubic-bezier(.34,1.56,.64,1) both;
-}
-@keyframes menuIn { from{opacity:0;transform:translateY(-6px) scale(.97)} to{opacity:1;transform:none} }
-
-.qb-year-option {
-  display:flex; align-items:center; justify-content:space-between;
-  padding:10px 16px; cursor:pointer; font-family:'Plus Jakarta Sans',system-ui,sans-serif;
-  font-size:13px; font-weight:600; color:#374151; transition:background .12s;
-  gap:20px;
-}
-.qb-year-option:first-child { border-radius:14px 14px 0 0; }
-.qb-year-option:last-child  { border-radius:0 0 14px 14px; }
-.qb-year-option:hover { background:rgba(99,102,241,.06); color:#6366f1; }
-.qb-year-option.sel  { background:rgba(99,102,241,.08); color:#4f46e5; }
-.qb-year-option .qb-year-count {
-  font-size:10.5px; font-weight:700; padding:2px 7px; border-radius:20px;
-  background:rgba(99,102,241,.1); color:#6366f1; flex-shrink:0;
-}
-.qb-year-option.sel .qb-year-count { background:rgba(99,102,241,.2); }
-.qb-year-sep { height:1px; background:#f1f5f9; margin:0 12px; }
-/* check mark for selected */
-.qb-year-check {
-  width:16px; height:16px; border-radius:5px; flex-shrink:0;
-  background:linear-gradient(135deg,#6366f1,#8b5cf6);
-  display:flex; align-items:center; justify-content:center;
-}
-.qb-year-check::after {
-  content:''; width:8px; height:5px;
-  border-left:2px solid #fff; border-bottom:2px solid #fff;
-  transform:rotate(-45deg) translateY(-1px);
-  display:block;
+.qb-hero::after {
+  content: '';
+  position: absolute;
+  top: -50px;
+  bottom: -50px;
+  width: 80px;
+  background: linear-gradient(90deg,transparent,rgba(255,255,255,.38),transparent);
+  animation: qbShine 7s ease-in-out infinite;
 }
 
-/* Subject filter chips — compact pill row */
-.qb-subj-chips { display:flex; gap:6px; flex-shrink:0; }
-.qb-schip {
-  height:42px; padding:0 16px; border-radius:14px;
-  border:1.5px solid #f1f5f9; background:#fff;
-  font-family:'Plus Jakarta Sans',system-ui,sans-serif;
-  font-size:12.5px; font-weight:600; cursor:pointer; color:#64748b;
-  transition:all .2s; white-space:nowrap;
-  box-shadow:0 2px 8px rgba(0,0,0,.04);
-}
-.qb-schip:hover { border-color:#c7d2fe; color:#6366f1; }
-.qb-schip.act   {
-  background:linear-gradient(135deg,#6366f1,#8b5cf6); color:#fff;
-  border-color:transparent; box-shadow:0 4px 12px rgba(99,102,241,.3);
+.dark .qb-hero, [data-theme="dark"] .qb-hero {
+  background: linear-gradient(135deg, #132e1b 0%, #173826 48%, #1c2738 100%);
+  border-color: rgba(110,231,183,.22);
+  box-shadow: 0 18px 44px rgba(0,0,0,.4);
 }
 
-/* Active filter indicator pill */
-.qb-active-filters {
-  display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:16px;
+.qb-hero-inner {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
 }
-.qb-filter-pill {
-  display:inline-flex; align-items:center; gap:5px;
-  padding:4px 10px 4px 12px; border-radius:20px;
-  background:rgba(99,102,241,.1); border:1px solid rgba(99,102,241,.18);
-  font-size:11.5px; font-weight:700; color:#6366f1;
+.qb-hero-content {
+  max-width: 580px;
 }
-.qb-filter-pill button {
-  width:16px; height:16px; border-radius:50%; border:none; background:rgba(99,102,241,.2);
-  color:#6366f1; cursor:pointer; display:flex; align-items:center; justify-content:center;
-  font-size:10px; line-height:1; transition:background .15s; padding:0;
+.qb-hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #10734c;
+  background: rgba(16,185,129,.14);
+  padding: 5px 13px;
+  border-radius: 20px;
+  margin-bottom: 10px;
+  border: 1px solid rgba(16,185,129,.22);
 }
-.qb-filter-pill button:hover { background:rgba(99,102,241,.38); }
+.dark .qb-hero-badge, [data-theme="dark"] .qb-hero-badge {
+  color: #7ee7b7;
+  background: rgba(16,185,129,.22);
+  border-color: rgba(16,185,129,.35);
+}
+.qb-hero-title {
+  font-size: clamp(24px, 3.2vw, 34px);
+  font-weight: 800;
+  line-height: 1.15;
+  color: #071235;
+  margin-bottom: 6px;
+  letter-spacing: -0.02em;
+}
+.dark .qb-hero-title, [data-theme="dark"] .qb-hero-title {
+  color: #f6f7ff;
+}
+.qb-hero-sub {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #526077;
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+.dark .qb-hero-sub, [data-theme="dark"] .qb-hero-sub {
+  color: #a8b3cf;
+}
 
-/* Paper grid */
-.qb-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:20px; }
-
-/* Paper card */
-.qb-paper-card {
-  background:#fff; border-radius:20px; border:1px solid rgba(0,0,0,.06);
-  box-shadow:0 2px 12px rgba(0,0,0,.05); overflow:hidden; display:flex; flex-direction:column;
-  cursor:pointer; transition:all .25s cubic-bezier(.4,0,.2,1); position:relative;
-  animation:cardIn .45s cubic-bezier(.34,1.56,.64,1) both;
+/* Stat pills on hero */
+.qb-hero-pills {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
-@keyframes cardIn { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:none} }
-.qb-paper-card:hover { transform:translateY(-6px) scale(1.01); box-shadow:0 16px 40px rgba(0,0,0,.12); border-color:#e0e7ff; }
-
-.qb-diff-strip { height:4px; border-radius:20px 20px 0 0; }
-
-.qb-paper-head { padding:22px 22px 14px; }
-.qb-paper-tags { display:flex; align-items:center; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
-.qb-tag { font-size:10px; font-weight:700; padding:3px 9px; border-radius:20px; text-transform:uppercase; letter-spacing:.05em; }
-.qb-tag-year  { background:#f1f5f9; color:#64748b; }
-.qb-tag-type  { background:rgba(99,102,241,.1); color:#6366f1; }
-.qb-tag-hard  { background:rgba(239,68,68,.1);  color:#dc2626; }
-.qb-tag-medium{ background:rgba(245,158,11,.1); color:#d97706; }
-.qb-tag-easy  { background:rgba(16,185,129,.1); color:#059669; }
-.qb-paper-title { font-size:16px; font-weight:800; color:#0f172a; margin-bottom:6px; line-height:1.3; transition:color .2s; }
-.qb-paper-card:hover .qb-paper-title { color:#4f46e5; }
-.qb-paper-meta { display:flex; align-items:center; gap:14px; }
-.qb-paper-meta-item { font-size:11px; font-weight:600; color:#94a3b8; display:flex; align-items:center; gap:4px; }
-
-.qb-paper-body { padding:0 22px 20px; flex:1; display:flex; flex-direction:column; gap:16px; }
-
-.qb-topics-label { font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.1em; color:#94a3b8; margin-bottom:8px; display:flex; align-items:center; gap:5px; }
-.qb-topics-row   { display:flex; flex-wrap:wrap; gap:6px; }
-.qb-topic-tag { font-size:10.5px; font-weight:700; padding:4px 10px; border-radius:20px; background:rgba(99,102,241,.08); color:#6366f1; border:1px solid rgba(99,102,241,.15); text-transform:uppercase; letter-spacing:.04em; }
-
-.qb-bars-label { font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.1em; color:#94a3b8; margin-bottom:8px; }
-.qb-bars-row   { display:flex; gap:6px; height:24px; align-items:flex-end; }
-.qb-bar-col    { flex:1; border-radius:4px 4px 0 0; transition:all .25s; opacity:.65; }
-.qb-paper-card:hover .qb-bar-col { opacity:1; }
-
-.qb-paper-foot { padding:16px 22px; border-top:1px solid #f1f5f9; display:flex; gap:10px; }
-.qb-btn-preview {
-  flex:1; padding:11px; border-radius:14px; border:1.5px solid #e2e8f0; background:#fff;
-  font-family:'Plus Jakarta Sans',system-ui,sans-serif; font-size:13px; font-weight:700;
-  cursor:pointer; color:#374151; display:flex; align-items:center; justify-content:center; gap:7px; transition:all .2s;
+.qb-hero-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 14px;
+  background: rgba(255,255,255,.85);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(15,23,42,.08);
+  box-shadow: 0 4px 12px rgba(35,44,87,.05);
 }
-.qb-btn-preview:hover { border-color:#6366f1; color:#6366f1; background:rgba(99,102,241,.04); }
-.qb-btn-download {
-  flex:1; padding:11px; border-radius:14px; border:none;
-  background:linear-gradient(135deg,#6366f1,#8b5cf6); color:#fff;
-  font-family:'Plus Jakarta Sans',system-ui,sans-serif; font-size:13px; font-weight:700;
-  cursor:pointer; display:flex; align-items:center; justify-content:center; gap:7px;
-  box-shadow:0 4px 14px rgba(99,102,241,.3); transition:all .2s;
+.dark .qb-hero-pill, [data-theme="dark"] .qb-hero-pill {
+  background: rgba(23,31,58,.82);
+  border-color: rgba(255,255,255,.12);
 }
-.qb-btn-download:hover { transform:translateY(-1px); box-shadow:0 6px 20px rgba(99,102,241,.42); }
-
-/* ── PDF VIEWER ── */
-.qb-viewer { position:fixed; inset:0; z-index:50; background:#f8fafc; display:flex; flex-direction:column; }
-.qb-viewer-head {
-  height:60px; background:#fff; border-bottom:1px solid #f1f5f9;
-  padding:0 20px; display:flex; align-items:center; justify-content:space-between; flex-shrink:0;
-  box-shadow:0 2px 8px rgba(0,0,0,.04);
+.qb-hero-pill strong {
+  font-size: 14px;
+  font-weight: 800;
+  color: #071235;
 }
-.qb-viewer-head-left  { display:flex; align-items:center; gap:12px; }
-.qb-viewer-head-title { font-size:13.5px; font-weight:800; color:#0f172a; }
-.qb-viewer-head-sub   { font-size:10.5px; color:#94a3b8; margin-top:1px; }
-.qb-viewer-head-right { display:flex; align-items:center; gap:10px; }
-.qb-vhbtn {
-  height:38px; padding:0 16px; border-radius:12px; border:1.5px solid #e2e8f0; background:#fff;
-  font-family:'Plus Jakarta Sans',system-ui,sans-serif; font-size:12.5px; font-weight:600;
-  cursor:pointer; color:#374151; display:flex; align-items:center; gap:6px; transition:all .2s;
+.dark .qb-hero-pill strong, [data-theme="dark"] .qb-hero-pill strong {
+  color: #f6f7ff;
 }
-.qb-vhbtn:hover { border-color:#6366f1; color:#6366f1; }
-.qb-vhbtn-dl {
-  height:38px; padding:0 18px; border-radius:12px; border:none;
-  background:linear-gradient(135deg,#6366f1,#8b5cf6); color:#fff;
-  font-family:'Plus Jakarta Sans',system-ui,sans-serif; font-size:12.5px; font-weight:700;
-  cursor:pointer; display:flex; align-items:center; gap:6px;
-  box-shadow:0 3px 10px rgba(99,102,241,.28); transition:all .2s;
-}
-.qb-vhbtn-dl:hover { transform:translateY(-1px); box-shadow:0 5px 16px rgba(99,102,241,.4); }
-.qb-vhclose {
-  width:36px; height:36px; border-radius:11px; border:1.5px solid #f1f5f9; background:#fff;
-  display:flex; align-items:center; justify-content:center; cursor:pointer; color:#64748b; transition:all .2s;
-}
-.qb-vhclose:hover { border-color:#ef4444; color:#ef4444; }
-
-.qb-viewer-body { flex:1; display:flex; overflow:hidden; }
-.qb-viewer-sb {
-  width:264px; background:#fff; border-right:1px solid #f1f5f9;
-  overflow-y:auto; flex-shrink:0; padding:20px 16px;
-  display:flex; flex-direction:column; gap:20px;
-}
-.qb-sb-section-title { font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.1em; color:#94a3b8; margin-bottom:10px; display:flex; align-items:center; gap:5px; }
-.qb-sec-item { cursor:pointer; padding:10px 12px; border-radius:12px; border:1px solid #f1f5f9; margin-bottom:7px; transition:all .18s; }
-.qb-sec-item:hover { border-color:#c7d2fe; background:rgba(99,102,241,.04); }
-.qb-sec-item-top { display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; }
-.qb-sec-lbl  { font-size:12.5px; font-weight:700; color:#374151; transition:color .18s; }
-.qb-sec-item:hover .qb-sec-lbl { color:#6366f1; }
-.qb-sec-page { font-size:10px; color:#94a3b8; font-weight:500; }
-.qb-sec-diff-badge { font-size:9.5px; font-weight:700; padding:2px 7px; border-radius:20px; }
-.qb-sec-bar-bg   { height:4px; background:#f1f5f9; border-radius:4px; overflow:hidden; }
-.qb-sec-bar-fill { height:100%; border-radius:4px; transition:width .8s; }
-
-.qb-ai-card { padding:14px; border-radius:14px; border:1px solid; }
-.qb-ai-card-title { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; margin-bottom:7px; display:flex; align-items:center; gap:5px; }
-.qb-ai-card-text  { font-size:11.5px; line-height:1.6; }
-
-.qb-predict-btn {
-  width:100%; padding:10px 14px; border-radius:12px;
-  border:1.5px solid rgba(139,92,246,.3); background:rgba(139,92,246,.06);
-  font-family:'Plus Jakarta Sans',system-ui,sans-serif; font-size:12px; font-weight:700;
-  cursor:pointer; color:#7c3aed; display:flex; align-items:center; justify-content:center; gap:6px; transition:all .2s;
-}
-.qb-predict-btn:hover { background:rgba(139,92,246,.12); }
-
-.qb-pdf-area { flex:1; background:#e2e8f0; overflow-y:auto; padding:28px 20px; }
-.qb-pdf-area::-webkit-scrollbar { width:6px; }
-.qb-pdf-area::-webkit-scrollbar-thumb { background:rgba(99,102,241,.25); border-radius:99px; }
-.qb-pdf-page-wrap { position:relative; background:#fff; box-shadow:0 4px 24px rgba(0,0,0,.12); margin:0 auto 24px; overflow:hidden; border-radius:4px; max-width:860px; }
-.qb-watermark { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; opacity:.04; transform:rotate(-45deg); font-size:80px; font-weight:900; text-transform:uppercase; white-space:nowrap; color:#0f172a; z-index:30; letter-spacing:-2px; }
-.qb-pdf-verified { position:absolute; bottom:12px; right:14px; font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.15em; color:#94a3b8; opacity:.5; z-index:40; }
-
-.qb-mobile-parts { display:none; }
-.ep-paper-wrapper {
-  width:100%; max-width:860px; margin:0 auto; padding:34px 44px 42px;
-  background:#fff; color:#111827; border:1px solid #d8dee8; border-radius:2px;
-  box-shadow:0 12px 36px rgba(15,23,42,.16);
-}
-.ep-paper-header { text-align:center; padding-bottom:18px; }
-.ep-paper-school { font-family:Georgia,'Times New Roman',serif; font-size:13px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:#475569; }
-.ep-paper-exam-title { margin-top:8px; font-family:Georgia,'Times New Roman',serif; font-size:25px; font-weight:700; color:#111827; line-height:1.2; }
-.ep-paper-subject { margin-top:4px; font-size:13px; font-weight:600; color:#64748b; }
-.ep-paper-meta-row {
-  margin:18px auto 0; display:grid; grid-template-columns:repeat(3,minmax(0,1fr));
-  max-width:520px; border:1px solid #cbd5e1; border-radius:2px; overflow:hidden;
-}
-.ep-paper-meta-item { padding:10px 12px; border-right:1px solid #cbd5e1; background:#f8fafc; }
-.ep-paper-meta-item:last-child { border-right:none; }
-.ep-paper-meta-val { font-size:16px; line-height:1; font-weight:800; color:#111827; }
-.ep-paper-meta-lbl { margin-top:4px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:#64748b; }
-.ep-paper-divider { margin-top:18px; height:2px; background:#111827; position:relative; }
-.ep-paper-divider::after { content:''; position:absolute; left:0; right:0; top:5px; height:1px; background:#cbd5e1; }
-.ep-part-section { padding:24px 0 4px; border-bottom:1px solid #e5e7eb; scroll-margin-top:24px; }
-.ep-part-section:last-child { border-bottom:none; padding-bottom:0; }
-.ep-part-header {
-  display:flex; align-items:flex-start; justify-content:space-between; gap:14px;
-  padding:0 0 12px; margin-bottom:12px; border-bottom:1px solid #111827;
-}
-.ep-part-left { display:flex; align-items:flex-start; gap:12px; min-width:0; }
-.ep-part-badge {
-  width:34px; height:34px; border-radius:2px; border:1px solid #111827;
-  display:flex; align-items:center; justify-content:center; flex-shrink:0;
-  font-size:15px; font-weight:800; color:#111827; background:#fff;
-}
-.ep-part-title { font-family:Georgia,'Times New Roman',serif; font-size:17px; font-weight:700; color:#111827; line-height:1.25; }
-.ep-part-subtitle { margin-top:3px; font-size:12px; font-weight:600; color:#64748b; }
-.ep-paper-questions { display:flex; flex-direction:column; gap:10px; }
-.ep-paper-qn {
-  display:grid; grid-template-columns:32px minmax(0,1fr) auto; gap:12px; align-items:flex-start;
-  padding:0 0 10px; border-bottom:1px dashed #d1d5db; background:#fff;
-  margin-bottom: 8px;
-}
-.ep-paper-qn:last-child { border-bottom:none; padding-bottom:0; }
-.ep-paper-qn-section-header {
-  grid-column: 1 / -1;
+.qb-hero-pill span {
   font-size: 11px;
   font-weight: 700;
-  color: #6366f1;
+  color: #64748b;
+}
+
+/* Mascot robot in banner */
+.qb-hero-mascot-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.qb-hero-robo {
+  width: clamp(110px, 14vw, 150px);
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 16px 20px rgba(0,0,0,.22));
+  animation: qbBreathe 4.5s ease-in-out infinite;
+}
+
+/* Back button in hero */
+.qb-btn-back {
+  border: 0;
+  border-radius: 14px;
+  padding: 9px 18px;
+  min-height: 40px;
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #fff;
+  font: 800 13px/1 'Plus Jakarta Sans', system-ui, sans-serif;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(16,185,129,.3);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all .2s cubic-bezier(.34,1.56,.64,1);
+}
+.qb-btn-back:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 12px 24px rgba(16,185,129,.4);
+}
+
+/* ── SEARCH & FILTER CONTROLS ── */
+.qb-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+}
+.qb-controls-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 280px;
+  max-width: 480px;
+}
+.qb-search-wrap {
+  position: relative;
+  width: 100%;
+}
+.qb-search-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 17px;
+  height: 17px;
+  color: #8c94aa;
+  pointer-events: none;
+}
+.qb-search-inp {
+  width: 100%;
+  height: 44px;
+  border-radius: 16px;
+  padding: 0 38px 0 42px;
+  border: 1.5px solid rgba(15,23,42,.1);
+  background: rgba(255,255,255,.9);
+  backdrop-filter: blur(10px);
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #071235;
+  outline: none;
+  transition: all .2s;
+  box-shadow: 0 3px 10px rgba(35,44,87,.04);
+}
+.dark .qb-search-inp, [data-theme="dark"] .qb-search-inp {
+  background: rgba(23,31,58,.85);
+  border-color: rgba(255,255,255,.14);
+  color: #f6f7ff;
+}
+.qb-search-inp:focus {
+  border-color: #10b981;
+  box-shadow: 0 0 0 4px rgba(16,185,129,.15);
+}
+.qb-search-clear {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(15,23,42,.08);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+  transition: background .15s;
+}
+.qb-search-clear:hover { background: rgba(15,23,42,.16); }
+
+/* Year dropdown */
+.qb-year-wrap { position: relative; }
+.qb-year-btn {
+  height: 44px;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 16px;
+  border: 1.5px solid rgba(15,23,42,.1);
+  background: rgba(255,255,255,.9);
+  backdrop-filter: blur(10px);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: #071235;
+  cursor: pointer;
+  transition: all .2s;
+  box-shadow: 0 3px 10px rgba(35,44,87,.04);
+  user-select: none;
+}
+.dark .qb-year-btn, [data-theme="dark"] .qb-year-btn {
+  background: rgba(23,31,58,.85);
+  border-color: rgba(255,255,255,.14);
+  color: #f6f7ff;
+}
+.qb-year-btn:hover { border-color: #10b981; }
+.qb-year-btn.open { border-color: #10b981; box-shadow: 0 0 0 3px rgba(16,185,129,.15); }
+.qb-year-btn.has-filter {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 4px 14px rgba(16,185,129,.35);
+}
+.qb-year-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 100;
+  background: #fff;
+  border-radius: 16px;
+  border: 1.5px solid rgba(15,23,42,.08);
+  box-shadow: 0 14px 38px rgba(0,0,0,.15);
+  overflow: hidden;
+  min-width: 170px;
+  animation: qbCardIn .2s both;
+}
+.dark .qb-year-menu, [data-theme="dark"] .qb-year-menu {
+  background: #171f3a;
+  border-color: rgba(255,255,255,.14);
+}
+.qb-year-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  color: #071235;
+  transition: background .15s;
+}
+.dark .qb-year-option, [data-theme="dark"] .qb-year-option {
+  color: #f6f7ff;
+}
+.qb-year-option:hover {
+  background: rgba(16,185,129,.1);
+  color: #10b981;
+}
+.qb-year-option.sel {
+  background: rgba(16,185,129,.15);
+  color: #059669;
+}
+
+/* Subject Chips row */
+.qb-subj-chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  max-width: 100%;
+}
+.qb-chip {
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 14px;
+  border: 1.5px solid rgba(15,23,42,.09);
+  background: rgba(255,255,255,.85);
+  backdrop-filter: blur(8px);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #64748b;
+  cursor: pointer;
+  transition: all .2s;
+  white-space: nowrap;
+}
+.dark .qb-chip, [data-theme="dark"] .qb-chip {
+  background: rgba(23,31,58,.8);
+  border-color: rgba(255,255,255,.12);
+  color: #94a3b8;
+}
+.qb-chip:hover {
+  transform: translateY(-1px);
+  border-color: #10b981;
+  color: #10b981;
+}
+.qb-chip.act {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 4px 14px rgba(16,185,129,.32);
+}
+
+/* ── COLORFUL CARDS (EXPLORE & PLAY STYLE) ── */
+.qb-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 22px;
+  margin-bottom: 40px;
+}
+
+.qb-card {
+  border-radius: 22px;
+  border: 1.5px solid rgba(15,23,42,.08);
+  background: rgba(255,255,255,.94);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 10px 26px rgba(35,44,87,.08);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: all .28s cubic-bezier(.34,1.56,.64,1);
+  position: relative;
+  isolation: isolate;
+}
+.dark .qb-card, [data-theme="dark"] .qb-card {
+  background: rgba(23,31,58,.94);
+  border-color: rgba(255,255,255,.12);
+  box-shadow: 0 14px 34px rgba(0,0,0,.35);
+}
+.qb-card:hover {
+  transform: translateY(-6px) scale(1.015);
+  box-shadow: 0 20px 42px rgba(35,44,87,.14);
+}
+.dark .qb-card:hover {
+  box-shadow: 0 20px 48px rgba(0,0,0,.5);
+}
+
+/* Vibrant Header on Card */
+.qb-card-hero {
+  position: relative;
+  overflow: hidden;
+  padding: 20px 22px 22px;
+  color: #fff;
+  min-height: 120px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.qb-card-hero::before {
+  content: '';
+  position: absolute;
+  inset: -30px auto auto -30px;
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.18);
+  transition: transform .3s ease;
+}
+.qb-card:hover .qb-card-hero::before {
+  transform: scale(1.25);
+}
+.qb-card-hero::after {
+  content: '';
+  position: absolute;
+  right: -24px;
+  bottom: -32px;
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.15);
+}
+
+.qb-card-badge-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  position: relative;
+  z-index: 2;
+  margin-bottom: 8px;
+}
+.qb-card-exam-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: 12px;
-  padding-bottom: 10px;
-  border-bottom: 2px solid #e0e7ff;
-  margin-top: 16px;
+  letter-spacing: .06em;
+  background: rgba(255,255,255,.24);
+  backdrop-filter: blur(8px);
+  padding: 4px 11px;
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,.35);
 }
-.ep-paper-qn-section-header:first-child { margin-top: 0; }
-.ep-paper-qn-num {
-  width:28px; height:28px; border-radius:50%; border:1px solid #cbd5e1;
-  display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:800; color:#111827;
+.qb-card-title {
+  font-size: 22px;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  position: relative;
+  z-index: 2;
+  text-shadow: 0 2px 6px rgba(0,0,0,.15);
 }
-.ep-paper-qn-text { font-family:Georgia,'Times New Roman',serif; font-size:15px; line-height:1.65; color:#111827; overflow-wrap:anywhere; }
-.ep-paper-qn-unit {
-  max-width:160px; padding:4px 8px; border-radius:2px; background:#f8fafc; border:1px solid #e2e8f0;
-  font-size:10px; line-height:1.2; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:#64748b;
-  white-space:normal; text-align:right;
-}
-.ep-paper-empty {
-  padding:28px 18px; border:1px dashed #cbd5e1; background:#f8fafc;
-  text-align:center; font-size:13px; font-weight:600; color:#64748b;
-}
-
-.qb-predictor-overlay { position:absolute; inset:0; z-index:60; background:rgba(15,23,42,.55); backdrop-filter:blur(6px); display:flex; align-items:center; justify-content:center; padding:24px; }
-.qb-predictor-card { background:#fff; border-radius:20px; max-width:400px; width:100%; overflow:hidden; box-shadow:0 24px 60px rgba(0,0,0,.2); }
-.qb-predictor-head { padding:18px 22px; border-bottom:1px solid #f1f5f9; display:flex; align-items:center; justify-content:space-between; }
-.qb-predictor-title { font-size:14px; font-weight:800; color:#0f172a; display:flex; align-items:center; gap:7px; }
-.qb-predictor-body  { padding:20px 22px; }
-.qb-predictor-row   { display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #f1f5f9; }
-.qb-predictor-row:last-child { border-bottom:none; }
-.qb-predictor-lbl { font-size:12.5px; color:#64748b; font-weight:500; }
-.qb-predictor-val { font-size:13px; font-weight:700; color:#6366f1; }
-
-.qb-scroll-top {
-  position:fixed; bottom:28px; right:24px; z-index:80;
-  width:44px; height:44px; border-radius:50%; background:#fff;
-  border:1.5px solid #f1f5f9; box-shadow:0 4px 16px rgba(0,0,0,.12);
-  display:flex; align-items:center; justify-content:center; cursor:pointer; color:#6366f1; transition:all .2s;
-}
-.qb-scroll-top:hover { transform:translateY(-2px); }
-
-.qb-mob-fab {
-  position:fixed; bottom:24px; right:24px; z-index:70;
-  width:50px; height:50px; border-radius:50%;
-  background:linear-gradient(135deg,#6366f1,#8b5cf6); border:none; cursor:pointer;
-  display:flex; align-items:center; justify-content:center; color:#fff;
-  box-shadow:0 6px 20px rgba(99,102,241,.38); transition:all .2s;
+.qb-card-sub {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: rgba(255,255,255,.9);
+  margin-top: 4px;
+  position: relative;
+  z-index: 2;
 }
 
-.qb-empty { text-align:center; padding:64px 24px; }
-.qb-empty-icon { width:72px; height:72px; border-radius:20px; background:rgba(99,102,241,.08); border:1px solid rgba(99,102,241,.12); display:flex; align-items:center; justify-content:center; margin:0 auto 20px; }
-.qb-empty-title { font-size:17px; font-weight:700; color:#374151; margin-bottom:8px; }
-.qb-empty-sub   { font-size:13.5px; color:#94a3b8; }
-
-/* ── RESPONSIVE ── */
-@media (max-width:1024px) { .qb-viewer-sb { width:220px; } }
-@media (max-width:900px)  {
-  .qb-viewer-sb { display:none; }
-  .qb-mobile-parts {
-    position:sticky; top:0; z-index:20; display:flex; gap:8px; overflow-x:auto;
-    margin:-28px -20px 18px; padding:12px 16px; background:rgba(248,250,252,.96);
-    border-bottom:1px solid #e2e8f0; backdrop-filter:blur(8px);
-  }
-  .qb-mobile-part-btn {
-    flex:0 0 auto; height:34px; padding:0 12px; border-radius:2px; border:1px solid #cbd5e1;
-    background:#fff; color:#334155; font-family:'Plus Jakarta Sans',system-ui,sans-serif;
-    font-size:12px; font-weight:800; cursor:pointer;
-  }
+/* Floating 3D Pop art in card header */
+.qb-card-art-pop {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  width: 58px;
+  height: 58px;
+  border-radius: 18px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(145deg, rgba(255,255,255,.85), rgba(255,255,255,.35));
+  box-shadow: inset 0 -6px 0 rgba(0,0,0,.08), 0 10px 18px rgba(0,0,0,.18);
+  filter: drop-shadow(0 6px 8px rgba(0,0,0,.16));
+  animation: qbPop3d 4.4s ease-in-out infinite;
+  z-index: 2;
 }
-@media (max-width:768px) {
-  .qb-hero { padding:24px 20px; margin-bottom:20px; }
-  .qb-hero-right { display:none; }
-  .qb-grid { grid-template-columns:1fr; }
-  .qb-viewer-head { padding:0 14px; }
-  .qb-vhbtn-print { display:none; }
-  .qb-filters { gap:8px; }
-  .qb-search-wrap { max-width:none; }
-  .qb-subj-chips { display:none; }   /* hide on mobile — use dropdown only */
-  .qb-pdf-area { padding:28px 14px 20px; }
-  .ep-paper-wrapper { padding:24px 18px 28px; }
-  .ep-paper-exam-title { font-size:21px; }
-  .ep-paper-meta-row { grid-template-columns:1fr; max-width:none; }
-  .ep-paper-meta-item { border-right:none; border-bottom:1px solid #cbd5e1; }
-  .ep-paper-meta-item:last-child { border-bottom:none; }
-  .ep-paper-qn { grid-template-columns:28px minmax(0,1fr); }
-  .ep-paper-qn-unit { grid-column:2; justify-self:start; max-width:100%; text-align:left; }
-}
-@media (max-width:480px) {
-  .qb-paper-foot { flex-direction:column; }
-  .qb-filters { flex-wrap:wrap; }
-  .qb-search-wrap { min-width:100%; order:1; }
-  .qb-year-wrap   { order:2; }
-  .qb-viewer-head-title { max-width:180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .qb-vhbtn-dl { padding:0 12px; }
-  .ep-part-title { font-size:15px; }
-  .ep-paper-qn-text { font-size:14px; line-height:1.6; }
+.qb-card-art-img {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
 }
 
-/* ── CARD GRID VIEW ── */
-.qb-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:20px; margin-top:28px; }
-.qb-qbank-card {
-  background:#fff; border-radius:16px; border:1px solid rgba(0,0,0,.06);
-  box-shadow:0 2px 12px rgba(0,0,0,.05); overflow:hidden;
-  transition:all .3s cubic-bezier(.34,1.56,.64,1); cursor:pointer;
-  display:flex; flex-direction:column;
+/* Card Body */
+.qb-card-body {
+  padding: 18px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1;
 }
-.qb-qbank-card:hover {
-  transform:translateY(-4px); box-shadow:0 12px 32px rgba(99,102,241,.15);
-  border-color:rgba(99,102,241,.2);
-}
-.qb-card-header {
-  background:linear-gradient(135deg,#6366f1 0%,#8b5cf6 50%,#ec4899 100%);
-  color:#fff; padding:20px; position:relative; overflow:hidden;
-}
-.qb-card-header::before { content:''; position:absolute; top:-30px; right:-30px; width:120px; height:120px; border-radius:50%; background:rgba(255,255,255,.1); }
-.qb-card-header-inner { position:relative; z-index:1; }
-.qb-card-badge { display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; background:rgba(255,255,255,.18); padding:4px 10px; border-radius:20px; margin-bottom:10px; border:1px solid rgba(255,255,255,.25); }
-.qb-card-title { font-size:20px; font-weight:800; margin-bottom:4px; }
-.qb-card-subject { font-size:13px; opacity:.85; }
 
-.qb-card-meta {
-  display:grid; grid-template-columns:repeat(2,1fr); gap:12px; padding:16px 20px;
-  border-bottom:1px solid #f1f5f9; font-size:13px;
+/* 4-Item Meta Grid */
+.qb-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
 }
-.qb-card-meta-item { }
-.qb-card-meta-lbl { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:#94a3b8; margin-bottom:3px; }
-.qb-card-meta-val { font-size:14px; font-weight:800; color:#0f172a; }
+.qb-meta-box {
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(15,23,42,.03);
+  border: 1px solid rgba(15,23,42,.06);
+}
+.dark .qb-meta-box, [data-theme="dark"] .qb-meta-box {
+  background: rgba(31,42,76,.65);
+  border-color: rgba(255,255,255,.09);
+}
+.qb-meta-lbl {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: #8c94aa;
+  margin-bottom: 2px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.qb-meta-val {
+  font-size: 15px;
+  font-weight: 800;
+  color: #071235;
+}
+.dark .qb-meta-val, [data-theme="dark"] .qb-meta-val {
+  color: #f6f7ff;
+}
 
-.qb-card-stats {
-  display:flex; gap:12px; padding:16px 20px; border-bottom:1px solid #f1f5f9;
-  background:#f8fafc;
+/* Difficulty Distribution Stack */
+.qb-diff-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
-.qb-card-stat {
-  flex:1; text-align:center; padding:8px;
-  border-radius:10px; background:#fff; border:1px solid #e2e8f0;
+.qb-diff-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: #64748b;
 }
-.qb-card-stat-val { font-size:16px; font-weight:800; color:#6366f1; }
-.qb-card-stat-lbl { font-size:9px; color:#94a3b8; margin-top:2px; }
+.qb-diff-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(15,23,42,.08);
+  display: flex;
+  overflow: hidden;
+  gap: 2px;
+}
+.dark .qb-diff-bar, [data-theme="dark"] .qb-diff-bar {
+  background: rgba(255,255,255,.1);
+}
+.qb-diff-seg {
+  height: 100%;
+  border-radius: inherit;
+  transition: width .6s ease;
+}
+.qb-diff-pills {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+.qb-diff-pill {
+  flex: 1;
+  text-align: center;
+  padding: 4px 6px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.qb-diff-pill.easy { background: rgba(16,185,129,.14); color: #059669; }
+.qb-diff-pill.medium { background: rgba(245,158,11,.14); color: #d97706; }
+.qb-diff-pill.hard { background: rgba(239,68,68,.14); color: #dc2626; }
 
+/* Topics preview */
+.qb-topics-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.qb-topic-chip {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 12px;
+  background: rgba(15,23,42,.05);
+  color: #475569;
+}
+.dark .qb-topic-chip, [data-theme="dark"] .qb-topic-chip {
+  background: rgba(255,255,255,.08);
+  color: #cbd5e1;
+}
+
+/* Card Action Buttons */
 .qb-card-actions {
-  display:flex; gap:10px; padding:16px 20px; margin-top:auto;
+  padding: 14px 22px 18px;
+  border-top: 1px solid rgba(15,23,42,.06);
+  display: flex;
+  gap: 10px;
+  background: rgba(15,23,42,.015);
 }
-.qb-card-btn {
-  flex:1; padding:10px 14px; border-radius:10px; border:none;
-  font-family:'Plus Jakarta Sans',system-ui,sans-serif; font-size:12px;
-  font-weight:700; cursor:pointer; transition:all .2s;
-  display:flex; align-items:center; justify-content:center; gap:6px;
+.dark .qb-card-actions, [data-theme="dark"] .qb-card-actions {
+  border-color: rgba(255,255,255,.08);
+  background: rgba(0,0,0,.15);
 }
-.qb-card-btn-view {
-  background:linear-gradient(135deg,#6366f1,#8b5cf6); color:#fff;
-  box-shadow:0 4px 12px rgba(99,102,241,.25);
+.qb-btn-view {
+  flex: 1;
+  height: 42px;
+  border-radius: 14px;
+  border: 0;
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  transition: all .2s;
 }
-.qb-card-btn-view:hover {
-  transform:translateY(-2px); box-shadow:0 6px 16px rgba(99,102,241,.35);
+.qb-btn-view:hover {
+  transform: translateY(-2px);
 }
-.qb-card-btn-download {
-  background:#fff; color:#6366f1; border:1.5px solid #e2e8f0;
-  box-shadow:0 2px 8px rgba(0,0,0,.04);
+.qb-btn-dl {
+  flex: 1;
+  height: 42px;
+  border-radius: 14px;
+  border: 1.5px solid rgba(15,23,42,.12);
+  background: #fff;
+  color: #334155;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  transition: all .2s;
 }
-.qb-card-btn-download:hover {
-  border-color:#6366f1; box-shadow:0 4px 12px rgba(99,102,241,.1);
+.dark .qb-btn-dl, [data-theme="dark"] .qb-btn-dl {
+  background: rgba(31,42,76,.8);
+  border-color: rgba(255,255,255,.16);
+  color: #f1f5f9;
+}
+.qb-btn-dl:hover {
+  transform: translateY(-2px);
+  border-color: #10b981;
+  color: #10b981;
 }
 
-.qb-landing-header {
-  padding:28px 0; margin-bottom:20px;
-  display:flex; align-items:center; justify-content:space-between;
-  flex-wrap:wrap; gap:16px;
+/* ── PDF VIEWER MODAL ── */
+.qb-viewer {
+  position: fixed; inset: 0; z-index: 100;
+  background: #f8fafc;
+  display: flex; flex-direction: column;
 }
-.qb-landing-title { font-size:28px; font-weight:800; color:#0f172a; }
-.qb-landing-back {
-  padding:10px 16px; border-radius:12px; border:1.5px solid #e2e8f0;
-  background:#fff; color:#64748b; font-family:'Plus Jakarta Sans',system-ui;
-  font-size:13px; font-weight:600; cursor:pointer; transition:all .2s;
-  display:flex; align-items:center; gap:6px;
-}
-.qb-landing-back:hover {
-  border-color:#6366f1; color:#6366f1;
+.dark .qb-viewer, [data-theme="dark"] .qb-viewer {
+  background: #080d1f;
+  color: #f6f7ff;
 }
 
-@media (max-width:768px) {
-  .qb-grid { grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:16px; }
-  .qb-landing-header { flex-direction:column; align-items:flex-start; }
-  .qb-card-header { padding:16px; }
-  .qb-card-title { font-size:18px; }
+.qb-viewer-head {
+  height: 62px;
+  background: #fff;
+  border-bottom: 1.5px solid rgba(15,23,42,.08);
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  box-shadow: 0 2px 10px rgba(0,0,0,.04);
+}
+.dark .qb-viewer-head, [data-theme="dark"] .qb-viewer-head {
+  background: #10172d;
+  border-color: rgba(255,255,255,.12);
+}
+.qb-viewer-head-left { display: flex; align-items: center; gap: 14px; }
+.qb-viewer-head-title { font-size: 15px; font-weight: 800; color: #071235; }
+.dark .qb-viewer-head-title, [data-theme="dark"] .qb-viewer-head-title { color: #f6f7ff; }
+.qb-viewer-head-sub { font-size: 11px; font-weight: 600; color: #64748b; margin-top: 1px; }
+.dark .qb-viewer-head-sub, [data-theme="dark"] .qb-viewer-head-sub { color: #94a3b8; }
+
+.qb-vhclose {
+  width: 38px; height: 38px; border-radius: 12px;
+  border: 1.5px solid rgba(15,23,42,.1); background: #fff;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; color: #64748b; transition: all .2s;
+}
+.dark .qb-vhclose, [data-theme="dark"] .qb-vhclose {
+  background: rgba(31,42,76,.8); border-color: rgba(255,255,255,.14); color: #cbd5e1;
+}
+.qb-vhclose:hover { border-color: #ef4444; color: #ef4444; }
+
+.qb-vhbtn-print {
+  height: 40px; padding: 0 16px; border-radius: 12px;
+  border: 1.5px solid rgba(15,23,42,.12); background: #fff;
+  font-family: inherit; font-size: 12.5px; font-weight: 700;
+  cursor: pointer; color: #374151; display: flex; align-items: center; gap: 6px; transition: all .2s;
+}
+.dark .qb-vhbtn-print, [data-theme="dark"] .qb-vhbtn-print {
+  background: rgba(31,42,76,.8); border-color: rgba(255,255,255,.16); color: #f1f5f9;
+}
+.qb-vhbtn-print:hover { border-color: #10b981; color: #10b981; }
+
+.qb-vhbtn-dl-primary {
+  height: 40px; padding: 0 18px; border-radius: 12px; border: 0;
+  background: linear-gradient(135deg, #10b981, #059669); color: #fff;
+  font-family: inherit; font-size: 13px; font-weight: 800;
+  cursor: pointer; display: flex; align-items: center; gap: 6px;
+  box-shadow: 0 6px 18px rgba(16,185,129,.35); transition: all .2s;
+}
+.qb-vhbtn-dl-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 22px rgba(16,185,129,.45);
+}
+
+.qb-viewer-body { flex: 1; display: flex; overflow: hidden; }
+.qb-viewer-sb {
+  width: 270px; background: #fff; border-right: 1.5px solid rgba(15,23,42,.08);
+  overflow-y: auto; flex-shrink: 0; padding: 20px 18px;
+  display: flex; flex-direction: column; gap: 18px;
+}
+.dark .qb-viewer-sb, [data-theme="dark"] .qb-viewer-sb {
+  background: #10172d; border-color: rgba(255,255,255,.12);
+}
+
+.qb-sb-section-title {
+  font-size: 10px; font-weight: 800; text-transform: uppercase;
+  letter-spacing: .08em; color: #64748b; margin-bottom: 10px;
+  display: flex; align-items: center; gap: 6px;
+}
+.qb-sec-item {
+  cursor: pointer; padding: 11px 12px; border-radius: 14px;
+  border: 1px solid rgba(15,23,42,.08); background: #fbfcff;
+  margin-bottom: 7px; transition: all .2s;
+}
+.dark .qb-sec-item, [data-theme="dark"] .qb-sec-item {
+  background: rgba(31,42,76,.6); border-color: rgba(255,255,255,.09);
+}
+.qb-sec-item:hover { border-color: #10b981; background: rgba(16,185,129,.06); }
+.qb-sec-item-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.qb-sec-lbl { font-size: 13px; font-weight: 800; color: #071235; }
+.dark .qb-sec-lbl, [data-theme="dark"] .qb-sec-lbl { color: #f6f7ff; }
+.qb-sec-page { font-size: 10.5px; color: #64748b; font-weight: 600; }
+
+.qb-ai-card {
+  padding: 14px; border-radius: 16px; border: 1.5px solid rgba(16,185,129,.2);
+  background: rgba(16,185,129,.08);
+}
+.qb-ai-card-title {
+  font-size: 10.5px; font-weight: 800; text-transform: uppercase;
+  letter-spacing: .06em; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;
+  color: #059669;
+}
+.dark .qb-ai-card-title, [data-theme="dark"] .qb-ai-card-title { color: #6ee7b7; }
+.qb-ai-card-text { font-size: 11.5px; font-weight: 600; line-height: 1.55; color: #2d453b; }
+.dark .qb-ai-card-text, [data-theme="dark"] .qb-ai-card-text { color: #a7f3d0; }
+
+.qb-predict-btn {
+  width: 100%; padding: 11px 14px; border-radius: 14px;
+  border: 1.5px solid rgba(255,156,26,.3); background: rgba(255,156,26,.08);
+  font-family: inherit; font-size: 12px; font-weight: 800;
+  cursor: pointer; color: #d97706; display: flex; align-items: center; justify-content: center; gap: 7px;
+  transition: all .2s;
+}
+.qb-predict-btn:hover { background: rgba(255,156,26,.18); transform: translateY(-1px); }
+
+/* Center Printable Question Paper area */
+.qb-pdf-area {
+  flex: 1; background: #eef2f6; overflow-y: auto; padding: 32px 20px;
+}
+.dark .qb-pdf-area, [data-theme="dark"] .qb-pdf-area { background: #0c1224; }
+
+.ep-paper-wrapper {
+  width: 100%; max-width: 860px; margin: 0 auto; padding: 40px 48px;
+  background: #ffffff; color: #111827; border: 1px solid #cbd5e1; border-radius: 4px;
+  box-shadow: 0 16px 42px rgba(15,23,42,.14);
+}
+.dark .ep-paper-wrapper, [data-theme="dark"] .ep-paper-wrapper {
+  background: #171f38; color: #f1f5f9; border-color: rgba(255,255,255,.14);
+}
+.ep-paper-header { text-align: center; padding-bottom: 20px; }
+.ep-paper-school { font-family: Georgia, serif; font-size: 13px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: #475569; }
+.dark .ep-paper-school, [data-theme="dark"] .ep-paper-school { color: #94a3b8; }
+.ep-paper-exam-title { margin-top: 8px; font-family: Georgia, serif; font-size: 26px; font-weight: 800; line-height: 1.2; color: #111827; }
+.dark .ep-paper-exam-title, [data-theme="dark"] .ep-paper-exam-title { color: #f8fafc; }
+.ep-paper-subject { margin-top: 4px; font-size: 13.5px; font-weight: 600; color: #64748b; }
+
+.ep-paper-meta-row {
+  margin: 18px auto 0; display: grid; grid-template-columns: repeat(3, 1fr);
+  max-width: 520px; border: 1px solid #cbd5e1; border-radius: 4px; overflow: hidden;
+}
+.dark .ep-paper-meta-row, [data-theme="dark"] .ep-paper-meta-row { border-color: rgba(255,255,255,.16); }
+.ep-paper-meta-item { padding: 10px 12px; border-right: 1px solid #cbd5e1; background: #f8fafc; text-align: center; }
+.dark .ep-paper-meta-item, [data-theme="dark"] .ep-paper-meta-item { background: #1f2a48; border-color: rgba(255,255,255,.16); }
+.ep-paper-meta-item:last-child { border-right: none; }
+.ep-paper-meta-val { font-size: 17px; font-weight: 800; color: #111827; }
+.dark .ep-paper-meta-val, [data-theme="dark"] .ep-paper-meta-val { color: #f8fafc; }
+.ep-paper-meta-lbl { margin-top: 3px; font-size: 10px; font-weight: 700; text-transform: uppercase; color: #64748b; }
+
+.ep-paper-divider { margin-top: 20px; height: 2px; background: #111827; position: relative; }
+.dark .ep-paper-divider, [data-theme="dark"] .ep-paper-divider { background: rgba(255,255,255,.3); }
+
+.ep-part-section { padding: 26px 0 10px; border-bottom: 1px solid #e5e7eb; scroll-margin-top: 24px; }
+.dark .ep-part-section, [data-theme="dark"] .ep-part-section { border-color: rgba(255,255,255,.1); }
+.ep-part-section:last-child { border-bottom: none; }
+
+.ep-part-header {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 14px;
+  padding: 0 0 12px; margin-bottom: 14px; border-bottom: 1.5px solid #111827;
+}
+.dark .ep-part-header, [data-theme="dark"] .ep-part-header { border-color: rgba(255,255,255,.25); }
+.ep-part-left { display: flex; align-items: flex-start; gap: 12px; }
+.ep-part-badge {
+  width: 32px; height: 32px; border-radius: 4px; border: 1.5px solid #111827;
+  display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 800;
+  background: #fff; color: #111827;
+}
+.dark .ep-part-badge, [data-theme="dark"] .ep-part-badge { background: #1f2a48; color: #f8fafc; border-color: rgba(255,255,255,.3); }
+.ep-part-title { font-family: Georgia, serif; font-size: 17px; font-weight: 800; color: #111827; }
+.dark .ep-part-title, [data-theme="dark"] .ep-part-title { color: #f8fafc; }
+.ep-part-subtitle { margin-top: 3px; font-size: 12px; font-weight: 600; color: #64748b; }
+
+.ep-paper-qn {
+  display: grid; grid-template-columns: 32px minmax(0,1fr) auto; gap: 12px; align-items: flex-start;
+  padding: 10px 0; border-bottom: 1px dashed #d1d5db;
+}
+.dark .ep-paper-qn, [data-theme="dark"] .ep-paper-qn { border-color: rgba(255,255,255,.12); }
+.ep-paper-qn:last-child { border-bottom: none; }
+.ep-paper-qn-num {
+  width: 28px; height: 28px; border-radius: 50%; border: 1.5px solid #cbd5e1;
+  display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800;
+  color: #111827;
+}
+.dark .ep-paper-qn-num, [data-theme="dark"] .ep-paper-qn-num { border-color: rgba(255,255,255,.2); color: #f8fafc; }
+.ep-paper-qn-text { font-family: Georgia, serif; font-size: 14.5px; line-height: 1.6; color: #111827; }
+.dark .ep-paper-qn-text, [data-theme="dark"] .ep-paper-qn-text { color: #e2e8f0; }
+
+.ep-paper-qn-unit {
+  padding: 4px 8px; border-radius: 4px; background: #f8fafc; border: 1px solid #e2e8f0;
+  font-size: 10px; font-weight: 800; text-transform: uppercase; color: #64748b;
+}
+.dark .ep-paper-qn-unit, [data-theme="dark"] .ep-paper-qn-unit { background: #1f2a48; border-color: rgba(255,255,255,.14); color: #cbd5e1; }
+
+/* Sticky part selector for mobile/tablet */
+.qb-mobile-parts {
+  position: sticky; top: -32px; z-index: 20; display: none; gap: 8px; overflow-x: auto;
+  margin: -32px -20px 20px; padding: 12px 16px; background: rgba(255,255,255,.94);
+  border-bottom: 1px solid #e2e8f0; backdrop-filter: blur(10px);
+}
+.dark .qb-mobile-parts, [data-theme="dark"] .qb-mobile-parts {
+  background: rgba(16,23,45,.94); border-color: rgba(255,255,255,.14);
+}
+.qb-mobile-part-btn {
+  flex: 0 0 auto; height: 36px; padding: 0 14px; border-radius: 10px; border: 1.5px solid rgba(15,23,42,.12);
+  background: #fff; color: #071235; font-family: inherit; font-size: 12px; font-weight: 800; cursor: pointer;
+}
+.dark .qb-mobile-part-btn, [data-theme="dark"] .qb-mobile-part-btn {
+  background: rgba(31,42,76,.8); border-color: rgba(255,255,255,.16); color: #f1f5f9;
+}
+
+/* Predictor modal */
+.qb-predictor-overlay {
+  position: fixed; inset: 0; z-index: 120; background: rgba(7,18,53,.6);
+  backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.qb-predictor-card {
+  background: #fff; border-radius: 24px; max-width: 420px; width: 100%;
+  overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,.25);
+  animation: qbCardIn .3s both;
+}
+.dark .qb-predictor-card, [data-theme="dark"] .qb-predictor-card {
+  background: #171f38; border: 1.5px solid rgba(255,255,255,.15);
+}
+.qb-predictor-head {
+  padding: 18px 22px; border-bottom: 1px solid rgba(15,23,42,.08);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.dark .qb-predictor-head, [data-theme="dark"] .qb-predictor-head { border-color: rgba(255,255,255,.12); }
+.qb-predictor-title { font-size: 15px; font-weight: 800; color: #071235; display: flex; align-items: center; gap: 8px; }
+.dark .qb-predictor-title, [data-theme="dark"] .qb-predictor-title { color: #f8fafc; }
+.qb-predictor-body { padding: 20px 22px; }
+.qb-predictor-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 11px 0; border-bottom: 1px solid rgba(15,23,42,.06);
+}
+.dark .qb-predictor-row, [data-theme="dark"] .qb-predictor-row { border-color: rgba(255,255,255,.1); }
+.qb-predictor-row:last-child { border-bottom: none; }
+.qb-predictor-lbl { font-size: 13px; font-weight: 600; color: #64748b; }
+.dark .qb-predictor-lbl, [data-theme="dark"] .qb-predictor-lbl { color: #94a3b8; }
+.qb-predictor-val { font-size: 14px; font-weight: 800; color: #10b981; }
+
+/* ── RESPONSIVE DESIGN ── */
+@media (max-width: 900px) {
+  .qb-viewer-sb { display: none; }
+  .qb-mobile-parts { display: flex; }
+}
+@media (max-width: 768px) {
+  .qb-hero { padding: 20px 18px; }
+  .qb-hero-inner { flex-direction: column; align-items: flex-start; }
+  .qb-hero-mascot-wrap { display: none; }
+  .qb-grid { grid-template-columns: 1fr; gap: 16px; }
+  .qb-controls-left { max-width: 100%; }
+}
+@media (max-width: 520px) {
+  .qb-hero-pills { flex-direction: column; align-items: flex-start; }
+  .ep-paper-wrapper { padding: 24px 18px; }
+  .ep-paper-meta-row { grid-template-columns: 1fr; }
+  .ep-paper-meta-item { border-right: none; border-bottom: 1px solid #cbd5e1; }
+  .ep-paper-meta-item:last-child { border-bottom: none; }
 }
 `;
-
-// Helper function to get difficulty color
-const diffColor = (d: string) =>
-  d === "hard" || d === "Hard" ? "#ef4444" : d === "medium" || d === "Medium" ? "#f59e0b" : "#10b981";
-
-const diffTagCls = (d: string) =>
-  d === "hard" || d === "Hard"
-    ? "qb-tag-hard"
-    : d === "medium" || d === "Medium"
-      ? "qb-tag-medium"
-      : "qb-tag-easy";
-
-const barColor = (diff: number) =>
-  diff > 80 ? "#ef4444" : diff > 60 ? "#f59e0b" : "#10b981";
 
 // Group questions by marks/type
 const groupQuestionsByMarks = (questions: Question[]): Record<number, Question[]> => {
@@ -642,7 +1233,7 @@ const groupQuestionsByMarks = (questions: Question[]): Record<number, Question[]
 // Get unique topics from questions
 const getTopicsFromQuestions = (questions: Question[]): string[] => {
   const topics = new Set(questions.map((q) => q.topic).filter(Boolean));
-  return Array.from(topics).slice(0, 5); // Top 5 topics
+  return Array.from(topics).slice(0, 4);
 };
 
 // Calculate difficulty distribution
@@ -651,133 +1242,47 @@ const getDifficultyStats = (questions: Question[]) => {
     medium = 0,
     hard = 0;
   questions.forEach((q) => {
-    if (q.difficulty === "easy") easy++;
-    else if (q.difficulty === "medium") medium++;
-    else if (q.difficulty === "hard") hard++;
+    const d = (q.difficulty || "").toLowerCase();
+    if (d === "easy") easy++;
+    else if (d === "medium") medium++;
+    else if (d === "hard") hard++;
   });
   return { easy, medium, hard };
-};
-
-/* ── Year Dropdown Component ── */
-const YearDropdown = ({
-  value,
-  onChange,
-  data,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  data: any[];
-}) => {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  // Close on outside click
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node))
-        setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  const countForYear = (y: string) =>
-    y === "all"
-      ? data.length
-      : data.filter((p) => p.year.toString() === y).length;
-
-  const label = value === "all" ? "All Years" : value;
-
-  return (
-    <div className="qb-year-wrap" ref={ref}>
-      <button
-        className={`qb-year-btn${open ? " open" : ""}${value !== "all" ? " has-filter" : ""}`}
-        onClick={() => setOpen((o) => !o)}
-      >
-        <svg
-          width={14}
-          height={14}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={2.2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          style={{ flexShrink: 0 }}
-        >
-          <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-          <line x1="16" y1="2" x2="16" y2="6" />
-          <line x1="8" y1="2" x2="8" y2="6" />
-          <line x1="3" y1="10" x2="21" y2="10" />
-        </svg>
-        {label}
-        <ChevronDown size={13} className="qb-chev" />
-      </button>
-
-      {open && (
-        <div className="qb-year-menu">
-          {/* All Years option */}
-          <div
-            className={`qb-year-option${value === "all" ? " sel" : ""}`}
-            onClick={() => {
-              onChange("all");
-              setOpen(false);
-            }}
-          >
-            <span>All Years</span>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span className="qb-year-count">{countForYear("all")}</span>
-              {value === "all" && <div className="qb-year-check" />}
-            </div>
-          </div>
-
-          <div className="qb-year-sep" />
-
-          {/* Individual year options */}
-          {ALL_YEARS.map((y) => (
-            <div
-              key={y}
-              className={`qb-year-option${value === y.toString() ? " sel" : ""}`}
-              onClick={() => {
-                onChange(y.toString());
-                setOpen(false);
-              }}
-            >
-              <span>{y}</span>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <span className="qb-year-count">
-                  {countForYear(y.toString())}
-                </span>
-                {value === y.toString() && <div className="qb-year-check" />}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
 };
 
 export default function QuestionBank() {
   const [, setLocation] = useLocation();
   const [search, setSearch] = useState("");
   const [yearFilt, setYearFilt] = useState("all");
+  const [selectedSubj, setSelectedSubj] = useState("all");
   const [apiDataList, setApiDataList] = useState<QuestionBankResponse["data"][]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<QuestionBankResponse["data"] | false>(false);
   const [showTop, setShowTop] = useState(false);
   const [showPred, setShowPred] = useState(false);
-  const [showMobSb, setShowMobSb] = useState(false);
+  const [yearDropdownOpen, setYearDropdownOpen] = useState(false);
   const { userHeader } = useAuth();
   const [role, setRole] = useState("student");
   const pdfRef = useRef<HTMLDivElement>(null);
+  const yearRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (userHeader?.role) setRole(userHeader.role);
   }, [userHeader]);
 
-  // Fetch API data based on query parameters
+  // Close year dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (yearRef.current && !yearRef.current.contains(e.target as Node)) {
+        setYearDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  // Fetch API data based on query parameters or fall back to demo data
   useEffect(() => {
     const fetchQuestionBank = async () => {
       const params = new URLSearchParams(window.location.search);
@@ -785,23 +1290,21 @@ export default function QuestionBank() {
       const classNumber = params.get("classNumber") || "";
       const subject = params.get("subject") || "";
       const subjectGroupKey = params.get("subjectGroupKey") || "";
-      // TEMP DEMO CHANGE: If Science/Maths/Social is opened and DB has no uploaded JSON yet,
-      // load the local Class 10 paper instead of changing/removing API logic.
+
       const demoQuestionBank = findDemoQuestionBank(subject, subjectGroupKey);
-      const loadDemoQuestionBank = () => {
-        if (!demoQuestionBank) return false;
-        setApiDataList([demoQuestionBank]);
+      const loadDemoQuestionBanks = () => {
+        if (!demoQuestionBank) {
+          setApiDataList(DEMO_QUESTION_BANKS);
+          setError(null);
+          return true;
+        }
+        setApiDataList(DEMO_QUESTION_BANKS);
         setError(null);
         return true;
       };
 
       if (!board || !classNumber || !subject || !subjectGroupKey) {
-        if (loadDemoQuestionBank()) {
-          setLoading(false);
-          return;
-        }
-
-        setError("Missing required parameters");
+        loadDemoQuestionBanks();
         setLoading(false);
         return;
       }
@@ -827,17 +1330,17 @@ export default function QuestionBank() {
         }
 
         if (data.status && data.data) {
-        const bankData = Array.isArray(data.data) ? data.data : [data.data];
+          const bankData = Array.isArray(data.data) ? data.data : [data.data];
           setApiDataList(bankData);
-        } else if (loadDemoQuestionBank()) {
+        } else if (loadDemoQuestionBanks()) {
           return;
         } else {
           setError(data?.message || "Question bank not added");
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to fetch data";
-        if (!message.toLowerCase().includes("session") && loadDemoQuestionBank()) {
-          return;
+        if (!message.toLowerCase().includes("session")) {
+          loadDemoQuestionBanks();
         } else {
           setError(message);
         }
@@ -849,62 +1352,56 @@ export default function QuestionBank() {
     fetchQuestionBank();
   }, []);
 
-  // Extract data from API response for use throughout component
-  // const examName = apiData?.examName || "";
-  // const subject = apiData?.subject || "";
-  // const classNumber = apiData?.classNumber || "";
-  // const board = apiData?.board || "";
-  // const year = apiData?.year || "";
-  // const totalQuestions = apiData?.totalQuestions || 0;
-  
-  // // Calculate total marks from questions
-  // const totalMarks = apiData?.questions?.reduce((sum, q) => sum + q.marks, 0) || 0;
-  
-  // // Group questions by marks
-  // const questionsByMarks = apiData ? groupQuestionsByMarks(apiData.questions) : {};
-  
-  // // Get difficulty stats
-  // const diffStats = apiData ? getDifficultyStats(apiData.questions) : { easy: 0, medium: 0, hard: 0 };
-  
-  // // Get top topics
-  // const topicsList = apiData ? getTopicsFromQuestions(apiData.questions) : [];
+  // Compute unique years and subjects for filters
+  const availableYears = useMemo(() => {
+    const set = new Set(apiDataList.map((b) => b.year).filter(Boolean));
+    return Array.from(set).sort((a, b) => Number(b) - Number(a));
+  }, [apiDataList]);
 
-  const dl = (url: string, name: string) => {
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = name;
-    a.click();
-  };
-  const print = (url: string) => {
-    const w = window.open(url, "_blank");
-    if (w) w.onload = () => w.print();
-  };
-  const scrollToPart = (partKey: string) => {
-    const el = document.getElementById(`qbank-part-${partKey}`);
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
-  const scrollTop = () => {
-    pdfRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-  };
+  const availableSubjects = useMemo(() => {
+    const set = new Set(apiDataList.map((b) => b.subject).filter(Boolean));
+    return ["all", ...Array.from(set)];
+  }, [apiDataList]);
 
-// Helper function to generate PDF content as HTML string
+  // Filtered Question Banks
+  const filteredBanks = useMemo(() => {
+    return apiDataList.filter((b) => {
+      const matchesSearch =
+        search === "" ||
+        b.subject.toLowerCase().includes(search.toLowerCase()) ||
+        b.examName.toLowerCase().includes(search.toLowerCase()) ||
+        b.board.toLowerCase().includes(search.toLowerCase()) ||
+        b.questions.some((q) => q.topic?.toLowerCase().includes(search.toLowerCase()));
+
+      const matchesYear = yearFilt === "all" || b.year === yearFilt;
+      const matchesSubject = selectedSubj === "all" || b.subject.toLowerCase() === selectedSubj.toLowerCase();
+
+      return matchesSearch && matchesYear && matchesSubject;
+    });
+  }, [apiDataList, search, yearFilt, selectedSubj]);
+
+  const totalQuestionsSum = useMemo(() => {
+    return apiDataList.reduce((acc, b) => acc + (b.totalQuestions || b.questions?.length || 0), 0);
+  }, [apiDataList]);
+
+  // Helper function to generate PDF content as HTML string
   const generatePDFContentForBank = (bank: QuestionBankResponse["data"]): string => {
     const bankQuestionsByMarks = groupQuestionsByMarks(bank.questions);
     const bankTotalMarks = bank.questions.reduce((sum, q) => sum + q.marks, 0);
-    
+
     let html = `
       <html>
         <head>
           <meta charset="UTF-8">
-          <title>${bank.subject}</title>
+          <title>${bank.subject} Question Paper</title>
           <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: Georgia, serif; color: #111827; line-height: 1.6; }
+            body { font-family: Georgia, serif; color: #111827; line-height: 1.6; padding: 40px; }
             .header { text-align: center; padding-bottom: 20px; border-bottom: 2px solid #111827; margin-bottom: 30px; }
             .school { font-family: Georgia, serif; font-size: 11px; font-weight: bold; letter-spacing: 0.08em; text-transform: uppercase; color: #475569; }
             .exam-title { font-family: Georgia, serif; font-size: 24px; font-weight: bold; color: #111827; line-height: 1.2; margin: 8px 0; }
             .meta-row { margin: 18px 0; display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid #cbd5e1; border-radius: 2px; overflow: hidden; }
-            .meta-item { padding: 10px 12px; border-right: 1px solid #cbd5e1; background: #f8fafc; }
+            .meta-item { padding: 10px 12px; border-right: 1px solid #cbd5e1; background: #f8fafc; text-align: center; }
             .meta-item:last-child { border-right: none; }
             .meta-val { font-size: 16px; font-weight: bold; color: #111827; }
             .meta-lbl { margin-top: 4px; font-size: 9px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; }
@@ -913,13 +1410,13 @@ export default function QuestionBank() {
             .section-badge { width: 34px; height: 34px; border-radius: 2px; border: 1px solid #111827; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: bold; color: #111827; background: #fff; }
             .section-title { font-family: Georgia, serif; font-size: 16px; font-weight: bold; color: #111827; line-height: 1.25; }
             .section-subtitle { margin-top: 3px; font-size: 11px; font-weight: 600; color: #64748b; }
-            .question { display: grid; grid-template-columns: 30px 1fr auto; gap: 12px; padding-bottom: 10px; border-bottom: 1px dashed #d1d5db; align-items: flex-start; }
+            .question { display: grid; grid-template-columns: 30px 1fr auto; gap: 12px; padding-bottom: 10px; border-bottom: 1px dashed #d1d5db; align-items: flex-start; margin-bottom: 10px; }
             .question:last-child { border-bottom: none; padding-bottom: 0; }
             .q-num { width: 28px; height: 28px; border-radius: 50%; border: 1px solid #cbd5e1; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; color: #111827; flex-shrink: 0; }
-            .q-text { font-size: 13px; line-height: 1.5; color: #111827; }
-            .q-options { margin-top: 8px; margin-left: 42px; display: flex; flex-direction: column; gap: 6px; }
+            .q-text { font-size: 13.5px; line-height: 1.5; color: #111827; }
+            .q-options { margin-top: 8px; margin-left: 12px; display: flex; flex-direction: column; gap: 6px; }
             .q-option { font-size: 12px; color: #374151; }
-            .q-marks { font-size: 11px; font-weight: 600; color: #64748b; white-space: nowrap; }
+            .q-marks { font-size: 11px; font-weight: bold; color: #64748b; white-space: nowrap; }
           </style>
         </head>
         <body>
@@ -935,13 +1432,12 @@ export default function QuestionBank() {
           </div>
     `;
 
-    // Group and display questions by marks
     Object.keys(bankQuestionsByMarks)
       .sort((a, b) => parseInt(a) - parseInt(b))
       .forEach((marks) => {
         const marksQuestions = bankQuestionsByMarks[parseInt(marks)];
         const sectionNum = Object.keys(bankQuestionsByMarks).indexOf(marks) + 1;
-        
+
         html += `
           <div class="section">
             <div class="section-header">
@@ -949,7 +1445,7 @@ export default function QuestionBank() {
                 <div class="section-badge">${sectionNum}</div>
                 <div>
                   <div class="section-title">${marks}-Mark Questions</div>
-                  <div class="section-subtitle">Each question carries ${marks} mark${marks > 1 ? "s" : ""}</div>
+                  <div class="section-subtitle">Each question carries ${marks} mark${parseInt(marks) > 1 ? "s" : ""}</div>
                 </div>
               </div>
             </div>
@@ -957,25 +1453,13 @@ export default function QuestionBank() {
         `;
 
         let lastSectionTitle = "";
-        
         marksQuestions.forEach((q, idx) => {
           const isNewSection = q.section_title && q.section_title !== lastSectionTitle;
-          if (isNewSection) {
-            lastSectionTitle = q.section_title;
-          }
-          
+          if (isNewSection) lastSectionTitle = q.section_title;
+
           html += `
             ${isNewSection ? `
-              <div style="
-                font-size: 11px;
-                font-weight: bold;
-                color: #6366f1;
-                text-transform: uppercase;
-                letter-spacing: 0.05em;
-                margin: 16px 0 12px 0;
-                padding-bottom: 10px;
-                border-bottom: 2px solid #e0e7ff;
-              ">
+              <div style="font-size: 11px; font-weight: bold; color: #10b981; text-transform: uppercase; letter-spacing: 0.05em; margin: 16px 0 12px 0; padding-bottom: 8px; border-bottom: 2px solid #a7f3d0;">
                 ${q.section_title}
               </div>
             ` : ""}
@@ -985,7 +1469,7 @@ export default function QuestionBank() {
                 ${q.question}
                 ${q.options && q.options.length > 0 ? `
                   <div class="q-options">
-                    ${q.options.map((opt) => `<div class="q-option">○ ${opt}</div>`).join("")}
+                    ${q.options.map((opt, optIdx) => `<div class="q-option">(${String.fromCharCode(97 + optIdx)}) ${opt}</div>`).join("")}
                   </div>
                 ` : ""}
               </div>
@@ -1004,17 +1488,9 @@ export default function QuestionBank() {
         </body>
       </html>
     `;
-
     return html;
   };
 
-  // Wrapper function for single API data (for backward compatibility)
-  const generatePDFContent = (): string => {
-    if (!apiDataList || apiDataList.length === 0) return "";
-    return generatePDFContentForBank(apiDataList[0]);
-  };
-
-  // Helper function to download PDF
   const downloadPDF = (htmlContent: string, filename: string) => {
     const iframe = document.createElement("iframe");
     iframe.style.display = "none";
@@ -1035,181 +1511,361 @@ export default function QuestionBank() {
     };
   };
 
-  // ── Landing view ──────────────────────────────────────────────────────────
+  const print = (bank: QuestionBankResponse["data"]) => {
+    const htmlContent = generatePDFContentForBank(bank);
+    const iframe = document.createElement("iframe");
+    iframe.style.display = "none";
+    document.body.appendChild(iframe);
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (doc) {
+      doc.open();
+      doc.write(htmlContent);
+      doc.close();
+      iframe.onload = () => {
+        iframe.contentWindow?.print();
+        setTimeout(() => {
+          document.body.removeChild(iframe);
+        }, 100);
+      };
+    }
+  };
+
+  const scrollToPart = (partKey: string) => {
+    const el = document.getElementById(`qbank-part-${partKey}`);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  const scrollTop = () => {
+    pdfRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  // ── LANDING VIEW ──────────────────────────────────────────────────────────
   if (!preview) {
-    // Show loading state
-    if (loading) {
-      return (
-        <div className="qb">
-          <style>{CSS}</style>
-          <Navigation currentRole={role} onRoleChange={setRole} />
-          <div style={{ padding: "28px 32px", maxWidth: 1280, margin: "0 auto" }}>
-            <div style={{
-              textAlign: "center",
-              padding: "60px 20px",
-              color: "#94a3b8"
-            }}>
-              <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>Loading Questions...</div>
-              <div style={{ fontSize: 14 }}>Please wait while we fetch your question bank.</div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    // Show error state
-    if (error || !apiDataList || apiDataList.length === 0) {
-      return (
-        <div className="qb">
-          <style>{CSS}</style>
-          <Navigation currentRole={role} onRoleChange={setRole} />
-          <div style={{ padding: "28px 32px", maxWidth: 1280, margin: "0 auto" }}>
-            <div style={{
-              textAlign: "center",
-              padding: "60px 20px",
-              background: "rgba(239,68,68,.1)",
-              borderRadius: 16,
-              color: "#dc2626"
-            }}>
-              <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Error Loading Questions</div>
-              <div style={{ fontSize: 14, marginBottom: 16 }}>{error || "Failed to load question bank"}</div>
-              <button
-                onClick={() => setLocation("/ai-tutor")}
-                style={{
-                  padding: "8px 16px",
-                  borderRadius: 8,
-                  border: "none",
-                  background: "#dc2626",
-                  color: "#fff",
-                  cursor: "pointer",
-                  fontWeight: 600
-                }}
-              >
-                Go Back
-              </button>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
     return (
       <div className="qb">
         <style>{CSS}</style>
-        <Navigation currentRole={role} onRoleChange={setRole} />
-        <div style={{ padding: "28px 32px", maxWidth: 1280, margin: "0 auto" }}>
-          {/* Landing Header */}
-          <div className="qb-landing-header">
-            <div>
-              <div className="qb-landing-title">Question Banks</div>
+        <span className="qb-bg-spark s1" aria-hidden />
+        <span className="qb-bg-spark s2" aria-hidden />
+        <span className="qb-bg-spark s3" aria-hidden />
+
+        <Navigation currentRole={role as "student" | "teacher"} onRoleChange={setRole} />
+
+        <div style={{ padding: "24px clamp(16px, 3vw, 36px) 48px", maxWidth: 1320, margin: "0 auto", position: "relative", zIndex: 1 }}>
+          {/* ── HERO BANNER WITH ROBO MASCOT & FRESH LEARNING COLORS ── */}
+          <motion.div
+            className="qb-hero"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+          >
+            <div className="qb-hero-inner">
+              <div className="qb-hero-content">
+                <div className="qb-hero-badge">
+                  <Sparkles size={13} />
+                  Model Question Papers & Question Bank
+                </div>
+                <h1 className="qb-hero-title">Practice & Master Questions</h1>
+                <p className="qb-hero-sub">
+                  Explore curated syllabus-aligned questions, chapter-wise weightage, and instant model exam printouts.
+                </p>
+
+                <div className="qb-hero-pills">
+                  <div className="qb-hero-pill">
+                    <Layers size={15} color="#10b981" />
+                    <strong>{apiDataList.length}</strong>
+                    <span>Papers Available</span>
+                  </div>
+                  <div className="qb-hero-pill">
+                    <CheckCircle2 size={15} color="#ff9c1a" />
+                    <strong>{totalQuestionsSum}</strong>
+                    <span>Total Questions</span>
+                  </div>
+                  <button
+                    onClick={() => setLocation("/ai-tutor")}
+                    className="qb-btn-back"
+                    style={{ marginLeft: 6 }}
+                  >
+                    <ArrowLeft size={15} /> Back to AI Tutor
+                  </button>
+                </div>
+              </div>
+
+              {/* Robo mascot in banner */}
+              <div className="qb-hero-mascot-wrap" aria-hidden="true">
+                <img
+                  src={studyRoboImg}
+                  alt="Study Robot"
+                  className="qb-hero-robo"
+                />
+              </div>
             </div>
-            <button
-              onClick={() => setLocation("/ai-tutor")}
-              className="qb-landing-back"
-            >
-              <ArrowLeft size={15} /> Back
-            </button>
-          </div>
+          </motion.div>
 
-          {/* Question Bank Cards Grid */}
-          <div className="qb-grid">
-            {apiDataList.map((bank) => {
-              const bankDiffStats = getDifficultyStats(bank.questions);
-              const bankTopics = getTopicsFromQuestions(bank.questions);
-              const bankQuestionsByMarks = groupQuestionsByMarks(bank.questions);
-              const bankTotalMarks = bank.questions.reduce((sum, q) => sum + q.marks, 0);
+          {/* ── SEARCH & FILTER CONTROLS ── */}
+          <div className="qb-controls">
+            <div className="qb-controls-left">
+              <div className="qb-search-wrap">
+                <Search className="qb-search-icon" />
+                <input
+                  type="text"
+                  className="qb-search-inp"
+                  placeholder="Search by subject, topic or board..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+                {search && (
+                  <button
+                    className="qb-search-clear"
+                    onClick={() => setSearch("")}
+                    aria-label="Clear search"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
 
-              return (
-                <div key={bank.documentId} className="qb-qbank-card">
-                  {/* Card Header */}
-                  <div className="qb-card-header">
-                    <div className="qb-card-header-inner">
-                      <div className="qb-card-badge">
-                        <GraduationCap size={11} />
-                        {bank.examName}
-                      </div>
-                      <div className="qb-card-title">{bank.subject}</div>
-                      <div className="qb-card-subject">
-                        Class {bank.classNumber} • {bank.board}
-                      </div>
-                    </div>
-                  </div>
+              {/* Year Dropdown Filter */}
+              <div className="qb-year-wrap" ref={yearRef}>
+                <button
+                  className={`qb-year-btn ${yearDropdownOpen ? "open" : ""} ${yearFilt !== "all" ? "has-filter" : ""}`}
+                  onClick={() => setYearDropdownOpen(!yearDropdownOpen)}
+                >
+                  <Calendar size={15} />
+                  <span>{yearFilt === "all" ? "All Years" : yearFilt}</span>
+                  <ChevronDown size={14} style={{ transform: yearDropdownOpen ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
+                </button>
 
-                  {/* Meta Information */}
-                  <div className="qb-card-meta">
-                    <div className="qb-card-meta-item">
-                      <div className="qb-card-meta-lbl">Year</div>
-                      <div className="qb-card-meta-val">{bank.year}</div>
-                    </div>
-                    <div className="qb-card-meta-item">
-                      <div className="qb-card-meta-lbl">Questions</div>
-                      <div className="qb-card-meta-val">{bank.totalQuestions}</div>
-                    </div>
-                    <div className="qb-card-meta-item">
-                      <div className="qb-card-meta-lbl">Total Marks</div>
-                      <div className="qb-card-meta-val">{bankTotalMarks}</div>
-                    </div>
-                    <div className="qb-card-meta-item">
-                      <div className="qb-card-meta-lbl">Board</div>
-                      <div className="qb-card-meta-val">{bank.board}</div>
-                    </div>
-                  </div>
-
-                  {/* Difficulty Stats */}
-                  <div className="qb-card-stats">
-                    <div className="qb-card-stat">
-                      <div className="qb-card-stat-val" style={{ color: "#10b981" }}>
-                        {bankDiffStats.easy}
-                      </div>
-                      <div className="qb-card-stat-lbl">Easy</div>
-                    </div>
-                    <div className="qb-card-stat">
-                      <div className="qb-card-stat-val" style={{ color: "#f59e0b" }}>
-                        {bankDiffStats.medium}
-                      </div>
-                      <div className="qb-card-stat-lbl">Medium</div>
-                    </div>
-                    <div className="qb-card-stat">
-                      <div className="qb-card-stat-val" style={{ color: "#ef4444" }}>
-                        {bankDiffStats.hard}
-                      </div>
-                      <div className="qb-card-stat-lbl">Hard</div>
-                    </div>
-                  </div>
-
-                  {/* Action Buttons */}
-                  <div className="qb-card-actions">
-                    <button
-                      className="qb-card-btn qb-card-btn-view"
-                      onClick={() => setPreview(bank)}
-                    >
-                      <Eye size={13} /> View PDF
-                    </button>
-                    <button
-                      className="qb-card-btn qb-card-btn-download"
+                {yearDropdownOpen && (
+                  <div className="qb-year-menu">
+                    <div
+                      className={`qb-year-option ${yearFilt === "all" ? "sel" : ""}`}
                       onClick={() => {
-                        const htmlContent = generatePDFContentForBank(bank);
-                        downloadPDF(htmlContent, `${bank.subject}_${bank.year}.pdf`);
+                        setYearFilt("all");
+                        setYearDropdownOpen(false);
                       }}
                     >
-                      <Download size={13} /> Download
-                    </button>
+                      <span>All Years</span>
+                      <span style={{ fontSize: 11, opacity: 0.6 }}>({apiDataList.length})</span>
+                    </div>
+                    {availableYears.map((y) => (
+                      <div
+                        key={y}
+                        className={`qb-year-option ${yearFilt === y ? "sel" : ""}`}
+                        onClick={() => {
+                          setYearFilt(y);
+                          setYearDropdownOpen(false);
+                        }}
+                      >
+                        <span>Year {y}</span>
+                        <span style={{ fontSize: 11, opacity: 0.6 }}>
+                          ({apiDataList.filter((b) => b.year === y).length})
+                        </span>
+                      </div>
+                    ))}
                   </div>
-                </div>
-              );
-            })}
+                )}
+              </div>
+            </div>
+
+            {/* Subject Filter Chips */}
+            <div className="qb-subj-chips">
+              {availableSubjects.map((subj) => (
+                <button
+                  key={subj}
+                  className={`qb-chip ${selectedSubj.toLowerCase() === subj.toLowerCase() ? "act" : ""}`}
+                  onClick={() => setSelectedSubj(subj)}
+                >
+                  {subj === "all" ? "All Subjects" : subj}
+                </button>
+              ))}
+            </div>
           </div>
 
-          {/* Empty State */}
-          {apiDataList.length === 0 && (
-            <div className="qb-empty">
-              <div className="qb-empty-icon">
-                <BookOpen size={36} />
-              </div>
-              <div className="qb-empty-title">No Question Banks Found</div>
-              <div className="qb-empty-sub">
-                Try adjusting your filters or check back later
-              </div>
+          {/* ── QUESTION BANK CARDS (COLORFUL EXPLORE & PLAY STYLE) ── */}
+          {loading ? (
+            <div style={{ textAlign: "center", padding: "60px 20px", color: "#64748b" }}>
+              <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>Loading Question Banks...</div>
+              <p style={{ fontSize: 13 }}>Preparing your interactive study materials.</p>
+            </div>
+          ) : filteredBanks.length === 0 ? (
+            <div
+              style={{
+                textAlign: "center",
+                padding: "60px 24px",
+                background: "rgba(255,255,255,.8)",
+                borderRadius: 24,
+                border: "2px dashed rgba(15,23,42,.12)",
+                maxWidth: 480,
+                margin: "40px auto",
+              }}
+            >
+              <div style={{ fontSize: 44, marginBottom: 12 }}>🔍</div>
+              <h3 style={{ fontSize: 18, fontWeight: 800, marginBottom: 6 }}>No Question Papers Found</h3>
+              <p style={{ fontSize: 13, color: "#64748b", marginBottom: 16 }}>
+                Try adjusting your search query or reset the year filter.
+              </p>
+              <button
+                className="qb-btn-back"
+                onClick={() => {
+                  setSearch("");
+                  setYearFilt("all");
+                  setSelectedSubj("all");
+                }}
+              >
+                Reset All Filters
+              </button>
+            </div>
+          ) : (
+            <div className="qb-grid">
+              {filteredBanks.map((bank, index) => {
+                const theme = getCardTheme(bank.subject, index);
+                const bankDiffStats = getDifficultyStats(bank.questions || []);
+                const bankTopics = getTopicsFromQuestions(bank.questions || []);
+                const bankTotalMarks = (bank.questions || []).reduce((sum, q) => sum + q.marks, 0);
+                const totalQ = bank.totalQuestions || bank.questions?.length || 0;
+
+                const easyPct = totalQ > 0 ? Math.round((bankDiffStats.easy / totalQ) * 100) : 33;
+                const medPct = totalQ > 0 ? Math.round((bankDiffStats.medium / totalQ) * 100) : 33;
+                const hardPct = totalQ > 0 ? Math.round((bankDiffStats.hard / totalQ) * 100) : 34;
+
+                return (
+                  <motion.div
+                    key={bank.documentId || `${bank.subject}-${index}`}
+                    className="qb-card"
+                    initial={{ opacity: 0, y: 18 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.06, duration: 0.35 }}
+                    whileHover={{ y: -6, scale: 1.015 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    {/* Vibrant Card Header */}
+                    <div className="qb-card-hero" style={{ background: theme.gradient }}>
+                      <div className="qb-card-badge-row">
+                        <span className="qb-card-exam-chip">
+                          <GraduationCap size={12} />
+                          {bank.examName || "Model Exam"}
+                        </span>
+                        <span style={{ fontSize: 11, fontWeight: 800, opacity: 0.85 }}>
+                          Class {bank.classNumber}
+                        </span>
+                      </div>
+
+                      <div>
+                        <h2 className="qb-card-title">{bank.subject}</h2>
+                        <div className="qb-card-sub">
+                          {bank.board} • {bank.year} Edition
+                        </div>
+                      </div>
+
+                      {/* 3D Pop floating subject icon */}
+                      <div className="qb-card-art-pop" aria-hidden="true">
+                        <img
+                          src={theme.art}
+                          alt=""
+                          className="qb-card-art-img"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Card Body */}
+                    <div className="qb-card-body">
+                      {/* Meta Grid */}
+                      <div className="qb-meta-grid">
+                        <div className="qb-meta-box">
+                          <div className="qb-meta-lbl">
+                            <Calendar size={11} /> Year
+                          </div>
+                          <div className="qb-meta-val">{bank.year}</div>
+                        </div>
+                        <div className="qb-meta-box">
+                          <div className="qb-meta-lbl">
+                            <Layers size={11} /> Questions
+                          </div>
+                          <div className="qb-meta-val">{totalQ}</div>
+                        </div>
+                        <div className="qb-meta-box">
+                          <div className="qb-meta-lbl">
+                            <Award size={11} /> Total Marks
+                          </div>
+                          <div className="qb-meta-val">{bankTotalMarks || 100} M</div>
+                        </div>
+                        <div className="qb-meta-box">
+                          <div className="qb-meta-lbl">
+                            <Bookmark size={11} /> Board
+                          </div>
+                          <div className="qb-meta-val">{bank.board}</div>
+                        </div>
+                      </div>
+
+                      {/* Difficulty Progress */}
+                      <div className="qb-diff-wrap">
+                        <div className="qb-diff-label-row">
+                          <span>Difficulty Breakdown</span>
+                          <span>{totalQ} Qs</span>
+                        </div>
+                        <div className="qb-diff-bar">
+                          <div className="qb-diff-seg" style={{ width: `${easyPct}%`, background: "#10b981" }} title={`Easy: ${bankDiffStats.easy}`} />
+                          <div className="qb-diff-seg" style={{ width: `${medPct}%`, background: "#f59e0b" }} title={`Medium: ${bankDiffStats.medium}`} />
+                          <div className="qb-diff-seg" style={{ width: `${hardPct}%`, background: "#ef4444" }} title={`Hard: ${bankDiffStats.hard}`} />
+                        </div>
+                        <div className="qb-diff-pills">
+                          <div className="qb-diff-pill easy">
+                            <span>Easy</span>
+                            <strong>{bankDiffStats.easy}</strong>
+                          </div>
+                          <div className="qb-diff-pill medium">
+                            <span>Med</span>
+                            <strong>{bankDiffStats.medium}</strong>
+                          </div>
+                          <div className="qb-diff-pill hard">
+                            <span>Hard</span>
+                            <strong>{bankDiffStats.hard}</strong>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Topics preview */}
+                      {bankTopics.length > 0 && (
+                        <div>
+                          <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", color: "#8c94aa", marginBottom: 6 }}>
+                            Key Topics Covered
+                          </div>
+                          <div className="qb-topics-list">
+                            {bankTopics.map((topic, ti) => (
+                              <span key={ti} className="qb-topic-chip">
+                                {topic}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Card Actions (NO PURPLE/BLUE AI GRADIENT) */}
+                    <div className="qb-card-actions">
+                      <button
+                        className="qb-btn-view"
+                        style={{
+                          background: theme.btnGrad,
+                          boxShadow: theme.btnShadow,
+                        }}
+                        onClick={() => setPreview(bank)}
+                      >
+                        <Eye size={15} /> View Question Paper
+                      </button>
+                      <button
+                        className="qb-btn-dl"
+                        onClick={() => {
+                          const html = generatePDFContentForBank(bank);
+                          downloadPDF(html, `${bank.subject}_${bank.year}_ModelPaper.pdf`);
+                        }}
+                        title="Download printable model paper"
+                      >
+                        <Download size={15} /> Download
+                      </button>
+                    </div>
+                  </motion.div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -1217,27 +1873,17 @@ export default function QuestionBank() {
     );
   }
 
-  // ── PDF Viewer view ───────────────────────────────────────────────────────
-  
-  // Extract variables from preview object
-  if (!preview || typeof preview === 'boolean') {
-    return null;
-  }
-
-  const subject = preview.subject;
-  const classNumber = preview.classNumber;
-  const board = preview.board;
-  const year = preview.year;
-  const totalQuestions = preview.totalQuestions;
-  const totalMarks = preview.questions.reduce((sum: number, q: Question) => sum + q.marks, 0);
-  const diffStats = getDifficultyStats(preview.questions);
-  const topicsList = getTopicsFromQuestions(preview.questions);
-  const questionsByMarks = groupQuestionsByMarks(preview.questions);
+  // ── PREVIEW / MODEL QUESTION PAPER VIEWER ─────────────────────────────────
+  const questionsByMarks = groupQuestionsByMarks(preview.questions || []);
+  const totalMarks = (preview.questions || []).reduce((sum, q) => sum + q.marks, 0);
+  const diffStats = getDifficultyStats(preview.questions || []);
+  const topicsList = getTopicsFromQuestions(preview.questions || []);
 
   return (
     <div className="qb">
       <style>{CSS}</style>
       <div className="qb-viewer">
+        {/* Viewer Top Header */}
         <div className="qb-viewer-head">
           <div className="qb-viewer-head-left">
             <button
@@ -1247,66 +1893,51 @@ export default function QuestionBank() {
                 setShowTop(false);
                 setShowPred(false);
               }}
+              aria-label="Back to Question Bank list"
             >
               <ArrowLeft size={16} />
             </button>
-            <div style={{ width: 1, height: 28, background: "#f1f5f9" }} />
+            <div style={{ width: 1, height: 28, background: "rgba(15,23,42,.1)" }} />
             <div>
-              <div className="qb-viewer-head-title">Question Paper</div>
+              <div className="qb-viewer-head-title">{preview.subject} — Model Question Paper</div>
               <div className="qb-viewer-head-sub">
-                {preview.subject} | Class {preview.classNumber} | {preview.year}
+                Class {preview.classNumber} • {preview.board} • {preview.year}
               </div>
             </div>
           </div>
-          <div className="qb-viewer-head-right">
+
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <button
-              className="qb-vhbtn qb-vhbtn-print"
-              onClick={() => {
-                const htmlContent = generatePDFContentForBank(preview);
-                const iframe = document.createElement("iframe");
-                iframe.style.display = "none";
-                document.body.appendChild(iframe);
-                const doc = iframe.contentDocument || iframe.contentWindow?.document;
-                if (doc) {
-                  doc.open();
-                  doc.write(htmlContent);
-                  doc.close();
-                  iframe.onload = () => {
-                    iframe.contentWindow?.print();
-                    setTimeout(() => {
-                      document.body.removeChild(iframe);
-                    }, 100);
-                  };
-                }
-              }}
+              className="qb-vhbtn-print"
+              onClick={() => print(preview)}
             >
-              <Printer size={14} />
-              Print
+              <Printer size={15} /> Print Paper
             </button>
             <button
-              className="qb-vhbtn-dl"
+              className="qb-vhbtn-dl-primary"
               onClick={() => {
-                const htmlContent = generatePDFContentForBank(preview);
-                downloadPDF(htmlContent, `${preview.subject}_${preview.year}.pdf`);
+                const html = generatePDFContentForBank(preview);
+                downloadPDF(html, `${preview.subject}_${preview.year}_ModelPaper.pdf`);
               }}
             >
-              <Download size={14} />
-              Download PDF
+              <Download size={15} /> Download PDF
             </button>
           </div>
         </div>
 
+        {/* Viewer Body */}
         <div className="qb-viewer-body">
-          <div className="qb-viewer-sb">
+          {/* Quick Links Sidebar */}
+          <aside className="qb-viewer-sb">
             <div>
               <div className="qb-sb-section-title">
-                <Bookmark size={12} />
-                Quick Links
+                <Bookmark size={13} color="#10b981" />
+                Marks Sections
               </div>
               {Object.keys(questionsByMarks)
                 .sort((a, b) => parseInt(a) - parseInt(b))
                 .map((marks, idx) => {
-                  const questionsInMark = questionsByMarks[parseInt(marks)];
+                  const qs = questionsByMarks[parseInt(marks)];
                   return (
                     <div
                       key={marks}
@@ -1314,87 +1945,59 @@ export default function QuestionBank() {
                       onClick={() => scrollToPart(`part${idx + 1}`)}
                     >
                       <div className="qb-sec-item-top">
-                        <span className="qb-sec-lbl">{marks}M Questions</span>
+                        <span className="qb-sec-lbl">{marks}-Mark Questions</span>
                         <span
-                          className="qb-sec-diff-badge"
                           style={{
-                            background: "rgba(15,23,42,.06)",
-                            color: "#334155",
+                            fontSize: 10,
+                            fontWeight: 800,
+                            padding: "2px 7px",
+                            borderRadius: 12,
+                            background: "rgba(16,185,129,.14)",
+                            color: "#059669",
                           }}
                         >
-                          {questionsInMark.length} Q{questionsInMark.length > 1 ? "s" : ""}
+                          {qs.length} Qs
                         </span>
                       </div>
-                      <div className="qb-sec-page" style={{ marginBottom: 6 }}>
-                        {parseInt(marks)} mark{parseInt(marks) > 1 ? "s" : ""} each
-                      </div>
-                      <div className="qb-sec-bar-bg">
-                        <div
-                          className="qb-sec-bar-fill"
-                          style={{ width: "100%", background: "#111827" }}
-                        />
+                      <div className="qb-sec-page">
+                        Section {idx + 1} • {parseInt(marks) * qs.length} Marks total
                       </div>
                     </div>
                   );
                 })}
             </div>
-            <div
-              className="qb-ai-card"
-              style={{
-                background: "rgba(99,102,241,.08)",
-                borderColor: "rgba(99,102,241,.12)",
-              }}
-            >
-              <div className="qb-ai-card-title" style={{ color: "#6366f1" }}>
-                <Sparkles size={11} />
-                Study Guide
+
+            {/* Study Guide Card */}
+            <div className="qb-ai-card">
+              <div className="qb-ai-card-title">
+                <Sparkles size={12} />
+                Focus Guide
               </div>
-              <div
-                className="qb-ai-card-text"
-                style={{ color: "rgba(99,102,241,.8)" }}
-              >
+              <div className="qb-ai-card-text">
                 {topicsList.length > 0
-                  ? `Focus on: ${topicsList.join(", ")}`
-                  : "Review all topics systematically"}
+                  ? `High frequency topics: ${topicsList.join(", ")}.`
+                  : "Practice all questions under timed exam conditions."}
               </div>
             </div>
-            <div
-              className="qb-ai-card"
-              style={{
-                background: "rgba(239,68,68,.05)",
-                borderColor: "rgba(239,68,68,.15)",
-              }}
-            >
-              <div className="qb-ai-card-title" style={{ color: "#dc2626" }}>
-                <AlertTriangle size={11} />
-                Mistake Radar
-              </div>
-              <div
-                className="qb-ai-card-text"
-                style={{ color: "rgba(185,28,28,.8)" }}
-              >
-                {preview.questions && preview.questions.length > 0
-                  ? "Review carefully - common mistakes detected in this topic"
-                  : "No mistake data available"}
-              </div>
-            </div>
+
+            {/* Topic Predictor Button */}
             <button
               className="qb-predict-btn"
               onClick={() => setShowPred(true)}
             >
-              <PieChart size={13} />
-              Topic Predictor
+              <PieChart size={14} />
+              View Weightage Stats
             </button>
-          </div>
+          </aside>
 
-          <div
+          {/* Printable Question Paper Document */}
+          <main
             className="qb-pdf-area"
             ref={pdfRef}
-            onScroll={(e) => {
-              setShowTop((e.target as HTMLElement).scrollTop > 600);
-            }}
+            onScroll={(e) => setShowTop((e.target as HTMLElement).scrollTop > 500)}
           >
- <div className="qb-mobile-parts">
+            {/* Mobile Parts jump-bar */}
+            <div className="qb-mobile-parts">
               {Object.keys(questionsByMarks)
                 .sort((a, b) => parseInt(a) - parseInt(b))
                 .map((marks, idx) => (
@@ -1403,46 +2006,44 @@ export default function QuestionBank() {
                     className="qb-mobile-part-btn"
                     onClick={() => scrollToPart(`part${idx + 1}`)}
                   >
-                    {marks}M Questions
+                    {marks}M Section
                   </button>
                 ))}
             </div>
 
             <div className="ep-paper-wrapper">
               <div className="ep-paper-header">
-                <div className="ep-paper-school">Model Question Paper</div>
-                <div className="ep-paper-exam-title">{subject}</div>
-                <div className="ep-paper-subject">Class {classNumber} | {board} | {year}</div>
+                <div className="ep-paper-school">Government of School Education</div>
+                <h1 className="ep-paper-exam-title">{preview.subject} Model Examination</h1>
+                <div className="ep-paper-subject">
+                  Standard {preview.classNumber} | Board of {preview.board} | Academic Year {preview.year}
+                </div>
                 <div className="ep-paper-meta-row">
                   <div className="ep-paper-meta-item">
-                    <div className="ep-paper-meta-val">{totalQuestions}</div>
-                    <div className="ep-paper-meta-lbl">Questions</div>
+                    <div className="ep-paper-meta-val">{preview.totalQuestions}</div>
+                    <div className="ep-paper-meta-lbl">Total Questions</div>
                   </div>
                   <div className="ep-paper-meta-item">
                     <div className="ep-paper-meta-val">{totalMarks}</div>
-                    <div className="ep-paper-meta-lbl">Total Marks</div>
+                    <div className="ep-paper-meta-lbl">Maximum Marks</div>
                   </div>
                   <div className="ep-paper-meta-item">
-                    <div className="ep-paper-meta-val">3 hrs</div>
-                    <div className="ep-paper-meta-lbl">Duration</div>
+                    <div className="ep-paper-meta-val">3 Hours</div>
+                    <div className="ep-paper-meta-lbl">Time Allowed</div>
                   </div>
                 </div>
                 <div className="ep-paper-divider" />
               </div>
 
-              {totalQuestions === 0 && (
-                <div className="ep-paper-empty">
-                  Questions for this subject are not available yet.
-                </div>
-              )}
-
+              {/* Sections by Marks */}
               {Object.keys(questionsByMarks)
                 .sort((a, b) => parseInt(a) - parseInt(b))
                 .map((marks, partIdx) => {
                   const qs = questionsByMarks[parseInt(marks)];
                   if (!qs || qs.length === 0) return null;
+
                   return (
-                    <div
+                    <section
                       id={`qbank-part-part${partIdx + 1}`}
                       key={marks}
                       className="ep-part-section"
@@ -1451,142 +2052,137 @@ export default function QuestionBank() {
                         <div className="ep-part-left">
                           <div className="ep-part-badge">{partIdx + 1}</div>
                           <div>
-                            <div className="ep-part-title">
-                              {marks}-Mark Questions
-                            </div>
+                            <h2 className="ep-part-title">Part {partIdx + 1} — {marks}-Mark Questions</h2>
                             <div className="ep-part-subtitle">
-                              Each question carries {marks} mark
-                              {parseInt(marks) > 1 ? "s" : ""}
+                              Answer all questions. Each question carries {marks} mark{parseInt(marks) > 1 ? "s" : ""}.
                             </div>
                           </div>
                         </div>
                       </div>
 
-                      <div className="ep-paper-questions">
+                      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                         {qs.map((q, qi) => {
-                          // Check if this is first question or section changed
                           const prevQuestion = qi > 0 ? qs[qi - 1] : null;
                           const showSection = !prevQuestion || prevQuestion.section_title !== q.section_title;
-                          
+
                           return (
-                            <div key={q.question_id}>
+                            <div key={q.question_id || qi}>
                               {showSection && q.section_title && (
-                                <div style={{
-                                  fontSize: 11,
-                                  fontWeight: 700,
-                                  color: "#6366f1",
-                                  textTransform: "uppercase",
-                                  letterSpacing: "0.05em",
-                                  marginBottom: 12,
-                                  paddingBottom: 10,
-                                  borderBottom: "2px solid #e0e7ff",
-                                  marginTop: qi > 0 ? 16 : 0
-                                }}>
+                                <div
+                                  style={{
+                                    fontSize: 11,
+                                    fontWeight: 800,
+                                    color: "#10b981",
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.06em",
+                                    margin: "14px 0 10px",
+                                    paddingBottom: 6,
+                                    borderBottom: "1.5px solid rgba(16,185,129,.2)",
+                                  }}
+                                >
                                   {q.section_title}
                                 </div>
                               )}
-                              <div className="ep-paper-qn" style={{ marginBottom: 12 }}>
+                              <div className="ep-paper-qn">
                                 <div className="ep-paper-qn-num">{qi + 1}</div>
                                 <div className="ep-paper-qn-text">
                                   {q.question}
                                   {q.options && q.options.length > 0 && (
-                                    <div style={{ marginTop: 8, marginLeft: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+                                    <div style={{ marginTop: 8, marginLeft: 8, display: "flex", flexDirection: "column", gap: 6 }}>
                                       {q.options.map((opt, optIdx) => (
-                                        <div key={optIdx} style={{ fontSize: 12, color: "#374151" }}>
-                                          {String.fromCharCode(97 + optIdx)}) {opt}
+                                        <div key={optIdx} style={{ fontSize: 13, color: "#475569" }}>
+                                          ({String.fromCharCode(97 + optIdx)}) {opt}
                                         </div>
                                       ))}
                                     </div>
                                   )}
                                 </div>
+                                <span className="ep-paper-qn-unit">{q.difficulty || `${marks}M`}</span>
                               </div>
-                              <span className="ep-paper-qn-unit">{q.difficulty}</span>
-                           
-                          </div>
-                        );
+                            </div>
+                          );
                         })}
                       </div>
-                    </div>
+                    </section>
                   );
                 })}
             </div>
-          </div>
+          </main>
+        </div>
 
-          {showPred && (
-            <div className="qb-predictor-overlay">
-              <div className="qb-predictor-card">
-                <div className="qb-predictor-head">
-                  <div className="qb-predictor-title">
-                    <PieChart size={15} style={{ color: "#8b5cf6" }} />
-                    Topic Weightage
-                  </div>
-                  <button
-                    onClick={() => setShowPred(false)}
-                    style={{
-                      width: 28,
-                      height: 28,
-                      borderRadius: 8,
-                      border: "1.5px solid #f1f5f9",
-                      background: "#fff",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: "#94a3b8",
-                    }}
-                  >
-                    <X size={14} />
-                  </button>
+        {/* Topic Predictor Modal */}
+        {showPred && (
+          <div className="qb-predictor-overlay" onClick={() => setShowPred(false)}>
+            <div className="qb-predictor-card" onClick={(e) => e.stopPropagation()}>
+              <div className="qb-predictor-head">
+                <div className="qb-predictor-title">
+                  <PieChart size={16} color="#ff9c1a" />
+                  Exam Difficulty Analytics
                 </div>
-                <div className="qb-predictor-body">
-                  {topicsList && topicsList.length > 0 ? (
-                    (() => {
-                      const difficulty = getDifficultyStats(preview.questions);
-                      const percentEasy = Math.round((difficulty.easy / preview.totalQuestions) * 100);
-                      const percentMedium = Math.round((difficulty.medium / preview.totalQuestions) * 100);
-                      const percentHard = Math.round((difficulty.hard / preview.totalQuestions) * 100);
-                      
-                      return (
-                        <>
-                          <div className="qb-predictor-row">
-                            <span className="qb-predictor-lbl">Easy Questions</span>
-                            <span className="qb-predictor-val">{percentEasy}%</span>
-                          </div>
-                          <div className="qb-predictor-row">
-                            <span className="qb-predictor-lbl">Medium Questions</span>
-                            <span className="qb-predictor-val">{percentMedium}%</span>
-                          </div>
-                          <div className="qb-predictor-row">
-                            <span className="qb-predictor-lbl">Hard Questions</span>
-                            <span className="qb-predictor-val">{percentHard}%</span>
-                          </div>
-                        </>
-                      );
-                    })()
-                  ) : (
-                    <div className="qb-predictor-row">
-                      <span className="qb-predictor-lbl">No data</span>
-                    </div>
-                  )}
+                <button
+                  className="qb-vhclose"
+                  style={{ width: 30, height: 30 }}
+                  onClick={() => setShowPred(false)}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="qb-predictor-body">
+                <div className="qb-predictor-row">
+                  <span className="qb-predictor-lbl">Easy Level Questions</span>
+                  <span className="qb-predictor-val" style={{ color: "#10b981" }}>
+                    {Math.round((diffStats.easy / (preview.totalQuestions || 1)) * 100)}% ({diffStats.easy} Qs)
+                  </span>
+                </div>
+                <div className="qb-predictor-row">
+                  <span className="qb-predictor-lbl">Medium Level Questions</span>
+                  <span className="qb-predictor-val" style={{ color: "#f59e0b" }}>
+                    {Math.round((diffStats.medium / (preview.totalQuestions || 1)) * 100)}% ({diffStats.medium} Qs)
+                  </span>
+                </div>
+                <div className="qb-predictor-row">
+                  <span className="qb-predictor-lbl">Hard Level Questions</span>
+                  <span className="qb-predictor-val" style={{ color: "#ef4444" }}>
+                    {Math.round((diffStats.hard / (preview.totalQuestions || 1)) * 100)}% ({diffStats.hard} Qs)
+                  </span>
+                </div>
+                <div className="qb-predictor-row">
+                  <span className="qb-predictor-lbl">Total Marks Target</span>
+                  <span className="qb-predictor-val" style={{ color: "#071235" }}>
+                    {totalMarks} Marks
+                  </span>
                 </div>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
+        {/* Scroll to Top FAB */}
         {showTop && (
-          <button className="qb-scroll-top" onClick={scrollTop}>
+          <button
+            style={{
+              position: "fixed",
+              bottom: 28,
+              right: 28,
+              zIndex: 80,
+              width: 44,
+              height: 44,
+              borderRadius: "50%",
+              background: "#10b981",
+              color: "#fff",
+              border: 0,
+              boxShadow: "0 6px 20px rgba(16,185,129,.35)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+            }}
+            onClick={scrollTop}
+            aria-label="Scroll to top"
+          >
             <ArrowUp size={18} />
           </button>
         )}
-
-        <button
-          className="qb-mob-fab"
-          style={{ display: "none" }}
-          onClick={() => setShowMobSb((o) => !o)}
-        >
-          {showMobSb ? <X size={20} /> : <List size={20} />}
-        </button>
       </div>
     </div>
   );

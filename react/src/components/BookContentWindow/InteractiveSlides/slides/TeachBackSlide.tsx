@@ -75,12 +75,12 @@ export const TeachBackSlide: React.FC<TeachBackSlideProps> = ({
       </div>
 
       {slide.keyPoints && slide.keyPoints.length > 0 && (
-        <div className="rounded-2xl border border-cyan-300/25 bg-cyan-400/5 p-4">
-          <div className="mb-2 text-xs font-black uppercase text-cyan-300">Key points to include</div>
-          <ul className="grid gap-2 text-xs font-semibold leading-relaxed text-slate-200 md:grid-cols-2 md:text-sm">
+        <div className="rounded-2xl border border-cyan-200 bg-cyan-50/80 p-4 dark:border-cyan-300/25 dark:bg-cyan-400/5">
+          <div className="mb-2 text-xs font-black uppercase text-cyan-800 dark:text-cyan-300">Key points to include</div>
+          <ul className="grid gap-2 text-xs font-semibold leading-relaxed text-slate-700 dark:text-slate-200 md:grid-cols-2 md:text-sm">
             {slide.keyPoints.map((point, index) => (
               <li key={`${index}-${point}`} className="flex gap-2">
-                <span className="grid h-5 w-5 shrink-0 place-items-center rounded-md bg-cyan-400/15 text-[11px] font-black text-cyan-200">{index + 1}</span>
+                <span className="grid h-5 w-5 shrink-0 place-items-center rounded-md bg-cyan-500/15 text-[11px] font-black text-cyan-800 dark:bg-cyan-400/15 dark:text-cyan-200">{index + 1}</span>
                 <span>{point}</span>
               </li>
             ))}
@@ -228,7 +228,7 @@ export const TeachBackSlide: React.FC<TeachBackSlideProps> = ({
           <motion.div
             initial={{ opacity: 0, x: -18 }}
             animate={{ opacity: 1, x: 0 }}
-            className="lg:col-span-12 rounded-2xl border border-emerald-300/40 bg-emerald-400/10 p-4 text-sm font-bold text-emerald-50"
+            className="lg:col-span-12 rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 text-sm font-bold text-emerald-900 dark:border-emerald-300/40 dark:bg-emerald-400/10 dark:text-emerald-50"
           >
             {slide.completionNarration.find((cue) => cue.text)?.text}
           </motion.div>

@@ -67,8 +67,6 @@ import DebatePage from "./pages/DebatePage";
 import SeminarPage from "./pages/SeminarPage";
 import MeetingPage from "./pages/MeetingPage";
 import LiveEventsPage from "./pages/live-events-page";
-import TeacherSeminarPage from "./pages/teacher-seminar-page";
-import TeacherDebatePage from "./pages/teacher-debate-page";
 import TeacherMeetingPage from "./pages/teacher-meeting-page";
 import TeacherSeminarSetupPage from "./pages/teacher-seminar-setup-page";
 import TeacherDebateSetupPage from "./pages/teacher-debate-setup-page";

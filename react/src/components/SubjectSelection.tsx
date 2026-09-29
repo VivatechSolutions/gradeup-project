@@ -51,15 +51,34 @@ const css = `
 
 .ss-root {
   font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
-  color: var(--theme-text-main, #071235);
-  background: radial-gradient(circle at 10% 6%,rgba(126,87,255,.12),transparent 25%), radial-gradient(circle at 90% 18%,rgba(255,171,64,.16),transparent 24%), linear-gradient(180deg,var(--theme-bg-app,#fbfcff),var(--theme-bg-elevated,#f5f7ff));
+  color: #071235;
+  background: radial-gradient(circle at 10% 6%,rgba(126,87,255,.12),transparent 25%), radial-gradient(circle at 90% 18%,rgba(255,171,64,.16),transparent 24%), linear-gradient(180deg,#fbfcff,#f5f7ff);
   flex: 1;
   min-height: 0;
+  height: 100%;
+  width: 100%;
+  max-width: 100%;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  overflow-x: hidden !important;
   position: relative;
   isolation: isolate;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+.ss-root::-webkit-scrollbar,
+.ss-body::-webkit-scrollbar,
+.ss-grid::-webkit-scrollbar,
+.ss-recent-grid::-webkit-scrollbar,
+*::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+.ss-root, .ss-body, .ss-grid, .ss-recent-grid {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
 }
 .ss-root::before,.ss-root::after { content:''; position:absolute; z-index:-1; border-radius:999px; pointer-events:none; animation:ssFloat 11s ease-in-out infinite alternate; }
 .ss-root::before { width:250px; height:250px; left:-90px; top:280px; background:radial-gradient(circle,rgba(46,182,255,.18),transparent 68%); }
@@ -70,7 +89,7 @@ const css = `
 @keyframes ssOrbit { from { transform:rotate(0deg) translateX(9px) rotate(0deg); } to { transform:rotate(360deg) translateX(9px) rotate(-360deg); } }
 @keyframes ssArtFloat { 0%,100% { transform:translateY(0) rotate(-2deg); } 50% { transform:translateY(-8px) rotate(3deg); } }
 @keyframes ssCardGlow { 0%,100% { opacity:.3; } 50% { opacity:.65; } }
-.dark .ss-root, [data-theme="dark"] .ss-root { color:#f6f7ff; background:radial-gradient(circle at 10% 6%,rgba(126,87,255,.18),transparent 25%),radial-gradient(circle at 90% 18%,rgba(255,171,64,.14),transparent 24%),linear-gradient(180deg,#080d1f,#10172d); }
+.dark .ss-root { color:#f6f7ff; background:radial-gradient(circle at 10% 6%,rgba(126,87,255,.18),transparent 25%),linear-gradient(180deg,#080d1f,#10172d); }
 .dark .ss-root::before { background:radial-gradient(circle,rgba(46,182,255,.12),transparent 68%); }
 .dark .ss-root::after { background:radial-gradient(circle,rgba(255,95,153,.1),transparent 70%); }
 .dark .ss-hero { background:linear-gradient(135deg,#101b3f 0%,#123326 55%,#392a16 100%); border-color:rgba(110,231,183,.18); }
@@ -408,7 +427,7 @@ const css = `
 }
 
 /* Compact command-bar variant */
-.ss-hero { padding:16px 28px; background:linear-gradient(105deg,#122451 0%,#155b68 52%,#247d65 100%); border:0; border-radius:0 0 22px 22px; box-shadow:0 12px 26px rgba(7,18,53,.16); }
+.ss-hero { position:sticky; top:0; z-index:25; padding:16px 28px; background:linear-gradient(105deg,#122451 0%,#155b68 52%,#247d65 100%); border:0; border-radius:0 0 22px 22px; box-shadow:0 12px 26px rgba(7,18,53,.16); }
 .ss-hero::before { top:-90px; right:9%; width:210px; height:210px; background:rgba(255,255,255,.08); }
 .ss-hero::after { bottom:-110px; left:42%; width:170px; height:170px; background:rgba(255,178,29,.16); }
 .ss-hero-inner { max-width:1280px; margin:0 auto; }

@@ -55,11 +55,7 @@ export function ChatHistoryPanel({
   }, [chatHistory, pinnedIds]);
 
   return (
-    <div className="h-[390px] w-full max-w-full md:max-w-[340px] lg:max-w-[380px] mx-auto flex flex-col bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
     <div className="h-[390px] w-full max-w-full md:max-w-[340px] lg:max-w-[380px] mx-auto flex flex-col bg-white dark:bg-[#10172d]/90 dark:backdrop-blur-md rounded-xl border border-slate-200 dark:border-white/10 overflow-hidden shadow-sm">
-      
-      {/* HEADER */}
-      <div className="p-2 px-3 flex flex-row justify-between items-center border-b border-slate-100 dark:border-slate-800 shrink-0 z-20 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md">
       <div className="p-2 px-3 flex flex-row justify-between items-center border-b border-slate-100 dark:border-white/10 shrink-0 z-20 bg-white/80 dark:bg-[#10172d]/90 backdrop-blur-md">
         <h3 className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">
           History {pinnedIds.length > 0 && `(${pinnedIds.length} Pinned)`}
@@ -68,25 +64,27 @@ export function ChatHistoryPanel({
           <Button onClick={startNewChat} size="sm" variant="ghost" className="h-6 w-6 p-0 hover:bg-blue-50 dark:hover:bg-blue-900/20">
             <Plus className="h-3.5 w-3.5 text-slate-600 dark:text-slate-400" />
           </Button>
-          
+
           <AlertDialog open={open} onOpenChange={setOpen}>
             <AlertDialogTrigger asChild>
               <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-400 hover:text-red-500">
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>
             </AlertDialogTrigger>
-            <AlertDialogContent className="max-w-[300px] rounded-xl">
+            <AlertDialogContent className="max-w-[300px] rounded-xl bg-white dark:bg-[#10172d] border border-slate-200 dark:border-white/10 text-slate-900 dark:text-slate-100">
               <AlertDialogHeader>
-                <AlertDialogTitle className="text-sm flex items-center gap-2">
+                <AlertDialogTitle className="text-sm flex items-center gap-2 text-slate-900 dark:text-white">
                   <AlertCircle className="h-4 w-4 text-red-500" /> Clear History?
                 </AlertDialogTitle>
-                <AlertDialogDescription className="text-xs">
+                <AlertDialogDescription className="text-xs text-slate-500 dark:text-slate-400">
                   Permanently delete all sessions.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter className="flex-row gap-2">
-                <AlertDialogCancel className="mt-0 flex-1 text-xs h-8">Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={clearAllHistory} className="bg-red-500 hover:bg-red-600 flex-1 text-xs h-8">
+                <AlertDialogCancel className="mt-0 flex-1 text-xs h-8 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-none">
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction onClick={clearAllHistory} className="bg-red-500 hover:bg-red-600 flex-1 text-xs h-8 text-white">
                   Delete All
                 </AlertDialogAction>
               </AlertDialogFooter>
@@ -95,10 +93,8 @@ export function ChatHistoryPanel({
         </div>
       </div>
 
-      {/* BODY */}
       <div className="flex-1 min-h-0 relative">
         {isLoading && (
-          <div className="absolute inset-0 bg-white/60 dark:bg-slate-950/60 flex items-center justify-center z-30 backdrop-blur-[1px]">
           <div className="absolute inset-0 bg-white/60 dark:bg-[#10172d]/70 flex items-center justify-center z-30 backdrop-blur-[1px]">
             <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
           </div>
@@ -117,12 +113,9 @@ export function ChatHistoryPanel({
                       currentChatId === chat.id
                         ? "bg-blue-50/70 dark:bg-blue-900/20 ring-1 ring-blue-100 dark:ring-blue-800/40"
                         : "hover:bg-slate-50 dark:hover:bg-slate-900/40"
-                        ? "bg-blue-50/70 dark:bg-blue-900/30 ring-1 ring-blue-100 dark:ring-blue-800/40"
-                        : "hover:bg-slate-50 dark:hover:bg-white/[0.06]"
                     }`}
                     style={{ minHeight: '44px' }}
                   >
-                    {/* COMPACT TEXT */}
                     <div className="chat-fade-mask" style={{ width: 'calc(100% - 45px)', overflow: 'hidden' }}>
                       <div className="whitespace-nowrap flex items-center gap-1.5">
                         {isPinned && <Pin className="h-2.5 w-2.5 text-blue-500 shrink-0 rotate-45" />}
@@ -135,13 +128,12 @@ export function ChatHistoryPanel({
                       </p>
                     </div>
 
-                    {/* ACTIONS CONTAINER */}
                     <div className="absolute right-1 top-1/2 -translate-y-1/2 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-all z-10">
                       <Button
                         onClick={(e) => togglePin(e, chat.id)}
                         size="icon"
                         variant="ghost"
-                        className={`h-6 w-6 ${isPinned ? "text-blue-500" : "text-slate-300 hover:text-blue-400"}`}
+                        className={`h-6 w-6 ${isPinned ? "text-blue-500" : "text-slate-400 hover:text-blue-400 dark:text-slate-400 dark:hover:text-blue-300"}`}
                       >
                         {isPinned ? <PinOff className="h-3 w-3" /> : <Pin className="h-3 w-3" />}
                       </Button>
@@ -149,7 +141,7 @@ export function ChatHistoryPanel({
                         onClick={(e) => { e.stopPropagation(); deleteChat(chat.id); }}
                         size="icon"
                         variant="ghost"
-                        className="h-6 w-6 text-slate-300 hover:text-red-400"
+                        className="h-6 w-6 text-slate-400 hover:text-red-400 dark:text-slate-400 dark:hover:text-red-400"
                       >
                         <Trash2 className="h-3 w-3" />
                       </Button>
@@ -184,15 +176,16 @@ export function ChatHistoryPanel({
           transform: translateX(calc(-100% + 110px));
           transition: transform 4s linear;
         }
-        
+
         .chat-marquee-target {
           transition: transform 0.4s ease-out;
         }
 
-        @media (max-width: 768px) {
-          .group .opacity-0 { opacity: 0.45; }
+        @media (max-width: 1023px), (pointer: coarse) {
+          .group .opacity-0 { opacity: 0.8 !important; }
         }
       `}} />
     </div>
   );
 }
+

@@ -8,7 +8,7 @@ import { ExplanationSlide } from "./slides/ExplanationSlide";
 import { AvatarTeacher } from "./AvatarTeacher";
 import { CompletionEffect } from "./CompletionEffect";
 import { generateLessonFromChapter } from "./mockLessonData";
-import { Hand, Lightbulb, Loader2, Mic, Send, Square, Volume2, X } from "lucide-react";
+import { GripVertical, Hand, Lightbulb, Loader2, Mic, Send, Square, Volume2, X } from "lucide-react";
 import {
   endAvatarSession,
   endAvatarSessionKeepalive,
@@ -81,6 +81,7 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
   const [avatarType, setAvatarType] = useState<"male" | "female">("male");
   const [isAvatarSpeaking, setIsAvatarSpeaking] = useState(false);
   const [isAvatarPaused, setIsAvatarPaused] = useState(false);
+  const raiseHandDragConstraintsRef = useRef<HTMLDivElement>(null);
   const [playbackState, setPlaybackState] = useState<PlaybackState>("idle");
   const lessonAudioRef = useRef<HTMLAudioElement | null>(null);
   const narrationModeRef = useRef<NarrationMode | null>(null);
@@ -613,7 +614,7 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
         pendingAvatarEndTimers.delete(sessionId);
         if (!endedAvatarSessions.has(sessionId)) {
           endedAvatarSessions.add(sessionId);
-          void endAvatarSession({ sessionId });
+          void endAvatarSessionKeepalive({ sessionId });
         }
       }, 0);
       pendingAvatarEndTimers.set(sessionId, timer);
@@ -1034,7 +1035,7 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
         {`
           @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
           @keyframes guFloatSoft { 0%, 100% { transform: translate3d(0,0,0); } 50% { transform: translate3d(0,-8px,0); } }
-          @keyframes guShine { 0% { transform: translateX(-130%) rotate(18deg); } 45%, 100% { transform: translateX(220%) rotate(18deg); } }
+          @keyframes guShine { from { transform: translateX(-120%) skewX(-18deg); } to { transform: translateX(460%) skewX(-18deg); } }
           @keyframes guPulseRing { 0%, 100% { box-shadow: 0 0 0 0 rgba(14,165,233,.28); } 50% { box-shadow: 0 0 0 9px rgba(14,165,233,0); } }
           @keyframes guAvatarBreathe { 0%, 100% { transform: translate3d(0,0,0) scale(var(--avatar-scale, 1)); } 50% { transform: translate3d(0,-8px,0) scale(calc(var(--avatar-scale, 1) * 1.02)); } }
           @keyframes guActiveStep { 0%, 100% { transform: scale(1.08); filter: brightness(1); } 50% { transform: scale(1.18); filter: brightness(1.14); } }
@@ -1264,8 +1265,8 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
               <div className="relative overflow-hidden rounded-[28px] border border-white/80 bg-white shadow-2xl shadow-slate-950/30 dark:border-white/10 dark:bg-[#101b33]">
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_8%,rgba(59,130,246,0.18),transparent_28%),radial-gradient(circle_at_92%_88%,rgba(16,185,129,0.16),transparent_26%),linear-gradient(135deg,rgba(255,255,255,.92),rgba(239,246,255,.82))] dark:bg-[radial-gradient(circle_at_12%_8%,rgba(59,130,246,0.22),transparent_28%),radial-gradient(circle_at_92%_88%,rgba(16,185,129,0.12),transparent_26%),linear-gradient(135deg,rgba(15,23,42,.94),rgba(17,27,51,.88))] pointer-events-none" />
                 <div
-                  className="absolute top-0 bottom-0 w-24 bg-gradient-to-r from-transparent via-white/40 to-transparent pointer-events-none dark:via-white/10"
-                  style={{ animation: shouldReduceMotion ? undefined : "guShine 5.2s ease-in-out infinite" }}
+                  className="absolute -left-[42%] top-0 bottom-0 w-[34%] bg-gradient-to-r from-transparent via-amber-200/35 to-transparent pointer-events-none dark:via-cyan-100/10"
+                  style={{ animation: shouldReduceMotion ? undefined : "guShine 5.2s linear infinite" }}
                   aria-hidden="true"
                 />
 
@@ -1339,6 +1340,7 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
         avatarType={avatarType}
         onAvatarTypeChange={handleAvatarTypeChange}
         onBackToUnits={handleExitToUnits}
+        onBackToLibrary={onBackToLibrary}
       />
 
       {/* Main Learning Slide Area */}
@@ -1353,8 +1355,8 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
           <div className="absolute inset-0 overflow-hidden rounded-[22px] sm:rounded-[28px] pointer-events-none">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_90%_9%,rgba(251,191,36,0.14),transparent_26%),radial-gradient(circle_at_8%_88%,rgba(16,185,129,0.08),transparent_24%),linear-gradient(135deg,rgba(255,255,255,.90),rgba(247,250,255,.72))] dark:bg-[radial-gradient(circle_at_8%_5%,rgba(34,211,238,0.18),transparent_24%),radial-gradient(circle_at_88%_10%,rgba(236,72,153,0.18),transparent_25%),radial-gradient(circle_at_88%_92%,rgba(251,191,36,0.12),transparent_24%),linear-gradient(135deg,rgba(11,25,58,.86),rgba(9,15,38,.84))] pointer-events-none" />
           <div
-            className="absolute top-0 bottom-0 w-20 bg-gradient-to-r from-transparent via-white/25 to-transparent pointer-events-none"
-            style={{ animation: shouldReduceMotion ? undefined : "guShine 6.5s ease-in-out infinite" }}
+            className="absolute -left-[42%] top-0 bottom-0 w-[34%] bg-gradient-to-r from-transparent via-amber-200/35 to-transparent pointer-events-none dark:via-cyan-100/10"
+            style={{ animation: shouldReduceMotion ? undefined : "guShine 6.5s linear infinite" }}
             aria-hidden="true"
           />
           </div>
@@ -1396,7 +1398,7 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
             </motion.div>
           </AnimatePresence>
 
-          <motion.div
+          {!doubtOpen && <motion.div
             drag
             dragMomentum={false}
             whileDrag={shouldReduceMotion ? undefined : { scale: 1.02, cursor: "grabbing" }}
@@ -1422,15 +1424,57 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
                 className="origin-center"
               />
             </div>
-          </motion.div>
-          <button
-            type="button"
-            onClick={pauseForDoubt}
-            className="fixed bottom-24 right-5 z-50 inline-flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-3 text-sm font-black text-white shadow-xl shadow-emerald-600/25 transition hover:bg-emerald-700"
+          </motion.div>}
+          <div
+            ref={raiseHandDragConstraintsRef}
+            className={`pointer-events-none fixed inset-4 z-50 ${doubtOpen ? "invisible" : ""}`}
+            aria-hidden={doubtOpen}
           >
-            <Hand className="h-4 w-4" />
-            Raise hand
-          </button>
+            <motion.button
+              type="button"
+              drag
+              dragConstraints={raiseHandDragConstraintsRef}
+              dragMomentum={false}
+              dragElastic={0.08}
+              whileHover={shouldReduceMotion ? undefined : { y: -2, scale: 1.02 }}
+              whileDrag={shouldReduceMotion ? undefined : { scale: 1.04, cursor: "grabbing" }}
+              whileTap={shouldReduceMotion ? undefined : { scale: 0.97 }}
+              onTap={pauseForDoubt}
+              className="pointer-events-auto absolute bottom-20 right-1 isolate inline-flex touch-none cursor-grab items-center gap-3 rounded-[22px] border border-amber-200/80 bg-[#101a36] p-1.5 pr-3 text-left shadow-[0_12px_34px_rgba(2,8,23,.42),0_0_24px_rgba(251,191,36,.2)] ring-1 ring-amber-300/30 transition-shadow hover:shadow-[0_16px_42px_rgba(2,8,23,.5),0_0_30px_rgba(251,191,36,.3)] active:cursor-grabbing"
+              title="Drag or tap to raise your hand"
+              aria-label="Drag or tap to raise your hand"
+            >
+              <span className="pointer-events-none absolute inset-1 z-0 overflow-hidden rounded-[17px]">
+                <motion.span
+                  className="absolute -left-[35%] top-0 h-full w-[28%] skew-x-[-18deg] bg-gradient-to-r from-transparent via-amber-100/30 to-transparent"
+                  animate={shouldReduceMotion ? undefined : { x: ["0%", "500%"] }}
+                  transition={{ duration: 3.2, ease: "linear", repeat: Infinity, repeatDelay: 1.1 }}
+                />
+              </span>
+              <span className="relative grid h-12 w-12 shrink-0 place-items-center rounded-[16px] bg-gradient-to-br from-yellow-300 via-amber-400 to-orange-500 text-slate-950 shadow-[inset_0_1px_0_rgba(255,255,255,.65),0_5px_14px_rgba(245,158,11,.3)]">
+                {!shouldReduceMotion && (
+                  <motion.span
+                    className="absolute -inset-1 rounded-[19px] border border-amber-200/80"
+                    animate={{ scale: [1, 1.35], opacity: [0.75, 0] }}
+                    transition={{ duration: 1.8, ease: "easeOut", repeat: Infinity, repeatDelay: 0.8 }}
+                    aria-hidden="true"
+                  />
+                )}
+                <motion.span
+                  animate={shouldReduceMotion ? undefined : { rotate: [0, 0, -15, 11, -12, 0, 0] }}
+                  transition={{ duration: 2.4, ease: "easeInOut", repeat: Infinity, repeatDelay: 1.2 }}
+                  className="origin-[70%_85%]"
+                >
+                  <Hand className="h-5 w-5" />
+                </motion.span>
+              </span>
+              <span className="relative z-10 flex flex-col gap-0.5 py-1">
+                <span className="text-[9px] font-black uppercase tracking-[.14em] text-amber-200">Need a hand?</span>
+                <span className="text-sm font-black leading-tight text-white">Raise hand</span>
+              </span>
+              <GripVertical className="relative z-10 h-4 w-4 shrink-0 text-white/45" aria-hidden="true" />
+            </motion.button>
+          </div>
         </motion.div>
       </main>
 
@@ -1438,6 +1482,7 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
       <SlideNavigation
         currentIndex={currentIndex}
         totalSlides={lesson.totalSlides}
+        isTaskCompleted={currentTaskState.isCompleted}
         onPrevious={handlePrevious}
         onNext={handleNext}
         isNavigating={isNavigating}
@@ -1452,12 +1497,13 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm"
           >
-            <motion.div
-              initial={{ y: 24, scale: 0.96 }}
-              animate={{ y: 0, scale: 1 }}
-              exit={{ y: 18, scale: 0.97 }}
-              className="flex max-h-[82vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#0d1730]"
-            >
+            <div className="flex max-h-[90vh] w-full max-w-5xl items-center justify-center gap-5">
+              <motion.div
+                initial={{ y: 24, scale: 0.96 }}
+                animate={{ y: 0, scale: 1 }}
+                exit={{ y: 18, scale: 0.97 }}
+                className="flex max-h-[82vh] w-full min-w-0 max-w-xl shrink flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#0d1730]"
+              >
               <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-white/10">
                 <div>
                   <p className="text-xs font-black uppercase tracking-wider text-emerald-600">Raise Hand</p>
@@ -1515,7 +1561,21 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
                   Resume lesson
                 </button>
               </div>
-            </motion.div>
+              </motion.div>
+              <div className="hidden w-52 shrink-0 items-end justify-center md:flex">
+                <AvatarTeacher
+                  message="What would you like to ask?"
+                  avatarType={avatarType}
+                  isSpeaking={isAvatarSpeaking}
+                  isPaused={isAvatarPaused}
+                  speechSupported={speechSupported}
+                  showControls={false}
+                  showTypeControls={false}
+                  showVoiceControls={false}
+                  className="scale-90 origin-bottom"
+                />
+              </div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

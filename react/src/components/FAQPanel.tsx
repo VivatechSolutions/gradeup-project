@@ -7,6 +7,7 @@ interface FAQPanelProps {
   unit: string;
   unitId?: string;
   onBack: () => void;
+  isDark?: boolean;
 }
 
 const CSS = `
@@ -33,6 +34,12 @@ const CSS = `
   border: 1px solid rgba(0,0,0,.06);
   box-shadow: 0 2px 12px rgba(0,0,0,.05);
   overflow: hidden;          /* only clips the rounded corners */
+}
+
+.fp-dark {
+  background: #091427;
+  border-color: rgba(148, 163, 184, 0.18);
+  box-shadow: 0 18px 40px rgba(2, 6, 23, 0.42);
 }
 
 /* ── COMPACT HEADER ─────────────────────────────── */
@@ -90,21 +97,37 @@ const CSS = `
   background: #fff;
   border-bottom: 1px solid #f1f5f9;
 }
+.fp-dark .fp-search {
+  background: rgba(15, 23, 42, 0.9);
+  border-bottom-color: rgba(148, 163, 184, 0.16);
+}
 .fp-search-row {
   display: flex; align-items: center; gap: 7px;
   padding: 7px 11px; border-radius: 11px;
   border: 1.5px solid #f1f5f9; background: #f8fafc;
   transition: all .18s;
 }
+.fp-dark .fp-search-row {
+  background: rgba(15, 23, 42, 0.88);
+  border-color: rgba(148, 163, 184, 0.18);
+}
 .fp-search-row:focus-within {
   border-color: #6366f1; background: #fff;
   box-shadow: 0 0 0 3px rgba(99,102,241,.09);
+}
+.fp-dark .fp-search-row:focus-within {
+  background: rgba(15, 23, 42, 0.96);
+  box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.2);
 }
 .fp-search-inp {
   flex: 1; background: none; border: none; outline: none;
   font-size: 12.5px; color: #0f172a;
 }
+.fp-dark .fp-search-inp {
+  color: #e2e8f0;
+}
 .fp-search-inp::placeholder { color: #94a3b8; }
+.fp-dark .fp-search-inp::placeholder { color: #94a3b8; }
 .fp-clear-btn {
   width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0;
   background: #e2e8f0; border: none; cursor: pointer;
@@ -112,6 +135,10 @@ const CSS = `
   color: #64748b; transition: background .15s;
 }
 .fp-clear-btn:hover { background: #c7d2fe; color: #6366f1; }
+.fp-dark .fp-clear-btn {
+  background: rgba(148, 163, 184, 0.15);
+  color: #cbd5e1;
+}
 
 /* ── META BAR (results count / notice) ─────────── */
 .fp-meta {
@@ -120,9 +147,14 @@ const CSS = `
   padding: 5px 12px 4px;
 }
 .fp-meta-label { font-size: 10.5px; font-weight: 600; color: #94a3b8; }
+.fp-dark .fp-meta-label { color: #94a3b8; }
 .fp-meta-pill  {
   font-size: 10.5px; font-weight: 700; padding: 1px 8px; border-radius: 20px;
   background: rgba(99,102,241,.1); color: #6366f1;
+}
+.fp-dark .fp-meta-pill {
+  background: rgba(99, 102, 241, 0.18);
+  color: #c7d2fe;
 }
 .fp-default-notice {
   flex-shrink: 0;
@@ -131,6 +163,11 @@ const CSS = `
   background: rgba(245,158,11,.07); border: 1px solid rgba(245,158,11,.2);
   font-size: 11.5px; font-weight: 500; color: #92400e;
   display: flex; align-items: center; gap: 6px;
+}
+.fp-dark .fp-default-notice {
+  background: rgba(245, 158, 11, 0.08);
+  border-color: rgba(251, 191, 36, 0.28);
+  color: #fcd34d;
 }
 
 /* ── SCROLLABLE LIST ─────────────────────────────
@@ -163,8 +200,14 @@ const CSS = `
   transition: border-color .18s, box-shadow .18s;
   /* no overflow:hidden — answers must grow freely */
 }
+.fp-dark .fp-item {
+  background: rgba(15, 23, 42, 0.88);
+  border-color: rgba(148, 163, 184, 0.14);
+}
 .fp-item:hover { border-color: #c7d2fe; box-shadow: 0 3px 12px rgba(99,102,241,.08); }
+.fp-dark .fp-item:hover { box-shadow: 0 6px 18px rgba(15, 23, 42, 0.5); }
 .fp-item.open  { border-color: #6366f1; box-shadow: 0 3px 14px rgba(99,102,241,.13); }
+.fp-dark .fp-item.open  { border-color: rgba(129, 140, 248, 0.8); box-shadow: 0 10px 22px rgba(79, 70, 229, 0.22); }
 
 /* trigger */
 .fp-trigger {
@@ -192,8 +235,13 @@ const CSS = `
   /* allow wrapping — never overflow */
   white-space: normal; word-break: break-word;
 }
+.fp-dark .fp-question {
+  color: #e2e8f0;
+}
 .fp-item.open .fp-question,
 .fp-item:hover .fp-question { color: #4f46e5; }
+.fp-dark .fp-item.open .fp-question,
+.fp-dark .fp-item:hover .fp-question { color: #c7d2fe; }
 
 .fp-chevron {
   flex-shrink: 0; color: #94a3b8; margin-top: 2px;
@@ -226,6 +274,10 @@ const CSS = `
   /* full word wrap — never clips */
   white-space: normal; word-break: break-word;
 }
+.fp-dark .fp-answer {
+  border-top-color: rgba(148, 163, 184, 0.12);
+  color: #cbd5e1;
+}
 
 /* ── EMPTY STATE ─────────────────────────────── */
 .fp-empty {
@@ -238,8 +290,14 @@ const CSS = `
   background: rgba(99,102,241,.08); border: 1px solid rgba(99,102,241,.12);
   display: flex; align-items: center; justify-content: center;
 }
+.fp-dark .fp-empty-ico {
+  background: rgba(99, 102, 241, 0.12);
+  border-color: rgba(129, 140, 248, 0.28);
+}
 .fp-empty-title { font-size: 13.5px; font-weight: 700; color: #374151; }
+.fp-dark .fp-empty-title { color: #f1f5f9; }
 .fp-empty-sub   { font-size: 12px; color: #94a3b8; }
+.fp-dark .fp-empty-sub { color: #cbd5e1; }
 
 /* ── responsive ─────────────────────────────── */
 @media (max-width: 480px) {
@@ -274,7 +332,7 @@ const defaultFaqs = [
   },
 ];
 
-const FAQPanel: React.FC<FAQPanelProps> = ({ subject = "", unit, unitId, onBack }) => {
+const FAQPanel: React.FC<FAQPanelProps> = ({ subject = "", unit, unitId, onBack, isDark = false }) => {
   const [openIdx, setOpenIdx] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const [faqs, setFaqs] = useState<any[]>([]);
@@ -302,7 +360,7 @@ const FAQPanel: React.FC<FAQPanelProps> = ({ subject = "", unit, unitId, onBack 
     let ignore = false;
 
     async function load() {
-      if (!unitSelected) {
+      if (!unitId || !unit.trim()) {
         setFaqs([]);
         setIsDefault(false);
         setErrorMessage("");
@@ -369,7 +427,7 @@ const FAQPanel: React.FC<FAQPanelProps> = ({ subject = "", unit, unitId, onBack 
   return (
     <>
       <style>{CSS}</style>
-      <div className="fp">
+      <div className={`fp${isDark ? " fp-dark" : ""}`}>
 
         {/* ── Compact header ── */}
         <div className="fp-head">

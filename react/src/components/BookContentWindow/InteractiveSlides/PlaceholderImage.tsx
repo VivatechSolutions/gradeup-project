@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { X } from "lucide-react";
 
 interface PlaceholderImageProps {
   src?: string;
@@ -31,17 +32,32 @@ export const PlaceholderImage: React.FC<PlaceholderImageProps> = ({
 }) => {
   const [imgError, setImgError] = useState(false);
   const [naturalAspectRatio, setNaturalAspectRatio] = useState<number>();
+  const [isExpanded, setIsExpanded] = useState(false);
 
   useEffect(() => {
     setImgError(false);
     setNaturalAspectRatio(undefined);
+    setIsExpanded(false);
   }, [src]);
+
+  useEffect(() => {
+    if (!isExpanded) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsExpanded(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [isExpanded]);
 
   // If real image source is provided and hasn't failed, render the image
   if (src && !imgError) {
     return (
-      <div
-        className={`relative overflow-hidden rounded-2xl border border-slate-200/80 dark:border-white/10 shadow-md group ${className}`}
+      <>
+      <button
+        type="button"
+        onClick={() => setIsExpanded(true)}
+        aria-label={`View ${alt} full screen`}
+        className={`relative block overflow-hidden rounded-2xl border border-slate-200/80 text-left shadow-md group focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-cyan-400/70 dark:border-white/10 ${className}`}
         style={{
           aspectRatio:
             aspectRatio === "auto"
@@ -66,7 +82,32 @@ export const PlaceholderImage: React.FC<PlaceholderImageProps> = ({
             {badge}
           </span>
         )}
-      </div>
+      </button>
+      {isExpanded && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={alt}
+          onClick={() => setIsExpanded(false)}
+          className="fixed inset-0 z-[120] grid cursor-zoom-out place-items-center bg-slate-950/90 p-4 backdrop-blur-sm"
+        >
+          <button
+            type="button"
+            autoFocus
+            onClick={() => setIsExpanded(false)}
+            aria-label="Close full-screen image"
+            className="absolute right-5 top-5 z-10 grid h-11 w-11 place-items-center rounded-full border border-white/20 bg-white/10 text-white shadow-lg backdrop-blur-md transition hover:bg-white/20 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-cyan-300/70"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <img
+            src={src}
+            alt={alt}
+            className="max-h-[92vh] max-w-[94vw] cursor-zoom-out object-contain drop-shadow-2xl"
+          />
+        </div>
+      )}
+      </>
     );
   }
 

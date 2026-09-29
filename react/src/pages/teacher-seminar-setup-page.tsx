@@ -2706,7 +2706,6 @@ export default function TeacherSeminarPage() {
           <TeacherSeminarHistory
             teacherName={teacherName}
             onNewSeminar={handleNewSeminar}
-            onOpenResult={(item) => setResult({ modeType: "prepare", timer: item.duration, topic: item.topic, subject: item.subject, unit: item.unit, presenterName: teacherName, scores: { total_score: item.score }, canViewFeedback: true }) || setScreen("results")}
             onOpenResult={(item: any) => {
               setResult({ modeType: "prepare", timer: item.duration, topic: item.topic, subject: item.subject, unit: item.unit, presenterName: teacherName, scores: { total_score: item.score }, canViewFeedback: true });
               setScreen("results");
