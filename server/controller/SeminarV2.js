@@ -474,10 +474,11 @@ const controller = {
   },
 
   async start(req, res) {
+    let uploadedFile = null;
     try {
       const parsed = await parseSeminarStartRequest(req);
       const body = parsed.body || {};
-      const uploadedFile = parsed.file || null;
+      uploadedFile = parsed.file || null;
 
       if (!body || typeof body !== "object" || !Object.keys(body).length) {
         return res.status(400).json({
@@ -498,6 +499,12 @@ const controller = {
       const visibilityContext = await getRequestStudentContext(req);
       const requestedSessionId = getRequestedSessionId(body);
       const requestedMode = body.mode || body.session_mode || "main";
+      console.info("[Seminar] Start upload received", {
+        mode: requestedMode,
+        filePresent: Boolean(uploadedFile),
+        fileSize: uploadedFile?.size ?? null,
+        mediaType: uploadedFile?.mimetype || null,
+      });
       const existingLiveSession = requestedSessionId ? await getSession(requestedSessionId) : null;
       const learningContext = {
         subject: body.subject || context.subject,
@@ -609,6 +616,18 @@ const controller = {
 
       return res.status(200).json({ status: true, data: { ...data, liveSession: storedSession } });
     } catch (error) {
+      if (uploadedFile && error.source === "python" &&
+          /PDF or PPT file upload is mandatory for demo and main seminar sessions/i.test(error.message || "")) {
+        console.warn("[Seminar] Uploaded file was rejected after downstream processing", {
+          fileSize: uploadedFile.size ?? null,
+          mediaType: uploadedFile.mimetype || null,
+          downstreamStatus: error.statusCode || null,
+        });
+        return res.status(422).json({
+          status: false,
+          message: "Your presentation was uploaded, but no usable text was extracted. Use a text-based PDF or PPTX with at least 50 characters; scanned pages need OCR first.",
+        });
+      }
       return res.status(error.statusCode || 500).json({
         status: false,
         message: error.message || "Failed to start seminar",

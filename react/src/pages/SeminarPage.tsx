@@ -12072,11 +12072,11 @@ function PresenterRoom({ config, onEnd }) {
                   marginBottom: 7,
                 }}
               >
-                📎 Upload Presentation File (PDF/PPT) — Optional
+                📎 Upload Presentation File (PDF/PPTX) — Required
               </div>
               <input
                 type="file"
-                accept=".pdf,.ppt,.pptx"
+                accept=".pdf,.pptx"
                 onChange={(e) => {
                   if (e.target.files && e.target.files[0])
                     setSessionFile(e.target.files[0]);
@@ -12101,7 +12101,7 @@ function PresenterRoom({ config, onEnd }) {
               className="btn-p"
               style={{ marginTop: 4 }}
               onClick={handleStartRoom}
-              disabled={starting || !config.unitId}
+              disabled={starting || !config.unitId || !sessionFile}
             >
               {starting ? "Starting Seminar..." : "Start Seminar"}
             </button>
