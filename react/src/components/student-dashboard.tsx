@@ -196,6 +196,7 @@ const icon = {
   rocket: "\u{1F680}", globe: "\u{1F30D}", pencil: "\u{270F}\u{FE0F}", check: "\u{2713}", leaf: "\u{1F331}", idea: "\u{1F4A1}",
   tamil: "\u{1F4DC}", atoms: "\u{269B}\u{FE0F}", map: "\u{1F5FA}\u{FE0F}", abacus: "\u{1F9EE}", dice: "\u{1F3B2}",
   medal: "\u{1F947}", film: "\u{1F3AC}", tools: "\u{1F6E0}\u{FE0F}", compass: "\u{1F9ED}", water: "\u{1F4A7}",
+  robot: "\u{1F916}", chart: "\u{1F4CA}", clipboard: "\u{1F4CB}", users: "\u{1F465}", calendar: "\u{1F4C5}",
 };
 
 export default function StudentDashboard({ onStartQuiz }: StudentDashboardProps) {
@@ -299,17 +300,17 @@ export default function StudentDashboard({ onStartQuiz }: StudentDashboardProps)
   ];
 
   const playCards = [
-    { title: "Progress", text: "Track your learning", icon: icon.target, bg: "linear-gradient(135deg,#ff5f99,#ff9f54)", action: () => setLocation("/progress") },
-    { title: "AI Tutor", text: "Ask Geni anything", icon: icon.chat, bg: "linear-gradient(135deg,#2eb6ff,#2676e8)", action: () => setLocation("/ai-tutor") },
+    { title: "Progress", text: "Track your learning", icon: icon.chart, bg: "linear-gradient(135deg,#ff5f99,#ff9f54)", action: () => setLocation("/progress") },
+    { title: "AI Tutor", text: "Ask Geni anything", icon: icon.robot, bg: "linear-gradient(135deg,#2eb6ff,#2676e8)", action: () => setLocation("/ai-tutor") },
     // { title: "AI Tutor", text: "Ask Geni anything", icon: icon.chat, bg: "linear-gradient(135deg,#00c8e0,#0084f0)", action: () => setLocation("/ai-tutor") },
     { title: "Book Library", text: "Read and discover", icon: icon.book, bg: "linear-gradient(135deg,#40c95f,#11a48c)", action: () => setLocation("/bookRewamp") },
-    { title: "Homework", text: "View your assignments", icon: icon.note, bg: "linear-gradient(135deg,#ff9c1a,#ff6c00)", action: () => setLocation("/homework") },
+    { title: "Homework", text: "View your assignments", icon: icon.clipboard, bg: "linear-gradient(135deg,#ff9c1a,#ff6c00)", action: () => setLocation("/homework") },
     { title: "Homework Helper", text: "Get help with tasks", icon: icon.bulb, bg: "linear-gradient(135deg,#8a4fff,#cf4bd8)", action: () => setLocation("/homework-helper") },
     // { title: "Homework Helper", text: "Get help with tasks", icon: icon.bulb, bg: "linear-gradient(135deg,#ff6b8b,#ff8e53)", action: () => setLocation("/homework-helper") },
-    { title: "Community", text: "Learn together", icon: icon.chat, bg: "linear-gradient(135deg,#ff6578,#ff563c)", action: () => setLocation("/community") },
-    { title: "Live Events", text: "Join upcoming sessions", icon: icon.video, bg: "linear-gradient(135deg,#00b9b4,#00a7e8)", action: () => setLocation("/live-events") },
+    { title: "Community", text: "Learn together", icon: icon.users, bg: "linear-gradient(135deg,#ff6578,#ff563c)", action: () => setLocation("/community") },
+    { title: "Live Events", text: "Join upcoming sessions", icon: icon.calendar, bg: "linear-gradient(135deg,#00b9b4,#00a7e8)", action: () => setLocation("/live-events") },
     // { title: "Exams", text: "Prepare and test yourself", icon: icon.quiz, bg: "linear-gradient(135deg,#2778ff,#5548d9)", action: () => setLocation("/exam-preparation") },
-    { title: "Exams", text: "Prepare and test yourself", icon: icon.quiz, bg: "linear-gradient(135deg,#3b82f6,#6366f1)", action: () => setLocation("/exam-preparation") },
+    { title: "Exams", text: "Prepare and test yourself", icon: icon.note, bg: "linear-gradient(135deg,#3b82f6,#6366f1)", action: () => setLocation("/exam-preparation") },
   ];
 
   const recs = (librarySubjects || []).slice(0, 4).map((subject, index) => ({

@@ -11569,30 +11569,17 @@ function PresenterRoom({ config, onEnd }) {
   async function handleStartRoom() {
     setStarting(true);
     try {
-      // If host uploaded a file, send it to the seminar start endpoint first
+      // Upload the required presentation with the authenticated API request.
       if (sessionFile) {
-        try {
-          const formData = new FormData();
-          formData.append("file", sessionFile);
-          formData.append("sessionId", config.sessionId);
-          formData.append("candidateId", currentCandidateId);
-          formData.append("candidateName", config.name);
-          formData.append("topic", config.topic);
-          formData.append("unitId", config.unitId || "");
-          formData.append("mode", "main");
-          await fetch(
-            `${process.env.REACT_APP_API_BASE_URL}/api/v1/seminar/start`,
-            {
-              method: "POST",
-              body: formData,
-            },
-          );
-        } catch (fileError) {
-          console.warn(
-            "[PresenterRoom] file upload during startRoom failed",
-            fileError,
-          );
-        }
+        await startSeminar({
+          file: sessionFile,
+          sessionId: config.sessionId,
+          candidateId: currentCandidateId,
+          candidateName: config.name,
+          topic: config.topic,
+          unitId: config.unitId || "",
+          mode: "main",
+        });
       }
       const response = await startSeminarRoom({
         sessionId: config.sessionId,
@@ -13454,26 +13441,33 @@ function ObserverRoom({ config, onEnd }) {
   // Heartbeat — keep lastSeenAt fresh so the host knows this tab is still open
   useEffect(() => {
     if (!config.sessionId || !currentCandidateId) return;
+    let stopped = false;
+    let pending = false;
     const heartbeat = async () => {
+      if (stopped || pending) return;
+      pending = true;
       try {
-        await fetch(
-          `${(window as any).__API_BASE__ || ""}/api/v1/seminar/join`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              sessionId: config.sessionId,
-              candidateId: currentCandidateId,
-              candidateName: config.name,
-              role: "observer",
-            }),
-          },
-        );
-      } catch {}
+        await joinSeminarSession({
+          sessionId: config.sessionId,
+          candidateId: currentCandidateId,
+          candidateName: config.name,
+          role: "observer",
+        });
+      } catch (error) {
+        const message = getErrorMessage(error, "Unable to refresh your seminar presence.");
+        console.warn("[ObserverRoom] heartbeat failed", message);
+        if (/authentication required/i.test(message)) {
+          stopped = true;
+          clearInterval(hbId);
+          setRoomError("Your session expired. Please sign in again to join this seminar.");
+        }
+      } finally {
+        pending = false;
+      }
     };
-    heartbeat();
     const hbId = setInterval(heartbeat, 20000);
-    return () => clearInterval(hbId);
+    void heartbeat();
+    return () => { stopped = true; clearInterval(hbId); };
   }, []);
 
   useEffect(() => {

@@ -16,8 +16,9 @@ function hasCookie(req, name) {
 
 function logAuthFailure(req, reason, stage) {
   // Use fixed fields only. Do not log headers, tokens, request bodies or error messages.
-  if (!req.path?.endsWith("/livekit-token")) return;
-  console.warn("[LiveKit][Auth] Request rejected", {
+  console.warn("[StudentAuth] Request rejected", {
+    routeGroup: req.baseUrl || "unknown",
+    method: req.method || "unknown",
     reason,
     stage,
     accessCookiePresent: hasCookie(req, ACCESS_COOKIE),

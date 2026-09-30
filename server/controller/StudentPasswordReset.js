@@ -59,7 +59,7 @@ exports.reset = async (req, res) => {
       $unset: { resetTokenHash: 1, resetExpiresAt: 1 },
     });
     if (!credential) return res.status(400).json({ message: "Invalid or expired reset link" });
-    await Session.updateMany({ userId: credential.userId, status: "active" }, { $set: { status: "revoked", revokedAt: new Date() } });
+    await Session.updateMany({ userId: credential.userId, status: { $in: ["active", "rotated"] } }, { $set: { status: "revoked", revokedAt: new Date() } });
     clearAuthCookies(res);
     return res.json({ message: "Password updated. Please sign in again." });
   } catch { return res.status(503).json({ message: "Unable to reset password. Please try again." }); }

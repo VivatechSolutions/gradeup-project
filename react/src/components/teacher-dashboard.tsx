@@ -331,6 +331,7 @@ const icon = {
   water: "\u{1F4A7}", teacher: "\u{1F469}\u{200D}\u{1F3EB}", graduation: "\u{1F393}", bell: "\u{1F514}",
   calendar: "\u{1F4C5}", clipboard: "\u{1F4CB}", megaphone: "\u{1F4E2}", chart: "\u{1F4CA}", clock: "\u{23F0}",
   users: "\u{1F465}", spark: "\u{2728}", folder: "\u{1F4C1}", upload: "\u{1F4E4}",
+  robot: "\u{1F916}", microphone: "\u{1F3A4}",
 };
 
 const SUBJECT_PALETTE = ["#2389ff", "#27b86a", "#7e45e8", "#ff791f", "#00a7c8", "#ff4d8d"];
@@ -385,14 +386,14 @@ export default function TeacherDashboard() {
   ];
 
   const playCards = [
-    { title: "AI Content Studio", text: "Create with advanced NLP", icon: icon.spark, bg: "linear-gradient(135deg,#8a4fff,#cf4bd8)", action: () => setLocation("/enhanced-content-manager") },
-    { title: "Assignments", text: "Design homework & tests", icon: icon.note, bg: "linear-gradient(135deg,#ff9c1a,#ff6c00)", action: () => setLocation("/teacher/homework") },
+    { title: "AI Content Studio", text: "Create with advanced NLP", icon: icon.robot, bg: "linear-gradient(135deg,#8a4fff,#cf4bd8)", action: () => setLocation("/enhanced-content-manager") },
+    { title: "Assignments", text: "Design homework & tests", icon: icon.clipboard, bg: "linear-gradient(135deg,#ff9c1a,#ff6c00)", action: () => setLocation("/teacher/homework") },
     { title: "Student Analytics", text: "Track grades & progress", icon: icon.chart, bg: "linear-gradient(135deg,#2eb6ff,#2676e8)", action: () => setLocation("/analytics") },
-    { title: "Curriculum Planner", text: "Plan lessons & syllabus", icon: icon.compass, bg: "linear-gradient(135deg,#40c95f,#11a48c)", action: () => setLocation("/teacher/curriculum-planner") },
-    { title: "Class Attendance", text: "Daily student register", icon: icon.clipboard, bg: "linear-gradient(135deg,#ff5f99,#ff9f54)", action: () => setLocation("/teacher/attendance") },
-    { title: "PDF Processing", text: "Upload & analyse documents", icon: icon.book, bg: "linear-gradient(135deg,#00b9b4,#00a7e8)", action: () => setLocation("/teacher/pdf-upload") },
+    { title: "Curriculum Planner", text: "Plan lessons & syllabus", icon: icon.calendar, bg: "linear-gradient(135deg,#40c95f,#11a48c)", action: () => setLocation("/teacher/curriculum-planner") },
+    { title: "Class Attendance", text: "Daily student register", icon: icon.users, bg: "linear-gradient(135deg,#ff5f99,#ff9f54)", action: () => setLocation("/teacher/attendance") },
+    { title: "PDF Processing", text: "Upload & analyse documents", icon: icon.upload, bg: "linear-gradient(135deg,#00b9b4,#00a7e8)", action: () => setLocation("/teacher/pdf-upload") },
     { title: "Exam Correction", text: "Grade student submissions", icon: icon.pencil, bg: "linear-gradient(135deg,#3b82f6,#6366f1)", action: () => setLocation("/teacher/exam-correction") },
-    { title: "Debates & Seminars", text: "Launch collaborative rooms", icon: icon.video, bg: "linear-gradient(135deg,#ff6578,#ff563c)", action: () => setLocation("/teacher/debates") },
+    { title: "Debates & Seminars", text: "Launch collaborative rooms", icon: icon.microphone, bg: "linear-gradient(135deg,#ff6578,#ff563c)", action: () => setLocation("/teacher/debates") },
   ];
 
   const recs = [

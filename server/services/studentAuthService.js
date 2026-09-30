@@ -67,7 +67,7 @@ function setAuthCookies(res, { accessToken, refreshToken }) {
   const accessTtl = Number(process.env.ACCESS_TOKEN_TTL_SECONDS || DEFAULT_ACCESS_TTL_SECONDS);
   const refreshDays = Number(process.env.REFRESH_TOKEN_TTL_DAYS || DEFAULT_REFRESH_TTL_DAYS);
   res.cookie(ACCESS_COOKIE, accessToken, cookieOptions(accessTtl));
-  res.cookie(REFRESH_COOKIE, refreshToken, cookieOptions(refreshDays * 24 * 60 * 60));
+  if (refreshToken) res.cookie(REFRESH_COOKIE, refreshToken, cookieOptions(refreshDays * 24 * 60 * 60));
 }
 
 function clearAuthCookies(res) {
@@ -261,23 +261,34 @@ async function rotateRefresh(req) {
   const refreshToken = getCookie(req, REFRESH_COOKIE);
   if (!refreshToken) return null;
   const tokenHash = hashToken(refreshToken);
-  const session = await AuthSession.findOne({ refreshTokenHash: tokenHash });
   const now = new Date();
-  if (!session || session.status !== "active" || session.expiresAt < now || session.absoluteExpiresAt < now) {
-    if (session?.familyId) {
-      await AuthSession.updateMany({ familyId: session.familyId }, { $set: { status: "reused", revokedAt: now } });
+  const session = await AuthSession.findOneAndUpdate(
+    { refreshTokenHash: tokenHash, status: "active", expiresAt: { $gt: now }, absoluteExpiresAt: { $gt: now } },
+    { $set: { status: "rotated", lastUsedAt: now } },
+    { new: false },
+  );
+  if (!session) {
+    const previous = await AuthSession.findOne({ refreshTokenHash: tokenHash });
+    if (!previous) return null;
+    // Several browser requests can arrive with the same expired access token.
+    // The first rotates the refresh token; later requests may get a new access
+    // token during a brief overlap without replacing the winner's refresh cookie.
+    if (previous.status === "rotated" && previous.lastUsedAt &&
+        now.getTime() - previous.lastUsedAt.getTime() <= 10_000) {
+      const user = await User.findById(previous.userId);
+      if (!user || user.status !== "active" || user.deletedAt) return null;
+      return { user, tokens: { accessToken: signAccessToken(user) } };
+    }
+    if (previous.status === "rotated") {
+      await AuthSession.updateMany({ familyId: previous.familyId, status: "active" },
+        { $set: { status: "reused", revokedAt: now } });
     }
     return null;
   }
-
   const user = await User.findById(session.userId);
   if (!user || user.status !== "active" || user.deletedAt) return null;
-
   const nextRefreshToken = randomToken();
   const refreshDays = Number(process.env.REFRESH_TOKEN_TTL_DAYS || DEFAULT_REFRESH_TTL_DAYS);
-  session.status = "rotated";
-  session.lastUsedAt = now;
-  await session.save();
   await AuthSession.create({
     userId: user._id,
     refreshTokenHash: hashToken(nextRefreshToken),
@@ -293,8 +304,10 @@ async function rotateRefresh(req) {
 async function revokeCurrentSession(req) {
   const refreshToken = getCookie(req, REFRESH_COOKIE);
   if (!refreshToken) return;
-  await AuthSession.updateOne(
-    { refreshTokenHash: hashToken(refreshToken), status: "active" },
+  const session = await AuthSession.findOne({ refreshTokenHash: hashToken(refreshToken) });
+  if (!session) return;
+  await AuthSession.updateMany(
+    { familyId: session.familyId, status: { $in: ["active", "rotated"] } },
     { $set: { status: "revoked", revokedAt: new Date() } },
   );
 }

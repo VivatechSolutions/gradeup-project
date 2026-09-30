@@ -487,6 +487,12 @@ const controller = {
         });
       }
 
+      // Multipart fields are parsed after the auth middleware. Never trust the
+      // uploaded candidateId to identify the authenticated participant.
+      const authenticatedUser = req.authUser.user;
+      body.candidateId = req.authUser.id;
+      body.candidateName = [authenticatedUser.firstName, authenticatedUser.lastName]
+        .filter(Boolean).join(" ") || authenticatedUser.email || "GradeUp Learner";
       const candidate = getCandidate(body);
       const { unit, context } = await getContext(body);
       const visibilityContext = await getRequestStudentContext(req);
