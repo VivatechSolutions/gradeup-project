@@ -1161,6 +1161,7 @@ console.log
     }
   },
   async getLivekitToken(req, res) {
+    let stage = "validate-request";
     try {
       const sessionId = req.body.sessionId || req.body.session_id;
       const candidateId = req.body.candidateId || req.body.candidate_id;
@@ -1168,30 +1169,34 @@ console.log
         req.body.candidateName || req.body.candidate_name || "Participant";
 
       if (!sessionId || !candidateId) {
+        console.warn("[LiveKit] Token request rejected", { reason: "missing-session-or-candidate", status: 400 });
         return res.status(400).json({
           status: false,
           message: "sessionId and candidateId are required",
         });
       }
 
+      stage = "lookup-session";
       const liveSession = await getSession(sessionId);
       if (!liveSession) {
+        console.warn("[LiveKit] Token request rejected", { reason: "session-not-found", status: 404 });
         return res
           .status(404)
           .json({ status: false, message: "Session not found" });
       }
 
-      const apiKey = process.env.LIVEKIT_API_KEY;
-      const apiSecret = process.env.LIVEKIT_API_SECRET;
-
-      const livekitUrl = process.env.LIVEKIT_URL?.trim();
-      if (!apiKey || !apiSecret || !livekitUrl || !/^wss?:\/\/[^/]+/.test(livekitUrl)) {
+      const { getLivekitConfig, logLivekitConfig } = require("../utils/livekitDiagnostics");
+      const config = getLivekitConfig();
+      const { apiKey, apiSecret, livekitUrl } = config;
+      if (!config.configured) {
+        logLivekitConfig("token-request", config);
         return res.status(503).json({
           status: false,
           message: "LiveKit requires LIVEKIT_URL (ws:// or wss://), LIVEKIT_API_KEY and LIVEKIT_API_SECRET on the server",
         });
       }
 
+      stage = "sign-token";
       const { AccessToken } = require("livekit-server-sdk");
       const token = new AccessToken(apiKey, apiSecret, {
         identity: String(candidateId),
@@ -1208,6 +1213,7 @@ console.log
       });
 
       const jwt = await token.toJwt();
+      console.info("[LiveKit] Token issued (client connection not checked)");
 
       return res.status(200).json({
         status: true,
@@ -1218,9 +1224,10 @@ console.log
         },
       });
     } catch (error) {
+      console.error("[LiveKit] Token request failed", { stage, status: 500 });
       return res.status(500).json({
         status: false,
-        message: error.message || "Failed to generate Livekit token",
+        message: "Failed to generate LiveKit token",
       });
     }
   },

@@ -1,3 +1,5 @@
+import { useToast } from "./use-toast";
+import { requestLivekitToken } from "../lib/livekitToken";
 import { useEffect, useRef, useState, useCallback } from "react";
 import {
   Room,
@@ -37,9 +39,9 @@ export function useSeminarLivekit({
   enabled,
   role,
   localStream,
-  apiBase,
   startMuted = true,
 }: UseSeminarLivekitOptions): UseSeminarLivekitReturn {
+  const { toast } = useToast();
   const roomRef = useRef<Room | null>(null);
   const audioElementsRef = useRef<HTMLAudioElement[]>([]);
   const [connected, setConnected] = useState(false);
@@ -74,16 +76,16 @@ export function useSeminarLivekit({
     if (!enabled || !sessionId || !candidateId) return;
 
     let cancelled = false;
+    const abortController = new AbortController();
+    setError(null);
 
     async function connect() {
       try {
-        const response = await fetch(`${apiBase}/api/v1/seminar/livekit-token`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId, candidateId, candidateName, role }),
-        });
-        const data = await response.json();
-        if (!data?.data?.token) throw new Error("Failed to get seminar Livekit token");
+        const connection = await requestLivekitToken(
+          "/api/v1/seminar/livekit-token",
+          { sessionId, candidateId, candidateName, role },
+          abortController.signal,
+        );
         if (cancelled) return;
 
         const room = new Room({ adaptiveStream: true, dynacast: true });
@@ -119,7 +121,7 @@ export function useSeminarLivekit({
           }
         });
 
-        await room.connect(data.data.livekitUrl, data.data.token, { autoSubscribe: true });
+        await room.connect(connection.livekitUrl, connection.token, { autoSubscribe: true });
 
         if (!cancelled && localStream) {
           const audioTrack = localStream.getAudioTracks()[0];
@@ -131,6 +133,7 @@ export function useSeminarLivekit({
         }
       } catch (err: any) {
         if (!cancelled) {
+          toast({ title: "Unable to join live room", description: err?.message || "Please try again.", variant: "destructive" });
           console.warn("[SEMINAR-LIVEKIT] connection failed:", err?.message);
           setError(err?.message || "Livekit connection failed");
         }
@@ -141,6 +144,7 @@ export function useSeminarLivekit({
 
     return () => {
       cancelled = true;
+      abortController.abort();
       cleanupAudioElements();
       roomRef.current?.disconnect();
       roomRef.current = null;

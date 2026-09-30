@@ -1,3 +1,5 @@
+import { useToast } from "./use-toast";
+import { requestLivekitToken } from "../lib/livekitToken";
 import { useEffect, useRef, useState, useCallback } from "react";
 import {
   Room,
@@ -39,9 +41,9 @@ export function useDebateLivekit({
   candidateName,
   enabled,
   localStream,
-  apiBase,
   startMuted = true,
 }: UseDebateLivekitOptions): UseDebateLivekitReturn {
+  const { toast } = useToast();
   const roomRef = useRef<Room | null>(null);
   const audioElementsRef = useRef<HTMLAudioElement[]>([]);
   const localScreenShareTrackRef = useRef<any>(null);
@@ -165,23 +167,21 @@ export function useDebateLivekit({
     if (!enabled || !sessionId || !candidateId) return;
 
     let cancelled = false;
+    const abortController = new AbortController();
+    setError(null);
 
     async function connect() {
       try {
         console.log("[LIVEKIT] fetching token", { sessionId, candidateId });
-        const response = await fetch(`${apiBase}/api/v1/debate/room/livekit-token`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId, candidateId, candidateName }),
-        });
-        const data = await response.json();
-        if (!data?.data?.token) {
-          throw new Error("Failed to get Livekit token");
-        }
+        const connection = await requestLivekitToken(
+          "/api/v1/debate/room/livekit-token",
+          { sessionId, candidateId, candidateName },
+          abortController.signal,
+        );
         if (cancelled) return;
         console.log("[LIVEKIT] token received, connecting to room", {
           sessionId,
-          livekitUrl: data.data.livekitUrl,
+          livekitUrl: connection.livekitUrl,
         });
 
         const room = new Room({ adaptiveStream: true, dynacast: true });
@@ -244,7 +244,7 @@ export function useDebateLivekit({
           }
         });
 
-        await room.connect(data.data.livekitUrl, data.data.token, {
+        await room.connect(connection.livekitUrl, connection.token, {
           autoSubscribe: true,
         });
 
@@ -292,6 +292,7 @@ export function useDebateLivekit({
         }
       } catch (err: any) {
         if (!cancelled) {
+          toast({ title: "Unable to join live room", description: err?.message || "Please try again.", variant: "destructive" });
           console.error("[LIVEKIT] connection failed", { sessionId, error: err?.message });
           setError(err?.message || "Livekit connection failed");
         }
@@ -302,6 +303,7 @@ export function useDebateLivekit({
 
     return () => {
       cancelled = true;
+      abortController.abort();
       cleanupAudioElements();
       stopScreenShare().catch(() => {});
       setRemoteScreenShareTrack(null);

@@ -6,6 +6,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 require("dotenv").config();
+require("./utils/livekitDiagnostics").logLivekitConfig("startup");
 const bodyParser = require('body-parser');
 //Routersconst bodyParser = require('body-parser');
 const AIFeaturesRouter = require("./router/TextHighlighting");
