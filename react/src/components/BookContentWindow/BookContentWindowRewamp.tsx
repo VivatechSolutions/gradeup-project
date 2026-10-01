@@ -30,6 +30,7 @@ import {
   Pause,
   Play,
   VolumeX,
+  MessageCircle,
   CheckCircle2,
   AlertCircle,
   Library,
@@ -4737,6 +4738,7 @@ const BookContentWindowRewamp = () => {
   const [isReadingAloud, setIsReadingAloud] = useState(false);
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [readAloudAvatar, setReadAloudAvatar] = useState<"male" | "female">("male");
+  const readAloudDragBoundsRef = useRef<HTMLDivElement>(null);
   const speechUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const blocksRef = useRef<Array<{ blockId: string; text: string; startChar: number; endChar: number }>>([]);
   const [activeSpokenWord, setActiveSpokenWord] = useState<{
@@ -4747,6 +4749,7 @@ const BookContentWindowRewamp = () => {
   } | null>(null);
   const [ttsRate, setTtsRate] = useState(1.0);
   const [isTtsPaused, setIsTtsPaused] = useState(false);
+  const [showReadAloudCaptions, setShowReadAloudCaptions] = useState(false);
   const [expandedUnit, setExpandedUnit] = useState<number | null>(null);
 
   const [isAiPanelOpen, setIsAiPanelOpen] = useState(false);
@@ -5702,6 +5705,7 @@ const BookContentWindowRewamp = () => {
       setIsReadingAloud(false);
       setIsTtsPaused(false);
       setActiveSpokenWord(null);
+      setShowReadAloudCaptions(false);
     } else {
       startReadAloud();
     }
@@ -9120,6 +9124,10 @@ const BookContentWindowRewamp = () => {
             </AnimatePresence>
 
             {selectedBook && !isTocView && (
+              <div
+                ref={readAloudDragBoundsRef}
+                className="read-aloud-drag-bounds"
+              >
               <AnimatePresence>
                 {isReadingAloud ? (
                   <motion.aside
@@ -9127,12 +9135,26 @@ const BookContentWindowRewamp = () => {
                     initial={{ opacity: 0, y: 40, scale: 0.92 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 40, scale: 0.92 }}
+                    drag
+                    dragConstraints={readAloudDragBoundsRef}
+                    dragMomentum={false}
+                    dragElastic={0.08}
+                    whileDrag={{ scale: 1.02, cursor: "grabbing" }}
                     transition={{ duration: 0.3, ease: "easeOut" }}
                     className="teacher-companion-dock"
                     aria-label="Interactive Teacher Companion"
                   >
-                    {/* Live speech bubble above teacher */}
-                    <div className="teacher-dock-bubble">
+                    <AnimatePresence initial={false}>
+                      {showReadAloudCaptions && (
+                        <motion.div
+                          className="teacher-dock-bubble"
+                          initial={{ opacity: 0, y: 8, scale: 0.94 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 6, scale: 0.96 }}
+                          transition={{ duration: 0.18 }}
+                          role="status"
+                          aria-live="polite"
+                        >
                       <div className="teacher-dock-bubble-top">
                         <span className="teacher-dock-avatar-name">
                           {readAloudAvatar === "female" ? "Teacher Sarah" : "Teacher David"}
@@ -9155,15 +9177,29 @@ const BookContentWindowRewamp = () => {
                           <span className="teacher-status-reading">Reading page... 📖</span>
                         )}
                       </div>
-                    </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
 
                     {/* Teacher figure pointing at book */}
-                    <div className="teacher-dock-figure-wrap">
-                      <img
-                        src={readAloudAvatar === "male" ? maleTeacherGif : femaleTeacherGif}
-                        alt={readAloudAvatar === "male" ? "Male Teacher pointer" : "Female Teacher pointer"}
-                        className="teacher-dock-gif"
-                      />
+                    <div className="teacher-dock-avatar-row">
+                      <button
+                        type="button"
+                        className="reader-caption-toggle teacher-caption-toggle"
+                        onClick={() => setShowReadAloudCaptions((visible) => !visible)}
+                        title={showReadAloudCaptions ? "Hide captions" : "Show captions"}
+                        aria-label={showReadAloudCaptions ? "Hide captions" : "Show captions"}
+                        aria-pressed={showReadAloudCaptions}
+                      >
+                        <MessageCircle size={17} />
+                      </button>
+                      <div className="teacher-dock-figure-wrap">
+                        <img
+                          src={readAloudAvatar === "male" ? maleTeacherGif : femaleTeacherGif}
+                          alt={readAloudAvatar === "male" ? "Male Teacher pointer" : "Female Teacher pointer"}
+                          className="teacher-dock-gif"
+                        />
+                      </div>
                     </div>
 
                     {/* Interactive Teacher Controls */}
@@ -9216,23 +9252,54 @@ const BookContentWindowRewamp = () => {
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
+                    drag
+                    dragConstraints={readAloudDragBoundsRef}
+                    dragMomentum={false}
+                    dragElastic={0.08}
+                    whileDrag={{ scale: 1.04, cursor: "grabbing" }}
                     className="rb-avatar-wrap"
                   >
-                    <div className="rb-avatar-bubble">
-                      Tap me to read this page aloud!
-                    </div>
+                    <AnimatePresence initial={false}>
+                      {showReadAloudCaptions && (
+                        <motion.div
+                          className="rb-avatar-bubble"
+                          initial={{ opacity: 0, x: 8, scale: 0.94 }}
+                          animate={{ opacity: 1, x: 0, scale: 1 }}
+                          exit={{ opacity: 0, x: 6, scale: 0.96 }}
+                          transition={{ duration: 0.18 }}
+                          role="status"
+                        >
+                          Tap the robot to read this page aloud.
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                     <button
                       className="rb-avatar-btn"
                       onClick={toggleReadAloud}
                       title="Read this page aloud"
                       aria-label="Read this page aloud"
                     >
-                      <img src={studyRoboImg} alt="Read aloud robot" />
-                      <span className="rb-avatar-badge">▶️</span>
+                      <img src={studyRoboImg} alt="Read aloud robot" draggable={false} />
+                      <span className="rb-avatar-action-label">
+                        <Volume2 size={13} />
+                        <span>Read Aloud</span>
+                      </span>
+                      <span className="rb-avatar-badge" aria-hidden="true">▶</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="reader-caption-toggle idle-caption-toggle"
+                      onClick={() => setShowReadAloudCaptions((visible) => !visible)}
+                      title={showReadAloudCaptions ? "Hide captions" : "Show captions"}
+                      aria-label={showReadAloudCaptions ? "Hide captions" : "Show captions"}
+                      aria-pressed={showReadAloudCaptions}
+                    >
+                      <MessageCircle size={17} />
                     </button>
                   </motion.div>
                 )}
               </AnimatePresence>
+              </div>
             )}
 
             {/* Explain/Summarize panel */}
@@ -13394,6 +13461,140 @@ mark.reader-highlight:hover { filter: brightness(1.15); }
   color: #f8fafc !important;
 }
 
+.read-aloud-drag-bounds {
+  position: fixed;
+  inset: 8px;
+  z-index: 999;
+  pointer-events: none;
+}
+.teacher-companion-dock,
+.rb-avatar-wrap {
+  pointer-events: auto;
+  touch-action: none;
+  cursor: grab;
+}
+.teacher-companion-dock:active,
+.rb-avatar-wrap:active {
+  cursor: grabbing;
+}
+.teacher-dock-avatar-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 9px;
+}
+.reader-caption-toggle {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.74);
+  border-radius: 50%;
+  color: #fff;
+  background: linear-gradient(135deg, #2563eb, #0ea5e9);
+  box-shadow: 0 8px 20px rgba(14, 165, 233, 0.28);
+  cursor: pointer;
+  animation: readerCaptionFloat 2.6s ease-in-out infinite;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+.reader-caption-toggle::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border: 1px solid rgba(14, 165, 233, 0.38);
+  border-radius: inherit;
+  animation: readerCaptionRing 2.1s ease-out infinite;
+  pointer-events: none;
+}
+.reader-caption-toggle:hover,
+.reader-caption-toggle[aria-pressed="true"] {
+  transform: translateY(-2px) scale(1.06);
+  background: linear-gradient(135deg, #059669, #0ea5e9);
+  box-shadow: 0 10px 26px rgba(16, 185, 129, 0.34);
+}
+.reader-caption-toggle:focus-visible,
+.rb-avatar-btn:focus-visible {
+  outline: 3px solid #f59e0b;
+  outline-offset: 3px;
+}
+.teacher-caption-toggle {
+  margin-bottom: 24px;
+}
+.rb-avatar-wrap {
+  align-items: center;
+  gap: 9px;
+}
+.rb-avatar-btn {
+  background: linear-gradient(135deg, #2563eb, #0ea5e9);
+  border-color: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 8px 22px rgba(14, 165, 233, 0.32);
+  animation: readerAvatarBreathe 3.2s ease-in-out infinite;
+}
+.rb-avatar-btn:hover {
+  box-shadow: 0 12px 28px rgba(16, 185, 129, 0.38);
+}
+.idle-caption-toggle {
+  width: 34px;
+  height: 34px;
+}
+.teacher-audio-bars .audio-bar {
+  background: #10b981;
+}
+.teacher-ctrl-primary {
+  background: linear-gradient(135deg, #2563eb, #0ea5e9);
+  border-color: #0ea5e9;
+  box-shadow: 0 4px 12px rgba(14, 165, 233, 0.2);
+}
+.teacher-ctrl-primary:hover {
+  background: linear-gradient(135deg, #1d4ed8, #0284c7);
+  border-color: #0284c7;
+}
+.book-container-wrapper::after {
+  content: "";
+  position: absolute;
+  inset: -18% -10%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 18% 22%, rgba(35, 137, 255, 0.18), transparent 22%),
+    radial-gradient(circle at 82% 72%, rgba(39, 184, 106, 0.14), transparent 24%),
+    radial-gradient(circle at 72% 18%, rgba(255, 178, 29, 0.13), transparent 20%);
+  animation: readerAmbientDrift 16s ease-in-out infinite alternate;
+}
+@keyframes readerAmbientDrift {
+  0% { transform: translate3d(-1%, 0, 0) scale(1); opacity: 0.68; }
+  100% { transform: translate3d(1.5%, -1%, 0) scale(1.06); opacity: 1; }
+}
+@keyframes readerAvatarBreathe {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-4px) scale(1.035); }
+}
+@keyframes readerCaptionFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+@keyframes readerCaptionRing {
+  0% { transform: scale(0.88); opacity: 0.7; }
+  100% { transform: scale(1.42); opacity: 0; }
+}
+.dark .book-container-wrapper::after,
+[data-theme="dark"] .book-container-wrapper::after {
+  background:
+    radial-gradient(circle at 18% 22%, rgba(35, 137, 255, 0.24), transparent 24%),
+    radial-gradient(circle at 82% 72%, rgba(39, 184, 106, 0.18), transparent 25%),
+    radial-gradient(circle at 72% 18%, rgba(255, 178, 29, 0.16), transparent 21%);
+}
+@media (prefers-reduced-motion: reduce) {
+  .reader-caption-toggle,
+  .reader-caption-toggle::after,
+  .rb-avatar-btn,
+  .book-container-wrapper::after {
+    animation: none !important;
+  }
+}
+
 @media (max-width: 1024px) {
   .workstation {
     padding: 0;
@@ -13453,8 +13654,12 @@ mark.reader-highlight:hover { filter: brightness(1.15); }
     bottom: max(12px, env(safe-area-inset-bottom)) !important;
   }
   .rb-avatar-btn {
-    width: 48px;
-    height: 48px;
+    width: 72px;
+    height: 86px;
+  }
+  .rb-avatar-btn img {
+    width: 54px;
+    height: 54px;
   }
   .rb-avatar-bubble {
     max-width: min(180px, calc(100vw - 84px));
@@ -13471,6 +13676,87 @@ mark.reader-highlight:hover { filter: brightness(1.15); }
   .bk-page-surface {
     padding-right: 12px;
     padding-left: 12px;
+  }
+}
+
+.sidebar {
+  background:
+    radial-gradient(circle at 12% 0%, rgba(35, 137, 255, 0.12), transparent 27%),
+    radial-gradient(circle at 90% 14%, rgba(255, 178, 29, 0.12), transparent 24%),
+    linear-gradient(180deg, #fbfcff, #f4f8fe);
+  border-color: rgba(35, 137, 255, 0.14);
+}
+.sb-hero {
+  background: linear-gradient(125deg, #2563eb 0%, #0ea5e9 58%, #10b981 100%);
+}
+.rb-avatar-btn {
+  width: 84px;
+  height: 98px;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 0;
+  border-radius: 22px;
+  padding: 5px 4px 4px;
+}
+.rb-avatar-btn img {
+  width: 64px;
+  height: 64px;
+  flex: 0 0 auto;
+}
+.rb-avatar-action-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 100%;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+}
+.rb-avatar-badge {
+  top: -5px;
+  right: -5px;
+  border-color: #f4f8fe;
+  background: #10b981;
+}
+.teacher-companion-dock {
+  max-width: 360px;
+}
+.teacher-dock-gif {
+  height: 188px;
+  max-width: 220px;
+}
+.dark .sidebar,
+[data-theme="dark"] .sidebar {
+  background:
+    radial-gradient(circle at 12% 0%, rgba(35, 137, 255, 0.16), transparent 28%),
+    radial-gradient(circle at 88% 15%, rgba(255, 178, 29, 0.12), transparent 25%),
+    linear-gradient(180deg, #080d1f, #10172d);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+.dark .sb-hero,
+[data-theme="dark"] .sb-hero {
+  background: linear-gradient(125deg, #102b43 0%, #123326 58%, #49321c 100%);
+}
+@media (max-width: 640px) {
+  .teacher-dock-gif {
+    height: 146px;
+    max-width: 172px;
+  }
+  .rb-avatar-btn {
+    width: 72px;
+    height: 86px;
+  }
+  .rb-avatar-btn img {
+    width: 54px;
+    height: 54px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .teacher-dock-gif {
+    transition: none;
   }
 }
 `;
