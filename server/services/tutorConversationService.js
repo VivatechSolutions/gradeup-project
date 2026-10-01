@@ -28,6 +28,10 @@ function normalizeConversation(conversation) {
       type: message.role === "assistant" ? "assistant" : "user",
       role: message.role,
       content: message.content,
+      attachments: (message.attachments || []).map((image) => ({
+        id: image.id, name: image.name, type: image.type, size: image.size,
+        dataUrl: `/api/v1/tutor/conversations/${encodeURIComponent(conversation.conversationId)}/images/${encodeURIComponent(image.id)}`,
+      })),
       timestamp: message.createdAt,
       status: message.status || "completed",
       subject: conversation.subject,
@@ -73,7 +77,7 @@ async function createConversation({ conversationId, candidateId, candidateName, 
   return normalizeConversation(conversation);
 }
 
-async function appendUserMessage({ conversationId, candidateId, messageId, content }) {
+async function appendUserMessage({ conversationId, candidateId, messageId, content, attachments = [] }) {
   const id = messageId || crypto.randomUUID();
   const conversation = await TutorConversation.findOneAndUpdate(
     {
@@ -87,6 +91,7 @@ async function appendUserMessage({ conversationId, candidateId, messageId, conte
           messageId: id,
           role: "user",
           content,
+          attachments,
           status: "pending",
           createdAt: new Date(),
         },
@@ -175,6 +180,11 @@ async function getConversation({ candidateId, conversationId }) {
 }
 
 async function clearConversations({ candidateId, conversationId }) {
+  const query = { candidateId, ...(conversationId ? { conversationId } : {}) };
+  const conversations = await TutorConversation.find(query).lean();
+  const images = conversations.flatMap((chat) => (chat.messages || []).flatMap((message) => message.attachments || []));
+  // Retain the conversation if storage deletion fails so cleanup can be retried.
+  await require("./tutorImageStorage").deleteImages(images);
   if (conversationId) {
     const result = await TutorConversation.deleteOne({ candidateId, conversationId });
     return result.deletedCount > 0;

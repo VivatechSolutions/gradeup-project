@@ -13,6 +13,8 @@ const {
   clearConversations,
 } = require("../services/tutorConversationService");
 const crypto = require("crypto");
+const TutorConversation = require("../model/TutorConversation");
+const { validateImages, uploadImages, readImage, deleteImages } = require("../services/tutorImageStorage");
 const {
   recordHomeworkChatTurn,
   listHomeworkChatSessions,
@@ -100,6 +102,7 @@ async function resolveLearningPayload(source = {}) {
 const controller = {
   async askTutor(req, res) {
     let persistedTurn = null;
+    let uploadedImages = [];
     try {
       const { unit, context } = await resolveLearningPayload(req.body);
       const candidate = getCandidatePayload(req.body);
@@ -110,7 +113,9 @@ const controller = {
         `tutor-${crypto.randomUUID()}`;
       const userMessageId = req.body.userMessageId || crypto.randomUUID();
       const assistantMessageId = crypto.randomUUID();
-      const userMessage = req.body.query || req.body.message || "[Image attached]";
+      const images = validateImages(req.body.images || (req.body.image_base64 ? [{ base64: req.body.image_base64, name: "Attached image" }] : []));
+      const userMessage = String(req.body.query || req.body.message || "").trim() || (images.length ? "Please explain the attached images." : "");
+      if (!userMessage) throw Object.assign(new Error("Enter a question or attach an image."), { statusCode: 400 });
 
       await createConversation({
         conversationId,
@@ -118,11 +123,14 @@ const controller = {
         candidateName: candidate.candidate_name,
         unit,
       });
+      const existing = await TutorConversation.findOne({ candidateId: candidate.candidate_id, conversationId, "messages.messageId": userMessageId }).lean();
+      if (!existing) uploadedImages = await uploadImages(candidate.candidate_id, conversationId, images);
       await appendUserMessage({
         conversationId,
         candidateId: candidate.candidate_id,
         messageId: userMessageId,
         content: userMessage,
+        attachments: uploadedImages,
       });
       persistedTurn = {
         conversationId,
@@ -142,9 +150,9 @@ const controller = {
       };
       
       // Add image data if present
-      if (req.body.image_base64) {
-        pythonPayload.image_base64 = req.body.image_base64;
-        pythonPayload.image_mime_type = req.body.image_mime_type || "image/jpeg";
+      if (images.length) {
+        pythonPayload.image_base64 = images[0].base64;
+        pythonPayload.image_mime_type = images[0].type;
       }
       
       const data = await callPython({
@@ -196,6 +204,7 @@ const controller = {
         },
       });
     } catch (error) {
+      if (!persistedTurn) await deleteImages(uploadedImages).catch(() => null);
       if (persistedTurn) {
         await failUserMessage(persistedTurn).catch(() => null);
       }
@@ -560,6 +569,24 @@ const controller = {
         status: false,
         message: error.message || "Failed to fetch homework history",
       });
+    }
+  },
+
+  async getTutorImage(req, res) {
+    try {
+      const conversation = await TutorConversation.findOne({
+        candidateId: req.authUser.id, conversationId: req.params.conversationId,
+      }).lean();
+      const image = conversation?.messages.flatMap((message) => message.attachments || []).find((item) => item.id === req.params.imageId);
+      if (!image) return res.status(404).json({ status: false, message: "Image not found" });
+      const object = await readImage(image);
+      res.setHeader("Content-Type", image.type);
+      res.setHeader("Cache-Control", "private, max-age=300");
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      object.Body.on("error", () => res.destroy());
+      return object.Body.pipe(res);
+    } catch (error) {
+      return res.status(error.statusCode || 500).json({ status: false, message: "Unable to load image" });
     }
   },
 

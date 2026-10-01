@@ -16,6 +16,17 @@ const tutorMessageSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    attachments: {
+      type: [new mongoose.Schema({
+        id: { type: String, required: true },
+        key: { type: String, required: true },
+        bucket: { type: String, required: true },
+        name: String,
+        type: String,
+        size: Number,
+      }, { _id: false })],
+      default: [],
+    },
     createdAt: {
       type: Date,
       default: Date.now,

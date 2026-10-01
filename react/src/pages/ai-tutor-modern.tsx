@@ -197,6 +197,7 @@ const normalizeTutorConversation = (chat: any): ChatHistory => ({
   messages: (chat.messages || []).map((message: any) => ({
     ...message,
     timestamp: new Date(message.timestamp),
+    attachments: (message.attachments || []).map((image: any) => ({ ...image, dataUrl: image.dataUrl ? buildApiUrl(image.dataUrl) : undefined })),
   })),
 });
 
@@ -611,7 +612,7 @@ const CSS = `
 }
 
 .at-bubble {
-  max-width: 74%; padding: 11px 14px; border-radius: 18px;
+  min-width: 0; max-width: 74%; padding: 11px 14px; border-radius: 18px;
   font-size: 13.5px; line-height: 1.6; position: relative;
 }
 .at-bubble.bot {
@@ -1528,7 +1529,7 @@ export default function AITutorModern() {
             let icon: React.ElementType = Book;
             let color = "bg-gradient-to-r from-gray-500 to-gray-600";
             let emoji = "📘";
-            switch (label.toLowerCase()) {
+            switch (subjectGroup.subject.toLowerCase()) {
               case "mathematics":
                 icon = Calculator;
                 color = "bg-gradient-to-r from-blue-500 to-cyan-500";
@@ -1688,6 +1689,7 @@ export default function AITutorModern() {
   const loadConversationMessages = useCallback(
     async (conversationId: string) => {
       const requestId = ++conversationLoadRequestRef.current;
+      setIsConversationLoading(true);
       try {
         const conversation = await getTutorConversation({
           candidateId: candidateContext.candidateId,
@@ -1702,6 +1704,7 @@ export default function AITutorModern() {
         const nextMessages = (conversation?.messages || []).map((msg: any) => ({
           ...msg,
           timestamp: new Date(msg.timestamp),
+          attachments: (msg.attachments || []).map((image: any) => ({ ...image, dataUrl: image.dataUrl ? buildApiUrl(image.dataUrl) : undefined })),
         }));
         setMessages(nextMessages);
         return nextMessages;
@@ -1722,17 +1725,20 @@ export default function AITutorModern() {
         });
         setMessages([]);
         return [];
+      } finally {
+        if (requestId === conversationLoadRequestRef.current) setIsConversationLoading(false);
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [candidateContext.candidateId],
-    // ↑ INTENTIONALLY omitting `toast` — it recreates on every render and
-    // would make this callback unstable, causing the currentChatId useEffect
-    // to re-fire on every render and wipe live messages with stale server data.
+    // History is fetched explicitly when opening a saved conversation.
   );
   const handleSubjectSelect = (subjectId: number) => {
     sendRequestRef.current += 1;
-    setIsLoading(true);
+    setIsResponding(false);
+    setIsCreatingChat(false);
+    setIsConversationLoading(false);
+    conversationLoadRequestRef.current += 1;
     setSelectedSubject(subjectId);
     console.log(
       "[handleSubjectSelect] resetting currentChatId → null (subjectId:",
@@ -1745,6 +1751,8 @@ export default function AITutorModern() {
     setChatError(null);
     setCurrentMessage("");
     setSelectedUnit("");
+    setSelectedUnitId("");
+    setAttachedFiles([]);
     setView("tutor");
   };
 
@@ -1781,7 +1789,10 @@ export default function AITutorModern() {
   const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = useState(false);
   const [isRightPanelCollapsed, setIsRightPanelCollapsed] = useState(false);
   const [currentMessage, setCurrentMessage] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [isResponding, setIsResponding] = useState(false);
+  const [isCreatingChat, setIsCreatingChat] = useState(false);
+  const [isConversationLoading, setIsConversationLoading] = useState(false);
+  const isLoading = isResponding || isCreatingChat || isConversationLoading;
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -1835,7 +1846,10 @@ export default function AITutorModern() {
   const handleUnitChange = (newUnit: string) => {
     if (newUnit === selectedUnitId) return;
     sendRequestRef.current += 1;
-    setIsLoading(Boolean(newUnit));
+    setIsResponding(false);
+    setIsCreatingChat(false);
+    setIsConversationLoading(false);
+    conversationLoadRequestRef.current += 1;
     setChatError(null);
     console.log(
       "[handleUnitChange] resetting currentChatId → null (unit changed to:",
@@ -1847,6 +1861,7 @@ export default function AITutorModern() {
     setMessages([]);
     setCurrentMessage("");
     const unitMatch = availableUnits.find((unit) => unit.unitId === newUnit);
+    setAttachedFiles([]);
     setSelectedUnitId(newUnit);
     setSelectedUnit(unitMatch?.name || "");
   };
@@ -1879,28 +1894,15 @@ export default function AITutorModern() {
       setSelectedUnit("");
       setSelectedUnitId("");
     }
-    setIsLoading(false);
   }, [selectedSubject, selectedSubjectGroup]);
 
-  // Cleanup blob URLs when component unmounts or messages change
+  const previewUrlsRef = useRef(new Set<string>());
   useEffect(() => {
-    return () => {
-      // Revoke all blob URLs on unmount
-      messages.forEach((msg) => {
-        if (msg.attachments) {
-          msg.attachments.forEach((att) => {
-            if (att.dataUrl && att.dataUrl.startsWith("blob:")) {
-              try {
-                URL.revokeObjectURL(att.dataUrl);
-              } catch (e) {
-                // Ignore errors from already-revoked URLs
-              }
-            }
-          });
-        }
-      });
-    };
+    const active = new Set(messages.flatMap((message) => (message.attachments || []).map((image) => image.dataUrl || "").filter((url) => url.startsWith("blob:"))));
+    previewUrlsRef.current.forEach((url) => { if (!active.has(url)) URL.revokeObjectURL(url); });
+    previewUrlsRef.current = active;
   }, [messages]);
+  useEffect(() => () => { previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url)); }, []);
   useEffect(() => {
     localStorage.setItem(
       "ai-tutor-selected-subject",
@@ -1924,41 +1926,6 @@ export default function AITutorModern() {
   // ↑ Use primitive selectedSubjectData?.value (string) NOT the object reference.
   // Do NOT include loadConversationList — it's a useCallback that recreates when
   // its own deps change, causing this effect to re-fire → infinite API loop.
-
-  useEffect(() => {
-    console.log(
-      "[useEffect:currentChatId] fired — currentChatId:",
-      currentChatId,
-      "| ref:",
-      currentChatIdRef.current,
-    );
-    if (!currentChatId) {
-      console.warn(
-        "[useEffect:currentChatId] ⚠️ currentChatId is null — clearing messages",
-      );
-      conversationLoadRequestRef.current += 1;
-      setMessages([]);
-      return;
-    }
-    // Only fetch stored messages when switching to an EXISTING chat.
-    // Do NOT fetch for a brand-new session that was just created by sendMessage —
-    // the server won't have messages yet and the fetch would wipe the live chat.
-    // We detect "existing" by checking if this id already exists in chatHistory.
-    const isExistingChat = chatHistory.some((c) => c.id === currentChatId);
-    console.log(
-      "[useEffect:currentChatId] isExistingChat:",
-      isExistingChat,
-      "for id:",
-      currentChatId,
-    );
-    if (isExistingChat) {
-      loadConversationMessages(currentChatId);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentChatId]);
-  // ↑ INTENTIONALLY only depending on currentChatId (primitive string).
-  // Adding loadConversationMessages causes it to re-fire on every render
-  // (because toast inside it is unstable), wiping live messages mid-conversation.
 
   useEffect(() => {
     const enableAudio = async () => {
@@ -2517,13 +2484,19 @@ export default function AITutorModern() {
     const hasText =
       textToSend && typeof textToSend === "string" && textToSend.trim();
     if ((!hasText && !attachedFiles.length) || isLoading) return;
+    if (!selectedUnitId) return;
+    if (attachedFiles.length > 1 || attachedFiles.some((file) => file.size > 5 * 1024 * 1024 || !["image/png", "image/jpeg", "image/gif", "image/webp"].includes(file.type))) {
+      toast({ title: "Invalid images", description: "Attach one PNG, JPEG, GIF or WebP image, at most 5 MB.", variant: "destructive" });
+      return;
+    }
+    const filesToSend = [...attachedFiles];
     const sendRequestId = ++sendRequestRef.current;
     setChatError(null);
 
     const userMsg: ChatMessage = {
       id: createClientId(),
       type: "user",
-      content: textToSend,
+      content: textToSend.trim() || "Please explain the attached images.",
       timestamp: new Date(),
       subject:
         selectedSubjectData?.value !== "all"
@@ -2534,7 +2507,7 @@ export default function AITutorModern() {
             name: f.name,
             type: f.type,
             size: f.size,
-            dataUrl: URL.createObjectURL(f), // ADD THIS LINE
+            dataUrl: URL.createObjectURL(f),
           }))
         : undefined,
       status: "pending",
@@ -2545,57 +2518,24 @@ export default function AITutorModern() {
     }
 
     // ⚠️ CRITICAL: Set loading FIRST, clear files SECOND before any async
-    setIsLoading(true);
+    setIsResponding(true);
 
-    // Convert image to base64
-    let imageBase64: string | undefined;
-    if (attachedFiles.length > 0) {
-      const imageFile = attachedFiles[0];
-
-      // Validate file size (max 5MB)
-      const MAX_SIZE = 5 * 1024 * 1024;
-      if (imageFile.size > MAX_SIZE) {
-        toast({
-          title: "File too large",
-          description: "Image must be less than 5MB",
-          variant: "destructive",
-        });
-        setIsLoading(false);
-        if (fileInputRef.current) fileInputRef.current.value = "";
-        return;
-      }
-
-      try {
-        imageBase64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          const imageFileRef = imageFile; // Store reference
-          reader.onload = () => {
-            const result = reader.result as string;
-            // Extract base64 part (after "data:image/...;base64,")
-            const base64 = result.split(",")[1];
-            if (!base64) {
-              reject(new Error("Failed to convert image to base64"));
-              return;
-            }
-            resolve(base64);
-          };
-          reader.onerror = () => reject(new Error("Failed to read file"));
-          reader.readAsDataURL(imageFileRef);
-        });
-      } catch (err) {
-        toast({
-          title: "Error reading image",
-          description:
-            err instanceof Error ? err.message : "Failed to process image",
-          variant: "destructive",
-        });
-        setIsLoading(false);
-        setAttachedFiles([]); // Clear files on error
-        if (fileInputRef.current) fileInputRef.current.value = "";
-        return;
-      }
+    let images: Array<{ name: string; base64: string; type: string }>;
+    try {
+      images = await Promise.all(filesToSend.map((file) => new Promise<{ name: string; base64: string; type: string }>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({ name: file.name, type: file.type, base64: String(reader.result).split(",")[1] });
+        reader.onerror = () => reject(new Error("Unable to read attached image."));
+        reader.readAsDataURL(file);
+      })));
+    } catch (error) {
+      if (sendRequestId !== sendRequestRef.current) return;
+      setIsResponding(false);
+      setChatError(error instanceof Error ? error.message : "Unable to read image.");
+      setMessages((previous) => previous.map((message) => message.id === userMsg.id ? { ...message, status: "failed" } : message));
+      return;
     }
-
+    if (sendRequestId !== sendRequestRef.current) return;
     // Clear files after processing
     setAttachedFiles([]);
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -2633,7 +2573,7 @@ export default function AITutorModern() {
         conversationId: sessionId,
         userMessageId: userMsg.id,
         limit: 5,
-        image_base64: imageBase64,
+        images,
       });
       if (
         sendRequestId !== sendRequestRef.current ||
@@ -2673,6 +2613,7 @@ export default function AITutorModern() {
       ]);
       if (data?.conversation) {
         const normalized = normalizeTutorConversation(data.conversation);
+        setMessages(normalized.messages);
         setChatHistory((previous) => [
           normalized,
           ...previous.filter((chat) => chat.id !== normalized.id),
@@ -2694,7 +2635,7 @@ export default function AITutorModern() {
       // Optionally remove the user message if you want clean retry:
       // setMessages((prev) => prev.filter((m) => m.id !== userMsg.id));
     } finally {
-      if (sendRequestId === sendRequestRef.current) setIsLoading(false);
+      if (sendRequestId === sendRequestRef.current) setIsResponding(false);
     }
   };
 
@@ -2703,7 +2644,9 @@ export default function AITutorModern() {
     const requestId = sendRequestRef.current;
     conversationLoadRequestRef.current += 1;
 
-    setIsLoading(false);
+    setIsResponding(false);
+    setIsConversationLoading(false);
+    setIsCreatingChat(false);
     setChatError(null);
     setMessages([]);
     setCurrentChatId(null);
@@ -2719,7 +2662,7 @@ export default function AITutorModern() {
 
     if (!selectedUnitId) return;
 
-    setIsLoading(true);
+    setIsCreatingChat(true);
     try {
       const created = await createTutorConversation({
         unitId: selectedUnitId,
@@ -2740,19 +2683,22 @@ export default function AITutorModern() {
         error instanceof Error ? error.message : "Failed to create a new chat.",
       );
     } finally {
-      if (requestId === sendRequestRef.current) setIsLoading(false);
+      if (requestId === sendRequestRef.current) setIsCreatingChat(false);
     }
   };
 
   const loadChat = (chat: ChatHistory) => {
     sendRequestRef.current += 1;
-    setIsLoading(false);
+    setIsResponding(false);
+    setIsCreatingChat(false);
     conversationLoadRequestRef.current += 1;
     stopSpeaking();
     console.log("[loadChat] switching to chat id:", chat.id);
     setMessages(chat.messages);
     setCurrentChatId(chat.id);
     currentChatIdRef.current = chat.id;
+    void loadConversationMessages(chat.id);
+    setAttachedFiles([]);
     setCurrentMessage("");
     setChatError(null);
     const subj = subjects.find(
@@ -2782,8 +2728,12 @@ export default function AITutorModern() {
       });
       return;
     }
-    if (currentChatId === chatId) {
+    if (currentChatIdRef.current === chatId) {
       sendRequestRef.current += 1;
+      conversationLoadRequestRef.current += 1;
+      setIsResponding(false);
+      setIsCreatingChat(false);
+      setIsConversationLoading(false);
       console.log(
         "[deleteChat] deleted active chat, resetting currentChatId → null",
       );
@@ -2795,6 +2745,10 @@ export default function AITutorModern() {
 
   const clearAllHistory = async () => {
     sendRequestRef.current += 1;
+    conversationLoadRequestRef.current += 1;
+    setIsResponding(false);
+    setIsCreatingChat(false);
+    setIsConversationLoading(false);
     try {
       await clearTutorHistory({
         candidateId: candidateContext.candidateId,
@@ -2876,12 +2830,12 @@ export default function AITutorModern() {
     const files = Array.from(e.target.files);
 
     // Only accept images
-    const imageFiles = files.filter((f) => f.type.startsWith("image/"));
-    if (imageFiles.length === 0) {
+    const imageFiles = files.filter((f) => ["image/png", "image/jpeg", "image/gif", "image/webp"].includes(f.type));
+    if (imageFiles.length !== files.length || imageFiles.length > 1 || imageFiles.some((file) => file.size > 5 * 1024 * 1024)) {
       toast({
         title: "Invalid file",
         description:
-          "Please upload image files only (JPG, PNG, GIF, WebP, etc.)",
+          "Attach one PNG, JPEG, GIF or WebP image, at most 5 MB.",
         variant: "destructive",
       });
       return;
@@ -2893,7 +2847,7 @@ export default function AITutorModern() {
   const triggerFileInput = () => {
     if (!fileInputRef.current) return;
     // Force image-only accept
-    fileInputRef.current.accept = "image/*";
+    fileInputRef.current.accept = "image/png,image/jpeg,image/gif,image/webp";
     fileInputRef.current.click();
   };
 
@@ -3605,23 +3559,11 @@ export default function AITutorModern() {
                   <div
                     className={`at-bubble${message.type === "user" ? " user" : " bot"}`}
                   >
-                    {/* Display image if attached */}
-                    {message.attachments &&
-                      message.attachments.length > 0 &&
-                      message.attachments[0].dataUrl && (
-                        <div style={{ marginBottom: 8 }}>
-                          <img
-                            src={message.attachments[0].dataUrl}
-                            alt="Attached image"
-                            style={{
-                              maxWidth: "100%",
-                              maxHeight: 200,
-                              borderRadius: 8,
-                              objectFit: "cover",
-                            }}
-                          />
-                        </div>
-                      )}
+                    {(message.attachments || []).map((image, index) => image.dataUrl && (
+                      <a key={index} href={image.dataUrl} target="_blank" rel="noreferrer" style={{ display: "block", marginBottom: 8 }}>
+                        <img src={image.dataUrl} alt={image.name} style={{ maxWidth: "100%", maxHeight: 200, borderRadius: 8, objectFit: "contain" }} />
+                      </a>
+                    ))}
                     <div style={{ fontSize: 13.5, lineHeight: 1.6 }}>
                       {message.audioSrc ? (
                         <audio
@@ -3926,7 +3868,7 @@ export default function AITutorModern() {
           type="file"
           ref={fileInputRef}
           onChange={handleFileChange}
-          accept="image/*"
+          accept="image/png,image/jpeg,image/gif,image/webp"
           multiple={false}
           className="hidden"
         />

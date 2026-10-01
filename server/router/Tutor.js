@@ -14,6 +14,7 @@ router.delete("/history", controller.clearTutorHistory);
 router.post("/speech/realtime-token", controller.getRealtimeSessionToken);
 router.get("/conversations", controller.getTutorConversations);
 router.get("/conversations/:conversationId", controller.getTutorConversation);
+router.get("/conversations/:conversationId/images/:imageId", controller.getTutorImage);
 router.get("/faq", controller.getFaq);
 router.get("/faq/section", controller.getFaqSection);
 router.post("/faq/track", controller.trackFaq);

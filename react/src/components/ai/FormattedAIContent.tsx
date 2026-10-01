@@ -15,6 +15,7 @@ type MarkdownBlock =
   | { type: "paragraph"; text: string }
   | { type: "unordered-list"; items: string[] }
   | { type: "ordered-list"; items: string[] }
+  | { type: "table"; headers: string[]; rows: string[][]; alignments: Array<"left" | "center" | "right"> }
   | { type: "code"; text: string };
 
 const containerStyle: React.CSSProperties = {
@@ -361,6 +362,29 @@ function renderInline(
   });
 }
 
+function splitTableRow(line: string) {
+  const cells: string[] = [];
+  let cell = "";
+  let codeDelimiter = "";
+  const trimmed = line.trim().replace(/^\|/, "").replace(/(?<!\\)\|$/, "");
+  for (let i = 0; i < trimmed.length; i++) {
+    const char = trimmed[i];
+    if (char === "\\" && trimmed[i + 1] === "|") { cell += "|"; i++; continue; }
+    if (char === "`") {
+      let ticks = "`";
+      while (trimmed[i + 1] === "`") { ticks += "`"; i++; }
+      if (!codeDelimiter) codeDelimiter = ticks;
+      else if (codeDelimiter === ticks) codeDelimiter = "";
+      cell += ticks;
+      continue;
+    }
+    if (char === "|" && !codeDelimiter) { cells.push(cell.trim()); cell = ""; }
+    else cell += char;
+  }
+  cells.push(cell.trim());
+  return cells;
+}
+
 function parseMarkdown(text: string): MarkdownBlock[] {
   const lines = String(text || "")
     .replace(/\r\n/g, "\n")
@@ -391,7 +415,8 @@ function parseMarkdown(text: string): MarkdownBlock[] {
     codeLines = [];
   };
 
-  for (const rawLine of lines) {
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    const rawLine = lines[lineIndex];
     const line = rawLine.trimEnd();
     const trimmed = line.trim();
 
@@ -407,6 +432,22 @@ function parseMarkdown(text: string): MarkdownBlock[] {
 
     if (inCode) {
       codeLines.push(line);
+      continue;
+    }
+
+    const headers = splitTableRow(line);
+    const separators = splitTableRow(lines[lineIndex + 1] || "");
+    if (line.includes("|") && headers.length === separators.length && separators.every((cell) => /^:?-{3,}:?$/.test(cell))) {
+      flushParagraph();
+      flushList();
+      const alignments = separators.map((cell): "left" | "center" | "right" => cell.startsWith(":") && cell.endsWith(":") ? "center" : cell.endsWith(":") ? "right" : "left");
+      const rows: string[][] = [];
+      lineIndex++;
+      while (lineIndex + 1 < lines.length && lines[lineIndex + 1].trim() && lines[lineIndex + 1].includes("|") && !lines[lineIndex + 1].trim().startsWith("```")) {
+        const cells = splitTableRow(lines[++lineIndex]);
+        rows.push(headers.map((_, index) => cells[index] || ""));
+      }
+      blocks.push({ type: "table", headers, rows, alignments });
       continue;
     }
 
@@ -568,6 +609,17 @@ export default function FormattedAIContent({
   return (
     <div className={className} style={containerStyle}>
       {blocks.map((block, index) => {
+        if (block.type === "table") {
+          const cellStyle = (column: number): React.CSSProperties => ({ border: "1px solid rgba(148,163,184,0.45)", padding: "0.5rem 0.75rem", textAlign: block.alignments[column], verticalAlign: "top", minWidth: 90 });
+          return (
+            <div key={index} role="region" aria-label="Response table" tabIndex={0} style={{ overflowX: "auto", maxWidth: "100%", marginBottom: "0.8rem" }}>
+              <table style={{ borderCollapse: "collapse", width: "100%", fontSize: "inherit" }}>
+                <thead><tr>{block.headers.map((cell, column) => <th key={column} scope="col" style={{ ...cellStyle(column), background: "rgba(99,102,241,0.1)" }}>{renderInline(cell, highlightEnabled, currentWordIndex, wordCounterRef)}</th>)}</tr></thead>
+                <tbody>{block.rows.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, column) => <td key={column} style={cellStyle(column)}>{renderInline(cell, highlightEnabled, currentWordIndex, wordCounterRef)}</td>)}</tr>)}</tbody>
+              </table>
+            </div>
+          );
+        }
         if (block.type === "heading") {
           const size = compact
             ? [1.04, 1, 0.96, 0.92, 0.88, 0.85][block.level - 1] || 0.85

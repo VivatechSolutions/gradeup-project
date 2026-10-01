@@ -1,4 +1,5 @@
 import { buildApiUrl } from "./apiBase";
+import { getSubjectDisplayLabel } from "./subjectLabel";
 
 export type LibraryUnit = {
   id: string;
@@ -347,9 +348,10 @@ export async function getLibrarySubjects(search = "") {
     params.set("search", search);
   }
 
-  return apiFetch<LibrarySubject[]>(
+  const subjects = await apiFetch<LibrarySubject[]>(
     `/api/v1/student/library/subjects${params.toString() ? `?${params.toString()}` : ""}`,
   );
+  return subjects.map((subject) => ({ ...subject, title: getSubjectDisplayLabel(subject) }));
 }
 
 export async function getStudentBooks() {
@@ -500,6 +502,7 @@ export async function askTutor(payload: {
   limit?: number;
   image_base64?: string;
   image_mime_type?: string;
+  images?: Array<{ name: string; base64: string; type: string }>;
 }) {
   return apiFetch<any>("/api/v1/tutor/ask", {
     method: "POST",
