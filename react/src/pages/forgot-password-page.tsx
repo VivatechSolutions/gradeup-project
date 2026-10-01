@@ -126,7 +126,7 @@ const CSS = `
 
 /* ── Alert ── */
 .fp-alert{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;
-  border-radius:12px;margin-bottom:16px;}
+  border-radius:12px;margin-bottom:16px;color: white;}
 .fp-alert.info{border:1.5px solid rgba(99,102,241,.2);background:rgba(99,102,241,.05);}
 .fp-alert.danger{border:1.5px solid rgba(239,68,68,.2);background:rgba(239,68,68,.05);}
 .fp-alert.success{border:1.5px solid rgba(16,185,129,.2);background:rgba(16,185,129,.05);}
@@ -177,7 +177,7 @@ const CSS = `
 /* ── Security note ── */
 .fp-security-note{display:flex;align-items:flex-start;gap:8px;padding:12px 14px;
   border-radius:12px;background:rgba(0,0,0,.03);border:1px solid rgba(0,0,0,.06);
-  margin-top:16px;}
+  margin-top:16px;color:#ffff}
 .dark, [data-theme="dark"] .fp-security-note{background:rgba(255,255,255,.03);border-color:rgba(255,255,255,.06);}
 .fp-security-text{font-size:11.5px;color:#94a3b8;line-height:1.5;}
 
@@ -195,7 +195,6 @@ const CSS = `
 }
 `;
 
-
 export default function ForgotPasswordPage() {
   const token = new URLSearchParams(window.location.search).get("token");
   const [email, setEmail] = useState("");
@@ -208,35 +207,173 @@ export default function ForgotPasswordPage() {
   const [error, setError] = useState("");
   const [done, setDone] = useState(false);
   async function submit(event: React.FormEvent) {
-    event.preventDefault(); setError(""); setMessage("");
-    if (!token && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { setError("Please enter a valid email address"); return; }
-    if (token && (password.length < 8 || new TextEncoder().encode(password).length > 72)) { setError("Use a password of at least 8 characters and at most 72 bytes"); return; }
-    if (token && password !== confirm) { setError("Passwords don't match"); return; }
-    if (!recaptchaToken) { setError("Please complete Google reCAPTCHA"); return; }
+    event.preventDefault();
+    setError("");
+    setMessage("");
+    if (!token && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setError("Please enter a valid email address");
+      return;
+    }
+    if (
+      token &&
+      (password.length < 8 || new TextEncoder().encode(password).length > 72)
+    ) {
+      setError("Use a password of at least 8 characters and at most 72 bytes");
+      return;
+    }
+    if (token && password !== confirm) {
+      setError("Passwords don't match");
+      return;
+    }
+    if (!recaptchaToken) {
+      setError("Please complete Google reCAPTCHA");
+      return;
+    }
     setBusy(true);
     try {
-      const response = await apiRequest("POST", token ? "/api/v1/auth/reset-password" : "/api/v1/auth/forgot-password",
-        token ? { token, newPassword: password, recaptchaToken } : { email: email.trim().toLowerCase(), recaptchaToken });
-      const result = await response.json(); setMessage(result.message); if (token) setDone(true);
-    } catch (e) { setError((e as Error).message); }
-    finally { setBusy(false); setRecaptchaToken(""); setResetKey(k => k + 1); }
+      const response = await apiRequest(
+        "POST",
+        token ? "/api/v1/auth/reset-password" : "/api/v1/auth/forgot-password",
+        token
+          ? { token, newPassword: password, recaptchaToken }
+          : { email: email.trim().toLowerCase(), recaptchaToken },
+      );
+      const result = await response.json();
+      setMessage(result.message);
+      if (token) setDone(true);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+      setRecaptchaToken("");
+      setResetKey((k) => k + 1);
+    }
   }
-  return <><style>{CSS}</style><main className="fp-root"><div className="fp-wrap">
-    <div className="fp-logo"><span className="fp-logo-text">GradeUp!</span></div>
-    <div className="fp-card"><div className="fp-card-head"><h1 className="fp-card-title">{done ? "Password updated" : token ? "Reset Password" : "Forgot Password?"}</h1>
-    <p className="fp-card-sub">{token ? "Choose your new account password." : "Enter your email and we'll send you a reset link."}</p></div>
-    <form className="fp-card-body" onSubmit={submit}>
-      {error && <p className="fp-alert danger" role="alert">{error}</p>}
-      {message && <p className="fp-alert success" role="status">{message}</p>}
-      {!done && <>
-        {!token ? <div className="fp-field"><label htmlFor="reset-email" className="fp-field-label">Email Address</label><input id="reset-email" className="fp-input" type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} /></div> : <>
-          <div className="fp-field"><label htmlFor="reset-password" className="fp-field-label">New password</label><input id="reset-password" className="fp-input" type="password" autoComplete="new-password" required minLength={8} value={password} onChange={e => setPassword(e.target.value)} /></div>
-          <div className="fp-field"><label htmlFor="reset-confirm" className="fp-field-label">Confirm password</label><input id="reset-confirm" className="fp-input" type="password" autoComplete="new-password" required value={confirm} onChange={e => setConfirm(e.target.value)} /></div>
-        </>}
-        <div className="fp-field"><GoogleRecaptcha onChange={setRecaptchaToken} resetKey={resetKey}/></div>
-        <button className="fp-btn" disabled={busy || !recaptchaToken} type="submit">{busy ? "Please wait…" : token ? "Reset Password" : "Send Reset Instructions"}</button>
-        <p className="fp-security-note">Protected by Google reCAPTCHA. Reset links expire after 15 minutes.</p>
-      </>}
-    </form></div><div className="fp-footer"><Link href="/auth">Back to sign in</Link>{token && !done && <p><a href="/forgot-password">Request a new reset link</a></p>}</div>
-  </div></main></>;
+  return (
+    <>
+      <style>{CSS}</style>
+      <main className="fp-root">
+        <div className="fp-wrap">
+          <div className="fp-logo">
+            <span className="fp-logo-text">GradeUp!</span>
+          </div>
+          <div className="fp-card">
+            <div className="fp-card-head">
+              <h1 className="fp-card-title">
+                {done
+                  ? "Password updated"
+                  : token
+                    ? "Reset Password"
+                    : "Forgot Password?"}
+              </h1>
+              <p className="fp-card-sub">
+                {token
+                  ? "Choose your new account password."
+                  : "Enter your email and we'll send you a reset link."}
+              </p>
+            </div>
+            <form className="fp-card-body" onSubmit={submit}>
+              {error && (
+                <p className="fp-alert danger" role="alert">
+                  {error}
+                </p>
+              )}
+              {message && (
+                <p className="fp-alert success" role="status">
+                  {message}
+                </p>
+              )}
+              {!done && (
+                <>
+                  {!token ? (
+                    <div className="fp-field">
+                      <label htmlFor="reset-email" className="fp-field-label">
+                        Email Address
+                      </label>
+                      <input
+                        id="reset-email"
+                        className="fp-input"
+                        type="email"
+                        autoComplete="email"
+                        required
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      <div className="fp-field">
+                        <label
+                          htmlFor="reset-password"
+                          className="fp-field-label"
+                        >
+                          New password
+                        </label>
+                        <input
+                          id="reset-password"
+                          className="fp-input"
+                          type="password"
+                          autoComplete="new-password"
+                          required
+                          minLength={8}
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                        />
+                      </div>
+                      <div className="fp-field">
+                        <label
+                          htmlFor="reset-confirm"
+                          className="fp-field-label"
+                        >
+                          Confirm password
+                        </label>
+                        <input
+                          id="reset-confirm"
+                          className="fp-input"
+                          type="password"
+                          autoComplete="new-password"
+                          required
+                          value={confirm}
+                          onChange={(e) => setConfirm(e.target.value)}
+                        />
+                      </div>
+                    </>
+                  )}
+                  <div className="fp-field">
+                    <GoogleRecaptcha
+                      onChange={setRecaptchaToken}
+                      resetKey={resetKey}
+                    />
+                  </div>
+                  <button
+                    className="fp-btn"
+                    disabled={busy || !recaptchaToken}
+                    type="submit"
+                  >
+                    {busy
+                      ? "Please wait…"
+                      : token
+                        ? "Reset Password"
+                        : "Send Reset Instructions"}
+                  </button>
+                  <p className="fp-security-note">
+                    Protected by Google reCAPTCHA. Reset links expire after 15
+                    minutes.
+                  </p>
+                </>
+              )}
+            </form>
+          </div>
+          <div className="fp-footer">
+            <Link href="/auth">Back to sign in</Link>
+            {token && !done && (
+              <p>
+                <a href="/forgot-password">Request a new reset link</a>
+              </p>
+            )}
+          </div>
+        </div>
+      </main>
+    </>
+  );
 }

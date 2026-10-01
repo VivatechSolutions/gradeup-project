@@ -4620,6 +4620,7 @@ const BookContentWindowRewamp = () => {
     metadata: { title: activeChapter?.title, subject: selectedBook?.subject },
   });
   const [isTocView, setIsTocView] = useState(false);
+  const [isBookReaderOpen, setIsBookReaderOpen] = useState(false);
   const [isFocus, setIsFocus] = useState(false);
   const [isQuizOpen, setIsQuizOpen] = useState(false);
   const [isSummaryOpen, setIsSummaryOpen] = useState(false);
@@ -4980,6 +4981,7 @@ const BookContentWindowRewamp = () => {
         setActiveChapter(null);
         setDisplayChapter(null);
         setIsTocView(true);
+        setIsBookReaderOpen(false);
         setCurrentSpreadIndex(0);
         setDisplaySpreadIndex(0);
         clearReaderState();
@@ -4989,6 +4991,7 @@ const BookContentWindowRewamp = () => {
       setActiveChapter(null);
       setDisplayChapter(null);
       setIsTocView(true);
+      setIsBookReaderOpen(false);
       setCurrentSpreadIndex(0);
       setDisplaySpreadIndex(0);
       clearReaderState();
@@ -5000,6 +5003,85 @@ const BookContentWindowRewamp = () => {
         title: "Book unavailable",
         description:
           error instanceof Error ? error.message : "Failed to open this book.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingPage(false);
+    }
+  };
+
+  const openBookReader = async (targetChapter?: any) => {
+    try {
+      setIsLoadingPage(true);
+      setBookLoadError(null);
+
+      let bookToUse = selectedBook;
+      if (!bookToUse) return;
+
+      const needsFullHydration =
+        !bookToUse.chapters?.length ||
+        bookToUse.chapters.some(
+          (ch) =>
+            !ch.content ||
+            ch.content.endsWith("content is available for reading."),
+        );
+
+      if (
+        needsFullHydration &&
+        !bookToUse.id.startsWith("sci-") &&
+        !bookToUse.id.startsWith("phy-")
+      ) {
+        try {
+          const detail = await getLibrarySubjectDetail(bookToUse.id);
+          const chapters = await Promise.all(
+            detail.units.map(async (unit, index) => {
+              try {
+                const chapterContent = await loadChapterContentPayload(unit);
+                return buildChapterFromUnit(unit, chapterContent, index);
+              } catch {
+                return buildChapterFromUnit(
+                  unit,
+                  { sectionTopics: unit.sectionTopics || [] },
+                  index,
+                );
+              }
+            }),
+          );
+          bookToUse = {
+            ...mapRemoteSubjectToBook(detail, 0),
+            chapters,
+          };
+          setSelectedBook(bookToUse);
+        } catch (e) {
+          console.warn("Could not batch hydrate all chapters, loading unit:", e);
+        }
+      }
+
+      let chapterToOpen = targetChapter;
+      if (!chapterToOpen && bookToUse.chapters?.length) {
+        chapterToOpen = bookToUse.chapters[0];
+      }
+
+      if (
+        chapterToOpen &&
+        (!chapterToOpen.content ||
+          chapterToOpen.content.endsWith("content is available for reading."))
+      ) {
+        const loaded = await loadUnitForAvatar(chapterToOpen);
+        if (loaded) chapterToOpen = loaded;
+      }
+
+      setActiveChapter(chapterToOpen);
+      setDisplayChapter(chapterToOpen);
+      setCurrentSpreadIndex(0);
+      setDisplaySpreadIndex(0);
+      clearReaderState();
+      setIsTocView(false);
+      setIsBookReaderOpen(true);
+    } catch (error: any) {
+      pushToast({
+        title: "Book unavailable",
+        description: error?.message || "Failed to open book reader.",
         variant: "destructive",
       });
     } finally {
@@ -5088,6 +5170,7 @@ const BookContentWindowRewamp = () => {
       });
       setDisplayChapter(null);
       setIsTocView(false);
+      setIsBookReaderOpen(false);
     } catch (error: any) {
       pushToast({
         title: "Lesson unavailable",
@@ -7616,7 +7699,7 @@ const BookContentWindowRewamp = () => {
   // ══════════════════════════════════════════════════════════════════════════════
   // ── TOC VIEW ──────────────────────────────────────────────────────────────────
   // ══════════════════════════════════════════════════════════════════════════════
-  if (selectedBook && isTocView) {
+  if (selectedBook && isTocView && !isBookReaderOpen) {
     const unitNumbers = Array.from(
       new Set(filteredChapters.map((ch) => ch.unit)),
     );
@@ -7655,15 +7738,30 @@ const BookContentWindowRewamp = () => {
                 <div className="lib-hero-div" />
                 <button
                   className="lib-hero-btn"
+                  style={{
+                    background: "rgba(255, 255, 255, 0.18)",
+                    color: "#fff",
+                    border: "1px solid rgba(255, 255, 255, 0.3)",
+                    marginRight: "8px",
+                  }}
                   onClick={() => {
                     setSelectedBook(null);
                     setIsTocView(false);
+                    setIsBookReaderOpen(false);
                     setSelectedPart(null);
                     setSelectedTerm(null);
                     clearReaderState();
                   }}
+                  title="Return to All Subjects"
                 >
-                  ← Refer Book
+                  ← All Subjects
+                </button>
+                <button
+                  className="lib-hero-btn"
+                  onClick={() => openBookReader()}
+                  title="Open Textbook Library / Reader"
+                >
+                  📖 Refer Book
                 </button>
               </div>
             </div>
@@ -7716,6 +7814,18 @@ const BookContentWindowRewamp = () => {
                         {firstChapter.title || `Unit ${unitNumber}`}
                       </span>
                     </div>
+                    <button
+                      type="button"
+                      className="toc-unit-refer-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openBookReader(firstChapter);
+                      }}
+                      title={`Refer Book for Unit ${unitNumber}`}
+                    >
+                      <BookOpen size={13} />
+                      <span>Refer Book</span>
+                    </button>
                   </div>
 
                   {/* Preview text */}
@@ -7764,7 +7874,1634 @@ const BookContentWindowRewamp = () => {
   }
 
   // ══════════════════════════════════════════════════════════════════════════════
-  // ── READER VIEW ───────────────────────────────────────────────────────────────
+  // ── READER VIEW (REFER BOOK) ─────────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════════════════
+  if (selectedBook && isBookReaderOpen) {
+    return (
+    <div className={`app-root ${isDark ? "dark" : ""} ${isFocus ? "focus-active" : ""}`} data-theme={theme}>
+      <AnimatePresence>
+        <motion.div
+          key="reader-view"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+        >
+          {isSidebarOpen && (
+            <div
+              className="sidebar-overlay"
+              onClick={() => setIsSidebarOpen(false)}
+            ></div>
+          )}
+          <div className="workstation">
+            {/* ── PREMIUM SIDEBAR ── */}
+            <aside className={`sidebar glass ${isSidebarOpen ? "open" : ""}`}>
+              {/* Sidebar Hero */}
+              <div className="sb-hero">
+                <div className="sb-hero-inner">
+                  <div className="sb-hero-top">
+                    <div className="sb-book-icon">
+                      {getBookSubjectArt(selectedBook?.subject || "") ? (
+                        <img src={getBookSubjectArt(selectedBook?.subject || "")} alt="" className="sb-subject-art" aria-hidden />
+                      ) : <BookOpen size={30} strokeWidth={1.5} aria-hidden />}
+                    </div>
+                    <button
+                      className="sb-close-btn"
+                      onClick={() => {
+                        if (isReadingAloud) window.speechSynthesis?.cancel();
+                        setIsReadingAloud(false);
+                        setIsBookReaderOpen(false);
+                        setIsTocView(true);
+                      }}
+                      title="Return to Units"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                  <div className="sb-book-title">{selectedBook?.title}</div>
+                  <div className="sb-book-subject">{selectedBook?.subject}</div>
+                  {/* Progress mini bar */}
+                  <div className="sb-progress-row">
+                    <div className="sb-progress-bg">
+                      <div
+                        className="sb-progress-fill"
+                        style={{
+                          width: `${Math.round(((currentChIdx + 1) / Math.max(allChapters.length, 1)) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                    <span className="sb-progress-pct">
+                      {Math.round(
+                        ((currentChIdx + 1) / Math.max(allChapters.length, 1)) *
+                          100,
+                      )}
+                      %
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+                            <button
+                className="sb-back-btn"
+                onClick={() => {
+                  if (isReadingAloud) window.speechSynthesis?.cancel();
+                  setIsReadingAloud(false);
+                  setIsBookReaderOpen(false);
+                  setIsTocView(true);
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "7px",
+                  margin: "8px 12px",
+                  padding: "8px 12px",
+                  borderRadius: "10px",
+                  background: "rgba(99, 102, 241, 0.12)",
+                  border: "1px solid rgba(99, 102, 241, 0.25)",
+                  color: "#6366f1",
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                <ArrowLeft size={13} />
+                Back to Units
+              </button>
+
+              {/* Back to library */}
+              {/* <button className="sb-back-btn" onClick={() => setIsSummaryOpen(true)}>
+                <ArrowLeft size={13} />
+                Back to Subjects
+              </button> */}
+
+              {/* Chapter nav */}
+              <div className="sb-section-label">CONTENTS</div>
+              <div className="nav-group-items">
+                {Array.from(
+                  new Set(selectedBook.chapters.map((ch: any) => ch.unit)),
+                ).map((unitNumber: any) => {
+                  const unitChapters = selectedBook.chapters.filter(
+                    (ch: any) => ch.unit === unitNumber,
+                  );
+                  const sectionTopics = getContentSectionTopics(
+                    unitChapters[0]?.sectionTopics || [],
+                  );
+                  const isExpanded = expandedUnit === unitNumber;
+                  const hasActive = unitChapters.some(
+                    (ch: any) => ch.id === activeChapter?.id,
+                  );
+                  const unitTitle =
+                    unitChapters[0]?.unitTitle ||
+                    unitChapters[0]?.title ||
+                    `Unit ${unitNumber}`;
+                  return (
+                    <div key={`unit-${unitNumber}`} className="sb-unit-group">
+                      {/* Unit header */}
+                      <div
+                        className={`sb-unit-header ${hasActive ? "active" : ""}`}
+                        onClick={() =>
+                          setExpandedUnit(isExpanded ? null : unitNumber)
+                        }
+                      >
+                        <div className="sb-unit-badge">
+                          {String(unitNumber).padStart(2, "0")}
+                        </div>
+                        <span className="sb-unit-label">
+                          <strong>{`Unit ${unitNumber}`}</strong>
+                          <small>{unitTitle}</small>
+                        </span>
+                        <span
+                          className={`sb-unit-chevron ${isExpanded ? "open" : ""}`}
+                        >
+                          ▾
+                        </span>
+                      </div>
+                      {/* Chapter rows */}
+                      <div
+                        className={`sb-chapters-wrap ${isExpanded ? "open" : ""}`}
+                        style={{
+                          maxHeight: isExpanded
+                            ? `${Math.max(sectionTopics.length, unitChapters.length) * 52}px`
+                            : "0px",
+                        }}
+                      >
+                        {sectionTopics.length > 0
+                          ? sectionTopics.map((topic: any, idx: number) => {
+                              const isCur =
+                                activeChapter?.id === unitChapters[0]?.id;
+                              return (
+                                <div
+                                  key={topic.id}
+                                  className={`sb-chapter-row ${isCur ? "active" : ""}`}
+                                  onClick={async () => {
+                                    const targetCh = unitChapters[0];
+                                    if (targetCh && (!targetCh.content || targetCh.content.endsWith("content is available for reading."))) {
+                                      await loadUnitForAvatar(targetCh);
+                                    }
+                                    setActiveChapter(targetCh);
+                                    setPendingSectionAnchor(topic.anchor);
+                                    setIsSidebarOpen(false);
+                                  }}
+                                >
+                                  <span className="sb-ch-num">
+                                    {topic.number || `${unitNumber}.${idx + 1}`}
+                                  </span>
+                                  <span className="sb-ch-title">
+                                    {topic.title}
+                                  </span>
+                                  {isCur && (
+                                    <span className="sb-ch-active-dot" />
+                                  )}
+                                </div>
+                              );
+                            })
+                          : unitChapters.map((ch: any, idx: number) => {
+                              const isCur = activeChapter?.id === ch.id;
+                              return (
+                                <div
+                                  key={ch.id}
+                                  className={`sb-chapter-row ${isCur ? "active" : ""}`}
+                                  onClick={async () => {
+                                    if (ch && (!ch.content || ch.content.endsWith("content is available for reading."))) {
+                                      await loadUnitForAvatar(ch);
+                                    }
+                                    if (
+                                      activeChapter &&
+                                      activeChapter.unit !== ch.unit
+                                    ) {
+                                      setActiveChapter({
+                                        id: `unit-intro-${ch.unit}`,
+                                        title: `Unit ${ch.unit}`,
+                                        content: "",
+                                        isUnitIntro: true,
+                                        realChapter: ch,
+                                        unit: ch.unit,
+                                      });
+                                    } else {
+                                      setActiveChapter(ch);
+                                    }
+                                    setIsSidebarOpen(false);
+                                  }}
+                                >
+                                  <span className="sb-ch-num">
+                                    {unitNumber}.{idx + 1}
+                                  </span>
+                                  <span className="sb-ch-title">
+                                    {ch.title}
+                                  </span>
+                                  {isCur && (
+                                    <span className="sb-ch-active-dot" />
+                                  )}
+                                </div>
+                              );
+                            })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </aside>
+
+            {/* Reader main */}
+            <main className="main-viewport" onMouseUp={handleMouseUp}>
+              <div className="scroll-canvas">
+                {/* ── TOP BAR — hamburger + chapter title + theme ── */}
+                <div className="reader-topbar">
+                  <div className="reader-topbar-left">
+                    <button
+                      className="reader-hamburger"
+                      onClick={() => setIsSidebarOpen(true)}
+                    >
+                      <span />
+                      <span />
+                      <span />
+                    </button>
+                    <button
+                      className="rb-pill"
+                      style={{ padding: "8px 14px", marginRight: "8px" }}
+                      onClick={() => {
+                        if (isReadingAloud) window.speechSynthesis?.cancel();
+                        setIsReadingAloud(false);
+                        setIsBookReaderOpen(false);
+                        setIsTocView(true);
+                      }}
+                      title="Return to Units"
+                    >
+                      <span className="rb-pill-icon">←</span>
+                      <span className="rb-pill-label">Units</span>
+                    </button>
+                    <div className="reader-topbar-info">
+                      <span className="reader-topbar-chapter">
+                        {activeUnitLabel}:{" "}
+                        {activeUnitTitle || displayChapter?.title}
+                        {activeSectionTitle ? ` — ${activeSectionTitle}` : ""}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="reader-topbar-right">
+                    {!displayChapter?.isUnitIntro && (
+                      <>
+                        <div className="reader-avatar-mode" aria-label="Choose reading avatar">
+                          <button
+                            type="button"
+                            className={readAloudAvatar === "male" ? "active" : ""}
+                            onClick={() => {
+                              if (isReadingAloud) window.speechSynthesis?.cancel();
+                              setIsReadingAloud(false);
+                              setReadAloudAvatar("male");
+                            }}
+                            title="Male reading avatar"
+                            aria-label="Male reading avatar"
+                          >
+                            👨‍🏫
+                          </button>
+                          <button
+                            type="button"
+                            className={readAloudAvatar === "female" ? "active" : ""}
+                            onClick={() => {
+                              if (isReadingAloud) window.speechSynthesis?.cancel();
+                              setIsReadingAloud(false);
+                              setReadAloudAvatar("female");
+                            }}
+                            title="Female reading avatar"
+                            aria-label="Female reading avatar"
+                          >
+                            👩‍🏫
+                          </button>
+                        </div>
+                        <button
+                          className={`rb-pill ${isReadingAloud ? "active" : ""}`}
+                          onClick={toggleReadAloud}
+                          title="Read this page aloud"
+                        >
+                          <span className="rb-pill-icon">
+                            {isReadingAloud ? "⏸️" : "🔊"}
+                          </span>
+                          <span className="rb-pill-label">
+                            {isReadingAloud ? "Stop" : "Read Aloud"}
+                          </span>
+                        </button>
+                        <button
+                          className="rb-pill"
+                          onClick={() => setTheme(isDark ? "light" : "dark")}
+                          title="Toggle night mode"
+                        >
+                          <span className="rb-pill-icon">{isDark ? "☀️" : "🌙"}</span>
+                          <span className="rb-pill-label">{isDark ? "Light Mode" : "Night Mode"}</span>
+                        </button>
+                        <button
+                          className={`rb-pill ${isBookmarked ? "active" : ""}`}
+                          onClick={toggleBookmark}
+                          title="Add to My Books"
+                        >
+                          <span className="rb-pill-icon">
+                            {isBookmarked ? "⭐" : "☆"}
+                          </span>
+                          <span className="rb-pill-label">
+                            {isBookmarked ? "Added" : "Add to My Books"}
+                          </span>
+                        </button>
+                      </>
+                    )}
+                    {/* <button
+                            className={`bk-float-btn bk-float-ai ${isAiPanelOpen ? "active" : ""}`}
+                            onClick={e => { e.stopPropagation(); setIsAiPanelOpen(o => !o); }}
+                            title="Ask AI about this chapter"
+                          >
+                            <Bot size={13} />
+                            <span>Ask AI</span>
+                            {aiMessages.filter(m => m.role === "assistant").length > 0 && (
+                              <span className="bk-float-badge">
+                                {aiMessages.filter(m => m.role === "assistant").length}
+                              </span>
+                            )}
+                          </button> */}
+                  </div>
+                </div>
+
+                <AnimatePresence>
+                  {isAvatarOpen && (
+                    <motion.div
+                      className={`avatar-genius-backdrop ${isReadingAloud ? "reader-avatar-overlay" : ""}`}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                    >
+                      <motion.section
+                        className="avatar-genius-panel"
+                        initial={{ opacity: 0, y: 24, scale: 0.98 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 18, scale: 0.98 }}
+                        transition={{
+                          type: "spring",
+                          stiffness: 260,
+                          damping: 24,
+                        }}
+                      >
+                        <div className="avatar-genius-head">
+                          <div>
+                            <span className="avatar-genius-kicker">
+                              Genius Mode
+                            </span>
+                            <h3>
+                              {currentGeniusSection?.title ||
+                                currentGeniusSection?.label ||
+                                "Avatar Teacher"}
+                            </h3>
+                          </div>
+                          <button
+                            type="button"
+                            className="avatar-genius-close"
+                            onClick={handleAvatarClose}
+                            title="Close Genius Mode"
+                          >
+                            <X size={16} />
+                          </button>
+                        </div>
+
+                        {isAvatarStarting ? (
+                          <div className="avatar-genius-loading">
+                            <Sparkles size={24} />
+                            <strong>Preparing your avatar lesson...</strong>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="avatar-genius-stage">
+                              <div
+                                className={`avatar-teacher-orb ${
+                                  avatarStatus === "playing" ? "speaking" : ""
+                                }`}
+                              >
+                                <Bot size={34} />
+                              </div>
+                              <div className="avatar-segment-copy">
+                                <span className="avatar-segment-meta">
+                                  {avatarStatus === "playing" ? (
+                                    <Volume2 size={13} />
+                                  ) : (
+                                    <Sparkles size={13} />
+                                  )}
+                                  Segment{" "}
+                                  {Math.min(
+                                    avatarIndex + 1,
+                                    Math.max(avatarSegments.length, 1),
+                                  )}{" "}
+                                  of {Math.max(avatarSegments.length, 1)}
+                                  {avatarDisplaySegment?.emotion
+                                    ? ` • ${avatarDisplaySegment.emotion}`
+                                    : ""}
+                                </span>
+                                <p>
+                                  {avatarDisplaySegment?.type === "flashcard"
+                                    ? avatarDisplaySegment.avatar_line ||
+                                      avatarDisplaySegment.front ||
+                                      "Let's pause for a quick check."
+                                    : avatarDisplaySegment?.text ||
+                                      "Your avatar lesson is ready."}
+                                </p>
+                              </div>
+                            </div>
+
+                            {avatarGeneratingCards && (
+                              <div className="avatar-inline-note">
+                                Preparing flashcards for this lesson...
+                              </div>
+                            )}
+
+                            {avatarDisplaySegment?.type === "flashcard" && (
+                              <div className="avatar-flashcard">
+                                <div className="avatar-flashcard-title">
+                                  {avatarIsMcq
+                                    ? "Quick Check"
+                                    : avatarDisplaySegment.card_title ||
+                                      "Flashcard"}
+                                </div>
+                                {avatarIsMcq ? (
+                                  <>
+                                    <p className="avatar-mcq-question">
+                                      {avatarDisplaySegment.question ||
+                                        "Type the correct option after the audio completes."}
+                                    </p>
+                                    {avatarDisplaySegment.options && (
+                                      <div className="avatar-mcq-options">
+                                        {Object.entries(
+                                          avatarDisplaySegment.options,
+                                        ).map(([key, value]) => (
+                                          <div
+                                            key={key}
+                                            className="avatar-mcq-option"
+                                          >
+                                            <strong>{key}</strong>
+                                            <span>{value}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                    <div className="avatar-answer-row">
+                                      <input
+                                        value={
+                                          avatarMcqAnswers[
+                                            avatarCurrentKey
+                                          ] || ""
+                                        }
+                                        onChange={(event) =>
+                                          setAvatarMcqAnswers((prev) => ({
+                                            ...prev,
+                                            [avatarCurrentKey]:
+                                              event.target.value,
+                                          }))
+                                        }
+                                        disabled={!avatarCanAnswerMcq}
+                                        placeholder={
+                                          avatarStatus === "waiting_flashcard"
+                                            ? "Type A, B, C or D"
+                                            : "Answer unlocks after audio"
+                                        }
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={handleAvatarMcqSubmit}
+                                        disabled={
+                                          !avatarCanAnswerMcq ||
+                                          !avatarMcqAnswers[
+                                            avatarCurrentKey
+                                          ]?.trim()
+                                        }
+                                      >
+                                        Check
+                                      </button>
+                                    </div>
+                                    {avatarMcqFeedback[avatarCurrentKey] && (
+                                      <div
+                                        className={`avatar-feedback ${
+                                          avatarMcqFeedback[avatarCurrentKey]
+                                            .correct
+                                            ? "correct"
+                                            : "wrong"
+                                        }`}
+                                      >
+                                        {avatarMcqFeedback[avatarCurrentKey]
+                                          .correct ? (
+                                          <CheckCircle2 size={18} />
+                                        ) : (
+                                          <AlertCircle size={18} />
+                                        )}
+                                        <div>
+                                          <strong>
+                                            {avatarMcqFeedback[
+                                              avatarCurrentKey
+                                            ].correct
+                                              ? "Excellent"
+                                              : "Review this"}
+                                          </strong>
+                                          <p>
+                                            {
+                                              avatarMcqFeedback[
+                                                avatarCurrentKey
+                                              ].message
+                                            }
+                                          </p>
+                                          {!avatarMcqFeedback[
+                                            avatarCurrentKey
+                                          ].correct &&
+                                            avatarDisplaySegment.option_explanations && (
+                                              <div className="avatar-option-explanations">
+                                                {Object.entries(
+                                                  avatarDisplaySegment.option_explanations,
+                                                ).map(([key, value]) => (
+                                                  <p key={key}>
+                                                    <b>{key}:</b> {value}
+                                                  </p>
+                                                ))}
+                                              </div>
+                                            )}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </>
+                                ) : (
+                                  <p className="avatar-flashcard-front">
+                                    {avatarDisplaySegment.front ||
+                                      "A supporting flashcard is being prepared for this idea."}
+                                  </p>
+                                )}
+                              </div>
+                            )}
+
+                            {avatarClarifications.length > 0 && (
+                              <div className="avatar-clarification">
+                                <strong>Doubt clarification</strong>
+                                {avatarClarifications.map((item, index) => (
+                                  <p key={`${item.text}-${index}`}>
+                                    {item.text}
+                                  </p>
+                                ))}
+                                <button
+                                  type="button"
+                                  onClick={handleAvatarResume}
+                                  disabled={isResumingAvatar}
+                                >
+                                  {isResumingAvatar
+                                    ? "Resuming..."
+                                    : "Resume lesson"}
+                                </button>
+                              </div>
+                            )}
+
+                            {avatarError && (
+                              <div className="avatar-error">{avatarError}</div>
+                            )}
+
+                            <div className="avatar-genius-actions">
+                              <div className="avatar-doubt-box">
+                                <Hand size={15} />
+                                <input
+                                  value={avatarDoubt}
+                                  onChange={(event) =>
+                                    setAvatarDoubt(event.target.value)
+                                  }
+                                  placeholder="Raise hand with a doubt"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={handleAvatarRaiseHand}
+                                  disabled={
+                                    !avatarSessionId ||
+                                    !avatarDoubt.trim() ||
+                                    isRaisingHand
+                                  }
+                                >
+                                  {isRaisingHand ? "Asking..." : "Ask"}
+                                </button>
+                              </div>
+
+                              {avatarStatus === "paused" &&
+                                !avatarClarifications.length && (
+                                  <button
+                                    type="button"
+                                    className="avatar-secondary-btn"
+                                    onClick={() => setAvatarStatus("playing")}
+                                  >
+                                    Continue audio
+                                  </button>
+                                )}
+                              {avatarStatus === "waiting_flashcard" &&
+                                !avatarIsMcq && (
+                                  <button
+                                    type="button"
+                                    className="avatar-primary-btn"
+                                    onClick={advanceAvatarSegment}
+                                  >
+                                    Continue
+                                  </button>
+                                )}
+                              {avatarStatus === "waiting_flashcard" &&
+                                avatarIsMcq &&
+                                avatarMcqFeedback[avatarCurrentKey] && (
+                                  <button
+                                    type="button"
+                                    className="avatar-primary-btn"
+                                    onClick={advanceAvatarSegment}
+                                  >
+                                    Continue
+                                  </button>
+                                )}
+                              {avatarStatus === "completed" && (
+                                <button
+                                  type="button"
+                                  className="avatar-primary-btn"
+                                  onClick={handleAvatarClose}
+                                >
+                                  Done
+                                </button>
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </motion.section>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {/* Context menu */}
+                <AnimatePresence>
+                  {menuPos && (
+                    <ContextMenuFixed
+                      viewportX={menuPos.x}
+                      viewportY={menuPos.y}
+                      selectedText={persistentSelection.current}
+                      onClose={() => setMenuPos(null)}
+                      onHighlight={() => {
+                        setNewHighlightText(persistentSelection.current);
+                        setIsCommentModalOpen(true);
+                        setMenuPos(null);
+                      }}
+                      onAskAI={(prompt, text, label) => {
+                        handleLiveAskAI(prompt, text, label);
+                        setMenuPos(null);
+                      }}
+                    />
+                  )}
+                </AnimatePresence>
+
+                {/* ══ CREATE HIGHLIGHT DIALOG — Word-doc style ══ */}
+                <Dialog
+                  open={isCommentModalOpen}
+                  onOpenChange={(open) => {
+                    if (!open) {
+                      setIsCommentModalOpen(false);
+                      setNewHighlightText("");
+                      if (newCommentRef.current)
+                        newCommentRef.current.value = "";
+                    }
+                  }}
+                >
+                  <DialogContent
+                    className="hl-dialog-content sm:max-w-[480px] p-0 overflow-hidden border-0 shadow-2xl"
+                    style={{
+                      background:
+                        "linear-gradient(145deg,#1e1b4b 0%,#0f172a 100%)",
+                      border: "1px solid rgba(139,92,246,.28)",
+                      borderRadius: 20,
+                      zIndex: 100000,
+                    }}
+                  >
+                    {/* Header */}
+                    <DialogHeader
+                      style={{
+                        padding: "20px 24px 16px",
+                        borderBottom: "1px solid rgba(139,92,246,.15)",
+                      }}
+                    >
+                      <DialogTitle
+                        style={{
+                          fontSize: 17,
+                          fontWeight: 800,
+                          background: "linear-gradient(135deg,#a78bfa,#f472b6)",
+                          WebkitBackgroundClip: "text",
+                          WebkitTextFillColor: "transparent",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          fontFamily: "'Plus Jakarta Sans',system-ui",
+                        }}
+                      >
+                        <HighlighterIcon
+                          size={15}
+                          style={{ color: "#a78bfa" }}
+                        />
+                        Create Highlight
+                      </DialogTitle>
+                      <DialogDescription
+                        style={{
+                          fontSize: 12,
+                          color: "rgba(167,139,250,.6)",
+                          marginTop: 4,
+                          fontFamily: "'Plus Jakarta Sans',system-ui",
+                        }}
+                      >
+                        Choose a color, add a note, then save.
+                      </DialogDescription>
+                    </DialogHeader>
+
+                    <div
+                      style={{
+                        padding: "16px 24px 20px",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 16,
+                      }}
+                    >
+                      {/* ── Selected text preview ── */}
+                      <div>
+                        <div className="hl-label">
+                          <HighlighterIcon
+                            size={11}
+                            style={{ color: "#a78bfa" }}
+                          />
+                          Selected text
+                        </div>
+                        <div
+                          className="hl-quote-scroll"
+                          style={{
+                            borderLeft: `3px solid ${getHlColor(newHlColor).mark}`,
+                            background: getHlColor(newHlColor).bg.replace(
+                              ".35",
+                              ".12",
+                            ),
+                          }}
+                        >
+                          "{newHighlightText}"
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 10,
+                            color: "rgba(148,163,184,.45)",
+                            marginTop: 4,
+                            textAlign: "right",
+                            fontFamily: "'Plus Jakarta Sans',system-ui",
+                          }}
+                        >
+                          {newHighlightText.length} characters
+                        </div>
+                      </div>
+
+                      {/* ── Color picker ── */}
+                      <div>
+                        <div className="hl-label">
+                          <span style={{ fontSize: 12 }}>🎨</span>
+                          Highlight color
+                        </div>
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 8,
+                            flexWrap: "wrap",
+                            alignItems: "center",
+                          }}
+                        >
+                          {HL_COLORS.map((c) => (
+                            <button
+                              key={c.id}
+                              title={c.label}
+                              onClick={() => setNewHlColor(c.id)}
+                              style={{
+                                width: 30,
+                                height: 30,
+                                borderRadius: 9,
+                                border: "none",
+                                cursor: "pointer",
+                                background: c.mark,
+                                outline:
+                                  newHlColor === c.id
+                                    ? "3px solid #fff"
+                                    : "2px solid transparent",
+                                outlineOffset: 2,
+                                boxShadow:
+                                  newHlColor === c.id
+                                    ? `0 0 0 5px rgba(139,92,246,.45), 0 4px 10px rgba(0,0,0,.3)`
+                                    : "0 2px 6px rgba(0,0,0,.2)",
+                                transform:
+                                  newHlColor === c.id
+                                    ? "scale(1.22)"
+                                    : "scale(1)",
+                                transition: "all .15s cubic-bezier(.4,0,.2,1)",
+                                position: "relative",
+                              }}
+                            >
+                              {newHlColor === c.id && (
+                                <span
+                                  style={{
+                                    position: "absolute",
+                                    inset: 0,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    fontSize: 14,
+                                    lineHeight: 1,
+                                    pointerEvents: "none",
+                                  }}
+                                >
+                                  ✓
+                                </span>
+                              )}
+                            </button>
+                          ))}
+                          <span
+                            style={{
+                              fontSize: 11.5,
+                              color: "rgba(167,139,250,.6)",
+                              fontWeight: 600,
+                              marginLeft: 4,
+                              fontFamily: "'Plus Jakarta Sans',system-ui",
+                            }}
+                          >
+                            {getHlColor(newHlColor).label}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* ── Note textarea ── */}
+                      <div>
+                        <div className="hl-label">
+                          <span style={{ fontSize: 12 }}>📝</span>
+                          Your note (optional)
+                        </div>
+                        <textarea
+                          ref={newCommentRef}
+                          className="hl-textarea"
+                          placeholder="Why is this passage important to you…?"
+                        />
+                      </div>
+
+                      {/* ── Action buttons ── */}
+                      <div style={{ display: "flex", gap: 10 }}>
+                        <button
+                          className="hl-btn-cancel"
+                          style={{ marginLeft: 0 }}
+                          onClick={() => {
+                            setIsCommentModalOpen(false);
+                            setNewHighlightText("");
+                            if (newCommentRef.current)
+                              newCommentRef.current.value = "";
+                          }}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          className="hl-btn-save"
+                          style={{
+                            flex: 1,
+                            background: `linear-gradient(135deg,${getHlColor(newHlColor).border.replace(".7", "1")},${getHlColor(newHlColor).mark})`,
+                          }}
+                          onClick={() => {
+                            const raw = newHighlightText;
+                            if (!raw.trim()) return;
+                            const color = newHlColor;
+                            const savedSelectionPieces =
+                              persistentHighlightPieces.current
+                                .map((piece) => piece.replace(/\s+/g, " ").trim())
+                                .filter((piece) => piece.length >= 3);
+
+                            // Split multi-paragraph selections per paragraph.
+                            // Goal: save smaller highlight fragments that actually exist in each
+                            // paragraph node text, while being robust to whitespace/newlines.
+                            const readableNodes = Array.from(
+                              document.querySelectorAll(
+                                ".bk-page-inner .reader-paragraph, .bk-page-inner .reader-list-item",
+                              ),
+                            ) as HTMLElement[];
+
+                            const collapseWS = (s: string) =>
+                              s.replace(/\s+/g, " ").trim();
+
+                            const normRaw = collapseWS(raw);
+                            const pieces: { text: string }[] =
+                              savedSelectionPieces.length > 0
+                                ? savedSelectionPieces.map((text) => ({ text }))
+                                : [];
+
+                            // remaining is the normalized selection content still not assigned to a paragraph
+                            let remaining = normRaw;
+                            let matchedAnyNode = false;
+
+                            for (const para of readableNodes) {
+                              if (pieces.length > 0) break;
+                              const paraTextNorm = collapseWS(
+                                para.textContent || "",
+                              );
+                              if (!paraTextNorm) continue;
+                              if (!remaining) break;
+
+                              // Find the best prefix of `remaining` that exists somewhere in this paragraph.
+                              // Prefer longer matches first.
+                              let found = "";
+                              const maxLen = Math.min(
+                                remaining.length,
+                                paraTextNorm.length,
+                              );
+
+                              for (let len = maxLen; len >= 5; len--) {
+                                const candidate = remaining.slice(0, len);
+                                if (candidate.length < 5) continue;
+                                if (paraTextNorm.includes(candidate)) {
+                                  found = candidate;
+                                  break;
+                                }
+                              }
+
+                              if (!found) {
+                                if (matchedAnyNode) break;
+                                continue;
+                              }
+
+                              matchedAnyNode = true;
+                              pieces.push({ text: found });
+                              remaining = remaining
+                                .slice(found.length)
+                                .replace(/^\s+/, "");
+                            }
+
+                            const toSave =
+                              pieces.length > 0
+                                ? pieces
+                                : [{ text: collapseWS(raw) }];
+
+                            setHighlights((prev) => [
+                              ...prev,
+                              ...toSave.map((p) => ({
+                                id: `h-${Date.now()}-${Math.random()
+                                  .toString(36)
+                                  .slice(2, 6)}`,
+                                text: p.text,
+                                comment: newCommentRef.current?.value || "",
+                                color,
+                              })),
+                            ]);
+                            setIsCommentModalOpen(false);
+                            setNewHighlightText("");
+                            if (newCommentRef.current)
+                              newCommentRef.current.value = "";
+                          }}
+                        >
+                          Highlight ✦
+                        </button>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+
+                {!displayChapter?.isUnitIntro && (
+                  <>
+
+                    <button
+                      className={`bk-page-arrow bk-page-arrow-left ${!hasPrevSpread ? "disabled" : ""}`}
+                      onClick={() => hasPrevSpread && goSpread(-1)}
+                      disabled={!hasPrevSpread}
+                      title="Previous page"
+                      aria-label="Previous page"
+                    >
+                      <ChevronLeft size={22} />
+                    </button>
+                    <button
+                      className={`bk-page-arrow bk-page-arrow-right ${!hasNextSpread ? "disabled" : ""}`}
+                      onClick={() => hasNextSpread && goSpread(1)}
+                      disabled={!hasNextSpread}
+                      title="Next page"
+                      aria-label="Next page"
+                    >
+                      <ChevronRight size={22} />
+                    </button>
+                  </>
+                )}
+
+                <div className="book-container-wrapper">
+                  {displayChapter && (
+                    <div
+                      className={`book-spread ${isFlipping ? `flipping-${direction}` : ""}`}
+                    >
+                      <div className="book-sheet book-sheet-paged">
+
+                        {/* ── TOP HEADER BAR ── */}
+                        <div className="bk-topbar no-select">
+                          <div className="bk-topbar-breadcrumb">
+                            <span className="bk-topbar-book-title">{selectedBook?.title}</span>
+                            <span className="bk-topbar-separator">/</span>
+                            <span className="bk-topbar-chapter-title">
+                              {activeUnitTitle || displayChapter?.title || "Chapter"}
+                            </span>
+                          </div>
+                          <div className="bk-topbar-page-badge">
+                            Page {activeSpread.left.pageNumber} of {readerPages.length}
+                          </div>
+                        </div>
+
+                        {/* ── CHAPTER TITLE — first column, non-selectable ── */}
+
+                        {/* ── UNIT INTRO ── */}
+                        {displayChapter.isUnitIntro && (
+                          <div className="bk-unit-intro no-select">
+                            <div className="bk-unit-num">
+                              {String(displayChapter.unit).padStart(2, "0")}
+                            </div>
+                            <div className="bk-unit-label">
+                              Unit {displayChapter.unit}
+                            </div>
+                            <div className="bk-unit-name">
+                              {getUnitTitle(
+                                displayChapter.realChapter || displayChapter,
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* ── BODY TEXT — single focused page document reader ── */}
+                        {!displayChapter.isUnitIntro && (
+                          <div
+                            className="bk-pages-shell single"
+                            style={{ opacity: isFlipping ? 0.35 : 1 }}
+                          >
+                            {renderReaderPage(
+                              activeSpread.left,
+                              "left",
+                              safeSpreadIndex === 0,
+                            )}
+                          </div>
+                        )}
+
+                        {/* ── BOTTOM FOOTER BAR ── */}
+                        <div className="bk-footer no-select">
+                          <span className="bk-footer-left">
+                            {selectedBook?.subject}
+                          </span>
+                          <span className="bk-footer-right">
+                            {displayChapter?.isUnitIntro
+                              ? `Chapter ${currentChIdx + 1} of ${allChapters.length}`
+                              : `Page ${activeSpread.left.pageNumber} of ${readerPages.length}`}
+                          </span>
+                        </div>
+                      </div>
+                      {/* /book-sheet */}
+                    </div>
+                  )}
+                </div>
+
+                {/* ── UNIFIED READER BOTTOM NAVIGATION DOCK ── */}
+                {!displayChapter?.isUnitIntro ? (
+                  <div className="rb-bottombar no-select">
+                    <div className="rb-bb-left">
+                      <button
+                        className="rb-bb-btn"
+                        onClick={() => setIsSidebarOpen(true)}
+                        title="Open Table of Contents"
+                      >
+                        📚 Contents
+                      </button>
+                      {hasPrev && (
+                        <button
+                          className="rb-bb-btn"
+                          onClick={() => goChapter(-1)}
+                          title={`Previous Chapter: ${allChapters[currentChIdx - 1]?.title ?? ""}`}
+                        >
+                          ⏮ Prev Chapter
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="rb-bb-center">
+                      <button
+                        className={`bk-nav-btn bk-nav-prev ${!hasPrevSpread ? "disabled" : ""}`}
+                        onClick={() => hasPrevSpread && goSpread(-1)}
+                        disabled={!hasPrevSpread}
+                        title="Previous Page"
+                      >
+                        <ChevronLeft size={16} />
+                        <span>Previous</span>
+                      </button>
+
+                      <div className="rb-bb-page-indicator">
+                        <span className="rb-bb-page-text">
+                          Page <strong>{activeSpread.left.pageNumber}</strong> of {readerPages.length}
+                        </span>
+                        <div className="bk-nav-dots">
+                          {readerSpreads.slice(0, 8).map((_, i: number) => (
+                            <button
+                              key={`spread-${i}`}
+                              className={`bk-nav-dot ${i === safeSpreadIndex ? "active" : ""}`}
+                              onClick={() => {
+                                setDirection(i >= safeSpreadIndex ? "next" : "prev");
+                                setCurrentSpreadIndex(i);
+                                setDisplaySpreadIndex(i);
+                              }}
+                              title={`Go to page ${i + 1}`}
+                            />
+                          ))}
+                          {readerSpreads.length > 8 && (
+                            <span className="bk-nav-more">+{readerSpreads.length - 8}</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <button
+                        className={`bk-nav-btn bk-nav-next primary ${!hasNextSpread ? "disabled" : ""}`}
+                        onClick={() => hasNextSpread && goSpread(1)}
+                        disabled={!hasNextSpread}
+                        title="Next Page"
+                      >
+                        <span>Next</span>
+                        <ChevronRight size={16} />
+                      </button>
+                    </div>
+
+                    <div className="rb-bb-right">
+                      {hasNext ? (
+                        <button
+                          className="rb-bb-btn"
+                          onClick={() => goChapter(1)}
+                          title={`Next Chapter: ${allChapters[currentChIdx + 1]?.title ?? ""}`}
+                        >
+                          Next Chapter ⏭
+                        </button>
+                      ) : (
+                        <div className="rb-bb-chapter-chip">
+                          Ch {currentChIdx + 1}/{allChapters.length}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bk-nav-row">
+                    <button
+                      className={`bk-nav-btn bk-nav-prev ${!hasPrev ? "disabled" : ""}`}
+                      onClick={() => hasPrev && goChapter(-1)}
+                      disabled={!hasPrev}
+                    >
+                      <ChevronLeft size={18} />
+                      <span>
+                        {hasPrev
+                          ? (allChapters[currentChIdx - 1]?.title ?? "Previous")
+                          : "First Chapter"}
+                      </span>
+                    </button>
+                    <button
+                      className={`bk-nav-btn bk-nav-next ${!hasNext ? "disabled" : ""}`}
+                      onClick={() => hasNext && goChapter(1)}
+                      disabled={!hasNext}
+                    >
+                      <span>
+                        {hasNext
+                          ? (allChapters[currentChIdx + 1]?.title ?? "Next")
+                          : "Last Chapter"}
+                      </span>
+                      <ChevronRight size={18} />
+                    </button>
+                  </div>
+                )}
+
+                {/* Tip bar */}
+                <div className="reader-tip-bar">
+                  <Zap size={11} className="tip-bar-icon" />
+                  <span>
+                    Select any text to highlight · explain · summarize · ask AI
+                  </span>
+                </div>
+              </div>
+            </main>
+
+            {/* Ask AI desktop panel */}
+            <AnimatePresence>
+              {isAiPanelOpen && (
+                <>
+                  <motion.aside
+                    key="ai-panel-desktop"
+                    initial={{ width: 0, opacity: 0 }}
+                    animate={{ width: 360, opacity: 1 }}
+                    exit={{ width: 0, opacity: 0 }}
+                    transition={{ duration: 0.28, ease: "easeInOut" }}
+                    className="ai-panel-desktop glass"
+                    style={{ minWidth: 0, overflow: "hidden" }}
+                  >
+                    <AskAIPanel
+                      messages={aiMessages}
+                      isLoading={aiLoading}
+                      pendingTag={pendingTag}
+                      inputValue={aiInput}
+                      bookTitle={selectedBook?.title || ""}
+                      chapterTitle={activeChapter?.title || ""}
+                      onSend={(text) => handleLiveAskAI(text, text, "Ask AI")}
+                      setInputValue={setAiInput}
+                      onTagDismiss={() => setPendingTag(null)}
+                      onClose={() => setIsAiPanelOpen(false)}
+                    />
+                  </motion.aside>
+
+                  <motion.div
+                    key="ai-panel-mobile"
+                    initial={{ y: "100%", opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    exit={{ y: "100%", opacity: 0 }}
+                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                    className="ai-panel-mobile glass"
+                  >
+                    <AskAIPanel
+                      messages={aiMessages}
+                      isLoading={aiLoading}
+                      pendingTag={pendingTag}
+                      inputValue={aiInput}
+                      bookTitle={selectedBook?.title || ""}
+                      chapterTitle={activeChapter?.title || ""}
+                      onSend={(text) => handleLiveAskAI(text, text, "Ask AI")}
+                      setInputValue={setAiInput}
+                      onTagDismiss={() => setPendingTag(null)}
+                      onClose={() => setIsAiPanelOpen(false)}
+                    />
+                  </motion.div>
+                </>
+              )}
+            </AnimatePresence>
+
+            {selectedBook && !isTocView && (
+              <AnimatePresence>
+                {isReadingAloud ? (
+                  <motion.aside
+                    key="teacher-companion-dock"
+                    initial={{ opacity: 0, y: 40, scale: 0.92 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 40, scale: 0.92 }}
+                    transition={{ duration: 0.3, ease: "easeOut" }}
+                    className="teacher-companion-dock"
+                    aria-label="Interactive Teacher Companion"
+                  >
+                    {/* Live speech bubble above teacher */}
+                    <div className="teacher-dock-bubble">
+                      <div className="teacher-dock-bubble-top">
+                        <span className="teacher-dock-avatar-name">
+                          {readAloudAvatar === "female" ? "Teacher Sarah" : "Teacher David"}
+                        </span>
+                        <div className="teacher-audio-bars">
+                          <span className={`audio-bar ${isTtsPaused ? "paused" : ""}`} />
+                          <span className={`audio-bar ${isTtsPaused ? "paused" : ""}`} />
+                          <span className={`audio-bar ${isTtsPaused ? "paused" : ""}`} />
+                          <span className={`audio-bar ${isTtsPaused ? "paused" : ""}`} />
+                        </div>
+                      </div>
+                      <div className="teacher-dock-bubble-text">
+                        {isTtsPaused ? (
+                          <span className="teacher-status-paused">Paused</span>
+                        ) : activeSpokenWord?.word ? (
+                          <span className="teacher-status-word">
+                            "{activeSpokenWord.word}"
+                          </span>
+                        ) : (
+                          <span className="teacher-status-reading">Reading page... 📖</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Teacher figure pointing at book */}
+                    <div className="teacher-dock-figure-wrap">
+                      <img
+                        src={readAloudAvatar === "male" ? maleTeacherGif : femaleTeacherGif}
+                        alt={readAloudAvatar === "male" ? "Male Teacher pointer" : "Female Teacher pointer"}
+                        className="teacher-dock-gif"
+                      />
+                    </div>
+
+                    {/* Interactive Teacher Controls */}
+                    <div className="teacher-dock-controls">
+                      <button
+                        type="button"
+                        className="teacher-ctrl-btn teacher-ctrl-primary"
+                        onClick={handlePauseResumeReadAloud}
+                        title={isTtsPaused ? "Resume Reading" : "Pause Reading"}
+                        aria-label={isTtsPaused ? "Resume Reading" : "Pause Reading"}
+                      >
+                        {isTtsPaused ? <Play size={13} /> : <Pause size={13} />}
+                        <span>{isTtsPaused ? "Resume" : "Pause"}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className="teacher-ctrl-btn"
+                        onClick={cycleTtsSpeed}
+                        title={`Speed: ${ttsRate}x (Click to change)`}
+                        aria-label={`Reading speed ${ttsRate}x`}
+                      >
+                        <span>{ttsRate}x</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className="teacher-ctrl-btn"
+                        onClick={() => handleSwitchReadAloudAvatar(readAloudAvatar === "male" ? "female" : "male")}
+                        title={`Switch to ${readAloudAvatar === "male" ? "Female" : "Male"} Teacher`}
+                        aria-label="Switch Teacher Voice"
+                      >
+                        <span>{readAloudAvatar === "male" ? "👩‍🏫" : "👨‍🏫"}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className="teacher-ctrl-btn teacher-ctrl-stop"
+                        onClick={toggleReadAloud}
+                        title="Stop Reading"
+                        aria-label="Stop Reading"
+                      >
+                        <VolumeX size={14} />
+                      </button>
+                    </div>
+                  </motion.aside>
+                ) : (
+                  <motion.div
+                    key="rb-avatar-wrap"
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    className="rb-avatar-wrap"
+                  >
+                    <div className="rb-avatar-bubble">
+                      Tap me to read this page aloud!
+                    </div>
+                    <button
+                      className="rb-avatar-btn"
+                      onClick={toggleReadAloud}
+                      title="Read this page aloud"
+                      aria-label="Read this page aloud"
+                    >
+                      <img src={studyRoboImg} alt="Read aloud robot" />
+                      <span className="rb-avatar-badge">▶️</span>
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            )}
+
+            {/* Explain/Summarize panel */}
+            <AnimatePresence>
+              {isExplainPanelOpen && explainData && (
+                <ExplainSummarizePanel
+                  title={explainData.title}
+                  content={explainData.content}
+                  selectedText={explainData.selectedText}
+                  isLoading={isExplainLoading}
+                  onClose={() => setIsExplainPanelOpen(false)}
+                />
+              )}
+            </AnimatePresence>
+          </div>
+
+          {isEnhancing && (
+            <div className="overlay blur">
+              <FunnyLoader />
+            </div>
+          )}
+
+          {/* Quiz modal */}
+          {isQuizOpen && (
+            <div className="overlay">
+              <div className="modal glass animate-pop">
+                <h2>Knowledge Check</h2>
+                <p>{QUIZ_DATA[activeChapter?.id]?.q}</p>
+                <div className="opt-list">
+                  {QUIZ_DATA[activeChapter?.id]?.opts.map((o, i) => (
+                    <button
+                      key={i}
+                      className="opt-btn"
+                      onClick={() => {
+                        const isCorrect = i === QUIZ_DATA[activeChapter.id].a;
+                        if (isCorrect) {
+                          triggerToast("✅ Correct! Excellent understanding.");
+                          setIsQuizOpen(false);
+                        } else
+                          triggerToast(
+                            "❌ Incorrect. Review the chapter text!",
+                          );
+                      }}
+                    >
+                      {o}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Session summary */}
+          {isSummaryOpen && (
+            <div className="overlay">
+              <div className="modal glass animate-pop">
+                <div className="modal-close-row">
+                  <button
+                    className="modal-x-btn"
+                    onClick={() => setIsSummaryOpen(false)}
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+                <div className="medal">🏆</div>
+                <h2>Session Complete</h2>
+                <div className="stats">
+                  <div>
+                    <strong>{formatTime(timer)}</strong>
+                    <br />
+                    <small>Time Read</small>
+                  </div>
+                </div>
+                <button
+                  className="btn-premium full"
+                  onClick={() => {
+                    if (isReadingAloud) window.speechSynthesis?.cancel();
+                    setIsReadingAloud(false);
+                    setIsBookReaderOpen(false);
+                    setIsTocView(true);
+                    setIsSummaryOpen(false);
+                    setTimer(0);
+                    setDisplayChapter(null);
+                    clearReaderState();
+                  }}
+                >
+                  Finish & Return to Units
+                </button>
+              </div>
+            </div>
+          )}
+        </motion.div>
+      </AnimatePresence>
+
+      <style>{libStyles + readerStyles}</style>
+      {toast && (
+        <div className={`toast-notification ${toast.type} animate-pop`}>
+          {toast.msg}
+        </div>
+      )}
+
+      {/* ══ INLINE HIGHLIGHTER — Edit / Delete modal ══ */}
+      {editingHighlight && (
+        <Dialog
+          open={!!editingHighlight}
+          onOpenChange={(open) => !open && setEditingHighlight(null)}
+        >
+          <DialogContent
+            className="hl-dialog-content sm:max-w-[480px] p-0 overflow-hidden border-0 shadow-2xl"
+            style={{
+              background: "linear-gradient(145deg,#1e1b4b 0%,#0f172a 100%)",
+              border: "1px solid rgba(139,92,246,.28)",
+              borderRadius: 20,
+              zIndex: 100000,
+            }}
+          >
+            {/* Header */}
+            <DialogHeader
+              style={{
+                padding: "20px 24px 16px",
+                borderBottom: "1px solid rgba(139,92,246,.15)",
+              }}
+            >
+              <DialogTitle
+                style={{
+                  fontSize: 17,
+                  fontWeight: 800,
+                  background: "linear-gradient(135deg,#a78bfa,#f472b6)",
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                <Edit3 size={16} style={{ color: "#a78bfa" }} />
+                Edit Highlight
+              </DialogTitle>
+              <DialogDescription
+                style={{
+                  fontSize: 12,
+                  color: "rgba(167,139,250,.6)",
+                  marginTop: 4,
+                }}
+              >
+                Change color, update your note, or delete this highlight.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div
+              style={{
+                padding: "16px 24px 20px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 16,
+              }}
+            >
+              {/* Highlighted text preview */}
+              <div>
+                <div className="hl-label">
+                  <span style={{ fontSize: 12 }}>✏️</span> Highlighted text
+                </div>
+                <div className="hl-quote-scroll">"{editingHighlight.text}"</div>
+                <div
+                  style={{
+                    fontSize: 10,
+                    color: "rgba(148,163,184,.45)",
+                    marginTop: 4,
+                    textAlign: "right",
+                  }}
+                >
+                  {editingHighlight.text.length} characters
+                </div>
+              </div>
+
+              {/* Color picker */}
+              <div>
+                <div className="hl-label">
+                  <span style={{ fontSize: 12 }}>🎨</span> Highlight color
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {HL_COLORS.map((c) => (
+                    <button
+                      key={c.id}
+                      title={c.label}
+                      onClick={() => setEditedColor(c.id)}
+                      style={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: 8,
+                        border: "none",
+                        cursor: "pointer",
+                        background: c.mark,
+                        outline:
+                          editedColor === c.id
+                            ? "3px solid #fff"
+                            : "2px solid transparent",
+                        outlineOffset: 2,
+                        boxShadow:
+                          editedColor === c.id
+                            ? "0 0 0 5px rgba(139,92,246,.5)"
+                            : "none",
+                        transition: "all .15s",
+                        transform:
+                          editedColor === c.id ? "scale(1.2)" : "scale(1)",
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* Note textarea */}
+              <div>
+                <div className="hl-label">
+                  <span style={{ fontSize: 12 }}>📝</span> Your note (optional)
+                </div>
+                <textarea
+                  className="hl-textarea"
+                  value={editedComment}
+                  onChange={(e) => setEditedComment(e.target.value)}
+                  placeholder="Why is this passage important to you…?"
+                />
+              </div>
+
+              {/* Buttons */}
+              <div className="hl-footer">
+                <button
+                  className="hl-btn-delete"
+                  onClick={() => {
+                    setHighlights((prev) =>
+                      prev.filter((h) => h.id !== editingHighlight.id),
+                    );
+                    setEditingHighlight(null);
+                  }}
+                >
+                  <Trash2 size={13} /> Delete
+                </button>
+                <button
+                  className="hl-btn-cancel"
+                  onClick={() => setEditingHighlight(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="hl-btn-save"
+                  onClick={() => {
+                    setHighlights((prev) =>
+                      prev.map((h) =>
+                        h.id === editingHighlight.id
+                          ? { ...h, comment: editedComment, color: editedColor }
+                          : h,
+                      ),
+                    );
+                    setEditingHighlight(null);
+                  }}
+                >
+                  Save Changes ✦
+                </button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
+  );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // ── INTERACTIVE SLIDES LESSON ────────────────────────────────────────────────
   // ══════════════════════════════════════════════════════════════════════════════
   return (
     <SlideContainer
@@ -7773,14 +9510,15 @@ const BookContentWindowRewamp = () => {
       onBackToUnits={() => {
         setActiveChapter(null);
         setIsTocView(true);
+        setIsBookReaderOpen(false);
       }}
       onBackToLibrary={() => {
-        setActiveChapter(null);
-        setIsTocView(true);
+        openBookReader(activeChapter);
       }}
       onLessonFinish={() => {
         setIsTocView(true);
         setActiveChapter(null);
+        setIsBookReaderOpen(false);
         pushToast({
           title: "Unit Completed! 🎉",
           description: `Great job completing ${activeChapter?.unitTitle || activeChapter?.title || "this unit"}!`,
@@ -8445,7 +10183,6 @@ const readerStyles = `
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
 :root {
   --bg-app:#fcfcfd; --text-main:#0f172a; --text-muted:#64748b;
-  --text:#0f172a; --bg-panel2:#f8fafc;
   --card-bg:rgba(255,255,255,0.8); --border:#f1f5f9; --accent:#6366f1;
   --shadow:0 10px 30px -10px rgba(0,0,0,0.04);
   --book-bg:#fff; --book-page-bg-left:#fdfdfd; --book-page-bg-right:#ffffff;
@@ -8458,7 +10195,6 @@ const readerStyles = `
 }
 .dark {
   --bg-app:#050816; --text-main:#f8fafc; --text-muted:#cbd5e1;
-  --text:#f8fafc; --bg-panel2:#162040;
   --card-bg:rgba(30,41,59,0.92); --border:rgba(226,232,240,.16);
   --shadow:0 10px 40px -15px rgba(0,0,0,0.4);
   --book-bg:#111827; --book-page-bg-left:#111827; --book-page-bg-right:#0f172a;
@@ -8858,7 +10594,7 @@ const readerStyles = `
   position: absolute;
   inset: 1px;
   border-radius: inherit;
-  background: linear-gradient(120deg, transparent 0%, rgba(255,250,226,.32) 35%, rgba(245,158,11,.12) 52%, transparent 70%);
+  background: linear-gradient(120deg, transparent 0%, rgba(255,255,255,.22) 35%, transparent 62%);
   transform: translateX(-120%);
   animation: geniusShine 4.2s ease-in-out infinite;
   pointer-events: none;
@@ -8947,11 +10683,8 @@ const readerStyles = `
   border-color: rgba(129,140,248,.2);
 }
 @keyframes geniusShine {
-  from { transform: translateX(-120%); }
-  to { transform: translateX(120%); }
-}
-.dark .bk-float-genius::after {
-  background: linear-gradient(120deg, transparent 0%, rgba(255,255,255,.22) 35%, transparent 62%);
+  0%, 56% { transform: translateX(-120%); }
+  72%, 100% { transform: translateX(120%); }
 }
 
 .bk-page-arrow {
@@ -9401,12 +11134,12 @@ mark.reader-highlight:hover { filter: brightness(1.15); }
 .dark .reader-list,
 .dark .reader-list li,
 .dark .reader-formula {
-  color:#ffff;
+  color:#fff;
 }
 .dark .reader-h1,
 .dark .bk-ch-title,
 .dark .bk-unit-label {
-  color:#ffff;
+  color:#fff;
 }
 .dark .reader-h2,
 .dark .reader-h3 {
@@ -11592,559 +13325,3 @@ mark.reader-highlight:hover { filter: brightness(1.15); }
 `;
 
 export default BookContentWindowRewamp;
-
-// function openEnhancedView(
-//   content: string,
-//   title: string,
-//   subject: string,
-//   chapterId: any,
-//   bookId: string,
-//   isDark: boolean,
-// ) {
-//   // ── 1. Strip HTML, normalise whitespace ──────────────────────────────────
-//   const cleanContent = content
-//     .replace(/<\/p>/gi,   "\n")
-//     .replace(/<br\s*\/?>/gi, "\n")
-//     .replace(/<\/li>/gi, "\n")
-//     .replace(/<li[^>]*>/gi, "- ")
-//     .replace(/<\/h[1-6]>/gi, "\n")
-//     .replace(/<h([1-6])[^>]*>/gi, (_m: string, n: string) => "#".repeat(Number(n)) + " ")
-//     .replace(/<[^>]*>/g, "")
-//     .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-//     .replace(/&nbsp;/g, " ").replace(/&#39;/g, "'").replace(/&quot;/g, '"')
-//     .replace(/\n{3,}/g, "\n\n")
-//     .trim();
-
-//   // ── 2. Escape for JSON / JS string embedding ────────────────────────────
-//   const safeContent = cleanContent
-//     .replace(/\\/g, "\\\\")
-//     .replace(/`/g, "\\`")
-//     .replace(/\$/g, "\\$");
-
-//   const safeTitle   = title.replace(/\\/g, "\\\\").replace(/`/g, "\\`");
-//   const safeSubject = subject.replace(/\\/g, "\\\\").replace(/`/g, "\\`");
-
-//   // ── 3. Build the full HTML (Sample 1 — Indigo Cosmos theme) ─────────────
-//   const html = `<!DOCTYPE html>
-// <html lang="en" data-theme="${isDark ? "dark" : "light"}">
-// <head>
-// <meta charset="UTF-8">
-// <meta name="viewport" content="width=device-width, initial-scale=1.0">
-// <title>AI Enhanced Reader | ${title}</title>
-// <link rel="preconnect" href="https://fonts.googleapis.com">
-// <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Crimson+Pro:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
-// <style>
-// *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-// :root{
-//   --bg-app:#f0f4f8;--bg-panel:#ffffff;--bg-panel2:#fafafa;
-//   --border:rgba(0,0,0,0.06);--border2:#e8edf3;
-//   --text-main:#0f172a;--text-sub:#64748b;--text-muted:#94a3b8;
-//   --shadow:0 2px 12px rgba(0,0,0,.06);--shadow2:0 12px 40px rgba(0,0,0,.12);
-//   --shadow3:0 32px 80px rgba(0,0,0,.18);
-//   --indigo:#6366f1;--indigo-d:#4f46e5;--indigo-l:#8b5cf6;
-//   --green:#10b981;--amber:#f59e0b;--pink:#ec4899;
-//   --prog-bg:#e8edf3;--hl-bg:rgba(99,102,241,0.14);--hl-border:#6366f1;
-//   --book-shadow:0 40px 100px rgba(99,102,241,.12),0 20px 60px rgba(0,0,0,.16);
-//   --page-shadow:inset -4px 0 12px rgba(0,0,0,.06);
-// }
-// [data-theme="dark"]{
-//   --bg-app:#060d1f;--bg-panel:#0f1c35;--bg-panel2:#162040;
-//   --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.08);
-//   --text-main:#f1f5f9;--text-sub:#94a3b8;--text-muted:#4e6284;
-//   --shadow:0 2px 16px rgba(0,0,0,.4);--shadow2:0 12px 40px rgba(0,0,0,.55);
-//   --shadow3:0 32px 80px rgba(0,0,0,.7);
-//   --book-shadow:0 40px 100px rgba(99,102,241,.22),0 20px 60px rgba(0,0,0,.5);
-//   --page-shadow:inset -4px 0 16px rgba(0,0,0,.2);
-//   --prog-bg:rgba(255,255,255,0.07);
-//   --hl-bg:rgba(99,102,241,0.22);--hl-border:#a5b4fc;
-// }
-// html,body{font-family:'Plus Jakarta Sans',system-ui,sans-serif;background:var(--bg-app);min-height:100vh;color:var(--text-main);transition:background .35s,color .35s;overflow-x:hidden;}
-// /* NAV */
-// .ev-top-nav{position:fixed;top:0;left:0;right:0;height:56px;z-index:1000;display:flex;align-items:center;justify-content:space-between;padding:0 24px;background:var(--bg-panel);border-bottom:1px solid var(--border2);box-shadow:var(--shadow);transition:background .35s,border-color .35s;}
-// @media(max-width:480px){.ev-top-nav{padding:0 12px;}}
-// .nav-left{display:flex;align-items:center;gap:10px;}
-// .nav-logo{width:34px;height:34px;border-radius:10px;flex-shrink:0;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:16px;}
-// .nav-brand{line-height:1;}
-// .nav-brand-name{font-size:13px;font-weight:800;color:var(--text-main);letter-spacing:-.2px;}
-// .nav-brand-sub{font-size:10px;font-weight:500;color:var(--text-muted);margin-top:1px;}
-// .nav-sep{width:1px;height:26px;background:var(--border2);}
-// @media(max-width:500px){.nav-sep,.nav-brand-sub{display:none;}}
-// .nav-pill{padding:4px 12px;border-radius:20px;font-size:10.5px;font-weight:700;background:rgba(99,102,241,.1);color:#6366f1;border:1px solid rgba(99,102,241,.2);white-space:nowrap;}
-// [data-theme="dark"] .nav-pill{background:rgba(99,102,241,.2);color:#a5b4fc;border-color:rgba(99,102,241,.35);}
-// @media(max-width:420px){.nav-pill{display:none;}}
-// .nav-right{display:flex;align-items:center;gap:8px;}
-// .nav-pg-pill{display:flex;align-items:center;gap:5px;padding:4px 11px;border-radius:20px;font-size:11px;font-weight:700;background:var(--bg-panel2);border:1px solid var(--border2);color:var(--text-sub);}
-// .pg-dot{width:6px;height:6px;border-radius:50%;background:var(--indigo);animation:pgpulse 2s ease-in-out infinite;}
-// @keyframes pgpulse{0%,100%{opacity:.35}50%{opacity:1}}
-// @media(max-width:520px){.nav-pg-pill{display:none;}}
-// .hl-btn{display:flex;align-items:center;gap:5px;padding:5px 12px;border-radius:20px;font-size:11px;font-weight:700;background:rgba(99,102,241,.09);border:1px solid rgba(99,102,241,.2);color:#6366f1;cursor:pointer;transition:all .2s;}
-// .hl-btn:hover{background:rgba(99,102,241,.18);transform:translateY(-1px);}
-// [data-theme="dark"] .hl-btn{background:rgba(99,102,241,.18);color:#a5b4fc;border-color:rgba(99,102,241,.3);}
-// @media(max-width:400px){.hl-btn{display:none;}}
-// .icon-btn{width:35px;height:35px;border-radius:10px;flex-shrink:0;border:1px solid var(--border2);background:var(--bg-panel2);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;transition:all .2s;color:var(--text-sub);}
-// .icon-btn:hover{border-color:var(--indigo);color:var(--indigo);}
-// /* READING BAR */
-// .reading-bar{height:3px;background:var(--prog-bg);}
-// .reading-bar-fill{height:100%;width:0%;background:linear-gradient(90deg,#6366f1,#8b5cf6,#ec4899);transition:width .5s ease;border-radius:0 3px 3px 0;}
-// /* STAT CARDS */
-// .stats-bar{display:flex;gap:10px;padding:65px 24px 0;flex-wrap:wrap;margin-bottom:10px;}
-// @media(max-width:600px){.stats-bar{padding:75px 12px 0;gap:8px;}}
-// .scard{display:flex;align-items:center;gap:9px;padding:9px 14px;border-radius:14px;background:var(--bg-panel);border:1px solid var(--border2);box-shadow:var(--shadow);transition:all .25s cubic-bezier(.4,0,.2,1);animation:scardIn .5s cubic-bezier(.34,1.56,.64,1) both;}
-// @keyframes scardIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
-// .scard:hover{transform:translateY(-3px);box-shadow:var(--shadow2);}
-// .scard.c-indigo{border-top:3px solid #6366f1;}.scard.c-green{border-top:3px solid #10b981;}.scard.c-amber{border-top:3px solid #f59e0b;}.scard.c-purple{border-top:3px solid #8b5cf6;}
-// .scard-icon{width:32px;height:32px;border-radius:9px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:15px;}
-// .c-indigo .scard-icon{background:rgba(99,102,241,.1);}.c-green .scard-icon{background:rgba(16,185,129,.1);}.c-amber .scard-icon{background:rgba(245,158,11,.1);}.c-purple .scard-icon{background:rgba(139,92,246,.1);}
-// .scard-n{font-size:15px;font-weight:800;color:var(--text-main);line-height:1;}
-// .scard-l{font-size:9.5px;font-weight:600;color:var(--text-muted);margin-top:1px;}
-// @media(max-width:480px){.scard:nth-child(n+4){display:none;}}
-// /* 3D BOOK */
-// .ev-scroll-canvas{padding:18px 0 60px;position:relative;}
-// .ev-book-container-wrapper{width:100%;display:flex;justify-content:center;padding:10px 14px;}
-// @media(min-width:992px){.ev-book-container-wrapper{perspective:2800px;padding:1.5rem 2.5rem 2rem;}}
-// .book-scene{position:relative;width:100%;max-width:1100px;}
-// @media(min-width:992px){.book-scene{transform-style:preserve-3d;animation:bookEntrance .8s cubic-bezier(.34,1.4,.64,1) both;}}
-// @keyframes bookEntrance{from{opacity:0;transform:rotateX(12deg) rotateY(-6deg) translateY(30px) scale(.96);}to{opacity:1;transform:rotateX(3deg) rotateY(0deg) translateY(0) scale(1);}}
-// .book-3d{position:relative;border-radius:4px 18px 18px 4px;}
-// @media(min-width:992px){.book-3d{box-shadow:var(--book-shadow);}.book-3d::after{content:'';position:absolute;bottom:-8px;left:20px;right:12px;height:16px;background:linear-gradient(180deg,var(--border2),transparent);border-radius:0 0 8px 8px;z-index:-1;filter:blur(2px);}}
-// .book-page-stack{display:none;}
-// @media(min-width:992px){.book-page-stack{display:block;position:absolute;top:4px;bottom:4px;right:-7px;width:14px;border-radius:0 3px 3px 0;z-index:-1;}.book-page-stack::before{content:'';position:absolute;inset:0;background:repeating-linear-gradient(0deg,#e2e8f0 0px,#e2e8f0 2px,#f0f4f8 2px,#f0f4f8 4px);border-radius:0 3px 3px 0;box-shadow:3px 0 8px rgba(0,0,0,.09);}[data-theme="dark"] .book-page-stack::before{background:repeating-linear-gradient(0deg,#1a2540 0px,#1a2540 2px,#1f2d4a 2px,#1f2d4a 4px);}}
-// .book-spine{display:none;}
-// @media(min-width:992px){.book-spine{display:block;position:absolute;top:0;bottom:0;left:0;width:24px;background:linear-gradient(180deg,#4338ca,#3730a3,#4338ca);border-radius:4px 0 0 4px;z-index:10;box-shadow:inset -3px 0 8px rgba(0,0,0,.25),3px 0 14px rgba(67,56,202,.35);}.book-spine::before{content:'';position:absolute;top:0;bottom:0;left:50%;transform:translateX(-50%);width:1px;background:rgba(165,180,252,.3);}.book-spine::after{content:'ENHANCED READER';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-90deg);font-family:'Plus Jakarta Sans',sans-serif;font-size:7px;font-weight:800;letter-spacing:.25em;color:rgba(255,255,255,.45);white-space:nowrap;}}
-// .ev-book-container{display:flex;flex-direction:column;gap:14px;background:transparent;}
-// @media(min-width:992px){.ev-book-container{flex-direction:row;gap:0;background:var(--bg-panel);border-radius:0 16px 16px 0;overflow:hidden;min-height:78vh;margin-left:24px;border:1px solid var(--border2);border-left:none;}}
-// .ev-book-page{flex:1;padding:32px 22px;position:relative;background:var(--bg-panel);border-radius:14px;box-shadow:var(--shadow);transition:background .35s;overflow:hidden;}
-// @media(min-width:992px){.ev-book-page{padding:52px 48px;border-radius:0;box-shadow:none;overflow:hidden;}.ev-book-page.ev-left{border-right:1px solid var(--border2);box-shadow:var(--page-shadow);}.ev-book-page.ev-right{transform-origin:left center;z-index:5;transition:transform .85s cubic-bezier(.645,.045,.355,1),background .35s;}.flipping{transform:rotateY(-180deg);}}
-// .ev-book-page.ev-left::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;background:linear-gradient(90deg,#6366f1,#8b5cf6,#ec4899);z-index:2;}
-// @media(min-width:992px){.ev-book-page.ev-left::after{content:'';position:absolute;top:0;right:0;bottom:0;width:20px;background:linear-gradient(270deg,rgba(0,0,0,.04),transparent);pointer-events:none;z-index:1;}.ev-book-page.ev-right::after{content:'';position:absolute;top:0;left:0;bottom:0;width:20px;background:linear-gradient(90deg,rgba(0,0,0,.03),transparent);pointer-events:none;z-index:1;}}
-// .deco-orb{position:absolute;border-radius:50%;pointer-events:none;background:rgba(99,102,241,.05);}
-// [data-theme="dark"] .deco-orb{background:rgba(99,102,241,.09);}
-// .ai-scan-line{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,rgba(99,102,241,.35),transparent);z-index:3;pointer-events:none;animation:scanDown 5s ease-in-out infinite;opacity:0;}
-// @keyframes scanDown{0%{top:-10px;opacity:0;}8%{opacity:.8;}90%{opacity:.4;}100%{top:105%;opacity:0;}}
-// /* CHAPTER HEADER */
-// .chapter-header{margin-bottom:22px;position:relative;z-index:1;}
-// .chapter-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 11px;border-radius:20px;margin-bottom:9px;background:rgba(99,102,241,.1);border:1px solid rgba(99,102,241,.2);font-size:9.5px;font-weight:800;color:#6366f1;letter-spacing:.1em;text-transform:uppercase;}
-// [data-theme="dark"] .chapter-pill{background:rgba(99,102,241,.2);color:#a5b4fc;border-color:rgba(99,102,241,.35);}
-// .cpill-dot{width:5px;height:5px;border-radius:50%;background:#6366f1;}
-// [data-theme="dark"] .cpill-dot{background:#a5b4fc;}
-// .chapter-h1{font-family:'Playfair Display',serif;font-weight:900;font-size:clamp(22px,3.5vw,38px);line-height:1.05;color:var(--text-main);margin-bottom:6px;letter-spacing:-.5px;}
-// .chapter-h1 em{font-style:italic;color:#6366f1;}
-// [data-theme="dark"] .chapter-h1 em{color:#a5b4fc;}
-// .chapter-tagline{font-family:'Crimson Pro',serif;font-style:italic;font-size:13px;color:var(--text-muted);line-height:1.6;margin-bottom:16px;}
-// .chapter-hstats{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:18px;}
-// .chstat{text-align:center;padding:6px 12px;border-radius:10px;min-width:52px;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.15);transition:transform .18s;}
-// [data-theme="dark"] .chstat{background:rgba(99,102,241,.16);border-color:rgba(99,102,241,.28);}
-// .chstat:hover{transform:translateY(-2px);}
-// .chstat-n{font-size:13px;font-weight:800;color:#6366f1;line-height:1;}
-// [data-theme="dark"] .chstat-n{color:#a5b4fc;}
-// .chstat-l{font-size:8.5px;font-weight:600;color:var(--text-muted);margin-top:2px;}
-// .chapter-divider{height:1px;background:var(--border2);margin-bottom:20px;position:relative;}
-// .chapter-divider::before{content:'';position:absolute;left:0;top:-.5px;width:48px;height:2px;background:linear-gradient(90deg,#6366f1,#8b5cf6);border-radius:2px;}
-// /* CONTENT */
-// .ev-book-page p{font-family:'Crimson Pro',serif;font-size:clamp(13.5px,1.45vw,16px);color:var(--text-sub);line-height:1.9;margin-bottom:16px;text-align:justify;position:relative;z-index:1;}
-// .ev-book-page h2{font-family:'Plus Jakarta Sans',sans-serif;font-size:11px;font-weight:800;color:var(--text-muted);text-transform:uppercase;letter-spacing:.14em;margin:22px 0 12px;display:flex;align-items:center;gap:8px;position:relative;z-index:1;}
-// .ev-book-page h2::after{content:'';flex:1;height:1px;background:var(--border2);}
-// .ev-book-page h3{font-family:'Plus Jakarta Sans',sans-serif;font-size:12px;font-weight:700;color:#6366f1;margin:18px 0 10px;border-left:3px solid #6366f1;padding-left:10px;position:relative;z-index:1;}
-// [data-theme="dark"] .ev-book-page h3{color:#a5b4fc;border-color:#a5b4fc;}
-// .ev-book-page h4{font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;font-weight:700;color:var(--text-main);margin:16px 0 10px;position:relative;z-index:1;}
-// .ev-book-page ul{padding-left:20px;margin-bottom:16px;position:relative;z-index:1;}
-// .ev-book-page ul li{font-family:'Crimson Pro',serif;font-size:clamp(13px,1.35vw,15px);color:var(--text-sub);line-height:1.8;margin-bottom:5px;}
-// .ev-book-page ul li::marker{color:#6366f1;}
-// .ev-figure{margin:18px 0 20px;position:relative;z-index:1;}
-// .ev-figure img{display:block;width:100%;max-height:320px;object-fit:contain;border-radius:14px;border:1px solid var(--border2);background:rgba(99,102,241,.04);box-shadow:var(--shadow);}
-// .ev-figcaption{font-size:11px;color:var(--text-muted);text-align:center;margin-top:8px;font-style:italic;}
-// .ev-formula{font-family:'Plus Jakarta Sans',sans-serif;font-size:12px;line-height:1.7;margin:16px 0;padding:12px 14px;border-radius:12px;border:1px solid rgba(99,102,241,.18);background:rgba(99,102,241,.08);color:var(--text-main);white-space:pre-wrap;}
-// .ev-highlighted-text{background:var(--hl-bg);border-bottom:2px solid var(--hl-border);border-radius:2px;padding:1px 3px;cursor:help;transition:background .2s;}
-// .ev-highlighted-text:hover{background:rgba(99,102,241,.24);}
-// .continuation-header{margin-bottom:20px;position:relative;z-index:1;}
-// .continuation-label{font-family:'Plus Jakarta Sans',sans-serif;font-size:9px;font-weight:800;letter-spacing:.2em;color:rgba(99,102,241,.45);text-transform:uppercase;margin-bottom:6px;display:flex;align-items:center;gap:8px;}
-// .continuation-label::after{content:'';flex:1;height:1px;background:var(--border2);}
-// /* CONTEXT MENU */
-// #context-menu{position:absolute;display:none;z-index:2000;background:var(--bg-panel);border:1px solid var(--border2);border-radius:14px;padding:8px;box-shadow:var(--shadow2);transform:translateX(-50%);animation:ctxPop .15s cubic-bezier(.34,1.56,.64,1);}
-// @keyframes ctxPop{from{opacity:0;transform:translateX(-50%) scale(.9) translateY(-4px);}to{opacity:1;transform:translateX(-50%) scale(1) translateY(0);}}
-// .ctx-btn{display:flex;align-items:center;gap:6px;padding:7px 16px;border-radius:9px;border:none;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;box-shadow:0 3px 12px rgba(99,102,241,.35);transition:all .18s;}
-// .ctx-btn:hover{transform:translateY(-1px);box-shadow:0 5px 18px rgba(99,102,241,.5);}
-// /* MODAL */
-// #modal-overlay{display:none;position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.5);backdrop-filter:blur(5px);align-items:center;justify-content:center;padding:20px;}
-// .modal-box{background:var(--bg-panel);border:1px solid var(--border2);border-radius:22px;padding:28px;width:100%;max-width:420px;box-shadow:var(--shadow3);animation:modalPop .3s cubic-bezier(.34,1.56,.64,1);}
-// @keyframes modalPop{from{opacity:0;transform:scale(.9) translateY(12px);}to{opacity:1;transform:none;}}
-// .modal-hd{display:flex;align-items:center;gap:10px;margin-bottom:16px;}
-// .modal-icon{width:38px;height:38px;border-radius:11px;flex-shrink:0;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:18px;}
-// .modal-title{font-size:16px;font-weight:800;color:var(--text-main);}
-// .modal-sub{font-size:11px;color:var(--text-muted);margin-top:1px;}
-// .modal-preview{font-family:'Crimson Pro',serif;font-style:italic;font-size:13px;color:var(--text-sub);line-height:1.6;border-left:3px solid #6366f1;padding:8px 0 8px 12px;margin-bottom:14px;background:rgba(99,102,241,.05);border-radius:0 8px 8px 0;}
-// [data-theme="dark"] .modal-preview{background:rgba(99,102,241,.12);}
-// .modal-textarea{width:100%;height:82px;border:1.5px solid var(--border2);border-radius:12px;padding:12px;background:var(--bg-panel2);color:var(--text-main);font-family:inherit;font-size:13px;resize:none;outline:none;transition:border-color .2s;margin-bottom:14px;}
-// .modal-textarea:focus{border-color:#6366f1;}
-// .modal-actions{display:flex;gap:10px;}
-// .modal-save{flex:1;padding:10px;border-radius:12px;border:none;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 4px 16px rgba(99,102,241,.35);transition:all .2s;}
-// .modal-save:hover{transform:translateY(-1px);box-shadow:0 6px 22px rgba(99,102,241,.5);}
-// .modal-cancel{flex:1;padding:10px;border-radius:12px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;transition:all .2s;border:1.5px solid var(--border2);background:none;color:var(--text-sub);}
-// .modal-cancel:hover{border-color:#6366f1;color:#6366f1;}
-// /* HL PANEL */
-// #hl-panel{display:none;position:fixed;right:0;top:56px;bottom:0;width:300px;background:var(--bg-panel);border-left:1px solid var(--border2);box-shadow:-4px 0 24px rgba(0,0,0,.08);z-index:900;overflow-y:auto;padding:18px;animation:panelSlide .25s ease;transition:background .35s;}
-// @keyframes panelSlide{from{transform:translateX(16px);opacity:0}to{transform:none;opacity:1}}
-// @media(max-width:640px){#hl-panel{width:100%;left:0;}}
-// .hlp-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--border2);}
-// .hlp-title{font-size:14px;font-weight:800;color:var(--text-main);display:flex;align-items:center;gap:7px;}
-// .hlp-ico{width:28px;height:28px;border-radius:8px;background:rgba(99,102,241,.1);display:flex;align-items:center;justify-content:center;font-size:14px;}
-// .hlp-close{width:30px;height:30px;border-radius:9px;border:1px solid var(--border2);background:none;cursor:pointer;font-size:14px;color:var(--text-muted);display:flex;align-items:center;justify-content:center;transition:all .18s;}
-// .hlp-close:hover{border-color:#6366f1;color:#6366f1;}
-// .hlp-empty{text-align:center;padding:40px 20px;font-size:13px;color:var(--text-muted);line-height:1.6;}
-// .hl-card{border-radius:13px;padding:12px 13px;margin-bottom:8px;border:1.5px solid var(--border2);background:var(--bg-panel2);position:relative;overflow:hidden;transition:all .2s;}
-// .hl-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:linear-gradient(180deg,#6366f1,#8b5cf6);}
-// .hl-card:hover{border-color:rgba(99,102,241,.3);transform:translateY(-1px);box-shadow:var(--shadow);}
-// .hl-card-text{font-family:'Crimson Pro',serif;font-style:italic;font-size:13px;color:var(--text-sub);line-height:1.55;margin-bottom:6px;}
-// .hl-card-note{font-size:11px;font-weight:600;color:var(--text-muted);display:flex;align-items:center;gap:5px;}
-// .hl-tag{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;background:rgba(99,102,241,.1);color:#6366f1;}
-// [data-theme="dark"] .hl-tag{background:rgba(99,102,241,.2);color:#a5b4fc;}
-// /* NAV BUTTONS */
-// .page-nav-bar{display:flex;align-items:center;justify-content:center;gap:12px;padding:16px 0 28px;flex-wrap:wrap;}
-// .nav-btn{padding:10px 24px;border-radius:30px;border:1.5px solid var(--border2);font-family:inherit;font-size:13px;font-weight:700;background:var(--bg-panel);color:var(--text-sub);cursor:pointer;transition:all .22s;box-shadow:var(--shadow);}
-// .nav-btn:hover:not(:disabled){border-color:#6366f1;color:#6366f1;background:rgba(99,102,241,.05);transform:translateY(-2px);box-shadow:var(--shadow2);}
-// .nav-btn:disabled{opacity:.3;cursor:default;}
-// .nav-btn.primary{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border-color:transparent;box-shadow:0 4px 16px rgba(99,102,241,.4);}
-// .nav-btn.primary:hover:not(:disabled){color:#fff;border-color:transparent;box-shadow:0 6px 24px rgba(99,102,241,.55);}
-// .page-badge{padding:7px 16px;border-radius:20px;font-size:12px;font-weight:700;background:var(--bg-panel2);border:1px solid var(--border2);color:var(--text-muted);}
-// footer.page-num{position:absolute;bottom:16px;font-size:11px;font-weight:600;color:var(--text-muted);z-index:1;}
-// .footer-left{left:22px;}.footer-right{right:22px;}
-// /* AI BOT */
-// .ai-bot-wrap{position:fixed;bottom:28px;right:24px;z-index:800;display:flex;flex-direction:column;align-items:flex-end;gap:10px;}
-// @media(max-width:480px){.ai-bot-wrap{bottom:20px;right:14px;}}
-// .ai-bubble{background:var(--bg-panel);border:1px solid rgba(99,102,241,.25);border-radius:16px 16px 4px 16px;padding:10px 14px;max-width:220px;box-shadow:var(--shadow2);font-size:12px;font-weight:600;color:var(--text-main);line-height:1.5;opacity:0;transform:translateY(8px) scale(.95);transition:all .35s cubic-bezier(.34,1.56,.64,1);pointer-events:none;}
-// .ai-bubble.visible{opacity:1;transform:none;pointer-events:all;}
-// .ai-bubble-accent{font-size:10px;font-weight:700;color:var(--indigo);margin-bottom:3px;display:flex;align-items:center;gap:5px;}
-// .ai-bubble-dot{width:5px;height:5px;border-radius:50%;background:var(--indigo);}
-// [data-theme="dark"] .ai-bubble{border-color:rgba(99,102,241,.35);}
-// .ai-bot-btn{width:52px;height:52px;border-radius:50%;cursor:pointer;position:relative;background:linear-gradient(135deg,#6366f1,#8b5cf6);border:3px solid rgba(99,102,241,.3);display:flex;align-items:center;justify-content:center;box-shadow:0 6px 24px rgba(99,102,241,.45);transition:all .3s;animation:botFloat 3s ease-in-out infinite;}
-// .ai-bot-btn:hover{transform:scale(1.1);box-shadow:0 8px 32px rgba(99,102,241,.6);}
-// @keyframes botFloat{0%,100%{transform:translateY(0);}50%{transform:translateY(-6px);}}
-// .ai-bot-orbit{position:absolute;inset:-8px;border-radius:50%;border:1.5px solid rgba(99,102,241,.25);animation:orbitSpin 3s linear infinite;}
-// .ai-bot-orbit::before{content:'';position:absolute;top:-4px;left:50%;width:8px;height:8px;border-radius:50%;background:#6366f1;transform:translateX(-50%);box-shadow:0 0 8px rgba(99,102,241,.8);}
-// @keyframes orbitSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
-// .ai-bot-pulse{position:absolute;inset:-6px;border-radius:50%;background:rgba(99,102,241,.15);animation:botPulse 2.5s ease-out infinite;}
-// @keyframes botPulse{0%{transform:scale(1);opacity:.6;}100%{transform:scale(1.6);opacity:0;}}
-// .ai-bot-badge{position:absolute;top:2px;right:2px;width:12px;height:12px;border-radius:50%;background:#10b981;border:2px solid var(--bg-panel);animation:badgePulse 2s ease-in-out infinite;z-index:3;}
-// @keyframes badgePulse{0%,100%{box-shadow:0 0 0 0 rgba(16,185,129,.4);}50%{box-shadow:0 0 0 5px rgba(16,185,129,0);}}
-// .bot-face{font-size:24px;position:relative;z-index:2;animation:botBlink 4s ease-in-out infinite;}
-// @keyframes botBlink{0%,90%,100%{transform:scaleY(1);}95%{transform:scaleY(.1);}}
-// .ai-typing{display:flex;align-items:center;gap:3px;margin-top:5px;}
-// .ai-typing span{width:5px;height:5px;border-radius:50%;background:rgba(99,102,241,.5);animation:typingDot 1.2s ease-in-out infinite;}
-// .ai-typing span:nth-child(2){animation-delay:.2s;}.ai-typing span:nth-child(3){animation-delay:.4s;}
-// @keyframes typingDot{0%,100%{transform:translateY(0);opacity:.4;}50%{transform:translateY(-4px);opacity:1;}}
-// /* TOAST */
-// .toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%) translateY(8px);background:var(--bg-panel);border:1px solid var(--border2);border-radius:14px;padding:10px 18px;box-shadow:var(--shadow2);font-size:12px;font-weight:700;color:var(--text-main);display:flex;align-items:center;gap:7px;opacity:0;transition:all .3s;pointer-events:none;z-index:9999;white-space:nowrap;}
-// .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
-// .toast-dot{width:7px;height:7px;border-radius:50%;background:#6366f1;flex-shrink:0;}
-// /* RESPONSIVE */
-// @media(min-width:640px) and (max-width:991px){.ev-book-container{display:grid;grid-template-columns:1fr 1fr;gap:12px;background:transparent;}.ev-book-page{border-radius:14px;}}
-// @media(min-width:1400px){.ev-book-page{padding:60px 56px;}.ev-book-page p{font-size:16.5px;}}
-// @media(max-width:639px){.ev-book-page{padding:24px 16px 36px;border-radius:14px;}.ev-book-page p{font-size:14px;}.page-nav-bar{gap:8px;}.nav-btn{padding:8px 18px;font-size:12px;}}
-// @media(max-width:360px){.ev-book-page{padding:20px 14px 32px;}.chapter-h1{font-size:20px;}}
-// </style>
-// </head>
-// <body id="app">
-
-// <nav class="ev-top-nav">
-//   <div class="nav-left">
-//     <div class="nav-logo">📖</div>
-//     <div class="nav-brand">
-//       <div class="nav-brand-name">AI Enhanced Reader</div>
-//       <div class="nav-brand-sub" id="nav-title-sub">${title}</div>
-//     </div>
-//     <div class="nav-sep"></div>
-//     <div class="nav-pill" id="nav-subject-pill">${subject}</div>
-//   </div>
-//   <div class="nav-right">
-//     <div class="nav-pg-pill"><div class="pg-dot"></div><span id="nav-pg-txt">Page 1</span></div>
-
-//     <button class="icon-btn" onclick="toggleTheme()" id="theme-btn">${isDark ? "☀️" : "🌙"}</button>
-//   </div>
-// </nav>
-
-// <div class="reading-bar"><div class="reading-bar-fill" id="reading-bar"></div></div>
-
-// <div class="stats-bar">
-//   <div class="scard c-indigo" style="animation-delay:.05s"><div class="scard-icon">📖</div><div><div class="scard-n" id="stat-chapter">Ch. 1</div><div class="scard-l">Chapter</div></div></div>
-//   <div class="scard c-green"  style="animation-delay:.12s"><div class="scard-icon">⏱️</div><div><div class="scard-n" id="stat-readtime">~5 min</div><div class="scard-l">Read time</div></div></div>
-//   <div class="scard c-amber"  style="animation-delay:.19s"><div class="scard-icon">📄</div><div><div class="scard-n" id="stat-pages">1/1</div><div class="scard-l">Pages</div></div></div>
-
-// <main style="padding-top:5px;">
-//   <div class="ev-scroll-canvas">
-
-//     <div class="ev-book-container-wrapper">
-//       <div class="book-scene">
-//         <div class="book-3d">
-//           <div class="book-spine"></div>
-//           <div class="book-page-stack"></div>
-//           <article class="ev-book-container">
-//             <section class="ev-book-page ev-left">
-//               <div class="deco-orb" style="top:-50px;right:-50px;width:180px;height:180px;"></div>
-//               <div class="ai-scan-line"></div>
-//               <div id="left-content" style="position:relative;z-index:1;"></div>
-//               <footer class="page-num footer-left" id="footer-left"></footer>
-//             </section>
-//             <section class="ev-book-page ev-right" id="right-page">
-//               <div class="deco-orb" style="bottom:-40px;left:10%;width:160px;height:160px;"></div>
-//               <div id="right-content" style="position:relative;z-index:1;"></div>
-//               <footer class="page-num footer-right" id="footer-right"></footer>
-//             </section>
-//           </article>
-//         </div>
-//       </div>
-//     </div>
-//     <div class="page-nav-bar">
-//       <button class="nav-btn" id="prev-btn" onclick="flipPage(-1)">‹ Previous</button>
-//       <div class="page-badge" id="page-badge">1 / 1</div>
-//       <button class="nav-btn primary" id="next-btn" onclick="flipPage(1)">Next ›</button>
-//     </div>
-//   </div>
-// </main>
-
-// <div id="hl-panel">
-//   <div class="hlp-hd">
-//     <div class="hlp-title"><div class="hlp-ico">✏️</div>My Notes</div>
-//     <button class="hlp-close" onclick="toggleHlPanel()">✕</button>
-//   </div>
-//   <div id="hl-list"><div class="hlp-empty">No highlights yet.<br>Select any text to add a note.</div></div>
-// </div>
-
-// <div id="modal-overlay">
-//   <div class="modal-box">
-//     <div class="modal-hd">
-//       <div class="modal-icon">✏️</div>
-//       <div><div class="modal-title">Create Insight</div><div class="modal-sub">Add a note to your selection</div></div>
-//     </div>
-//     <div class="modal-preview" id="modal-preview"></div>
-//     <textarea class="modal-textarea" id="modal-note" placeholder="What are your thoughts on this passage?"></textarea>
-//     <div class="modal-actions">
-//       <button class="modal-save" onclick="saveHighlight()">Save Note</button>
-//       <button class="modal-cancel" onclick="closeModal()">Cancel</button>
-//     </div>
-//   </div>
-// </div>
-
-// <div class="ai-bot-wrap">
-//   <div class="ai-bubble" id="ai-bubble">
-//     <div class="ai-bubble-accent"><div class="ai-bubble-dot"></div>AI Assistant</div>
-//     <span id="ai-bubble-msg">Enhanced reading mode active!</span>
-//     <div class="ai-typing" id="ai-typing" style="display:none;"><span></span><span></span><span></span></div>
-//   </div>
-//   <button class="ai-bot-btn" onclick="toggleBubble()">
-//     <div class="ai-bot-pulse"></div>
-//     <div class="ai-bot-orbit"></div>
-//     <div class="bot-face">🤖</div>
-//     <div class="ai-bot-badge"></div>
-//   </button>
-// </div>
-
-// <script>
-// var state = {
-//   title: \`${safeTitle}\`,
-//   subject: \`${safeSubject}\`,
-//   rawContent: \`${safeContent}\`,
-//   spreads: [], currentIdx: 0, highlights: [],
-//   selectedText: '', hlOpen: false, bubbleOpen: false,
-// };
-
-// function init() {
-//   document.getElementById('nav-title-sub').textContent  = state.title;
-//   document.getElementById('nav-subject-pill').textContent = state.subject;
-//   document.title = 'AI Enhanced Reader | ' + state.title;
-//   var lines = state.rawContent.split('\\n').filter(function(l){ return l.trim(); });
-//   var perPage = 6;
-//   for (var i = 0; i < lines.length; i += perPage * 2) {
-//     state.spreads.push({ left: lines.slice(i, i+perPage), right: lines.slice(i+perPage, i+perPage*2) });
-//   }
-//   if (!state.spreads.length) state.spreads.push({ left: lines, right: [] });
-//   var words = state.rawContent.split(/\\s+/).length;
-//   document.getElementById('stat-readtime').textContent = '~' + Math.max(1, Math.round(words/200)) + ' min';
-//   render();
-//   setTimeout(function(){ showBubble('AI-enhanced content loaded!'); }, 1800);
-// }
-
-// function applyHighlights(text) {
-//   var t = text;
-//   state.highlights.forEach(function(h) {
-//     var esc = h.text.replace(/[-\\/\\\\^$*+?.()|[\\]{}]/g,'\\\\$&');
-//     var reg = new RegExp('('+esc+')','gi');
-//     t = t.replace(reg,'<span class="ev-highlighted-text" title="'+h.note+'">$1</span>');
-//   });
-//   return t;
-// }
-// function showSmartInsight() {
-//   const insights = [
-//     "This concept connects with earlier ideas...",
-//     "Notice the pattern in this section.",
-//     "This could be a key exam point.",
-//   ];
-
-//   setTimeout(() => {
-//     showBubble(insights[Math.floor(Math.random() * insights.length)]);
-//   }, 5000);
-// }
-// function lineToHTML(line, idx) {
-//   var l = line.trim();
-//   if (!l) return '';
-//   var imageMatch = l.match(/^!\[(.*?)\]\((.+?)\)$/);
-//   if (imageMatch) {
-//     var caption = imageMatch[1] || 'Illustration';
-//     var src = imageMatch[2];
-//     return '<figure class="ev-figure"><img src="'+src+'" alt="'+caption.replace(/"/g,'&quot;')+'" onerror="this.closest(\\'figure\\').style.display=\\'none\\'" /><figcaption class="ev-figcaption">'+caption+'</figcaption></figure>';
-//   }
-//   if (l.startsWith('### ')) return '<h3>'+applyHighlights(l.replace(/^###\\s*/,''))+'</h3>';
-//   if (l.startsWith('## '))  return '<h2>'+applyHighlights(l.replace(/^##\\s*/,''))+'</h2>';
-//   if (l.startsWith('# '))   return '<h4>'+applyHighlights(l.replace(/^#\\s*/,''))+'</h4>';
-//   if (/^[^|]+\\|[^|]+/.test(l)) return '<div class="ev-formula">'+applyHighlights(l)+'</div>';
-//   if (l.startsWith('- ') || l.startsWith('• ')) return '<ul><li>'+applyHighlights(l.replace(/^[-•]\\s*/,''))+'</li></ul>';
-//   return '<p>'+applyHighlights(l)+'</p>';
-// }
-
-// function render() {
-//   var spread = state.spreads[state.currentIdx] || {left:[],right:[]};
-//   var total  = state.spreads.length;
-//   var leftHTML = '';
-//   if (state.currentIdx === 0) {
-//     leftHTML = '<div class="chapter-header">'
-//       +'<div class="chapter-pill"><div class="cpill-dot"></div>'+state.subject+'</div>'
-//       +'<div class="chapter-h1">'+state.title+'</div>'
-//       +'<div class="chapter-tagline">AI-enhanced — select any text to add personal notes</div>'
-//       +'<div class="chapter-hstats">'
-//       +'<div class="chstat"><div class="chstat-n">'+total+'</div><div class="chstat-l">Spreads</div></div>'
-//       +'<div class="chstat"><div class="chstat-n">AI</div><div class="chstat-l">Enhanced</div></div>'
-//       +'<div class="chstat"><div class="chstat-n">✓</div><div class="chstat-l">Active</div></div>'
-//       +'</div><div class="chapter-divider"></div></div>';
-//   } else {
-//     leftHTML = '<div class="continuation-header"><div class="continuation-label">'+state.title+' — continued</div></div>';
-//   }
-//   spread.left.forEach(function(l,i){ leftHTML += lineToHTML(l,i); });
-//   var rightHTML = '';
-//   if (!spread.right || !spread.right.length) {
-//     rightHTML = '<div style="height:220px;display:flex;align-items:center;justify-content:center;opacity:.12;font-size:26px;letter-spacing:14px;color:#6366f1;">✦ ✦ ✦</div>';
-//   } else {
-//     rightHTML = '<div class="continuation-header"><div class="continuation-label">Continued</div></div>';
-//     spread.right.forEach(function(l,i){ rightHTML += lineToHTML(l,i); });
-//   }
-//   document.getElementById('left-content').innerHTML  = leftHTML;
-//   document.getElementById('right-content').innerHTML = rightHTML;
-//   document.getElementById('footer-left').innerText   = 'p.'+(state.currentIdx*2+1);
-//   document.getElementById('footer-right').innerText  = 'p.'+(state.currentIdx*2+2);
-//   document.getElementById('prev-btn').disabled = state.currentIdx === 0;
-//   document.getElementById('next-btn').disabled = state.currentIdx >= total-1;
-//   document.getElementById('page-badge').textContent  = (state.currentIdx+1)+' / '+total;
-//   document.getElementById('nav-pg-txt').textContent  = 'Page '+(state.currentIdx+1)+' of '+total;
-//   document.getElementById('stat-pages').textContent  = (state.currentIdx+1)+'/'+total;
-//   document.getElementById('stat-chapter').textContent= 'Spread '+(state.currentIdx+1);
-//   var pct = total > 1 ? (state.currentIdx/(total-1))*100 : 100;
-//   document.getElementById('reading-bar').style.width = pct+'%';
-// }
-
-// function flipPage(dir) {
-//   var newIdx = state.currentIdx+dir;
-//   if (newIdx < 0 || newIdx >= state.spreads.length) return;
-//   var isDesktop = window.innerWidth >= 992;
-//   if (dir === 1 && isDesktop) {
-//     var rp = document.getElementById('right-page');
-//     rp.classList.add('flipping');
-//     setTimeout(function(){ state.currentIdx=newIdx; rp.classList.remove('flipping'); render(); window.scrollTo({top:0,behavior:'smooth'}); }, 850);
-//   } else {
-//     state.currentIdx=newIdx; render(); window.scrollTo({top:0,behavior:'smooth'});
-//   }
-//   var msgs=['Great progress!','Select text to add notes.','Keep reading!','Almost there!'];
-//   setTimeout(function(){ showBubble(msgs[newIdx%msgs.length]); },400);
-// }
-
-// document.addEventListener('mouseup',function(){
-//   var sel=window.getSelection(), text=sel&&sel.toString().trim();
-//   var menu=document.getElementById('context-menu');
-//   if(text&&text.length>3){
-//     state.selectedText=text;
-//     var rect=sel.getRangeAt(0).getBoundingClientRect();
-//     menu.style.display='block';
-//     menu.style.top=(rect.top+window.scrollY-56)+'px';
-//     menu.style.left=(rect.left+rect.width/2)+'px';
-//   } else { menu.style.display='none'; }
-// });
-// document.addEventListener('mousedown',function(e){
-//   if(!e.target.closest('#context-menu')) document.getElementById('context-menu').style.display='none';
-// });
-// function openModal(){
-//   document.getElementById('modal-preview').textContent='"'+state.selectedText.substring(0,110)+(state.selectedText.length>110?'...:':'')+'"';
-//   document.getElementById('modal-note').value='';
-//   document.getElementById('modal-overlay').style.display='flex';
-//   document.getElementById('context-menu').style.display='none';
-//   setTimeout(function(){document.getElementById('modal-note').focus();},120);
-// }
-// function closeModal(){ document.getElementById('modal-overlay').style.display='none'; }
-// function saveHighlight(){
-//   var note=document.getElementById('modal-note').value.trim()||'Note added';
-//   state.highlights.push({text:state.selectedText,note:note});
-//   closeModal(); render(); updateHlPanel(); updateHlCount();
-//   showToast('Note saved!'); showBubble('Note saved! Great insight.');
-// }
-// function toggleHlPanel(){
-//   state.hlOpen=!state.hlOpen;
-//   document.getElementById('hl-panel').style.display=state.hlOpen?'block':'none';
-//   if(state.hlOpen) updateHlPanel();
-// }
-// function updateHlPanel(){
-//   var list=document.getElementById('hl-list');
-//   if(!state.highlights.length){list.innerHTML='<div class="hlp-empty">No highlights yet.<br>Select text to add a note.</div>';return;}
-//   list.innerHTML=state.highlights.map(function(h){
-//     return '<div class="hl-card"><div class="hl-card-text">"'+h.text.substring(0,90)+(h.text.length>90?'...':'')+'"</div><div class="hl-card-note"><span class="hl-tag">Note</span>'+h.note+'</div></div>';
-//   }).join('');
-// }
-// function updateHlCount(){
-//   var n=state.highlights.length;
-//   document.getElementById('hl-count').textContent=n;
-//   document.getElementById('stat-hl').textContent=n;
-// }
-// function toggleTheme(){
-//   var html=document.documentElement, btn=document.getElementById('theme-btn');
-//   var dark=html.getAttribute('data-theme')==='dark';
-//   html.setAttribute('data-theme',dark?'light':'dark');
-//   btn.textContent=dark?'🌙':'☀️';
-//   showBubble(dark?'Light mode activated!':'Dark mode activated!');
-// }
-// var BOT_MESSAGES = [
-//   "AI-enhanced reading activated.",
-//   "Your focus level is improving.",
-//   "You're building knowledge step by step.",
-//   "Think critically about this paragraph.",
-//   "Understanding > memorizing.",
-//   "You're learning smarter, not harder."
-// ];
-// var bubbleTimer=null;
-// function showBubble(msg){
-//   var bubble=document.getElementById('ai-bubble'), msgEl=document.getElementById('ai-bubble-msg'), typing=document.getElementById('ai-typing');
-//   msgEl.style.display='none'; typing.style.display='flex';
-//   bubble.classList.add('visible'); state.bubbleOpen=true;
-//   clearTimeout(bubbleTimer);
-//   setTimeout(function(){ typing.style.display='none'; msgEl.style.display='inline'; msgEl.textContent=msg; },900);
-//   bubbleTimer=setTimeout(function(){ bubble.classList.remove('visible'); state.bubbleOpen=false; },5000);
-// }
-// function toggleBubble(){
-//   if(state.bubbleOpen){ document.getElementById('ai-bubble').classList.remove('visible'); state.bubbleOpen=false; clearTimeout(bubbleTimer); }
-//   else showBubble(BOT_MESSAGES[Math.floor(Math.random()*BOT_MESSAGES.length)]);
-// }
-// setInterval(function(){ if(!state.bubbleOpen) showBubble(BOT_MESSAGES[Math.floor(Math.random()*BOT_MESSAGES.length)]); },15000);
-// function showToast(msg){
-//   var t=document.getElementById('toast'); document.getElementById('toast-msg').textContent=msg;
-//   t.classList.add('show'); setTimeout(function(){t.classList.remove('show');},1600);
-// }
-// document.getElementById('modal-overlay').addEventListener('click',function(e){ if(e.target===document.getElementById('modal-overlay')) closeModal(); });
-// document.addEventListener('keydown',function(e){
-//   if(e.key==='ArrowRight'||e.key==='ArrowDown') flipPage(1);
-//   if(e.key==='ArrowLeft'||e.key==='ArrowUp') flipPage(-1);
-//   if(e.key==='Escape'){ closeModal(); if(state.hlOpen) toggleHlPanel(); document.getElementById('ai-bubble').classList.remove('visible'); }
-// });
-// init();
-// </script>
-// </body>
-// </html>`;
-
-//   // ── 4. Open as Blob URL (same as original) ──────────────────────────────
-//   const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-//   const url  = URL.createObjectURL(blob);
-//   window.open(url, "_blank");
-// }

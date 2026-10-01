@@ -288,6 +288,13 @@ export const PartTermFilterBar: React.FC<PartTermFilterBarProps> = ({
           box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
         }
 
+        .dark .part-term-filter-bar,
+        [data-theme="dark"] .part-term-filter-bar {
+          background: linear-gradient(145deg, #111a31 0%, #151d3c 100%);
+          border-color: rgba(129, 140, 248, 0.28);
+          box-shadow: 0 12px 32px rgba(2, 6, 23, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.035);
+        }
+
         .filter-bar-header {
           display: flex;
           justify-content: space-between;
@@ -295,6 +302,11 @@ export const PartTermFilterBar: React.FC<PartTermFilterBarProps> = ({
           margin-bottom: 1.5rem;
           padding-bottom: 1rem;
           border-bottom: 1px solid #e5e7eb;
+        }
+
+        .dark .filter-bar-header,
+        [data-theme="dark"] .filter-bar-header {
+          border-color: rgba(148, 163, 184, 0.2);
         }
 
         .filter-info {
@@ -311,10 +323,16 @@ export const PartTermFilterBar: React.FC<PartTermFilterBarProps> = ({
           color: #6b7280;
         }
 
+        .dark .filter-label,
+        [data-theme="dark"] .filter-label { color: #e2e8f0; }
+
         .filter-count {
           font-size: 0.75rem;
           color: #9ca3af;
         }
+
+        .dark .filter-count,
+        [data-theme="dark"] .filter-count { color: #a5b4d0; }
 
         .reset-button {
           display: flex;
@@ -358,6 +376,9 @@ export const PartTermFilterBar: React.FC<PartTermFilterBarProps> = ({
           margin-bottom: 0.75rem;
         }
 
+        .dark .filter-section-label,
+        [data-theme="dark"] .filter-section-label { color: #aebbd4; }
+
         .filter-tabs {
           display: flex;
           flex-wrap: wrap;
@@ -386,6 +407,18 @@ export const PartTermFilterBar: React.FC<PartTermFilterBarProps> = ({
           transform: translateY(-1px);
         }
 
+        .dark .filter-tab,
+        [data-theme="dark"] .filter-tab {
+          background: #222c4b;
+          color: #dbe5f7;
+        }
+
+        .dark .filter-tab:hover,
+        [data-theme="dark"] .filter-tab:hover {
+          background: #303c61;
+          color: #fff;
+        }
+
         .filter-tab.active {
           background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
           color: white;
@@ -397,6 +430,9 @@ export const PartTermFilterBar: React.FC<PartTermFilterBarProps> = ({
           background: rgba(255, 255, 255, 0.25);
           color: white;
         }
+
+        .dark .filter-tab.active,
+        [data-theme="dark"] .filter-tab.active { color: #fff; }
 
         .tab-label {
           font-weight: 600;
@@ -411,9 +447,41 @@ export const PartTermFilterBar: React.FC<PartTermFilterBarProps> = ({
           font-weight: 700;
         }
 
+        .dark .tab-count,
+        [data-theme="dark"] .tab-count {
+          background: rgba(129, 140, 248, 0.2);
+          color: #c7d2fe;
+        }
+
+        .dark .filter-tab.active .tab-count,
+        [data-theme="dark"] .filter-tab.active .tab-count {
+          background: rgba(255, 255, 255, 0.25);
+          color: white;
+        }
+
         .filter-tab.all-tab {
           border: 2px solid #d1d5db;
           background: white;
+        }
+
+        .dark .filter-tab.all-tab,
+        [data-theme="dark"] .filter-tab.all-tab {
+          background: #192341;
+          border-color: #465477;
+          color: #dbe5f7;
+        }
+
+        .dark .reset-button,
+        [data-theme="dark"] .reset-button {
+          border-color: #465477;
+          color: #dbe5f7;
+        }
+
+        .dark .reset-button:hover,
+        [data-theme="dark"] .reset-button:hover {
+          background: #263353;
+          color: #fff;
+          border-color: #7182ad;
         }
 
         .filter-tab.all-tab:hover {

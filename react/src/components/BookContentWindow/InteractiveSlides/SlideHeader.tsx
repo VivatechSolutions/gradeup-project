@@ -1,6 +1,7 @@
 import React from "react";
 import { ArrowLeft, Check, GraduationCap, Lock, Medal, Moon, Sparkles, Sun, UserRound } from "lucide-react";
 import { useTheme } from "../../../hooks/use-theme";
+import { useAuth } from "../../../hooks/use-auth";
 import logoDark from "../../../assets/logo-dark.png";
 import logoWhite from "../../../assets/logo-white.png";
 
@@ -28,8 +29,15 @@ export const SlideHeader: React.FC<SlideHeaderProps> = ({
   onBackToLibrary,
 }) => {
   const { theme, setTheme } = useTheme();
+  const { user, userHeader } = useAuth();
   const isDark = theme === "dark";
   const progressPercent = Math.round(((currentIndex + 1) / totalSlides) * 100);
+  const profile = user ?? userHeader;
+  const fullName = [profile?.firstName, profile?.lastName].filter(Boolean).join(" ").trim()
+    || profile?.username
+    || profile?.email?.split("@")[0]
+    || "Student";
+  const initials = fullName.split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
 
   return (
     <header className="relative z-30 w-full max-w-[1540px] mx-auto px-2.5 sm:px-4 py-1 sm:py-1.5 flex flex-col gap-1.5 text-[#071b4d] dark:text-white shrink-0">
@@ -113,7 +121,7 @@ export const SlideHeader: React.FC<SlideHeaderProps> = ({
           </button>
 
           <div className="hidden sm:flex w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#232a78] dark:bg-gradient-to-br dark:from-indigo-500 dark:to-sky-500 text-white items-center justify-center font-extrabold text-sm shadow-lg shadow-indigo-500/20">
-            GK
+            {initials}
           </div>
         </div>
       </div>
