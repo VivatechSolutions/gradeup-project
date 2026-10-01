@@ -14,7 +14,6 @@ interface SlideHeaderProps {
   avatarType: "male" | "female";
   onAvatarTypeChange: (type: "male" | "female") => void;
   onBackToUnits: () => void;
-  onBackToLibrary?: () => void;
 }
 
 export const SlideHeader: React.FC<SlideHeaderProps> = ({
@@ -26,7 +25,6 @@ export const SlideHeader: React.FC<SlideHeaderProps> = ({
   avatarType,
   onAvatarTypeChange,
   onBackToUnits,
-  onBackToLibrary,
 }) => {
   const { theme, setTheme } = useTheme();
   const { user, userHeader } = useAuth();
@@ -44,12 +42,12 @@ export const SlideHeader: React.FC<SlideHeaderProps> = ({
       <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3">
         <div className="flex items-center gap-3">
           <button
-            onClick={onBackToLibrary ?? onBackToUnits}
+            onClick={onBackToUnits}
             className="inline-flex items-center gap-2 px-3 sm:px-4 py-1.5 rounded-2xl text-xs sm:text-sm font-extrabold text-blue-700 dark:text-cyan-50 bg-white/80 dark:bg-[#0d2b50]/90 border border-blue-100 dark:border-cyan-300/35 shadow-sm shadow-slate-900/5 dark:shadow-[0_0_18px_rgba(34,211,238,.12)] hover:-translate-y-0.5 hover:bg-white dark:hover:bg-[#123860] transition-all"
-            title={onBackToLibrary ? "Return to the book library" : "Return to Units List"}
+            title="Back to Units"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span className="inline">{onBackToLibrary ? "Refer Book" : "Units"}</span>
+            <span className="inline">Back</span>
           </button>
 
           <div className="flex items-center gap-2">

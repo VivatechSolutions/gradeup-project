@@ -8551,68 +8551,6 @@ const BookContentWindowDemo = () => {
 
                 {!displayChapter?.isUnitIntro && (
                   <>
-                    <div className="bk-float-btns no-select">
-                      <motion.button
-                        className={`bk-float-btn bk-float-genius ${!canUseAvatarGenius ? "locked" : ""}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (!canUseAvatarGenius) {
-                            pushToast({
-                              title: "Genius Mode unavailable",
-                              description:
-                                geniusUnavailableReason ||
-                                "Open a section page to use Genius Mode.",
-                              variant: "destructive",
-                            });
-                            return;
-                          }
-                          handleAvatarGeniusStart();
-                        }}
-                        disabled={!canUseAvatarGenius || isAvatarStarting}
-                        title={
-                          canUseAvatarGenius
-                            ? "Open Genius Mode"
-                            : geniusUnavailableReason
-                        }
-                        whileHover={
-                          canUseAvatarGenius
-                            ? {
-                                y: -2,
-                                scale: 1.02,
-                                transition: { duration: 0.18 },
-                              }
-                            : {}
-                        }
-                        whileTap={{ scale: 0.96 }}
-                      >
-                        <span className="genius-orbit" />
-                        <span className="genius-icon-wrap">
-                          <Sparkles size={15} />
-                        </span>
-                        <span className="genius-copy">
-                          <strong>
-                            {isAvatarStarting ? "Launching..." : "Genius Mode"}
-                          </strong>
-                          <small>Study smarter</small>
-                        </span>
-                        {!canUseAvatarGenius && (
-                          <span className="bk-float-lock">ðŸ”’</span>
-                        )}
-                      </motion.button>
-
-                      {/* <button
-                        className="bk-float-btn bk-float-summary"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleSummariseCurrentPage();
-                        }}
-                        title="Summarise this page"
-                      >
-                        <BookOpen size={14} />
-                        <span>Summarise</span>
-                      </button> */}
-                    </div>
-
                     <button
                       className={`bk-page-arrow bk-page-arrow-left ${!hasPrevSpread ? "disabled" : ""}`}
                       onClick={() => hasPrevSpread && goSpread(-1)}
@@ -8640,70 +8578,6 @@ const BookContentWindowDemo = () => {
                       className={`book-spread ${isFlipping ? `flipping-${direction}` : ""}`}
                     >
                       <div className="book-sheet book-sheet-paged">
-                        {false && (
-                          <div className="bk-float-btns no-select">
-                            <motion.button
-                              className={`bk-float-btn bk-float-genius ${!canUseAvatarGenius ? "locked" : ""}`}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (!canUseAvatarGenius) {
-                                  pushToast({
-                                    title: "Genius Mode unavailable",
-                                    description:
-                                      geniusUnavailableReason ||
-                                      "Open a section page to use Genius Mode.",
-                                    variant: "destructive",
-                                  });
-                                  return;
-                                }
-                                handleAvatarGeniusStart();
-                              }}
-                              disabled={!canUseAvatarGenius || isAvatarStarting}
-                              title={
-                                canUseAvatarGenius
-                                  ? "Open Genius Mode"
-                                  : geniusUnavailableReason
-                              }
-                              whileHover={
-                                canUseAvatarGenius
-                                  ? {
-                                      y: -2,
-                                      scale: 1.02,
-                                      transition: { duration: 0.18 },
-                                    }
-                                  : {}
-                              }
-                              whileTap={{ scale: 0.96 }}
-                            >
-                              <span className="genius-orbit" />
-                              <span className="genius-icon-wrap">
-                                <Sparkles size={15} />
-                              </span>
-                              <span className="genius-copy">
-                                <strong>
-                                  {isAvatarStarting ? "Launching..." : "Genius Mode"}
-                                </strong>
-                                <small>Study smarter</small>
-                              </span>
-                              {!canUseAvatarGenius && (
-                                <span className="bk-float-lock">🔒</span>
-                              )}
-                            </motion.button>
-
-                            <button
-                              className="bk-float-btn bk-float-summary"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleSummariseCurrentPage();
-                              }}
-                              title="Summarise this page"
-                            >
-                              <BookOpen size={14} />
-                              <span>Summarise</span>
-                            </button>
-                          </div>
-                        )}
-
                         {/* ── TOP HEADER BAR ── */}
                         <div className="bk-topbar no-select">
                           <div className="bk-topbar-breadcrumb">
@@ -13130,6 +13004,154 @@ mark.reader-highlight:hover { filter: brightness(1.15); }
   .rb-bb-left, .rb-bb-center, .rb-bb-right { justify-content: space-between; width: 100%; }
   .rb-bb-btn { padding: 6px 10px; font-size: 0.78rem; }
   .rb-bb-progress { order: 3; flex-basis: 100%; min-width: 0; }
+}
+
+/* Final reader overrides: legible paper, balanced themes, and small-screen layout. */
+.app-root {
+  min-height: 100dvh;
+  overflow: hidden;
+}
+.workstation {
+  width: 100%;
+  max-width: none;
+  height: 100dvh;
+  min-height: 0;
+}
+.main-viewport,
+.scroll-canvas {
+  min-width: 0;
+  min-height: 0;
+}
+.bk-page-inner,
+.reader-paragraph,
+.reader-list,
+.reader-list li {
+  opacity: 1;
+  filter: none;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+.reader-paragraph,
+.reader-list li {
+  font-size: 1rem;
+  line-height: 1.75;
+}
+.kf-callout-heading {
+  color: #172033 !important;
+}
+.rb-avatar-wrap {
+  left: auto !important;
+  right: clamp(12px, 2vw, 24px) !important;
+  bottom: clamp(12px, 2vh, 24px) !important;
+}
+.bk-float-genius {
+  display: none !important;
+}
+.dark .kf-callout,
+[data-theme="dark"] .kf-callout {
+  background: #182338;
+  border-color: #3b4a61;
+  box-shadow: inset 3px 0 0 #38bdf8;
+}
+.dark .kf-callout-title,
+[data-theme="dark"] .kf-callout-title {
+  color: #7dd3fc !important;
+}
+.dark .kf-callout .kf-callout-heading,
+[data-theme="dark"] .kf-callout .kf-callout-heading {
+  color: #f1f5f9 !important;
+}
+.dark .reader-paragraph,
+.dark .reader-list li,
+[data-theme="dark"] .reader-paragraph,
+[data-theme="dark"] .reader-list li {
+  color: #e2e8f0;
+}
+.dark .reader-paragraph strong,
+.dark .reader-list strong,
+[data-theme="dark"] .reader-paragraph strong,
+[data-theme="dark"] .reader-list strong {
+  color: #f8fafc !important;
+}
+
+@media (max-width: 1024px) {
+  .workstation {
+    padding: 0;
+    gap: 0;
+  }
+  .sidebar {
+    width: min(300px, 86vw);
+    max-width: 100%;
+  }
+  .reader-topbar {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .reader-topbar-left {
+    flex: 1 1 220px;
+    min-width: 0;
+  }
+  .reader-topbar-right {
+    flex: 1 1 100%;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 640px) {
+  .reader-topbar {
+    align-items: flex-start;
+    padding: 8px 10px;
+  }
+  .reader-topbar-left {
+    flex-basis: 100%;
+  }
+  .reader-topbar-info,
+  .reader-topbar-chapter {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .reader-topbar-right {
+    justify-content: flex-start;
+    gap: 6px;
+  }
+  .reader-topbar-right .rb-pill {
+    min-height: 36px;
+    padding: 7px 10px;
+    font-size: 0.78rem;
+  }
+  .bk-page-surface {
+    min-height: 0;
+    padding: 14px 16px 24px;
+  }
+  .reader-paragraph,
+  .reader-list li {
+    font-size: 0.98rem;
+    line-height: 1.72;
+  }
+  .rb-avatar-wrap {
+    right: 12px !important;
+    bottom: max(12px, env(safe-area-inset-bottom)) !important;
+  }
+  .rb-avatar-btn {
+    width: 48px;
+    height: 48px;
+  }
+  .rb-avatar-bubble {
+    max-width: min(180px, calc(100vw - 84px));
+    white-space: normal;
+  }
+}
+@media (max-width: 380px) {
+  .reader-topbar-right .rb-pill-label {
+    display: none;
+  }
+  .reader-topbar-right .rb-pill {
+    padding: 8px;
+  }
+  .bk-page-surface {
+    padding-right: 12px;
+    padding-left: 12px;
+  }
 }
 `;
 

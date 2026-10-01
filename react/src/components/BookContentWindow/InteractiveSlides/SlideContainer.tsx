@@ -24,7 +24,6 @@ interface SlideContainerProps {
   book?: any;
   chapter?: any;
   onBackToUnits: () => void;
-  onBackToLibrary?: () => void;
   onLessonFinish?: () => void;
 }
 
@@ -61,7 +60,6 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
   book,
   chapter,
   onBackToUnits,
-  onBackToLibrary,
   onLessonFinish,
 }) => {
   const shouldReduceMotion = useReducedMotion();
@@ -1340,7 +1338,6 @@ export const SlideContainer: React.FC<SlideContainerProps> = ({
         avatarType={avatarType}
         onAvatarTypeChange={handleAvatarTypeChange}
         onBackToUnits={handleExitToUnits}
-        onBackToLibrary={onBackToLibrary}
       />
 
       {/* Main Learning Slide Area */}
