@@ -16,7 +16,7 @@ test("registered email gets a real link; reset consumes token, hashes password a
   const user = { _id: "student", email: "student@example.com" };
   let stored; let changed; let revoked = false;
   User.findOne = async query => { if (query.normalizedEmail) assert.equal(query.normalizedEmail, user.email); return user; };
-  Credential.findOne = async query => query.userId ? { _id: "credential" } : stored && query.resetTokenHash === stored.resetTokenHash ? { userId: user._id } : null;
+  Credential.findOne = async query => query.userId ? { _id: "credential" } : stored && query.resetTokenHash === stored.resetTokenHash ? { userId: user._id, passwordHash: await require("bcrypt").hash("Previous-password-123", 4) } : null;
   Credential.updateOne = async (_query, update) => { stored = update.$set; };
   Credential.findOneAndUpdate = async (query, update) => {
     if (!stored || stored.resetTokenHash !== query.resetTokenHash) return null;
@@ -33,7 +33,7 @@ test("registered email gets a real link; reset consumes token, hashes password a
   assert.ok(stored.resetExpiresAt > new Date());
   res = response(); await controller.reset({ body: { token, newPassword: "New-password-123" } }, res);
   assert.equal(res.code, 200); assert.ok(revoked);
-  assert.ok(await require("bcrypt").compare("New-password-123", changed.passwordHash));
+  assert.ok(await require("../services/studentPassword").verifyPassword("New-password-123", changed.passwordHash));
   res = response(); await controller.reset({ body: { token, newPassword: "New-password-456" } }, res);
   assert.equal(res.code, 400);
 });
@@ -47,4 +47,29 @@ test("malformed reset tokens and invalid email are rejected", async () => {
   assert.equal(res.code, 400);
   res = response(); await controller.forgot({ body: { email: "invalid" } }, res);
   assert.equal(res.code, 400);
+});
+test("new password policy accepts long passphrases and rejects predictable passwords", async () => {
+  const policy = require("../services/studentPassword");
+  assert.match(policy.validateNewPassword("too-short"), /15/);
+  assert.match(policy.validateNewPassword("password123456789"), /predictable/);
+  assert.equal(policy.validateNewPassword("A long passphrase with spaces and no mandatory digits"), null);
+  const long = "🌱 A very long unique passphrase ".repeat(5);
+  assert.equal(policy.validateNewPassword(long), null);
+  const hash = await policy.hashPassword(long);
+  assert.equal(await policy.verifyPassword(long, hash), true);
+  assert.equal(await policy.verifyPassword(long + "x", hash), false);
+  const legacy = await require("bcrypt").hash("legacy-pass", 4);
+  assert.equal(await policy.verifyPassword("legacy-pass", legacy), true);
+});
+test("reset rejects the current password without using the reset link", async () => {
+  const token = "a".repeat(64);
+  const password = "My current password is long";
+  const hash = await require("bcrypt").hash(password, 4);
+  User.findOne = async () => ({ _id: "student" });
+  Credential.findOne = async () => ({ userId: "student", passwordHash: hash });
+  Credential.findOneAndUpdate = async () => { throw new Error("Reset token should remain available"); };
+  const res = response();
+  await controller.reset({ body: { token, newPassword: password } }, res);
+  assert.equal(res.code, 400);
+  assert.match(res.body.message, /different/);
 });

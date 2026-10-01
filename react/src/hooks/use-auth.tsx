@@ -46,7 +46,7 @@ type RegisterData = {
   schoolName?: string;
   subjects?: string[];
 };
-type RegistrationResult = { email: string; verificationPending: true };
+type RegistrationResult = { email: string; verificationPending: true; pendingToken?: string };
 
 type OAuthData = {
   provider: "google" | "microsoft";

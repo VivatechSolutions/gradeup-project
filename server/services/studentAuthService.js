@@ -1,6 +1,6 @@
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
-const bcrypt = require("bcrypt");
+const { validateNewPassword, hashPassword, verifyPassword } = require("./studentPassword");
 const User = require("../model/User");
 const PasswordCredential = require("../model/PasswordCredential");
 const StudentProfile = require("../model/StudentProfile");
@@ -147,8 +147,9 @@ async function registerIndependentStudent(payload, req) {
     error.statusCode = 400;
     throw error;
   }
-  if (String(payload.password).length < 8) {
-    const error = new Error("Password must be at least 8 characters");
+  const passwordError = validateNewPassword(payload.password);
+  if (passwordError) {
+    const error = new Error(passwordError);
     error.statusCode = 400;
     throw error;
   }
@@ -180,8 +181,8 @@ async function registerIndependentStudent(payload, req) {
   const bcryptCost = Number(process.env.BCRYPT_COST || 12);
   await PasswordCredential.create({
     userId: user._id,
-    passwordHash: await bcrypt.hash(payload.password, bcryptCost),
-    bcryptCost,
+    passwordHash: await hashPassword(payload.password),
+    bcryptCost: 0,
   });
 
   const profile = await StudentProfile.create({
@@ -222,7 +223,7 @@ async function loginStudent(payload, req) {
     throw error;
   }
 
-  const ok = await bcrypt.compare(payload.password || "", credential.passwordHash);
+  const ok = await verifyPassword(payload.password || "", credential.passwordHash);
   if (!ok) {
     credential.failedLoginCount += 1;
     if (credential.failedLoginCount >= 5) {
@@ -238,11 +239,16 @@ async function loginStudent(payload, req) {
     const error = new Error("Verify your email before signing in.");
     error.statusCode = 403;
     error.code = "EMAIL_VERIFICATION_PENDING";
+    error.pendingToken = require("./pendingVerification").issuePendingToken(user);
     throw error;
   }
 
   credential.failedLoginCount = 0;
   credential.lockedUntil = null;
+  if (!credential.passwordHash.startsWith("scrypt$")) {
+    credential.passwordHash = await hashPassword(payload.password);
+    credential.bcryptCost = 0;
+  }
   user.lastLoginAt = new Date();
   await Promise.all([credential.save(), user.save()]);
 

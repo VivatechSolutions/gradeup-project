@@ -3,19 +3,22 @@ function escapeHtml(value) {
 }
 
 function layoutTemplate({ title, intro, content, actionLabel, actionUrl, footerNote }) {
+  const appUrl = process.env.FE_URL || process.env.APP_URL || process.env.FRONTEND_URL || "";
+  let logoUrl = "";
+  try { const parsed = new URL(appUrl); if (parsed.protocol === "https:") logoUrl = new URL("/gradeup-email-logo.png", parsed).toString(); } catch { /* text fallback */ }
   return `
     <!doctype html>
     <html>
-      <body style="margin:0;padding:0;background:#edf3f8;font-family:Arial,sans-serif;color:#102033;">
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:32px 16px;background:#edf3f8;">
+      <body style="margin:0;padding:0;background:#f5f8ff;font-family:Arial,sans-serif;color:#14213d;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:32px 16px;background:#f5f8ff;">
           <tr>
             <td align="center">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border-radius:24px;overflow:hidden;border:1px solid #dbe6f2;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border-radius:20px;overflow:hidden;border:1px solid #dbeafe;">
                 <tr>
-                  <td style="padding:28px 32px;background:linear-gradient(135deg,#183b63,#2c71f0);color:#ffffff;">
-                    <div style="font-size:24px;font-weight:700;">GradeUp!</div>
+                  <td style="padding:28px 32px;background:#eff6ff;border-bottom:4px solid #2563eb;color:#14213d;">
+                    ${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="GradeUp" width="190" style="display:block;width:190px;max-width:100%;height:auto;margin:0 0 8px;" />` : `<div style="font-size:24px;font-weight:700;color:#2563eb;">GradeUp!</div>`}
                     <h1 style="margin:18px 0 8px;font-size:28px;line-height:1.2;">${escapeHtml(title)}</h1>
-                    <p style="margin:0;font-size:15px;line-height:1.7;color:#e8efff;">${escapeHtml(intro)}</p>
+                    <p style="margin:0;font-size:15px;line-height:1.7;color:#475569;">${escapeHtml(intro)}</p>
                   </td>
                 </tr>
                 <tr>
@@ -26,7 +29,7 @@ function layoutTemplate({ title, intro, content, actionLabel, actionUrl, footerN
                         ? `
                           <table role="presentation" cellspacing="0" cellpadding="0" style="margin:28px 0 20px;">
                             <tr>
-                              <td style="border-radius:14px;background:#2c71f0;">
+                              <td style="border-radius:12px;background:#2563eb;">
                                 <a href="${escapeHtml(actionUrl)}" style="display:inline-block;padding:14px 22px;color:#ffffff;text-decoration:none;font-weight:700;">
                                   ${escapeHtml(actionLabel)}
                                 </a>
@@ -36,7 +39,7 @@ function layoutTemplate({ title, intro, content, actionLabel, actionUrl, footerN
                         `
                         : ""
                     }
-                    <p style="margin:24px 0 0;font-size:13px;line-height:1.7;color:#5f738c;">${escapeHtml(footerNote)}</p>
+                    <p style="margin:24px 0 0;font-size:13px;line-height:1.7;color:#64748b;">${escapeHtml(footerNote)}</p>
                   </td>
                 </tr>
               </table>

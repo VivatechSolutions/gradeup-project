@@ -1,5 +1,5 @@
 const crypto = require("crypto");
-const bcrypt = require("bcrypt");
+const { validateNewPassword, hashPassword, verifyPassword } = require("../services/studentPassword");
 const User = require("../model/User");
 const Credential = require("../model/PasswordCredential");
 const Session = require("../model/AuthSession");
@@ -32,7 +32,7 @@ exports.forgot = async (req, res) => {
         throw error;
       }
     }
-    return res.json({ message: "If an eligible account exists, a reset link has been sent. For Google or Microsoft accounts, sign in with that provider." });
+    return res.json({ message: "If an account is registered with this email, we’ve sent a reset link. Check your inbox and spam folder." });
   } catch {
     return res.status(503).json({ message: "Unable to send reset instructions. Please try again later." });
   }
@@ -46,17 +46,17 @@ exports.verify = async (req, res) => {
 exports.reset = async (req, res) => {
   try {
     const { token, newPassword } = req.body;
-    if (!validToken(token) || typeof newPassword !== "string" || newPassword.length < 8 || Buffer.byteLength(newPassword) > 72) {
-      return res.status(400).json({ message: "A valid reset link and password of 8–72 bytes are required" });
-    }
+    if (!validToken(token)) return res.status(400).json({ message: "Invalid or expired reset link" });
+    const passwordError = validateNewPassword(newPassword);
+    if (passwordError) return res.status(400).json({ message: passwordError, field: "password" });
     const existing = await Credential.findOne(filter(token));
     const user = existing && await User.findOne({ _id: existing.userId, status: "active", deletedAt: null });
     if (!user) return res.status(400).json({ message: "Invalid or expired reset link" });
-    const bcryptCost = Number(process.env.BCRYPT_COST || 12);
-    const passwordHash = await bcrypt.hash(newPassword, bcryptCost);
+    if (await verifyPassword(newPassword, existing.passwordHash)) return res.status(400).json({ message: "Choose a password different from your current password.", field: "password" });
+    const passwordHash = await hashPassword(newPassword);
     // Conditional update consumes the token exactly once, including concurrent requests.
-    const credential = await Credential.findOneAndUpdate(filter(token), {
-      $set: { passwordHash, bcryptCost, passwordChangedAt: new Date(), failedLoginCount: 0, lockedUntil: null },
+    const credential = await Credential.findOneAndUpdate({ ...filter(token), passwordHash: existing.passwordHash }, {
+      $set: { passwordHash, bcryptCost: 0, passwordChangedAt: new Date(), failedLoginCount: 0, lockedUntil: null },
       $unset: { resetTokenHash: 1, resetExpiresAt: 1 },
     });
     if (!credential) return res.status(400).json({ message: "Invalid or expired reset link" });

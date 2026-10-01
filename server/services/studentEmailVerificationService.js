@@ -70,19 +70,24 @@ async function resendVerification(email) {
 }
 
 async function verifyStudentEmail(token) {
-  if (typeof token !== "string" || !/^[a-f0-9]{64}$/.test(token)) return false;
+  if (typeof token !== "string" || !/^[a-f0-9]{64}$/.test(token)) return "invalid";
+  const hash = digest(token);
+  const existing = await User.findOne({ emailVerificationTokenHash: hash, deletedAt: null }).select("+emailVerificationTokenHash +emailVerificationExpiresAt");
+  if (!existing) return "invalid";
+  if (existing.status === "active") return "already_verified";
+  if (existing.status !== "pending") return "invalid";
+  if (!existing.emailVerificationExpiresAt || existing.emailVerificationExpiresAt <= new Date()) return "expired";
   const user = await User.findOneAndUpdate({
-    emailVerificationTokenHash: digest(token), emailVerificationExpiresAt: { $gt: new Date() }, status: "pending", deletedAt: null,
-  }, { $set: { status: "active", emailVerifiedAt: new Date(), emailVerificationTokenHash: null,
-    emailVerificationExpiresAt: null, emailVerificationSentAt: null } }, { new: true });
-  if (!user) return false;
+    emailVerificationTokenHash: hash, emailVerificationExpiresAt: { $gt: new Date() }, status: "pending", deletedAt: null,
+  }, { $set: { status: "active", emailVerifiedAt: new Date(), emailVerificationSentAt: null } }, { new: true });
+  if (!user) return "already_verified";
   StudentProfile.findOne({ userId: user._id }).lean().then(profile => {
     const welcome = getStudentWelcomeEmail({ name: user.firstName, appUrl: frontendUrl()?.toString(),
       board: profile?.independentLearningContext?.board,
       classNumber: profile?.independentLearningContext?.classNumber });
     return sendEmail({ to: user.email, ...welcome });
   }).catch(error => console.error("Student welcome email failed", error.message));
-  return true;
+  return "verified";
 }
 
 module.exports = { requireVerificationConfiguration, sendVerification, resendVerification, verifyStudentEmail };

@@ -39,6 +39,7 @@ test("verification link uses a hashed, expiring, single-use token", async () => 
     stored = { ...stored, ...update.$set };
     return user;
   };
+  User.findOne = () => ({ select: async () => stored && ({ ...user, ...stored }) });
   StudentProfile.findOne = () => ({ lean: async () => null });
   const accepted = await verification.sendVerification(user);
   assert.equal(accepted, true);
@@ -46,9 +47,9 @@ test("verification link uses a hashed, expiring, single-use token", async () => 
   const token = new URL(sent.text.match(/https:\/\/\S+/)[0]).searchParams.get("token");
   assert.equal(stored.emailVerificationTokenHash, crypto.createHash("sha256").update(token).digest("hex"));
   assert.ok(stored.emailVerificationExpiresAt > new Date());
-  assert.equal(await verification.verifyStudentEmail(token), true);
+  assert.equal(await verification.verifyStudentEmail(token), "verified");
   assert.equal(stored.status, "active");
-  assert.equal(await verification.verifyStudentEmail(token), false);
+  assert.equal(await verification.verifyStudentEmail(token), "already_verified");
 });
 
 test("password signup stays pending and does not create an auth session", async () => {
@@ -67,7 +68,7 @@ test("password signup stays pending and does not create an auth session", async 
     Profile.create = async () => ({ _id: "profile" });
     Rewards.create = async () => ({});
     Session.create = async () => { throw new Error("Session should not be created before verification"); };
-    const result = await auth.registerIndependentStudent({ email: "S@gmail.com", password: "long-password",
+    const result = await auth.registerIndependentStudent({ email: "S@gmail.com", password: "long-password-for-student",
       firstName: "S", lastName: "Learner", schoolName: "School", board: "CBSE", classNumber: "10" }, {});
     assert.equal(result.user.status, "pending");
     assert.equal(result.tokens, undefined);

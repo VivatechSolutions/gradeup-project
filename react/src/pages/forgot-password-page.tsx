@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "wouter";
 import { apiRequest } from "../lib/queryClient";
 import GoogleRecaptcha from "../components/GoogleRecaptcha";
+import { passwordError, passwordStrength } from "../lib/passwordPolicy";
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -205,24 +206,23 @@ export default function ForgotPasswordPage() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [done, setDone] = useState(false);
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setError("");
     setMessage("");
+    setFieldErrors({});
     if (!token && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      setError("Please enter a valid email address");
+      setFieldErrors({ email: "Please enter a valid email address" });
       return;
     }
-    if (
-      token &&
-      (password.length < 8 || new TextEncoder().encode(password).length > 72)
-    ) {
-      setError("Use a password of at least 8 characters and at most 72 bytes");
+    if (token && passwordError(password)) {
+      setFieldErrors({ password: passwordError(password) });
       return;
     }
     if (token && password !== confirm) {
-      setError("Passwords don't match");
+      setFieldErrors({ confirm: "Passwords don't match" });
       return;
     }
     if (!recaptchaToken) {
@@ -242,7 +242,11 @@ export default function ForgotPasswordPage() {
       setMessage(result.message);
       if (token) setDone(true);
     } catch (e) {
-      setError((e as Error).message);
+      const raw = (e as Error).message;
+      let detail = raw;
+      try { detail = JSON.parse(raw.slice(raw.indexOf("{"))).message || raw; } catch { /* keep original */ }
+      if (token && /password/i.test(detail)) setFieldErrors({ password: detail });
+      else setError(detail);
     } finally {
       setBusy(false);
       setRecaptchaToken("");
@@ -272,7 +276,7 @@ export default function ForgotPasswordPage() {
                   : "Enter your email and we'll send you a reset link."}
               </p>
             </div>
-            <form className="fp-card-body" onSubmit={submit}>
+            <form className="fp-card-body" onSubmit={submit} noValidate>
               {error && (
                 <p className="fp-alert danger" role="alert">
                   {error}
@@ -299,6 +303,7 @@ export default function ForgotPasswordPage() {
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                       />
+                      {fieldErrors.email && <p className="fp-field-error" role="alert">{fieldErrors.email}</p>}
                     </div>
                   ) : (
                     <>
@@ -315,10 +320,12 @@ export default function ForgotPasswordPage() {
                           type="password"
                           autoComplete="new-password"
                           required
-                          minLength={8}
                           value={password}
-                          onChange={(e) => setPassword(e.target.value)}
+                          onChange={(e) => { setPassword(e.target.value); setFieldErrors(p => ({ ...p, password: "" })); }}
                         />
+                        {password && <div className="fp-pw-strength" aria-live="polite">Password strength: {passwordError(password) ? "Weak" : passwordStrength(password)}</div>}
+                        {fieldErrors.password && <p className="fp-field-error" role="alert">{fieldErrors.password}</p>}
+                        <p className="fp-security-note">Use 15 or more characters. Spaces and symbols are allowed.</p>
                       </div>
                       <div className="fp-field">
                         <label
@@ -334,8 +341,9 @@ export default function ForgotPasswordPage() {
                           autoComplete="new-password"
                           required
                           value={confirm}
-                          onChange={(e) => setConfirm(e.target.value)}
+                          onChange={(e) => { setConfirm(e.target.value); setFieldErrors(p => ({ ...p, confirm: "" })); }}
                         />
+                        {fieldErrors.confirm && <p className="fp-field-error" role="alert">{fieldErrors.confirm}</p>}
                       </div>
                     </>
                   )}

@@ -15,6 +15,7 @@ import {
 import { FaGoogle, FaMicrosoft } from "react-icons/fa";
 import logoDark from "../assets/logo-dark.png";
 import logoWhite from "../assets/logo-white.png";
+import { passwordError, passwordStrength } from "../lib/passwordPolicy";
 import learningIsland from "../assets/dashboard/07_floating_learning_island.png";
 
 // ─── CSS — Student Dashboard Color System, No-Scroll 100vh Layout & Micro-Animations ─
@@ -1242,13 +1243,10 @@ const CSS = `
 `;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const LOGIN_STEPS = [
-  { id: 2, label: "Credentials" },
-];
 const REGISTER_STEPS = [
-  { id: 2, label: "Profile" },
-  { id: 3, label: "Details" },
-  { id: 4, label: "Password" },
+  { id: 1, label: "Profile" },
+  { id: 2, label: "Details" },
+  { id: 3, label: "Password" },
 ];
 const BOARDS = ["CBSE", "ICSE", "State Board", "IB", "Cambridge"];
 const GoogleIcon = FaGoogle as any;
@@ -1415,12 +1413,16 @@ export default function AuthPage() {
   const [regErrors, setRegErrors] = useState<Record<string, string>>({});
   const latestRegEmail = useRef("");
   const [pendingEmail, setPendingEmail] = useState("");
+  const [pendingToken, setPendingToken] = useState("");
+  const [editingEmail, setEditingEmail] = useState(false);
+  const [editedEmail, setEditedEmail] = useState("");
   const [resendMessage, setResendMessage] = useState("");
   const [resending, setResending] = useState(false);
 
   useEffect(() => {
     if (registerMutation.isSuccess && registerMutation.data?.verificationPending) {
       setPendingEmail(registerMutation.data.email);
+      setPendingToken(registerMutation.data.pendingToken || "");
       setResendMessage("Account created. Check your inbox for the verification link.");
     }
   }, [registerMutation.isSuccess, registerMutation.data]);
@@ -1428,6 +1430,7 @@ export default function AuthPage() {
   useEffect(() => {
     if (oauthMutation.isSuccess && oauthMutation.data && "verificationPending" in oauthMutation.data) {
       setPendingEmail(oauthMutation.data.email);
+      setPendingToken(oauthMutation.data.pendingToken || "");
       setResendMessage("Check your inbox for the verification link.");
     }
   }, [oauthMutation.isSuccess, oauthMutation.data]);
@@ -1437,6 +1440,23 @@ export default function AuthPage() {
     try {
       const response = await apiRequest("POST", "/api/v1/auth/student/verification/resend", { email: pendingEmail || loginForm.email, recaptchaToken });
       const body = await response.json();
+      setResendMessage(body.message);
+    } catch (error) { setResendMessage((error as Error).message); }
+    finally { setResending(false); setRecaptchaToken(""); setCaptchaResetKey(k => k + 1); }
+  }
+
+  async function savePendingEmail() {
+    const validation = studentEmailError(editedEmail);
+    if (validation) { setResendMessage(validation); return; }
+    setResending(true);
+    try {
+      const response = await apiRequest("POST", "/api/v1/auth/student/verification/email", {
+        pendingToken, email: editedEmail.trim(), recaptchaToken,
+      });
+      const body = await response.json();
+      setPendingEmail(body.data.email);
+      setPendingToken(body.data.pendingToken);
+      setEditingEmail(false);
       setResendMessage(body.message);
     } catch (error) { setResendMessage((error as Error).message); }
     finally { setResending(false); setRecaptchaToken(""); setCaptchaResetKey(k => k + 1); }
@@ -1462,6 +1482,7 @@ export default function AuthPage() {
 
         if (String(err?.message).includes("EMAIL_VERIFICATION_PENDING")) {
           setPendingEmail(loginForm.email.trim().toLowerCase());
+          try { setPendingToken(JSON.parse(String(err.message).slice(String(err.message).indexOf("{"))).pendingToken || ""); } catch { setPendingToken(""); }
           setResendMessage("Verify your email before signing in. Check your inbox or request a new link.");
         } else setLoginErrors({ form: err?.message || "Invalid credentials. Please try again." });
     }
@@ -1483,8 +1504,6 @@ export default function AuthPage() {
       if (!recaptchaToken) errs.captcha = "Please complete Google reCAPTCHA";
       if (!loginForm.password) {
         errs.password = "Password is required";
-      } else if (loginForm.password.length < 8) {
-        errs.password = "Password must be at least 8 characters";
       }
 
     }
@@ -1542,7 +1561,7 @@ export default function AuthPage() {
 
     if (step === 4) {
       if (!regForm.password) errs.password = "Password is required";
-      else if (regForm.password.length < 8) errs.password = "Password must be at least 8 characters";
+      else if (passwordError(regForm.password)) errs.password = passwordError(regForm.password);
       if (!regForm.confirmPassword) errs.confirmPassword = "Please confirm your password";
       else if (regForm.password !== regForm.confirmPassword) errs.confirmPassword = "Passwords don't match";
     }
@@ -1876,6 +1895,16 @@ export default function AuthPage() {
                   <h2 className="sd-card-title">Verify your email</h2>
                   <p className="sd-card-sub">We sent a verification link to {pendingEmail}. Open it before signing in.</p>
                   <p style={{ margin: "16px 0" }}>{resendMessage}</p>
+                  {pendingToken && <>
+                    {editingEmail && <div className="sd-field"><label className="sd-label" htmlFor="pending-email">Correct email address</label>
+                      <input id="pending-email" className="sd-input" type="email" value={editedEmail}
+                        onChange={event => { setEditedEmail(event.target.value); setResendMessage(""); }} /></div>}
+                    <button className="sd-btn sd-btn-outline" type="button" onClick={() => {
+                      if (editingEmail) savePendingEmail(); else { setEditedEmail(pendingEmail); setEditingEmail(true); }
+                    }} disabled={resending || (editingEmail && !recaptchaToken)}>
+                      {editingEmail ? "Save email and send verification" : "Edit email address"}
+                    </button>
+                  </>}
                   <GoogleRecaptcha onChange={setRecaptchaToken} resetKey={captchaResetKey} />
                   <button className="sd-btn" type="button" disabled={resending || !recaptchaToken} onClick={resendVerification}>
                     {resending ? "Sending…" : "Resend verification email"}
@@ -1906,7 +1935,6 @@ export default function AuthPage() {
                     </div>
 
                     <div className="sd-card-body">
-                      <StepIndicator current={loginStep} steps={LOGIN_STEPS} />
 
                       {/* Form-level error alert */}
                       {loginErrors.form && (
@@ -2126,7 +2154,7 @@ export default function AuthPage() {
                     </div>
 
                     <div className="sd-card-body">
-                      <StepIndicator current={step} steps={REGISTER_STEPS} />
+                      <StepIndicator current={step - 1} steps={REGISTER_STEPS} />
 
                       {regErrors.form && (
                         <div className="sd-alert">
@@ -2384,9 +2412,9 @@ export default function AuthPage() {
                                     <input
                                       className={`sd-input with-icon with-eye${regErrors.password ? " is-error" : ""}`}
                                       type={showRegPw ? "text" : "password"}
-                                      placeholder="Min 8 chars"
+                                      placeholder="At least 15 characters"
                                       value={regForm.password}
-                                      onChange={e => setRegForm(f => ({ ...f, password: e.target.value }))}
+                                      onChange={e => { setRegForm(f => ({ ...f, password: e.target.value })); setRegErrors(p => ({ ...p, password: "" })); }}
                                       data-testid="input-reg-password"
                                     />
                                     <button
@@ -2398,6 +2426,8 @@ export default function AuthPage() {
                                       {showRegPw ? <EyeOff size={14} /> : <Eye size={14} />}
                                     </button>
                                   </div>
+                                  {regForm.password && <div aria-live="polite" className="sd-card-sub">Password strength: {passwordError(regForm.password) ? "Weak" : passwordStrength(regForm.password)}</div>}
+                                  <div className="sd-card-sub">Use 15 or more characters. Spaces and symbols are welcome.</div>
                                   {regErrors.password && (
                                     <div className="sd-field-error">
                                       <AlertTriangle size={11} /> {regErrors.password}

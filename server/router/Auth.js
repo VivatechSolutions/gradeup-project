@@ -11,6 +11,7 @@ router.post("/student/email/check", authRateLimit, authController.checkStudentEm
 const { requireRecaptcha } = require("../middleware/recaptcha");
 const reset = require("../controller/StudentPasswordReset");
 router.post("/student/verification/resend", authRateLimit, requireRecaptcha, authController.resendStudentVerification);
+router.post("/student/verification/email", authRateLimit, requireRecaptcha, authController.editPendingStudentEmail);
 router.post("/student/verification/verify", authRateLimit, authController.verifyStudentEmail);
 router.post("/login", authRateLimit, requireRecaptcha, authController.StudentLogin);
 router.post("/forgot-password", authRateLimit, requireRecaptcha, reset.forgot);
