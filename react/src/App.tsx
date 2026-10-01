@@ -17,6 +17,7 @@ import VoiceStudyCompanionV2 from "./pages/voice-study-companion-v2";
 import VoiceStudyCompanionV3 from "./pages/voice-study-companion-v3";
 import QuizPage from "./pages/quiz-page";
 import HomeworkPage from "./pages/homework-page";
+/* Teacher module imports are retained for the later launch.
 import TeacherHomeworkPage from "./pages/teacher-homework-page";
 import TeacherCurriculumPlannerPage from './pages/teacher-curriculum-planner-page';
 import TeacherPDFUpload from "./pages/teacher-pdf-upload";
@@ -28,12 +29,14 @@ import TeacherAttendancePage from "./components/attendance/AttendanceDashboard";
 import AnalyticsPage from "./pages/analytics-page";
 import ContentManagerPage from "./pages/content-manager-page";
 import EnhancedContentManager from "./pages/enhanced-content-manager";
+*/
 import CommunityPage from "./pages/community-page-fixed";
-import StudentsPage from "./pages/students-page";
+/* import StudentsPage from "./pages/students-page"; */
 import ProfilePage from "./pages/profile-page";
 import SettingsPage from "./pages/settings-page";
 import NotificationPage from "./pages/notification-page";
 import ForgotPasswordPage from "./pages/forgot-password-page";
+import VerifyEmailPage from "./pages/verify-email-page";
 import CommunityNewPage from "./pages/CommunityPage";
 import GroupChatJoinPage from "./pages/group-chat-join-page";
 import Landing from "./pages/landing";
@@ -60,23 +63,23 @@ import QuestionBank from "./pages/studio/QuestionBank";
 import EnhancedView from "./components/BookContentWindow/EnhancedView";
 import ExamPreparationPage from "./pages/exam-preparation";
 import CalendarPage from "./pages/calendar-page";
-import TeacherAssessmentQuizCreatorPage from "./pages/teacher-assessment-quiz-creator-page";
-import TeacherExamProgressTracker from "./pages/teacher-exam-progress-tracker";
+/* import TeacherAssessmentQuizCreatorPage from "./pages/teacher-assessment-quiz-creator-page";
+import TeacherExamProgressTracker from "./pages/teacher-exam-progress-tracker"; */
 import MeetingSystem from "./components/Meetingsystem";
 import DebatePage from "./pages/DebatePage";
 import SeminarPage from "./pages/SeminarPage";
 import MeetingPage from "./pages/MeetingPage";
 import LiveEventsPage from "./pages/live-events-page";
-import TeacherMeetingPage from "./pages/teacher-meeting-page";
+/* import TeacherMeetingPage from "./pages/teacher-meeting-page";
 import TeacherSeminarSetupPage from "./pages/teacher-seminar-setup-page";
 import TeacherDebateSetupPage from "./pages/teacher-debate-setup-page";
-import TeacherMeetingSetupPage from "./pages/teacher-meeting-setup-page";
+import TeacherMeetingSetupPage from "./pages/teacher-meeting-setup-page"; */
 
 
 const SlideEditorPage = React.lazy(() => import('./pages/SlideEditorPage'));
 const LiveAssessmentRedirect = () => <Redirect to="/studio/quiz" />;
 
-const withTeacherLayout = (
+/* const withTeacherLayout = (
   Component: React.ComponentType<any>,
   options: { showSidebar: boolean } = { showSidebar: true }
 ) => {
@@ -85,7 +88,7 @@ const withTeacherLayout = (
       <Component {...props} />
     </TeacherLayout>
   );
-};
+}; */
 
 function AppWithAuth() {
   const { user, isLoading } = useAuth();
@@ -123,6 +126,7 @@ function AppWithAuth() {
         <ProtectedRoute path="/quiz" component={QuizPage} />
         <ProtectedRoute path="/homework" component={HomeworkPage} />
         <ProtectedRoute path="/homework-helper" component={HomeworkHelperPage} />
+        {/* Teacher module routes are disabled for the student launch.
         <ProtectedRoute path="/teacher/homework" component={withTeacherLayout(TeacherHomeworkPage, { showSidebar: false })} />
         <ProtectedRoute path="/teacher/attendance" component={withTeacherLayout(TeacherAttendancePage, { showSidebar: false })} />
         <ProtectedRoute path="/teacher/assessment-quiz-creator" component={withTeacherLayout(TeacherAssessmentQuizCreatorPage, { showSidebar: false })} />
@@ -131,22 +135,21 @@ function AppWithAuth() {
         <ProtectedRoute path="/teacher/exam-correction" component={TeacherExamCorrectionPage} />
         <ProtectedRoute path="/teacher/curriculum-planner" component={withTeacherLayout(TeacherCurriculumPlannerPage, { showSidebar: false })} />
         <ProtectedRoute path="/teacher/exam-progress" component={withTeacherLayout(TeacherExamProgressTracker, { showSidebar: false })} />
-        {/* <ProtectedRoute path="/teacher/seminars" component={withTeacherLayout(TeacherSeminarPage, { showSidebar: false })} /> */}
         <ProtectedRoute path="/teacher/seminars" component={withTeacherLayout(TeacherSeminarSetupPage, { showSidebar: false })} />
-        {/* <ProtectedRoute path="/teacher/debates" component={withTeacherLayout(TeacherDebatePage, { showSidebar: false })} /> */}
         <ProtectedRoute path="/teacher/debates" component={withTeacherLayout(TeacherDebateSetupPage, { showSidebar: false })} />
         <ProtectedRoute path="/teacher/meetings" component={withTeacherLayout(TeacherMeetingPage, { showSidebar: false })} />
         <ProtectedRoute path="/teacher/meetings/new" component={withTeacherLayout(TeacherMeetingSetupPage, { showSidebar: false })} />
         <ProtectedRoute path="/content-manager" component={withTeacherLayout(ContentManagerPage, { showSidebar: false })} />
         <ProtectedRoute path="/enhanced-content-manager" component={withTeacherLayout(EnhancedContentManager, { showSidebar: false })} />
         <ProtectedRoute path="/analytics" component={withTeacherLayout(AnalyticsPage, { showSidebar: false })} />
+        */}
         <ProtectedRoute path="/community" component={CommunityPage} />
         <ProtectedRoute path="/communityNew" component={CommunityNewPage} />
         <ProtectedRoute path="/group-chat/join/:token" component={(params) => <GroupChatJoinPage token={params.token} />} />
         <ProtectedRoute path="/preparation-exam" component={PreparationExamPage} />
         <ProtectedRoute path="/main-exam" component={MainExamPage} />
-        <ProtectedRoute path="/students" component={withTeacherLayout(StudentsPage, { showSidebar: false })} />
-        <ProtectedRoute path="/teachers" component={withTeacherLayout(TeacherDashboard)} />
+        {/* <ProtectedRoute path="/students" component={withTeacherLayout(StudentsPage, { showSidebar: false })} />
+        <ProtectedRoute path="/teachers" component={withTeacherLayout(TeacherDashboard)} /> */}
 
         <ProtectedRoute path="/profile" component={ProfilePage} />
         <ProtectedRoute path="/settings" component={SettingsPage} />
@@ -159,6 +162,7 @@ function AppWithAuth() {
         </Route>
         <Route path="/forgot-password" component={ForgotPasswordPage} />
         <Route path="/reset-password" component={ForgotPasswordPage} />
+        <Route path="/verify-email" component={VerifyEmailPage} />
         <ProtectedRoute path="/enhanced-view" component={EnhancedView} />
         <ProtectedRoute path="/avatar-genius" component={AvatarGeniusView} />
         {/* <ProtectedRoute path="/bookExpanded" component={BookContentWindow} /> */}

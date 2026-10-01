@@ -6,8 +6,8 @@ const PasswordCredential = require("../model/PasswordCredential");
 const StudentProfile = require("../model/StudentProfile");
 const AuthSession = require("../model/AuthSession");
 const RewardAccount = require("../model/RewardAccount");
-const { sendEmail } = require("../config/EmailTransporter");
-const { getStudentWelcomeEmail } = require("../config/EmailTemplate");
+const { requireVerificationConfiguration, sendVerification } = require("./studentEmailVerificationService");
+const { isValidStudentEmail, hasMailDomain } = require("../utils/studentEmail");
 
 const ACCESS_COOKIE = "gradeup_access";
 const REFRESH_COOKIE = "gradeup_refresh";
@@ -129,6 +129,19 @@ async function createSession(user, req) {
 
 async function registerIndependentStudent(payload, req) {
   const email = normalizeEmail(payload.email);
+  if (!isValidStudentEmail(email)) {
+    const error = new Error("Please enter a valid email address"); error.statusCode = 400; throw error;
+  }
+  try {
+    if (!await hasMailDomain(email)) {
+      const error = new Error("This email domain does not appear to receive mail"); error.statusCode = 400; throw error;
+    }
+  } catch (error) {
+    if (error.statusCode) throw error;
+    const unavailable = new Error("Unable to validate the email domain. Please try again.");
+    unavailable.statusCode = 503;
+    throw unavailable;
+  }
   if (!email || !payload.password || !payload.firstName || !payload.lastName) {
     const error = new Error("firstName, lastName, email and password are required");
     error.statusCode = 400;
@@ -146,6 +159,7 @@ async function registerIndependentStudent(payload, req) {
     error.statusCode = 400;
     throw error;
   }
+  requireVerificationConfiguration();
 
   const existing = await User.findOne({ normalizedEmail: email, deletedAt: null });
   if (existing) {
@@ -160,7 +174,7 @@ async function registerIndependentStudent(payload, req) {
     firstName: String(payload.firstName).trim(),
     lastName: String(payload.lastName).trim(),
     role: "student",
-    status: "active",
+    status: "pending",
   });
 
   const bcryptCost = Number(process.env.BCRYPT_COST || 12);
@@ -185,24 +199,8 @@ async function registerIndependentStudent(payload, req) {
 
   await RewardAccount.create({ userId: user._id, studentProfileId: profile._id });
 
-  const appUrl = process.env.FE_URL || process.env.APP_URL || process.env.FRONTEND_URL || "";
-  const welcome = getStudentWelcomeEmail({
-    name: user.firstName,
-    appUrl,
-    board: profile.independentLearningContext.board,
-    classNumber: profile.independentLearningContext.classNumber,
-  });
-  await sendEmail({
-    to: user.email,
-    subject: welcome.subject,
-    text: welcome.text,
-    html: welcome.html,
-  }).catch((error) => {
-    console.log("Student welcome email failed", error.message);
-  });
-
-  const tokens = await createSession(user, req);
-  return { user, tokens };
+  await sendVerification(user);
+  return { user };
 }
 
 async function loginStudent(payload, req) {
@@ -211,7 +209,7 @@ async function loginStudent(payload, req) {
     const error = new Error("Please enter a valid email address"); error.statusCode = 400; throw error;
   }
   const user = await User.findOne({ normalizedEmail: email, deletedAt: null });
-  if (!user || user.status !== "active") {
+  if (!user || !["active", "pending"].includes(user.status)) {
     const error = new Error("Invalid credentials");
     error.statusCode = 401;
     throw error;
@@ -233,6 +231,13 @@ async function loginStudent(payload, req) {
     await credential.save();
     const error = new Error("Invalid credentials");
     error.statusCode = 401;
+    throw error;
+  }
+
+  if (user.status === "pending") {
+    const error = new Error("Verify your email before signing in.");
+    error.statusCode = 403;
+    error.code = "EMAIL_VERIFICATION_PENDING";
     throw error;
   }
 

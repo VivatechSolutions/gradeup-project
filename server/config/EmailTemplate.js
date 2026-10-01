@@ -1,3 +1,7 @@
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+}
+
 function layoutTemplate({ title, intro, content, actionLabel, actionUrl, footerNote }) {
   return `
     <!doctype html>
@@ -9,11 +13,9 @@ function layoutTemplate({ title, intro, content, actionLabel, actionUrl, footerN
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border-radius:24px;overflow:hidden;border:1px solid #dbe6f2;">
                 <tr>
                   <td style="padding:28px 32px;background:linear-gradient(135deg,#183b63,#2c71f0);color:#ffffff;">
-                    <div style="width:56px;height:56px;border-radius:16px;background:rgba(255,255,255,0.14);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;">
-                      Logo
-                    </div>
-                    <h1 style="margin:18px 0 8px;font-size:28px;line-height:1.2;">${title}</h1>
-                    <p style="margin:0;font-size:15px;line-height:1.7;color:rgba(255,255,255,0.84);">${intro}</p>
+                    <div style="font-size:24px;font-weight:700;">GradeUp!</div>
+                    <h1 style="margin:18px 0 8px;font-size:28px;line-height:1.2;">${escapeHtml(title)}</h1>
+                    <p style="margin:0;font-size:15px;line-height:1.7;color:#e8efff;">${escapeHtml(intro)}</p>
                   </td>
                 </tr>
                 <tr>
@@ -25,8 +27,8 @@ function layoutTemplate({ title, intro, content, actionLabel, actionUrl, footerN
                           <table role="presentation" cellspacing="0" cellpadding="0" style="margin:28px 0 20px;">
                             <tr>
                               <td style="border-radius:14px;background:#2c71f0;">
-                                <a href="${actionUrl}" style="display:inline-block;padding:14px 22px;color:#ffffff;text-decoration:none;font-weight:700;">
-                                  ${actionLabel}
+                                <a href="${escapeHtml(actionUrl)}" style="display:inline-block;padding:14px 22px;color:#ffffff;text-decoration:none;font-weight:700;">
+                                  ${escapeHtml(actionLabel)}
                                 </a>
                               </td>
                             </tr>
@@ -34,7 +36,7 @@ function layoutTemplate({ title, intro, content, actionLabel, actionUrl, footerN
                         `
                         : ""
                     }
-                    <p style="margin:24px 0 0;font-size:13px;line-height:1.7;color:#5f738c;">${footerNote}</p>
+                    <p style="margin:24px 0 0;font-size:13px;line-height:1.7;color:#5f738c;">${escapeHtml(footerNote)}</p>
                   </td>
                 </tr>
               </table>
@@ -48,7 +50,7 @@ function layoutTemplate({ title, intro, content, actionLabel, actionUrl, footerN
 
 function getAdminWelcomeEmail({ name, email, password, appUrl }) {
   const content = `
-    <p style="margin:0 0 18px;font-size:15px;line-height:1.7;">Hello ${name || "there"},</p>
+    <p style="margin:0 0 18px;font-size:15px;line-height:1.7;">Hello ${escapeHtml(name || "there")},</p>
     <p style="margin:0 0 18px;font-size:15px;line-height:1.7;">
       Your GradeUp admin account has been created. Use the credentials below to sign in.
     </p>
@@ -56,9 +58,9 @@ function getAdminWelcomeEmail({ name, email, password, appUrl }) {
       <tr>
         <td style="padding:20px;">
           <p style="margin:0 0 8px;font-size:13px;color:#5f738c;">Email</p>
-          <p style="margin:0 0 16px;font-size:16px;font-weight:700;color:#102033;">${email}</p>
+          <p style="margin:0 0 16px;font-size:16px;font-weight:700;color:#102033;">${escapeHtml(email)}</p>
           <p style="margin:0 0 8px;font-size:13px;color:#5f738c;">Temporary Password</p>
-          <p style="margin:0;font-size:16px;font-weight:700;color:#102033;">${password}</p>
+          <p style="margin:0;font-size:16px;font-weight:700;color:#102033;">${escapeHtml(password)}</p>
         </td>
       </tr>
     </table>
@@ -83,13 +85,13 @@ function getAdminWelcomeEmail({ name, email, password, appUrl }) {
 
 function getPasswordResetEmail({ name, resetUrl, appUrl }) {
   const content = `
-    <p style="margin:0 0 18px;font-size:15px;line-height:1.7;">Hello ${name || "there"},</p>
+    <p style="margin:0 0 18px;font-size:15px;line-height:1.7;">Hello ${escapeHtml(name || "there")},</p>
     <p style="margin:0 0 18px;font-size:15px;line-height:1.7;">
       We received a request to reset your GradeUp admin password. Use the button below to continue.
     </p>
     <p style="margin:0 0 18px;font-size:14px;line-height:1.7;color:#5f738c;">
       If the button does not work, copy and paste this link into your browser:<br />
-      <a href="${resetUrl}" style="color:#2c71f0;">${resetUrl}</a>
+      <a href="${escapeHtml(resetUrl)}" style="color:#2c71f0;">${escapeHtml(resetUrl)}</a>
     </p>
     <p style="margin:0;font-size:15px;line-height:1.7;">
       If you did not request this, you can ignore this email and your password will remain unchanged.
@@ -112,7 +114,7 @@ function getPasswordResetEmail({ name, resetUrl, appUrl }) {
 
 function getStudentWelcomeEmail({ name, appUrl, board, classNumber }) {
   const content = `
-    <p style="margin:0 0 18px;font-size:15px;line-height:1.7;">Hello ${name || "there"},</p>
+    <p style="margin:0 0 18px;font-size:15px;line-height:1.7;">Hello ${escapeHtml(name || "there")},</p>
     <p style="margin:0 0 18px;font-size:15px;line-height:1.7;">
       Your GradeUp student account is ready. We have set up your independent learning space so you can start exploring books, debates, seminars, and progress tracking.
     </p>
@@ -120,9 +122,9 @@ function getStudentWelcomeEmail({ name, appUrl, board, classNumber }) {
       <tr>
         <td style="padding:20px;">
           <p style="margin:0 0 8px;font-size:13px;color:#5f738c;">Board</p>
-          <p style="margin:0 0 16px;font-size:16px;font-weight:700;color:#102033;">${board || "Selected during signup"}</p>
+          <p style="margin:0 0 16px;font-size:16px;font-weight:700;color:#102033;">${escapeHtml(board || "Selected during signup")}</p>
           <p style="margin:0 0 8px;font-size:13px;color:#5f738c;">Class</p>
-          <p style="margin:0;font-size:16px;font-weight:700;color:#102033;">${classNumber || "Selected during signup"}</p>
+          <p style="margin:0;font-size:16px;font-weight:700;color:#102033;">${escapeHtml(classNumber || "Selected during signup")}</p>
         </td>
       </tr>
     </table>
@@ -142,6 +144,32 @@ function getStudentWelcomeEmail({ name, appUrl, board, classNumber }) {
       actionUrl: appUrl,
       footerNote: "If you did not create this account, please contact GradeUp support.",
     }),
+  };
+}
+
+function getStudentVerificationEmail({ name, verifyUrl }) {
+  const content = `<p>Hello ${escapeHtml(name || "there")},</p>
+    <p>Confirm this email address to activate your GradeUp student account.</p>
+    <p>If the button does not work, copy this link into your browser:<br><a href="${escapeHtml(verifyUrl)}">${escapeHtml(verifyUrl)}</a></p>
+    <p>If you did not create an account, you can ignore this message.</p>`;
+  return {
+    subject: "Verify your GradeUp email",
+    text: `Verify your GradeUp email within 24 hours: ${verifyUrl}\nIf you did not create an account, ignore this message.`,
+    html: layoutTemplate({ title: "Verify Your Email", intro: "One more step before you start learning.", content,
+      actionLabel: "Verify Email", actionUrl: verifyUrl, footerNote: "This link expires after 24 hours and works only once." }),
+  };
+}
+
+function getStudentPasswordResetEmail({ name, resetUrl }) {
+  const content = `<p>Hello ${escapeHtml(name || "there")},</p>
+    <p>We received a request to reset your GradeUp student password.</p>
+    <p>If the button does not work, copy this link into your browser:<br><a href="${escapeHtml(resetUrl)}">${escapeHtml(resetUrl)}</a></p>
+    <p>If you did not request this, you can ignore this email.</p>`;
+  return {
+    subject: "Reset your GradeUp password",
+    text: `Reset your GradeUp password within 15 minutes: ${resetUrl}\nIf you did not request this, ignore this email.`,
+    html: layoutTemplate({ title: "Reset Your Password", intro: "Choose a new password for your GradeUp account.", content,
+      actionLabel: "Reset Password", actionUrl: resetUrl, footerNote: "This link expires after 15 minutes and works only once." }),
   };
 }
 
@@ -251,4 +279,6 @@ module.exports = {
   getSessionInviteEmail,
   getPasswordResetEmail,
   getStudentWelcomeEmail,
+  getStudentVerificationEmail,
+  getStudentPasswordResetEmail,
 };

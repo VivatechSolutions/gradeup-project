@@ -8,6 +8,8 @@ const StudentProfile = require("../model/StudentProfile");
 const RewardAccount = require("../model/RewardAccount");
 const { sendEmail } = require("../config/EmailTransporter");
 const { getStudentWelcomeEmail } = require("../config/EmailTemplate");
+const { requireVerificationConfiguration, sendVerification } = require("./studentEmailVerificationService");
+const { isValidStudentEmail } = require("../utils/studentEmail");
 const { createSession } = require("./studentAuthService");
 
 const microsoftJwksCache = new Map();
@@ -118,7 +120,7 @@ async function verifyMicrosoftToken({ idToken }) {
   return {
     providerSubject: payload.sub || payload.oid,
     email: normalizeEmail(payload.preferred_username || payload.email),
-    emailVerified: true,
+    emailVerified: payload.email_verified === true,
     firstName: payload.given_name || "",
     lastName: payload.family_name || "",
   };
@@ -166,7 +168,7 @@ async function authenticateStudentWithOAuth({ provider, idToken, accessToken, pr
       ? await verifyGoogleToken({ idToken, accessToken })
       : await verifyMicrosoftToken({ idToken });
 
-  if (!verified.providerSubject || !verified.email) {
+  if (!verified.providerSubject || !isValidStudentEmail(verified.email)) {
     const error = new Error("OAuth account email could not be verified");
     error.statusCode = 401;
     throw error;
@@ -180,7 +182,13 @@ async function authenticateStudentWithOAuth({ provider, idToken, accessToken, pr
   let user = identity ? await User.findById(identity.userId) : null;
 
   if (!user) {
-    user = await User.findOne({ normalizedEmail: verified.email, deletedAt: null });
+    const emailAccount = await User.findOne({ normalizedEmail: verified.email, deletedAt: null });
+    if (emailAccount && !verified.emailVerified) {
+      const error = new Error("An account already uses this email. Sign in with its existing method.");
+      error.statusCode = 409;
+      throw error;
+    }
+    user = emailAccount;
   }
 
   let created = false;
@@ -188,6 +196,7 @@ async function authenticateStudentWithOAuth({ provider, idToken, accessToken, pr
 
   if (!user) {
     const context = validateProfileContext(profileContext);
+    if (!verified.emailVerified) requireVerificationConfiguration();
     const [firstFromEmail] = verified.email.split("@");
     user = await User.create({
       email: verified.email,
@@ -195,7 +204,7 @@ async function authenticateStudentWithOAuth({ provider, idToken, accessToken, pr
       firstName: String(profileContext?.firstName || verified.firstName || firstFromEmail || "Student").trim(),
       lastName: String(profileContext?.lastName || verified.lastName || "Learner").trim(),
       role: "student",
-      status: "active",
+      status: verified.emailVerified ? "active" : "pending",
       emailVerifiedAt: verified.emailVerified ? new Date() : null,
     });
     profile = await StudentProfile.create({
@@ -258,6 +267,21 @@ async function authenticateStudentWithOAuth({ provider, idToken, accessToken, pr
     throw error;
   }
 
+  if (user.status === "pending" && verified.emailVerified) {
+    user.status = "active";
+    user.emailVerifiedAt = new Date();
+    user.emailVerificationTokenHash = null;
+    user.emailVerificationExpiresAt = null;
+    user.emailVerificationSentAt = null;
+  }
+  if (user.status === "pending") {
+    if (created) await sendVerification(user);
+    else await sendVerification(user, { enforceCooldown: true });
+    return { user, created, verificationPending: true, tokens: null };
+  }
+  if (user.status !== "active") {
+    const error = new Error("Account is unavailable"); error.statusCode = 403; throw error;
+  }
   if (verified.emailVerified && !user.emailVerifiedAt) {
     user.emailVerifiedAt = new Date();
   }

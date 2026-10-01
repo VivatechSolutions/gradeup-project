@@ -1,6 +1,7 @@
 import GoogleRecaptcha from "../components/GoogleRecaptcha";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../hooks/use-auth";
+import { apiRequest } from "../lib/queryClient";
 import { Link } from "wouter";
 import { useToast } from "../hooks/use-toast";
 import { useTheme } from "../hooks/use-theme";
@@ -1242,11 +1243,9 @@ const CSS = `
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const LOGIN_STEPS = [
-  { id: 1, label: "Role" },
   { id: 2, label: "Credentials" },
 ];
 const REGISTER_STEPS = [
-  { id: 1, label: "Role" },
   { id: 2, label: "Profile" },
   { id: 3, label: "Details" },
   { id: 4, label: "Password" },
@@ -1373,6 +1372,16 @@ function getMicrosoftIdToken(): Promise<string> {
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
+function studentEmailError(value: string): string {
+  const email = value.trim();
+  if (!email) return "Email is required";
+  const parts = email.split("@");
+  if (email.length > 254 || parts.length !== 2 || !parts[0] || parts[0].length > 64 || /\s/.test(email) || parts[0].startsWith(".") || parts[0].endsWith(".") || parts[0].includes("..")) return "Please enter a valid email address";
+  const labels = parts[1].toLowerCase().split(".");
+  if (labels.length < 2 || labels.some(label => !label || label.length > 63 || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label)) || !/^[a-z]{2,63}$/.test(labels[labels.length - 1])) return "Please enter a valid email address";
+  return "";
+}
+
 export default function AuthPage() {
   const { loginMutation, registerMutation, oauthMutation } = useAuth();
   const { toast } = useToast();
@@ -1385,8 +1394,8 @@ export default function AuthPage() {
   const [activeTab, setActiveTab] = useState<"login" | "register">("login");
 
   // ── Login state ──
-  const [loginStep, setLoginStep] = useState(1);
-  const [loginRole, setLoginRole] = useState<"student" | "teacher" | "">("");
+  const [loginStep, setLoginStep] = useState(2);
+  const [loginRole, setLoginRole] = useState<"student" | "teacher" | "">("student");
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
   const [recaptchaToken, setRecaptchaToken] = useState("");
   const [captchaResetKey, setCaptchaResetKey] = useState(0);
@@ -1394,7 +1403,7 @@ export default function AuthPage() {
   const [loginErrors, setLoginErrors] = useState<Record<string, string>>({});
 
   // ── Register state ──
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(2);
   const [regRole, setRegRole] = useState<"student" | "teacher">("student");
   const [regBoard, setRegBoard] = useState("");
   const [regGrade, setRegGrade] = useState("");
@@ -1404,6 +1413,46 @@ export default function AuthPage() {
   const [showRegPw, setShowRegPw] = useState(false);
   const [showRegConf, setShowRegConf] = useState(false);
   const [regErrors, setRegErrors] = useState<Record<string, string>>({});
+  const latestRegEmail = useRef("");
+  const [pendingEmail, setPendingEmail] = useState("");
+  const [resendMessage, setResendMessage] = useState("");
+  const [resending, setResending] = useState(false);
+
+  useEffect(() => {
+    if (registerMutation.isSuccess && registerMutation.data?.verificationPending) {
+      setPendingEmail(registerMutation.data.email);
+      setResendMessage("Account created. Check your inbox for the verification link.");
+    }
+  }, [registerMutation.isSuccess, registerMutation.data]);
+
+  useEffect(() => {
+    if (oauthMutation.isSuccess && oauthMutation.data && "verificationPending" in oauthMutation.data) {
+      setPendingEmail(oauthMutation.data.email);
+      setResendMessage("Check your inbox for the verification link.");
+    }
+  }, [oauthMutation.isSuccess, oauthMutation.data]);
+
+  async function resendVerification() {
+    setResending(true);
+    try {
+      const response = await apiRequest("POST", "/api/v1/auth/student/verification/resend", { email: pendingEmail || loginForm.email, recaptchaToken });
+      const body = await response.json();
+      setResendMessage(body.message);
+    } catch (error) { setResendMessage((error as Error).message); }
+    finally { setResending(false); setRecaptchaToken(""); setCaptchaResetKey(k => k + 1); }
+  }
+
+  async function checkRegistrationEmail(value: string) {
+    const formatError = studentEmailError(value);
+    if (formatError) { setRegErrors(p => ({ ...p, email: formatError })); return; }
+    try {
+      const response = await apiRequest("POST", "/api/v1/auth/student/email/check", { email: value.trim() });
+      const result = await response.json();
+      if (latestRegEmail.current === value) setRegErrors(p => ({ ...p, email: result.valid ? "" : result.message }));
+    } catch {
+      if (latestRegEmail.current === value) setRegErrors(p => ({ ...p, email: "Could not check this email domain. Please try again." }));
+    }
+  }
 
   // ── Handle login error (captcha trigger) ──
   useEffect(() => {
@@ -1411,7 +1460,10 @@ export default function AuthPage() {
       setCaptchaResetKey(k => k + 1);
       const err = loginMutation.error as any;
 
-        setLoginErrors({ form: err?.message || "Invalid credentials. Please try again." });
+        if (String(err?.message).includes("EMAIL_VERIFICATION_PENDING")) {
+          setPendingEmail(loginForm.email.trim().toLowerCase());
+          setResendMessage("Verify your email before signing in. Check your inbox or request a new link.");
+        } else setLoginErrors({ form: err?.message || "Invalid credentials. Please try again." });
     }
   }, [loginMutation.isError, loginMutation.error]);
 
@@ -1425,8 +1477,8 @@ export default function AuthPage() {
     } else if (loginStep === 2) {
       if (!loginForm.email.trim()) {
         errs.email = "Email is required";
-      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(loginForm.email.trim())) {
-        errs.email = "Please enter a valid email address";
+      } else if (studentEmailError(loginForm.email)) {
+        errs.email = studentEmailError(loginForm.email);
       }
       if (!recaptchaToken) errs.captcha = "Please complete Google reCAPTCHA";
       if (!loginForm.password) {
@@ -1457,16 +1509,9 @@ export default function AuthPage() {
     }
   };
 
-  const handleLoginBack = () => {
-    if (loginStep > 1) {
-      setLoginStep(s => s - 1);
-      setLoginErrors({});
-    }
-  };
-
   const resetLoginForm = () => {
-    setLoginStep(1);
-    setLoginRole("");
+    setLoginStep(2);
+    setLoginRole("student");
     setLoginForm({ email: "", password: "" });
     setLoginErrors({});
     setRecaptchaToken("");
@@ -1483,7 +1528,8 @@ export default function AuthPage() {
       if (!regForm.lastName.trim()) errs.lastName = "Last name is required";
       if (!regForm.username.trim()) errs.username = "Username is required";
       if (!regForm.email.trim()) errs.email = "Email is required";
-      else if (!/\S+@\S+\.\S+/.test(regForm.email)) errs.email = "Invalid email address";
+      else if (studentEmailError(regForm.email)) errs.email = studentEmailError(regForm.email);
+      else if (regErrors.email) errs.email = regErrors.email;
       if (regRole === "student" && !regForm.schoolName.trim()) errs.schoolName = "School name is required";
     }
 
@@ -1805,7 +1851,7 @@ export default function AuthPage() {
             </div>
 
             {/* Segmented Tab Switcher */}
-            <div className="sd-auth-tabs">
+            {!pendingEmail && <div className="sd-auth-tabs">
               <button
                 type="button"
                 className={`sd-auth-tab${activeTab === "login" ? " active" : ""}`}
@@ -1820,12 +1866,26 @@ export default function AuthPage() {
               >
                 Create Account
               </button>
-            </div>
+            </div>}
 
             <AnimatePresence mode="wait">
 
               {/* ────────── SIGN IN FLOW ────────── */}
-              {activeTab === "login" && (
+              {pendingEmail && (
+                <div className="sd-card" role="status" style={{ padding: 28 }}>
+                  <h2 className="sd-card-title">Verify your email</h2>
+                  <p className="sd-card-sub">We sent a verification link to {pendingEmail}. Open it before signing in.</p>
+                  <p style={{ margin: "16px 0" }}>{resendMessage}</p>
+                  <GoogleRecaptcha onChange={setRecaptchaToken} resetKey={captchaResetKey} />
+                  <button className="sd-btn" type="button" disabled={resending || !recaptchaToken} onClick={resendVerification}>
+                    {resending ? "Sending…" : "Resend verification email"}
+                  </button>
+                  <button className="sd-btn sd-btn-outline" type="button" onClick={() => { setPendingEmail(""); setResendMessage(""); setActiveTab("login"); resetLoginForm(); }}>
+                    Back to sign in
+                  </button>
+                </div>
+              )}
+              {!pendingEmail && activeTab === "login" && (
                 <motion.div
                   key="login-tab"
                   initial={{ opacity: 0, y: 10 }}
@@ -1953,9 +2013,11 @@ export default function AuthPage() {
                                     placeholder="name@example.com"
                                     value={loginForm.email}
                                     onChange={e => {
-                                      setLoginForm(f => ({ ...f, email: e.target.value }));
-                                      setLoginErrors(p => ({ ...p, email: "" }));
+                                      const value = e.target.value;
+                                      setLoginForm(f => ({ ...f, email: value }));
+                                      if (loginErrors.email && !studentEmailError(value)) setLoginErrors(p => ({ ...p, email: "" }));
                                     }}
+                                    onBlur={() => setLoginErrors(p => ({ ...p, email: studentEmailError(loginForm.email) }))}
                                     data-testid="input-email"
                                   />
                                 </div>
@@ -2011,13 +2073,6 @@ export default function AuthPage() {
                               <div className="sd-step-actions">
                                 <button
                                   type="button"
-                                  className="sd-btn sd-btn-outline"
-                                  onClick={handleLoginBack}
-                                >
-                                  <ChevronLeft size={15} /> Back
-                                </button>
-                                <button
-                                  type="button"
                                   className="sd-btn"
                                   onClick={handleLoginNext}
                                   disabled={loginMutation.isPending}
@@ -2046,7 +2101,7 @@ export default function AuthPage() {
               )}
 
               {/* ────────── CREATE ACCOUNT FLOW ────────── */}
-              {activeTab === "register" && (
+              {!pendingEmail && activeTab === "register" && (
                 <motion.div
                   key="register-tab"
                   initial={{ opacity: 0, y: 10 }}
@@ -2204,7 +2259,13 @@ export default function AuthPage() {
                                     type="email"
                                     placeholder="alex@example.com"
                                     value={regForm.email}
-                                    onChange={e => setRegForm(f => ({ ...f, email: e.target.value }))}
+                                    onChange={e => {
+                                      const value = e.target.value;
+                                      latestRegEmail.current = value;
+                                      setRegForm(f => ({ ...f, email: value }));
+                                      if (regErrors.email && !studentEmailError(value)) setRegErrors(p => ({ ...p, email: "" }));
+                                    }}
+                                    onBlur={() => { void checkRegistrationEmail(regForm.email); }}
                                     data-testid="input-reg-email"
                                   />
                                 </div>
@@ -2216,13 +2277,6 @@ export default function AuthPage() {
                               </div>
 
                               <div className="sd-step-actions">
-                                <button
-                                  type="button"
-                                  className="sd-btn sd-btn-outline"
-                                  onClick={() => setStep(1)}
-                                >
-                                  <ChevronLeft size={15} /> Back
-                                </button>
                                 <button
                                   type="button"
                                   className="sd-btn"
@@ -2472,4 +2526,3 @@ export default function AuthPage() {
     </>
   );
 }
-

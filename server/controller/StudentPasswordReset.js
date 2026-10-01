@@ -4,6 +4,7 @@ const User = require("../model/User");
 const Credential = require("../model/PasswordCredential");
 const Session = require("../model/AuthSession");
 const { getEmailTransporter, sendEmail } = require("../config/EmailTransporter");
+const { getStudentPasswordResetEmail } = require("../config/EmailTemplate");
 const { clearAuthCookies } = require("../services/studentAuthService");
 const digest = token => crypto.createHash("sha256").update(token).digest("hex");
 const validToken = token => typeof token === "string" && /^[a-f0-9]{64}$/.test(token);
@@ -24,7 +25,7 @@ exports.forgot = async (req, res) => {
       const url = new URL("/reset-password", appUrl);
       url.searchParams.set("token", token);
       try {
-        const result = await sendEmail({ to: user.email, subject: "Reset your GradeUp password", text: `Reset your password using this link within 15 minutes: ${url.toString()}\nIf you did not request this, ignore this email.` });
+        const result = await sendEmail({ to: user.email, ...getStudentPasswordResetEmail({ name: user.firstName, resetUrl: url.toString() }) });
         if (result?.skipped) throw new Error("Email unavailable");
       } catch (error) {
         await Credential.updateOne({ _id: credential._id, resetTokenHash: tokenHash }, { $unset: { resetTokenHash: 1, resetExpiresAt: 1 } });

@@ -46,6 +46,7 @@ type RegisterData = {
   schoolName?: string;
   subjects?: string[];
 };
+type RegistrationResult = { email: string; verificationPending: true };
 
 type OAuthData = {
   provider: "google" | "microsoft";
@@ -67,8 +68,8 @@ type AuthContextType = {
   error: Error | null;
   loginMutation: UseMutationResult<SelectUser, Error, LoginData>;
   logoutMutation: UseMutationResult<void, Error, void>;
-  registerMutation: UseMutationResult<SelectUser, Error, RegisterData>;
-  oauthMutation: UseMutationResult<SelectUser, Error, OAuthData>;
+  registerMutation: UseMutationResult<RegistrationResult, Error, RegisterData>;
+  oauthMutation: UseMutationResult<SelectUser | RegistrationResult, Error, OAuthData>;
 };
 
 export const AuthContext = createContext<AuthContextType | null>(null);
@@ -123,7 +124,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLocation(consumePostAuthRedirect() || "/dashboard");
     },
     onError: (error: Error) => {
-      toast({ title: "Login failed", description: error.message, variant: "destructive" });
+      if (!error.message.includes("EMAIL_VERIFICATION_PENDING")) {
+        toast({ title: "Login failed", description: error.message, variant: "destructive" });
+      }
     },
   });
 
@@ -133,13 +136,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error("Only independent student signup is available right now.");
       }
       const res = await apiRequest("POST", "/api/v1/auth/student/register", payload);
-      return unwrapUser(await res.json());
+      return (await res.json()).data as RegistrationResult;
     },
-    onSuccess: (user: SelectUser) => {
-      resetAuthActivity();
-      queryClient.setQueryData(["/api/v1/auth/me"], user);
-      toast({ title: "Welcome to GradeUp!", description: "Your student account is ready." });
-      setLocation(consumePostAuthRedirect() || "/dashboard");
+    onSuccess: () => {
+      toast({ title: "Check your email", description: "Use the verification link before signing in." });
     },
     onError: (error: Error) => {
       toast({ title: "Registration failed", description: error.message, variant: "destructive" });
@@ -153,9 +153,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         `/api/v1/auth/student/oauth/${payload.provider}`,
         payload,
       );
-      return unwrapUser(await res.json());
+      return (await res.json()).data as SelectUser | RegistrationResult;
     },
-    onSuccess: (user: SelectUser) => {
+    onSuccess: (user: SelectUser | RegistrationResult) => {
+      if ("verificationPending" in user) {
+        toast({ title: "Check your email", description: "Verify this address before signing in." });
+        return;
+      }
       resetAuthActivity();
       queryClient.setQueryData(["/api/v1/auth/me"], user);
       toast({ title: "Welcome to GradeUp!", description: "You are signed in." });
@@ -175,7 +179,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await queryClient.cancelQueries();
       clearClientAuthState();
       toast({ title: "Logged out", description: "You have been successfully logged out." });
-      setLocation("/auth");
+      // Reload so no in-flight authenticated view can repopulate the previous user.
+      window.location.replace("/auth");
 
     },
   });

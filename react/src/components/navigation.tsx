@@ -649,7 +649,7 @@ export default function Navigation({ currentRole = "student" }: NavigationProps)
     return Object.entries(PAGE_LABELS).sort((a, b) => b[0].length - a[0].length).find(([k]) => prevPath.startsWith(k))?.[1] ?? "Back";
   })();
 
-  const links    = currentRole === "teacher" ? TEACHER_LINKS : STUDENT_LINKS;
+  const links    = STUDENT_LINKS;
   const initials = `${user?.firstName?.[0] ?? "A"}${user?.lastName?.[0] ?? "J"}`;
   const isActive = (href: string) => location === href || (href === "/dashboard" && isDash);
 

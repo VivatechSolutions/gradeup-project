@@ -1175,7 +1175,7 @@ function ParallaxFeatureSlider({isDark,scrollY}){
               fontSize:isMobile?15:17,lineHeight:1.7,
               maxWidth:540,margin:"0 auto 32px",
             }}>
-              Purpose-built tools for both students and teachers — powered by neural AI and designed for results.
+              Purpose-built learning tools for students — powered by neural AI and designed for results.
             </p>
 
             {/* Tab switcher */}
@@ -1185,7 +1185,7 @@ function ParallaxFeatureSlider({isDark,scrollY}){
               border:`1px solid ${isDark?"rgba(255,255,255,.08)":"rgba(0,0,0,.08)"}`,
               padding:4,gap:4,
             }}>
-              {(["student","teacher"] as const).map(tab=>{
+              {(["student","teacher"] as const).filter(tab => tab === "student").map(tab=>{
                 const isActive=activeTab===tab;
                 const tColor=tab==="student"?T.indigo:T.emerald;
                 return(
@@ -2281,7 +2281,7 @@ export default function GradeUp(){
             </h1>
 
             <p style={{fontSize:17,color:muted,lineHeight:1.78,maxWidth:480,marginBottom:42,animation:"fadeUp 1s .2s ease both"}}>
-              12 student tools + 7 teacher tools in one neural-adaptive platform. From AI tutoring and debates to live meetings and exam prep — everything students and educators need to excel.
+              Student learning tools in one neural-adaptive platform. From AI tutoring and debates to live meetings and exam prep — everything learners need to excel.
             </p>
 
             <div style={{display:"flex",gap:16,flexWrap:"wrap",animation:"fadeUp 1s .3s ease both"}}>
