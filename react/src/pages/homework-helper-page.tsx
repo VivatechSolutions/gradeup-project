@@ -26,7 +26,7 @@ import {
   type HomeworkChatSession,
   type HomeworkChatSessionSummary,
 } from "../lib/gradeupApi";
-import { useLocation } from "wouter";
+import { useSearch } from "wouter";
 import {
   useCallback,
   useEffect,
@@ -1400,15 +1400,20 @@ function HistoryView({ sessions, activeId, onOpen, onDelete, onNew, onBack, bp }
 export default function HomeworkHelper() {
   useGlobalStyle();
   const bp = useBreakpoint();
-  const [location] = useLocation();
+  const search = useSearch();
+  const navigationParams = useMemo(() => new URLSearchParams(search), [search]);
+  const hasUrlContext = Boolean(navigationParams.get("subjectGroupKey") || navigationParams.get("unitId"));
   const { user } = useAuth();
   const { isDark } = useTheme();
 
   // ── App State ────────────────────────────────────────────
   const [appState, setAppState] = useState<AppState>(loadState);
   const [subjectCatalog, setSubjectCatalog] = useState<LibrarySubject[]>([]);
-  const [subjectsLoading, setSubjectsLoading] = useState(false);
-  const [contextHydrated, setContextHydrated] = useState(false);
+  const [subjectsLoading, setSubjectsLoading] = useState(true);
+  const [hydratedSearch, setHydratedSearch] = useState<string | null>(null);
+  const [contextError, setContextError] = useState("");
+  const processedNavigationRef = useRef<string | null>(null);
+  const homeworkRequestRef = useRef(0);
   const [view, setView] = useState<View>("chat");
   const [input, setInput] = useState("");
   const [pendingFiles, setPendingFiles] = useState<AttachmentItem[]>([]);
@@ -1485,48 +1490,47 @@ export default function HomeworkHelper() {
   }, []);
 
   useEffect(() => {
-    if (contextHydrated || !subjectCatalog.length) return;
-    const queryString = location.includes("?") ? location.split("?")[1] : "";
-    const params = new URLSearchParams(queryString);
-    const subjectGroupKey = params.get("subjectGroupKey");
-    const unitId = params.get("unitId");
-    if (!subjectGroupKey && !unitId) {
-      setContextHydrated(true);
-      return;
+    if (processedNavigationRef.current === search || (hasUrlContext && subjectsLoading)) return;
+    processedNavigationRef.current = search;
+    setContextError("");
+    if (hasUrlContext) {
+      const groupKey = navigationParams.get("subjectGroupKey");
+      const unitId = navigationParams.get("unitId");
+      const subjectGroup = groupKey
+        ? subjectCatalog.find((item) => item.subjectGroupKey === groupKey)
+        : subjectCatalog.find((item) => item.units.some((unit) => unit.id === unitId));
+      // An explicit unit ID must belong to the supplied subject; never silently substitute it.
+      const number = navigationParams.get("unitNumber");
+      const unit = unitId
+        ? subjectGroup?.units.find((item) => item.id === unitId)
+        : number ? subjectGroup?.units.find((item) => String(item.unitNumber) === number) : null;
+      const session = mkSession();
+      if (subjectGroup && unit) {
+        Object.assign(session, {
+          subjectGroupKey: subjectGroup.subjectGroupKey,
+          subject: unit.subject || subjectGroup.subject,
+          unitId: unit.id,
+          unitTitle: getLibraryUnitDisplayLabel(unit),
+          unitNumber: unit.unitNumber ?? null,
+          board: unit.board || subjectGroup.board,
+          classNumber: unit.standard || subjectGroup.standard,
+          term: unit.term ?? subjectGroup.term ?? null,
+          topicId: navigationParams.get("topicId"),
+          topicLabel: navigationParams.get("topic") || navigationParams.get("topicLabel"),
+        });
+      } else {
+        setContextError("The subject or unit from AI Tutor is unavailable. Please select a subject and chapter below.");
+      }
+      homeworkRequestRef.current += 1;
+      setLoading(false);
+      setAppState((prev) => ({ sessions: [session, ...prev.sessions], activeId: session.id }));
+      setInput("");
+      setPendingFiles([]);
+      setSidebarOpen(false);
+      setView("chat");
     }
-
-    const subjectGroup =
-      subjectCatalog.find((item) => item.subjectGroupKey === subjectGroupKey) ||
-      subjectCatalog.find((item) => item.units.some((unit) => unit.id === unitId));
-    const unit =
-      subjectGroup?.units.find((item) => item.id === unitId) ||
-      subjectGroup?.units.find((item) => String(item.unitNumber || "") === String(params.get("unitNumber") || "")) ||
-      null;
-
-    if (subjectGroup && unit) {
-      setAppState((prev) => ({
-        ...prev,
-        sessions: prev.sessions.map((session) =>
-          session.id !== prev.activeId
-            ? session
-            : {
-                ...session,
-                subjectGroupKey: subjectGroup.subjectGroupKey,
-                subject: unit.subject || subjectGroup.subject,
-                unitId: unit.id,
-                unitTitle: getLibraryUnitDisplayLabel(unit),
-                unitNumber: unit.unitNumber ?? null,
-                board: unit.board || subjectGroup.board,
-                classNumber: unit.standard || subjectGroup.standard,
-                term: unit.term || subjectGroup.term || null,
-                topicId: params.get("topicId"),
-                topicLabel: params.get("topic") || params.get("topicLabel"),
-              }
-        ),
-      }));
-    }
-    setContextHydrated(true);
-  }, [contextHydrated, location, subjectCatalog]);
+    setHydratedSearch(search);
+  }, [search, navigationParams, hasUrlContext, subjectsLoading, subjectCatalog]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1535,7 +1539,6 @@ export default function HomeworkHelper() {
         const history = await getHomeworkChatHistory();
         if (cancelled || !history.sessions?.length) return;
         const sessions = history.sessions.map(sessionSummaryToChat);
-        const hasUrlContext = location.includes("subjectGroupKey=") || location.includes("unitId=");
         const activeId = sessions[0].id;
         const activeDetail = await getHomeworkChatSession(activeId).catch(() => null);
         const hydratedSessions = activeDetail
@@ -1565,7 +1568,7 @@ export default function HomeworkHelper() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [search, hasUrlContext]);
 
   // ── State Mutators ────────────────────────────────────────
   const patchActive = useCallback((fn: (s: ChatSession) => ChatSession) => {
@@ -1576,6 +1579,9 @@ export default function HomeworkHelper() {
   }, []);
 
   const startNewChat = useCallback((overrides?: Partial<ChatSession>) => {
+    homeworkRequestRef.current += 1;
+    setLoading(false);
+    setContextError("");
     const s = mkSession();
     if (overrides) Object.assign(s, overrides);
     setAppState((prev) => ({ sessions: [s, ...prev.sessions], activeId: s.id }));
@@ -1585,11 +1591,15 @@ export default function HomeworkHelper() {
   }, []);
 
   const openSession = useCallback(async (id: string) => {
+    const requestId = ++homeworkRequestRef.current;
+    setLoading(false);
+    setContextError("");
     setAppState((prev) => ({ ...prev, activeId: id }));
     setView("chat");
     setSidebarOpen(false);
     try {
       const detail = await getHomeworkChatSession(id);
+      if (requestId !== homeworkRequestRef.current) return;
       const loaded = sessionDetailToChat(detail.session);
       setAppState((prev) => ({
         ...prev,
@@ -1756,6 +1766,7 @@ export default function HomeworkHelper() {
         animate: false,
       };
 
+      const requestId = ++homeworkRequestRef.current;
       setInput("");
       setPendingFiles([]);
       setLoading(true);
@@ -1788,6 +1799,7 @@ export default function HomeworkHelper() {
           classNumber: active.classNumber || null,
           term: active.term || null,
         });
+        if (requestId !== homeworkRequestRef.current) return;
         const aiMsg: Message = {
           id: uid(),
           role: "assistant",
@@ -1814,6 +1826,7 @@ export default function HomeworkHelper() {
           }),
         }));
       } catch (error) {
+        if (requestId !== homeworkRequestRef.current) return;
         const aiMsg: Message = {
           id: uid(),
           role: "assistant",
@@ -1833,7 +1846,7 @@ export default function HomeworkHelper() {
           ),
         }));
       } finally {
-        setLoading(false);
+        if (requestId === homeworkRequestRef.current) setLoading(false);
       }
     },
     [active, hasRequiredContext, input, loading, patchActive, pendingFiles]
@@ -1921,6 +1934,10 @@ export default function HomeworkHelper() {
     );
   }
 
+  if (hasUrlContext && hydratedSearch !== search) {
+    return <div className="hh-root"><Navigation currentRole={(user?.role as "student" | "teacher") || "student"} onRoleChange={() => {}} /><div role="status" style={{ padding: 24 }}>Preparing your homework chat…</div></div>;
+  }
+
   // ─────────────────────────────────────────────────────────
   // MAIN CHAT LAYOUT
   // ─────────────────────────────────────────────────────────
@@ -1939,6 +1956,8 @@ export default function HomeworkHelper() {
 
       {/* Global Top Navbar */}
       <Navigation currentRole={(user?.role as "student" | "teacher") || "student"} onRoleChange={() => {}} />
+
+      {contextError && <div role="alert" style={{ padding: "10px 16px", color: "var(--sd-ink)", background: "var(--sd-card)" }}>{contextError}</div>}
 
       {/* Mobile drawer scrim */}
       {!showSidebarInline && sidebarOpen && (

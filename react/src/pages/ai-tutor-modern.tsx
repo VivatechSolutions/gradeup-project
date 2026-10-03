@@ -110,6 +110,7 @@ import {
 import { realtimeAudioService } from "../lib/realtimeAudioService";
 import { buildApiUrl } from "../lib/apiBase";
 import { useStudySession } from "../hooks/use-study-session";
+import { createVoiceDictation } from "../lib/voiceDictation";
 
 // ── Typing Markdown Component ──────────────────────────────────────────────────
 function TypingMarkdown({
@@ -1734,6 +1735,8 @@ export default function AITutorModern() {
     // History is fetched explicitly when opening a saved conversation.
   );
   const handleSubjectSelect = (subjectId: number) => {
+    dictationRef.current?.cancel();
+    setIsListening(false);
     sendRequestRef.current += 1;
     setIsResponding(false);
     setIsCreatingChat(false);
@@ -1768,6 +1771,8 @@ export default function AITutorModern() {
   }, []);
 
   const handleBack = useCallback(() => {
+    dictationRef.current?.cancel();
+    setIsListening(false);
     localStorage.removeItem("ai-tutor-selected-subject");
     localStorage.removeItem("ai-tutor-selected-unit");
     setView("subject-selection");
@@ -1817,7 +1822,7 @@ export default function AITutorModern() {
   const currentChatIdRef = useRef<string | null>(null);
   const conversationLoadRequestRef = useRef(0);
   const sendRequestRef = useRef(0);
-  const recognitionRef = useRef<any>(null);
+  const dictationRef = useRef<ReturnType<typeof createVoiceDictation> | null>(null);
   const highlightTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -1844,6 +1849,8 @@ export default function AITutorModern() {
   }, [currentChatId]);
 
   const handleUnitChange = (newUnit: string) => {
+    dictationRef.current?.cancel();
+    setIsListening(false);
     if (newUnit === selectedUnitId) return;
     sendRequestRef.current += 1;
     setIsResponding(false);
@@ -1940,32 +1947,18 @@ export default function AITutorModern() {
   }, []);
 
   useEffect(() => {
-    if (!("webkitSpeechRecognition" in window)) return;
-    const recognition = new (window as any).webkitSpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.lang =
-      selectedAccent === "uk"
-        ? "en-GB"
-        : selectedAccent === "indian"
-          ? "en-IN"
-          : "en-US";
-    recognition.onstart = () => setIsListening(true);
-    recognition.onresult = (e: any) => {
-      setCurrentMessage(e.results[0][0].transcript);
-      setIsListening(false);
+    const Recognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    setIsListening(false);
+    if (!Recognition) return;
+    const recognition = new Recognition();
+    recognition.lang = selectedAccent === "uk" ? "en-GB" : selectedAccent === "indian" ? "en-IN" : "en-US";
+    const dictation = createVoiceDictation(recognition, setCurrentMessage, setIsListening,
+      (description) => toast({ title: "Speech error", description, variant: "destructive" }));
+    dictationRef.current = dictation;
+    return () => {
+      dictation.dispose();
+      dictationRef.current = null;
     };
-    recognition.onerror = (event: any) => {
-      console.error("Speech recognition error:", event.error);
-      setIsListening(false);
-      toast({
-        title: "Speech error",
-        description: `Error: ${event.error}. Please try again.`,
-        variant: "destructive",
-      });
-    };
-    recognition.onend = () => setIsListening(false);
-    recognitionRef.current = recognition;
   }, [selectedAccent, toast]);
 
   useEffect(() => {
@@ -2375,21 +2368,13 @@ export default function AITutorModern() {
     };
   }, []);
   const startListening = () => {
-    if (!recognitionRef.current) {
-      toast({ title: "Not supported", variant: "destructive" });
+    if (!dictationRef.current) {
+      toast({ title: "Voice input is not supported by this browser", variant: "destructive" });
       return;
     }
-    try {
-      recognitionRef.current.start();
-    } catch (error) {
-      console.error("Failed to start speech recognition:", error);
-      setIsListening(false);
-    }
+    dictationRef.current.start(currentMessage);
   };
-  const stopListening = () => {
-    recognitionRef.current?.stop();
-    setIsListening(false);
-  };
+  const stopListening = () => dictationRef.current?.stop();
 
   const startRecording = () => {
     navigator.mediaDevices
@@ -2489,6 +2474,7 @@ export default function AITutorModern() {
       toast({ title: "Invalid images", description: "Attach one PNG, JPEG, GIF or WebP image, at most 5 MB.", variant: "destructive" });
       return;
     }
+    dictationRef.current?.cancel();
     const filesToSend = [...attachedFiles];
     const sendRequestId = ++sendRequestRef.current;
     setChatError(null);
@@ -2640,6 +2626,8 @@ export default function AITutorModern() {
   };
 
   const startNewChat = async () => {
+    dictationRef.current?.cancel();
+    setIsListening(false);
     sendRequestRef.current += 1;
     const requestId = sendRequestRef.current;
     conversationLoadRequestRef.current += 1;
@@ -2688,6 +2676,8 @@ export default function AITutorModern() {
   };
 
   const loadChat = (chat: ChatHistory) => {
+    dictationRef.current?.cancel();
+    setIsListening(false);
     sendRequestRef.current += 1;
     setIsResponding(false);
     setIsCreatingChat(false);
@@ -3292,6 +3282,7 @@ export default function AITutorModern() {
                   }
                   if (unitMatch?.term) p.append("term", unitMatch.term);
                   p.append("from", "/ai-tutor");
+                  p.append("newChat", createClientId());
                   setLocation(`/homework-helper?${p.toString()}`);
                   if (isMobile) setIsRightPanelOpen(false);
                 }}

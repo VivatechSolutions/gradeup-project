@@ -502,84 +502,32 @@ function createFaqRecord({
   };
 }
 
-function extractFaqsFromValue(value, unit, collected, seen, sectionTitle = null) {
-  if (!value) {
-    return;
-  }
-
-  if (Array.isArray(value)) {
-    value.forEach((item) => extractFaqsFromValue(item, unit, collected, seen, sectionTitle));
-    return;
-  }
-
-  if (typeof value !== "object") {
-    return;
-  }
-
-  const directQuestion =
-    value.question ||
-    value.q ||
-    value.prompt ||
-    value.ask ||
-    value.title ||
-    value.heading;
-  const directAnswer =
-    value.answer ||
-    value.a ||
-    value.response ||
-    value.reply ||
-    value.content ||
-    value.summary ||
-    value.explanation;
-
-  const nextSectionTitle =
-    value.section_title ||
-    value.sectionTitle ||
-    value.topic ||
-    value.title ||
-    sectionTitle;
-
-  if (directQuestion && directAnswer) {
-    const faqRecord = createFaqRecord({
-      unit,
-      question: directQuestion,
-      answer: directAnswer,
-      sectionTitle: nextSectionTitle,
-      source: value.source || value.kind || value.type || null,
-    });
-
-    if (faqRecord) {
-      const faqKey = `${faqRecord.unitId}:${faqRecord.question.toLowerCase()}`;
-      if (!seen.has(faqKey)) {
-        seen.add(faqKey);
-        collected.push(faqRecord);
+function extractFaqsForUnit(unit) {
+  const enrichedUnits = Array.isArray(unit.enrichedData?.units) ? unit.enrichedData.units : [];
+  const selectedNumber = Number(unit.unitNumber);
+  const matchingUnits = enrichedUnits.filter((entry) => {
+    const number = entry?.unit_number ?? entry?.unitNumber;
+    // A single unnumbered unit is scoped by the enclosing SubjectUnit record.
+    if (number === null || number === undefined || number === "") return enrichedUnits.length === 1;
+    return unit.unitNumber !== null && unit.unitNumber !== undefined && Number(number) === selectedNumber;
+  });
+  const collected = [];
+  const seen = new Set();
+  for (const entry of matchingUnits) {
+    for (const section of Array.isArray(entry?.sections) ? entry.sections : []) {
+      for (const faq of Array.isArray(section?.enrichment?.faqs) ? section.enrichment.faqs : []) {
+        if (typeof faq?.question !== "string" || typeof faq?.answer !== "string") continue;
+        const record = createFaqRecord({ unit, question: faq.question, answer: faq.answer,
+          sectionTitle: section.title || section.section_title, source: "enrichment.faqs" });
+        if (!record) continue;
+        const key = JSON.stringify([record.question.toLowerCase(), record.answer.toLowerCase()]);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        record.id = record.id + ":" + collected.length;
+        collected.push(record);
       }
     }
   }
-
-  [
-    value.units,
-    value.faq,
-    value.faqs,
-    value.questions,
-    value.qa,
-    value.qna,
-    value.items,
-    value.children,
-    value.sections,
-    value.topics,
-    value.content,
-    value.enrichment,
-  ].forEach((nested) => extractFaqsFromValue(nested, unit, collected, seen, nextSectionTitle));
-}
-
-function extractFaqsForUnit(unit) {
-  const collected = [];
-  const seen = new Set();
-
-  extractFaqsFromValue(unit.enrichedData, unit, collected, seen);
-  extractFaqsFromValue(unit.structuredData, unit, collected, seen);
-
   return collected;
 }
 

@@ -362,27 +362,24 @@ const FAQPanel: React.FC<FAQPanelProps> = ({ subject = "", unit, unitId, onBack,
     async function load() {
       if (!unitId || !unit.trim()) {
         setFaqs([]);
+        setOpenIdx(null);
+        setSearch("");
+        setIsLoading(false);
         setIsDefault(false);
         setErrorMessage("");
         return;
       }
 
       setIsLoading(true);
+      setFaqs([]);
+      setOpenIdx(null);
+      setSearch("");
       setErrorMessage("");
 
       try {
         const data = await getFaqs(unitId);
-        const items = Array.isArray(data?.faqs)
-          ? data.faqs
-          : Array.isArray(data?.data?.faqs)
-            ? data.data.faqs
-            : Array.isArray(data)
-              ? data
-              : Array.isArray(data?.questions)
-                ? data.questions
-                : Array.isArray(data?.data?.questions)
-                  ? data.data.questions
-                  : [];
+        const items = (Array.isArray(data?.faqs) ? data.faqs : [])
+          .filter((item: any) => typeof item?.question === "string" && item.question.trim() && typeof item?.answer === "string" && item.answer.trim());
 
         if (ignore) return;
 
@@ -393,17 +390,7 @@ const FAQPanel: React.FC<FAQPanelProps> = ({ subject = "", unit, unitId, onBack,
           return;
         }
 
-        setFaqs(
-          items.map((item: any) => ({
-            question: item.question || item.title || item.section_title || "Question",
-            answer:
-              item.answer ||
-              item.response ||
-              item.content ||
-              item.summary ||
-              "No answer available.",
-          })),
-        );
+        setFaqs(items.map((item: any) => ({ question: item.question.trim(), answer: item.answer.trim() })));
         setIsDefault(false);
       } catch (error: any) {
         if (ignore) return;
@@ -422,7 +409,7 @@ const FAQPanel: React.FC<FAQPanelProps> = ({ subject = "", unit, unitId, onBack,
     return () => {
       ignore = true;
     };
-  }, [unitId, unitSelected]);
+  }, [unitId, unit]);
 
   return (
     <>
@@ -504,6 +491,13 @@ const FAQPanel: React.FC<FAQPanelProps> = ({ subject = "", unit, unitId, onBack,
               <div className="fp-empty-sub">
                 Choose a unit first to load FAQs from that unit’s sections.
               </div>
+            </div>
+          ) : isLoading ? (
+            <div className="fp-empty" role="status">Loading unit FAQs...</div>
+          ) : errorMessage && faqs.length === 0 ? (
+            <div className="fp-empty">
+              <div className="fp-empty-title">No FAQs available</div>
+              <div className="fp-empty-sub">{errorMessage}</div>
             </div>
           ) : filtered.length === 0 ? (
             <div className="fp-empty">
