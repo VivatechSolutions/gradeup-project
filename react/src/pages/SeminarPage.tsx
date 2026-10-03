@@ -5993,7 +5993,7 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
                   className={`module-card${seminarMode === item.id ? " sel" : ""}`}
                   onClick={() => {
                     setSeminarMode(item.id);
-                    setSessionSubMode("");
+                    setSessionSubMode(item.id === "session" ? "presenter" : "");
                     setCreateDocLink("");
                     setCreateDocConfig(null);
                     setShowCreateLinkModal(false);
@@ -6080,26 +6080,6 @@ function SeminarSetupIntegrated({ onBack, onLaunch }) {
                     <div className="submode-title">Demo Session</div>
                     <div className="submode-desc">
                       Upload your file here and present directly to AI.
-                    </div>
-                  </div>
-                </div>
-              </>
-            )}
-
-            {seminarMode === "session" && (
-              <>
-                <div className="sec-div">I want to…</div>
-                <div className="submode-grid fi">
-                  <div
-                    className={`submode-card${sessionSubMode === "presenter" ? " sel" : ""}`}
-                    onClick={() => setSessionSubMode("presenter")}
-                  >
-                    <div className="submode-ic">
-                      <SeminarIcon name="mic" />
-                    </div>
-                    <div className="submode-title">Present a Seminar</div>
-                    <div className="submode-desc">
-                      Start a room, share your screen, deliver your seminar.
                     </div>
                   </div>
                 </div>

@@ -11,6 +11,34 @@ import jsPDF from "jspdf";
 import Navigation from "../components/navigation";
 import FormattedAIContent from "../components/ai/FormattedAIContent";
 import robotWaving from "../assets/dashboard/15_robot_waving.png";
+import studyRobo from "../assets/dashboard/study-robo.png";
+import robotLaptop from "../assets/dashboard/16_robot_laptop.png";
+import roboImg from "../assets/robo.png";
+import { useTheme } from "../hooks/use-theme";
+import {
+  Mic,
+  MicOff,
+  Volume2,
+  VolumeX,
+  Sparkles,
+  Send,
+  Sun,
+  Moon,
+  Bot,
+  User,
+  Clock,
+  Radio,
+  Flame,
+  MessageSquare,
+  Award,
+  ChevronLeft,
+  ChevronRight,
+  PhoneOff,
+  Maximize2,
+  Minimize2,
+  Volume1,
+  Square,
+} from "lucide-react";
 import { useAuth } from "../hooks/use-auth";
 import { useSessionState } from "../hooks/useSessionState";
 import {
@@ -94,6 +122,8 @@ button,input,select,textarea{font-family:var(--font)}
 @keyframes tIn{from{opacity:0;transform:translateX(-50%) translateY(16px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
 @keyframes voicePulse{0%,100%{box-shadow:0 0 0 0 rgba(139,92,246,.4)}50%{box-shadow:0 0 0 8px rgba(139,92,246,.0)}}
 @keyframes micGlow{0%,100%{box-shadow:0 0 0 0 rgba(16,185,129,.5)}50%{box-shadow:0 0 0 10px rgba(16,185,129,.0)}}
+@keyframes dockMicPulse{0%,100%{box-shadow:0 7px 18px rgba(16,185,129,.22),0 0 0 0 rgba(16,185,129,.32)}55%{box-shadow:0 8px 22px rgba(16,185,129,.3),0 0 0 7px rgba(16,185,129,0)}}
+@keyframes dockEndPulse{0%,100%{box-shadow:0 5px 16px rgba(239,68,68,.24)}50%{box-shadow:0 7px 20px rgba(239,68,68,.4)}}
 @keyframes countdownPulse{0%{transform:scale(1)}50%{transform:scale(1.08)}100%{transform:scale(1)}}
 
 .dp-toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--surf);border:1.5px solid var(--bdr);border-radius:13px;padding:10px 17px;font-size:12.5px;font-weight:700;color:var(--t1);box-shadow:var(--sh2);z-index:9999;display:flex;align-items:center;gap:7px;animation:tIn .32s cubic-bezier(.34,1.2,.64,1);white-space:nowrap;max-width:calc(100vw - 28px)}
@@ -582,6 +612,1678 @@ select.finput option, select.finput optgroup{background:var(--surf2);color:var(-
   .res-verdict,.res-insights{grid-template-columns:1fr}
 }
 @media(max-width:560px){.cbtn span:last-child{display:none}.cbtn{min-width:32px}.tile{min-height:160px}.team-member-grid{grid-template-columns:1fr}.res-actions{flex-direction:column;align-items:stretch}}
+
+/* ═════════════════════════════════════════════════════════════════════════════
+   1 VS AI LIVE MEETING ROOM — STUDENT DASHBOARD THEME
+═════════════════════════════════════════════════════════════════════════════ */
+.mr-root {
+  min-height: 100vh;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  color: var(--sd-ink);
+  background: radial-gradient(circle at 14% 9%, rgba(126,87,255,.14), transparent 28%),
+              radial-gradient(circle at 88% 14%, rgba(255,171,64,.16), transparent 26%),
+              radial-gradient(circle at 50% 80%, rgba(35,137,255,.10), transparent 40%),
+              linear-gradient(180deg, var(--sd-page), var(--sd-page-2));
+  --sd-page: #fbfcff;
+  --sd-page-2: #f5f7ff;
+  --sd-card: #ffffff;
+  --sd-card-soft: #f7faff;
+  --sd-ink: #071235;
+  --sd-muted: #68708a;
+  --sd-faint: #8c94aa;
+  --sd-line: rgba(15,23,42,.08);
+  --sd-shadow: 0 16px 36px rgba(35,44,87,.09);
+  --sd-shadow-soft: 0 8px 22px rgba(35,44,87,.06);
+  position: relative;
+  transition: background .3s, color .3s;
+}
+
+[data-theme="dark"] .mr-root,
+.dark .mr-root,
+.mr-root.dark {
+  --sd-page: #080d1f;
+  --sd-page-2: #10172d;
+  --sd-card: rgba(23,31,58,.94);
+  --sd-card-soft: rgba(31,42,76,.76);
+  --sd-ink: #f6f7ff;
+  --sd-muted: #b5bfd8;
+  --sd-faint: #7f8aa7;
+  --sd-line: rgba(255,255,255,.12);
+  --sd-shadow: 0 20px 54px rgba(0,0,0,.42);
+  --sd-shadow-soft: 0 12px 30px rgba(0,0,0,.28);
+}
+
+.mr-sparkle {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 50%;
+  filter: blur(.5px);
+  opacity: .55;
+  animation: sdFloatBg 14s ease-in-out infinite alternate;
+}
+
+.mr-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 18px;
+  background: var(--sd-card);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--sd-line);
+  box-shadow: var(--sd-shadow-soft);
+  z-index: 30;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.mr-brand-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.mr-btn-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  border-radius: 12px;
+  border: 1px solid var(--sd-line);
+  background: var(--sd-card-soft);
+  color: var(--sd-muted);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .2s;
+}
+.mr-btn-back:hover {
+  background: rgba(99,102,241,.1);
+  color: var(--sd-ink);
+  border-color: rgba(99,102,241,.3);
+  transform: translateX(-2px);
+}
+
+.mr-room-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, rgba(99,102,241,.12), rgba(139,92,246,.14));
+  border: 1px solid rgba(99,102,241,.24);
+  padding: 6px 14px;
+  border-radius: 999px;
+}
+.mr-room-badge-text {
+  font-size: 13px;
+  font-weight: 800;
+  color: #6366f1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+[data-theme="dark"] .mr-room-badge-text,
+.dark .mr-room-badge-text {
+  color: #a5b4fc;
+}
+
+.mr-topic-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--sd-ink);
+  background: var(--sd-card-soft);
+  border: 1px solid var(--sd-line);
+  padding: 6px 14px;
+  border-radius: 999px;
+  max-width: 360px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mr-center-hud {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mr-timer-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-family: monospace, var(--font);
+  font-size: 13.5px;
+  font-weight: 800;
+  background: var(--sd-card);
+  border: 1.5px solid var(--sd-line);
+  color: var(--sd-ink);
+  box-shadow: var(--sd-shadow-soft);
+}
+
+.mr-turn-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 15px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  transition: all .3s cubic-bezier(.34,1.56,.64,1);
+}
+.mr-turn-pill.you {
+  background: linear-gradient(135deg, rgba(16,185,129,.16), rgba(5,150,105,.22));
+  border: 1.5px solid rgba(16,185,129,.45);
+  color: #059669;
+  box-shadow: 0 0 16px rgba(16,185,129,.2);
+}
+[data-theme="dark"] .mr-turn-pill.you,
+.dark .mr-turn-pill.you {
+  color: #34d399;
+}
+.mr-turn-pill.ai {
+  background: linear-gradient(135deg, rgba(139,92,246,.16), rgba(124,58,237,.22));
+  border: 1.5px solid rgba(139,92,246,.45);
+  color: #7c3aed;
+  box-shadow: 0 0 16px rgba(139,92,246,.2);
+  animation: pulse 1.8s infinite;
+}
+[data-theme="dark"] .mr-turn-pill.ai,
+.dark .mr-turn-pill.ai {
+  color: #c4b5fd;
+}
+
+.mr-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mr-btn-theme {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  border: 1px solid var(--sd-line);
+  background: var(--sd-card-soft);
+  color: var(--sd-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all .2s;
+}
+.mr-btn-theme:hover {
+  background: rgba(99,102,241,.12);
+  color: var(--sd-ink);
+  transform: rotate(15deg);
+}
+
+.mr-btn-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 12px;
+  border: none;
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(239,68,68,.3);
+  transition: all .2s;
+}
+.mr-btn-end:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(239,68,68,.45);
+}
+
+.mr-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  position: relative;
+}
+
+.mr-stage-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 20px 20px;
+  gap: 14px;
+  overflow-y: auto;
+  position: relative;
+  min-width: 0;
+}
+
+.mr-turn-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 18px;
+  border-radius: 16px;
+  background: var(--sd-card);
+  backdrop-filter: blur(12px);
+  border: 1.5px solid var(--sd-line);
+  box-shadow: var(--sd-shadow-soft);
+  animation: sdCardIn .35s cubic-bezier(.34,1.3,.64,1);
+  transition: all .3s;
+}
+.mr-turn-banner.you {
+  border-color: rgba(16,185,129,.4);
+  background: linear-gradient(135deg, rgba(16,185,129,.08), var(--sd-card));
+}
+.mr-turn-banner.ai {
+  border-color: rgba(139,92,246,.4);
+  background: linear-gradient(135deg, rgba(139,92,246,.08), var(--sd-card));
+}
+
+.mr-stage-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  min-height: 380px;
+  align-items: stretch;
+}
+
+.mr-tile {
+  border-radius: 24px;
+  background: var(--sd-card);
+  border: 2px solid var(--sd-line);
+  box-shadow: var(--sd-shadow);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: all .35s cubic-bezier(.34,1.3,.64,1);
+}
+.mr-tile.active-speaker {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99,102,241,.25), 0 20px 45px rgba(99,102,241,.18);
+  transform: translateY(-2px);
+}
+.mr-tile.ai-speaking {
+  border-color: #8b5cf6;
+  box-shadow: 0 0 0 3px rgba(139,92,246,.3), 0 20px 45px rgba(139,92,246,.2);
+  transform: translateY(-2px);
+}
+
+.mr-tile-top-bar {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  right: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.mr-tile-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(0,0,0,.65);
+  backdrop-filter: blur(8px);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  box-shadow: 0 4px 12px rgba(0,0,0,.15);
+}
+
+.mr-tile-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  background: rgba(0,0,0,.65);
+  backdrop-filter: blur(8px);
+  color: #fff;
+}
+
+.mr-tile-center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  padding: 24px 16px;
+  z-index: 5;
+}
+
+.mr-student-avatar {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 44px;
+  font-weight: 900;
+  color: #fff;
+  background: linear-gradient(135deg, #3b82f6, #6366f1);
+  box-shadow: 0 12px 30px rgba(59,130,246,.35);
+  position: relative;
+}
+
+.mr-robo-img-wrap {
+  width: 160px;
+  height: 160px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: sdBreathe 4.5s ease-in-out infinite;
+}
+
+.mr-robo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 14px 22px rgba(99,102,241,.28));
+  transition: transform .3s;
+}
+
+.mr-soundwave-ring {
+  position: absolute;
+  inset: -14px;
+  border-radius: 50%;
+  border: 2px dashed rgba(139,92,246,.5);
+  animation: sdOrbit 8s linear infinite;
+}
+
+.mr-caption-hud {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  right: 16px;
+  padding: 12px 16px;
+  border-radius: 16px;
+  background: rgba(7, 18, 53, .88);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255,255,255,.16);
+  color: #fff;
+  z-index: 15;
+  box-shadow: 0 10px 25px rgba(0,0,0,.25);
+  animation: fadeIn .25s ease;
+}
+[data-theme="light"] .mr-caption-hud,
+.mr-root:not(.dark) .mr-caption-hud {
+  background: rgba(255, 255, 255, .94);
+  color: #071235;
+  border-color: rgba(99,102,241,.22);
+  box-shadow: 0 10px 25px rgba(35,44,87,.14);
+}
+
+.mr-caption-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  margin-bottom: 5px;
+  opacity: .8;
+}
+
+.mr-caption-text {
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  max-height: 70px;
+  overflow-y: auto;
+}
+
+.mr-cursor-blink {
+  display: inline-block;
+  width: 2px;
+  height: 14px;
+  background: #6366f1;
+  margin-left: 4px;
+  vertical-align: middle;
+  animation: pulse .8s infinite;
+}
+
+.mr-controls-dock {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 12px 24px;
+  background: var(--sd-card);
+  backdrop-filter: blur(16px);
+  border: 1.5px solid var(--sd-line);
+  border-radius: 24px;
+  box-shadow: var(--sd-shadow);
+  margin: 0 auto;
+  max-width: 620px;
+  width: 100%;
+}
+
+.mr-btn-mic {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 28px;
+  border-radius: 16px;
+  font-size: 13.5px;
+  font-weight: 800;
+  cursor: pointer;
+  border: none;
+  transition: all .25s cubic-bezier(.34,1.4,.64,1);
+  box-shadow: 0 6px 20px rgba(99,102,241,.25);
+}
+.mr-btn-mic.ready {
+  background: linear-gradient(135deg, #2563eb, #6366f1);
+  color: #fff;
+}
+.mr-btn-mic.ready:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 26px rgba(99,102,241,.38);
+}
+.mr-btn-mic.recording {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: #fff;
+  animation: micGlow 1.2s infinite;
+}
+.mr-btn-mic.disabled {
+  opacity: .5;
+  cursor: not-allowed;
+  background: var(--sd-card-soft);
+  color: var(--sd-muted);
+  box-shadow: none;
+}
+.mr-controls-dock .mr-dock-action-mic {
+  min-width: 94px;
+  min-height: 46px;
+  padding: 10px 15px;
+  border: 1px solid rgba(16,185,129,.48);
+  border-radius: 15px;
+  background: linear-gradient(135deg, #159568, #138f86);
+  color: #fff;
+  font-size: 12px;
+  gap: 8px;
+  animation: dockMicPulse 2s ease-out infinite;
+}
+.mr-controls-dock .mr-dock-action-mic:hover:not(:disabled) {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 10px 24px rgba(16,185,129,.36);
+}
+.mr-controls-dock .mr-dock-action-mic:disabled { animation: none; opacity: .58; }
+.mr-controls-dock .mr-dock-action-end {
+  min-width: 78px;
+  min-height: 46px;
+  padding: 10px 15px;
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 15px;
+  background: linear-gradient(135deg, #f05b52, #d73543);
+  color: #fff;
+  font-size: 12px;
+  gap: 7px;
+  animation: dockEndPulse 2.4s ease-in-out infinite;
+}
+.mr-controls-dock .mr-dock-action-end:hover:not(:disabled) {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 9px 24px rgba(239,68,68,.42);
+}
+.mr-controls-dock .mr-dock-action-end:disabled { animation: none; opacity: .58; cursor: not-allowed; }
+
+.mr-side-panel {
+  width: 360px;
+  min-width: 360px;
+  background: var(--sd-card);
+  border-left: 1px solid var(--sd-line);
+  box-shadow: var(--sd-shadow-soft);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: width .3s, transform .3s;
+}
+
+.mr-side-header {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--sd-line);
+  background: var(--sd-card-soft);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.mr-side-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--sd-ink);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mr-side-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mr-chat-input-bar {
+  padding: 12px 14px;
+  border-top: 1px solid var(--sd-line);
+  background: var(--sd-card);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mr-chat-input {
+  flex: 1;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1.5px solid var(--sd-line);
+  background: var(--sd-card-soft);
+  color: var(--sd-ink);
+  font-size: 13px;
+  outline: none;
+  transition: all .2s;
+}
+.mr-chat-input:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99,102,241,.12);
+}
+
+.mr-chat-send-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  border: none;
+  background: linear-gradient(135deg, #2563eb, #6366f1);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all .2s;
+  box-shadow: 0 4px 12px rgba(99,102,241,.3);
+  flex-shrink: 0;
+}
+.mr-chat-send-btn:hover:not(:disabled) {
+  transform: scale(1.06);
+}
+.mr-chat-send-btn:disabled {
+  opacity: .4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+@media (max-width: 1024px) {
+  .mr-body {
+    flex-direction: column;
+  }
+  .mr-side-panel {
+    width: 100%;
+    min-width: 100%;
+    max-height: 380px;
+    border-left: none;
+    border-top: 1px solid var(--sd-line);
+  }
+  .mr-stage-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 640px) {
+  .mr-topbar {
+    padding: 8px 12px;
+  }
+  .mr-topic-pill {
+    display: none;
+  }
+  .mr-stage-area {
+    padding: 10px;
+  }
+  .mr-controls-dock {
+    padding: 8px 14px;
+  }
+  .mr-btn-mic {
+    padding: 10px 18px;
+    font-size: 12px;
+  }
+}
+
+@keyframes mrRoomIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes mrAvatarFloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@keyframes mrCaptionIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+.mr-root {
+  --mr-green: #159568;
+  --mr-teal: #138f86;
+  --mr-amber: #eaa927;
+  --mr-coral: #e87353;
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100vh;
+  min-height: 100vh;
+  z-index: 1000;
+  overflow: hidden;
+  padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px);
+  background:
+    radial-gradient(circle at 12% 12%, rgba(32,181,119,.17), transparent 30%),
+    radial-gradient(circle at 88% 14%, rgba(240,174,45,.16), transparent 28%),
+    radial-gradient(circle at 55% 92%, rgba(232,115,83,.12), transparent 34%),
+    linear-gradient(160deg, var(--sd-page), var(--sd-page-2));
+}
+.mr-root.dark {
+  --sd-page: #05070b;
+  --sd-page-2: #0b1118;
+  --sd-card: #111820;
+  --sd-card-soft: #18232d;
+  --sd-ink: #f2fbff;
+  --sd-muted: #b2c4ce;
+  --sd-faint: #8298a5;
+  --sd-line: rgba(116,204,235,.16);
+  --sd-shadow: 0 20px 48px rgba(0,0,0,.52);
+  --sd-shadow-soft: 0 12px 30px rgba(0,0,0,.36);
+  background:
+    radial-gradient(circle at 12% 12%, rgba(139,92,246,.2), transparent 31%),
+    radial-gradient(circle at 88% 14%, rgba(34,211,238,.17), transparent 29%),
+    radial-gradient(circle at 55% 92%, rgba(16,185,129,.14), transparent 34%),
+    linear-gradient(155deg, #05070b, #0b1118 58%, #10131b);
+}
+.mr-root.dark .mr-topbar { background: rgba(10,15,22,.97); border-color: rgba(116,204,235,.16); }
+.mr-root.dark .mr-side-panel { background: #090e14; }
+.mr-root.dark .mr-side-header { background: linear-gradient(100deg, rgba(139,92,246,.17), rgba(34,211,238,.12)); }
+.mr-root.dark .mr-side-title svg { color: #22d3ee !important; }
+.mr-root.dark .mr-tile { background: #111820; border-color: rgba(116,204,235,.17); }
+.mr-root.dark .mr-caption-hud { background: rgba(11,19,27,.97); color: #f2fbff; border-color: rgba(34,211,238,.42); }
+.mr-root.dark .mr-caption-hud[style] { background: #18232d !important; border-color: rgba(34,211,238,.34) !important; }
+.mr-root.dark .mr-caption-label { color: #b9a0ff; }
+.mr-root.dark .mr-caption-label[style] { color: #b9a0ff !important; }
+.mr-root.dark .mr-caption-text { color: #effaff; }
+.mr-root.dark .mr-tile .tile-wave-bar[style*="#8b5cf6"] { background: #a78bfa !important; }
+.mr-root.dark .mr-chat-input { background: #18232d; border-color: rgba(116,204,235,.2); color: #f2fbff; }
+.mr-root.dark .mr-chat-input::placeholder { color: #9aadb8; }
+.mr-root.dark .mr-chat-input:focus { border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(139,92,246,.2); }
+.mr-root.dark .mr-chat-input-bar { background: #090e14; border-color: rgba(116,204,235,.16); }
+.mr-root.dark .mr-chat-send-btn { background: linear-gradient(130deg, #7c3aed, #0891b2); box-shadow: 0 4px 14px rgba(34,211,238,.2); }
+.mr-root.dark .mr-room-badge { background: rgba(16,185,129,.14); border-color: rgba(52,211,153,.34); }
+.mr-root.dark .mr-turn-pill.you { background: rgba(16,185,129,.16); border-color: rgba(52,211,153,.42); }
+.mr-root.dark .mr-turn-pill.ai { background: rgba(139,92,246,.17); border-color: rgba(167,139,250,.46); }
+.mr-root.dark .mr-turn-banner { background-color: rgba(15,22,31,.96); }
+.mr-root.dark .mr-turn-banner.you { background: linear-gradient(110deg, rgba(16,185,129,.14), #111820); }
+.mr-root.dark .mr-turn-banner.ai { background: linear-gradient(110deg, rgba(139,92,246,.18), #111820); }
+.mr-root.dark .mr-side-content > div:first-child { background: #18232d !important; border-color: rgba(116,204,235,.2) !important; }
+.mr-root.dark .mr-side-content > div:first-child > div:first-child { color: #a78bfa !important; }
+.mr-root.dark .mr-side-content > div:first-child > div:nth-child(2) { color: #f2fbff !important; }
+.mr-root.dark .mr-side-content > div:first-child > div:nth-child(3) { color: #b2c4ce !important; }
+.mr-root .mr-sparkle { filter: blur(1px); opacity: .58; }
+.mr-root .mr-topbar { background: color-mix(in srgb, var(--sd-card) 92%, #f2bd54 8%); }
+.mr-root .mr-btn-back:hover,
+.mr-root .mr-btn-theme:hover { background: rgba(21,149,104,.13); border-color: rgba(21,149,104,.38); }
+.mr-root .mr-room-badge { background: rgba(21,149,104,.12); border-color: rgba(21,149,104,.3); }
+.mr-root .mr-room-badge-text { color: #13865d; }
+.mr-root.dark .mr-room-badge-text { color: #72d6a5; }
+.mr-root .mr-turn-pill.you { background: rgba(21,149,104,.13); border-color: rgba(21,149,104,.36); color: #11774f; box-shadow: 0 0 18px rgba(21,149,104,.12); }
+.mr-root.dark .mr-turn-pill.you { color: #79dfad; }
+.mr-root .mr-turn-pill.ai { background: rgba(234,169,39,.16); border-color: rgba(234,169,39,.42); color: #9b6410; box-shadow: 0 0 18px rgba(234,169,39,.12); }
+.mr-root.dark .mr-turn-pill.ai { color: #ffd273; }
+.mr-root .mr-body { min-height: 0; }
+.mr-root .mr-stage-area { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.mr-root .mr-stage-grid { min-height: min(380px, 54dvh); grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: minmax(0, 1fr); gap: clamp(10px, 1.2vw, 16px); }
+.mr-root .mr-tile { min-height: 0; border-radius: 20px; animation: mrRoomIn .48s both; background-size: 180% 180%; transition: transform .3s cubic-bezier(.34,1.3,.64,1), background-position .5s, box-shadow .35s; }
+.mr-root .mr-tile:first-child { background: linear-gradient(140deg, #2eb6ff 0%, #2676e8 52%, #40c95f 100%); }
+.mr-root .mr-tile:nth-child(2) { background: linear-gradient(140deg, #ff9c1a 0%, #ff5f72 54%, #2676e8 100%); }
+.mr-root .mr-tile::before { content: ""; position: absolute; top: -54px; right: -30px; width: 170px; height: 170px; border-radius: 50%; background: radial-gradient(circle, rgba(255,255,255,.28), transparent 70%); pointer-events: none; z-index: 1; transition: transform .35s; }
+.mr-root .mr-tile::after { content: ""; position: absolute; top: -30%; left: -55%; width: 36%; height: 160%; transform: rotate(20deg); background: linear-gradient(90deg, transparent, rgba(255,255,255,.18), transparent); opacity: 0; pointer-events: none; z-index: 2; transition: left .6s ease, opacity .2s ease; }
+.mr-root .mr-tile:hover { background-position: 100% 0; }
+.mr-root .mr-tile:hover::before { transform: scale(1.16); }
+.mr-root .mr-tile:hover::after { left: 125%; opacity: 1; }
+.mr-root .mr-tile.active-speaker { border-color: #22a876; box-shadow: 0 0 0 3px rgba(34,168,118,.2), 0 18px 40px rgba(34,168,118,.16); }
+.mr-root .mr-tile.ai-speaking { border-color: #e4aa35; box-shadow: 0 0 0 3px rgba(228,170,53,.24), 0 18px 40px rgba(228,170,53,.16); }
+.mr-root .mr-tile-center { min-height: 0; padding: 18px 14px 138px; }
+.mr-root .mr-student-avatar { background: linear-gradient(135deg, #20a66f, #168f85); box-shadow: 0 14px 32px rgba(20,142,103,.28); animation: mrAvatarFloat 4s ease-in-out infinite; }
+.mr-root .mr-robo-img-wrap { max-width: 42%; max-height: 42%; aspect-ratio: 1; animation: mrAvatarFloat 4.2s ease-in-out infinite; }
+.mr-root .mr-robo-img { filter: drop-shadow(0 14px 22px rgba(215,153,45,.24)); }
+.mr-root .mr-soundwave-ring { border-color: rgba(234,169,39,.65); }
+.mr-root .mr-caption-hud {
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  max-height: 38%;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 13px;
+  background: rgba(20,43,32,.94);
+  border-color: rgba(234,169,39,.34);
+  box-shadow: 0 10px 26px rgba(0,0,0,.22);
+  animation: mrCaptionIn .28s ease both;
+}
+.mr-root:not(.dark) .mr-caption-hud { background: rgba(249,255,246,.96); color: #18372b; border-color: rgba(21,149,104,.28); }
+.mr-root .mr-caption-label { color: #f4c55f; }
+.mr-root:not(.dark) .mr-caption-label { color: #188356; }
+.mr-root .mr-caption-text {
+  flex: 0 1 auto;
+  max-height: min(92px, 17dvh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(234,169,39,.72) rgba(255,255,255,.1);
+  scroll-behavior: smooth;
+}
+.mr-root .mr-caption-text::-webkit-scrollbar,
+.mr-root .mr-side-content::-webkit-scrollbar,
+.mr-root .chat-msgs::-webkit-scrollbar { width: 6px; }
+.mr-root .mr-caption-text::-webkit-scrollbar-thumb,
+.mr-root .mr-side-content::-webkit-scrollbar-thumb,
+.mr-root .chat-msgs::-webkit-scrollbar-thumb { background: rgba(234,169,39,.68); border-radius: 8px; }
+.mr-root .mr-caption-text::-webkit-scrollbar-track,
+.mr-root .mr-side-content::-webkit-scrollbar-track,
+.mr-root .chat-msgs::-webkit-scrollbar-track { background: rgba(21,149,104,.08); border-radius: 8px; }
+.mr-root .mr-cursor-blink { background: #23a773; }
+.mr-root.dark .mr-cursor-blink { background: #ffd273; }
+.mr-root .mr-controls-dock { flex-shrink: 0; animation: mrRoomIn .42s .08s both; }
+.mr-root .mr-btn-mic.ready { background: linear-gradient(120deg, #159568, #138f86); box-shadow: 0 7px 20px rgba(21,149,104,.24); }
+.mr-root .mr-btn-mic.ready:hover { box-shadow: 0 10px 25px rgba(21,149,104,.34); }
+.mr-root .mr-side-panel { min-height: 0; background: color-mix(in srgb, var(--sd-card) 94%, #f0bd4f 6%); }
+.mr-root .mr-side-header { flex-shrink: 0; background: linear-gradient(100deg, rgba(21,149,104,.09), rgba(234,169,39,.12)); }
+.mr-root .mr-side-content { min-height: 0; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: rgba(21,149,104,.52) transparent; }
+.mr-root .mr-side-content > .chat-msgs { min-height: 120px !important; max-height: min(380px, 46dvh) !important; scrollbar-width: thin; scrollbar-color: rgba(21,149,104,.58) rgba(21,149,104,.08); overscroll-behavior: contain; }
+.mr-root .chat-msg { animation: mrRoomIn .28s ease both; }
+.mr-root .bubble-own { background: linear-gradient(125deg, #168f61, #168d82); }
+.mr-root .bubble-o { background: rgba(234,169,39,.12); border-color: rgba(234,169,39,.24); }
+.mr-root:not(.dark) .bubble-o { background: #fff3d6; border-color: #e8ce91; color: #352c1a; }
+.mr-root:not(.dark) .chat-sender { color: #5d6b61; }
+.mr-root:not(.dark) .chat-empty { color: #66736a; }
+.mr-root.dark .bubble-own { background: linear-gradient(125deg, #7c3aed, #0891b2); color: #fff; }
+.mr-root.dark .bubble-o { background: #18232d; border-color: rgba(34,211,238,.3); color: #effaff; }
+.mr-root.dark .chat-sender { color: #d1c7bc; }
+.mr-root.dark .chat-empty { color: #bbb3aa; }
+.mr-root > .mr-sparkle:nth-of-type(1) { background: radial-gradient(circle, rgba(21,149,104,.18), transparent 70%) !important; }
+.mr-root > .mr-sparkle:nth-of-type(2) { background: radial-gradient(circle, rgba(234,169,39,.18), transparent 70%) !important; }
+.mr-root .mr-topic-pill svg { color: #159568 !important; }
+.mr-root .mr-timer-pill svg { color: #d39a25 !important; }
+.mr-root .mr-turn-banner.ai svg { color: #d39a25 !important; }
+.mr-root .mr-turn-banner.ai > span { background: rgba(234,169,39,.16) !important; color: #a66c11 !important; }
+.mr-root.dark .mr-turn-banner.ai > span { color: #ffd273 !important; }
+.mr-root .mr-tile-status-pill span[style*="#60a5fa"] { color: #63c69a !important; }
+.mr-root .mr-tile-status-pill span[style*="#c4b5fd"] { color: #ffd273 !important; }
+.mr-root .mr-caption-label svg { color: #d39a25 !important; }
+.mr-root .mr-tile.ai-speaking .mr-caption-label > span:last-child { color: #c58b20 !important; }
+.mr-root .mr-caption-hud[style] { background: rgba(21,149,104,.1) !important; border-color: rgba(21,149,104,.28) !important; }
+.mr-root .mr-side-content [style*="rgba(139,92,246"] { background: rgba(234,169,39,.1) !important; border-color: rgba(234,169,39,.24) !important; }
+.mr-root .mr-side-content [style*="#8b5cf6"] { color: #ba841c !important; }
+.mr-root .mr-chat-input:focus { border-color: #159568; box-shadow: 0 0 0 3px rgba(21,149,104,.13); }
+.mr-root .mr-chat-send-btn { background: linear-gradient(125deg, #159568, #138f86); box-shadow: 0 4px 12px rgba(21,149,104,.25); }
+.mr-root .mr-turn-banner.you { border-color: rgba(21,149,104,.32); background: linear-gradient(110deg, rgba(21,149,104,.1), var(--sd-card)); }
+.mr-root .mr-turn-banner.ai { border-color: rgba(234,169,39,.38); background: linear-gradient(110deg, rgba(234,169,39,.13), var(--sd-card)); }
+.mr-root.dark .mr-tile.active-speaker { border-color: #34d399; box-shadow: 0 0 0 3px rgba(52,211,153,.24), 0 18px 40px rgba(52,211,153,.14); }
+.mr-root.dark .mr-tile.ai-speaking { border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(167,139,250,.28), 0 18px 40px rgba(167,139,250,.16); }
+.mr-root.dark .mr-student-avatar { background: linear-gradient(135deg, #7c3aed, #0891b2); box-shadow: 0 14px 32px rgba(34,211,238,.24); }
+.mr-root.dark .mr-soundwave-ring { border-color: rgba(34,211,238,.74); }
+.mr-root.dark .mr-side-content { scrollbar-color: rgba(34,211,238,.66) transparent; }
+.mr-root.dark .mr-side-content > .chat-msgs { scrollbar-color: rgba(167,139,250,.72) rgba(255,255,255,.06); }
+.mr-root.dark .mr-caption-text { scrollbar-color: rgba(34,211,238,.76) rgba(255,255,255,.06); }
+.mr-root.dark .mr-caption-text::-webkit-scrollbar-thumb,
+.mr-root.dark .mr-side-content::-webkit-scrollbar-thumb,
+.mr-root.dark .chat-msgs::-webkit-scrollbar-thumb { background: #22d3ee; }
+.mr-root.dark .mr-caption-text::-webkit-scrollbar-track,
+.mr-root.dark .mr-side-content::-webkit-scrollbar-track,
+.mr-root.dark .chat-msgs::-webkit-scrollbar-track { background: rgba(16,185,129,.1); }
+.mr-root.dark .mr-cursor-blink { background: #22d3ee; }
+.mr-root.dark .mr-btn-mic.ready { background: linear-gradient(125deg, #7c3aed, #0891b2); box-shadow: 0 7px 20px rgba(124,58,237,.3); }
+.mr-root.dark .mr-btn-mic.ready:hover { box-shadow: 0 10px 26px rgba(34,211,238,.34); }
+.mr-root.dark .mr-room-badge-text { color: #34d399; }
+.mr-root.dark .mr-turn-pill.you { color: #6ee7b7; }
+.mr-root.dark .mr-turn-pill.ai { color: #c4b5fd; }
+.mr-root.dark .mr-turn-banner.you { border-color: rgba(52,211,153,.4); background: linear-gradient(110deg, rgba(16,185,129,.16), #111820); }
+.mr-root.dark .mr-turn-banner.ai { border-color: rgba(167,139,250,.44); background: linear-gradient(110deg, rgba(139,92,246,.18), #111820); }
+.mr-root.dark .mr-turn-banner.ai > span { background: rgba(139,92,246,.2) !important; color: #c4b5fd !important; }
+.mr-root.dark .mr-turn-banner.you > span { background: rgba(16,185,129,.18) !important; color: #6ee7b7 !important; }
+.mr-root.dark .mr-tile-status-pill span[style*="#60a5fa"] { color: #22d3ee !important; }
+.mr-root.dark .mr-tile-status-pill span[style*="#c4b5fd"] { color: #c4b5fd !important; }
+.mr-root.dark .mr-caption-label svg { color: #22d3ee !important; }
+.mr-root.dark .mr-tile.ai-speaking .mr-caption-label > span:last-child { color: #c4b5fd !important; }
+.mr-root.dark .mr-chat-input:focus { border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(139,92,246,.2); }
+.mr-root.dark .mr-chat-send-btn { background: linear-gradient(125deg, #7c3aed, #0891b2); box-shadow: 0 4px 12px rgba(34,211,238,.25); }
+.mr-root.dark > .mr-sparkle:nth-of-type(1) { background: radial-gradient(circle, rgba(139,92,246,.22), transparent 70%) !important; }
+.mr-root.dark > .mr-sparkle:nth-of-type(2) { background: radial-gradient(circle, rgba(34,211,238,.18), transparent 70%) !important; }
+.mr-root.dark .mr-topic-pill svg { color: #22d3ee !important; }
+.mr-root.dark .mr-timer-pill svg { color: #a78bfa !important; }
+.mr-root.dark .mr-side-content [style*="rgba(139,92,246"] { background: rgba(139,92,246,.16) !important; border-color: rgba(167,139,250,.36) !important; }
+.mr-root.dark .mr-side-content [style*="#8b5cf6"] { color: #c4b5fd !important; }
+.mr-root.dark {
+  --mr-blue: #3b82f6;
+  --mr-orange: #ff8a3d;
+  --mr-mint: #55e6b0;
+  --sd-page: #0b1220;
+  --sd-page-2: #111b2b;
+  --sd-card: #131e2e;
+  --sd-card-soft: #192638;
+  --sd-ink: #f8fafc;
+  --sd-muted: #c1ccda;
+  --sd-faint: #8c9bb0;
+  --sd-line: rgba(173,195,221,.14);
+  --sd-shadow: 0 20px 48px rgba(0,0,0,.4);
+  --sd-shadow-soft: 0 12px 30px rgba(0,0,0,.28);
+  background:
+    radial-gradient(circle at 12% 10%, rgba(59,130,246,.15), transparent 32%),
+    radial-gradient(circle at 88% 14%, rgba(255,138,61,.12), transparent 30%),
+    radial-gradient(circle at 55% 92%, rgba(85,230,176,.09), transparent 36%),
+    linear-gradient(155deg, #0b1220, #101a29 58%, #121b28);
+  color: #f8fafc;
+}
+.mr-root.dark .mr-topbar { background: rgba(11,18,32,.94); border-color: var(--sd-line); }
+.mr-root.dark .mr-side-panel { background: rgba(12,20,32,.98); }
+.mr-root.dark .mr-side-header { background: linear-gradient(100deg, rgba(59,130,246,.13), rgba(255,138,61,.1)); }
+.mr-root.dark .mr-side-title svg,
+.mr-root.dark .mr-topic-pill svg { color: var(--mr-blue) !important; }
+.mr-root.dark .mr-timer-pill svg { color: var(--mr-orange) !important; }
+.mr-root.dark .mr-tile { background: #121d2c; border-color: rgba(173,195,221,.16); }
+.mr-root.dark .mr-tile:first-child { background: linear-gradient(145deg, #16478d 0%, #087eaa 52%, #146b5f 100%); }
+.mr-root.dark .mr-tile:nth-child(2) { background: linear-gradient(145deg, #a8491d 0%, #ba3e54 48%, #1b5793 100%); }
+.mr-root.dark .mr-tile::before { background: radial-gradient(circle, rgba(255,255,255,.2), transparent 70%); }
+.mr-root.dark .mr-tile::after { background: linear-gradient(90deg, transparent, rgba(255,255,255,.14), transparent); }
+.mr-root.dark .mr-tile.active-speaker { border-color: var(--mr-mint); box-shadow: 0 0 0 3px rgba(85,230,176,.2), 0 18px 40px rgba(85,230,176,.11); }
+.mr-root.dark .mr-tile.ai-speaking { border-color: var(--mr-orange); box-shadow: 0 0 0 3px rgba(255,138,61,.2), 0 18px 40px rgba(255,138,61,.12); }
+.mr-root.dark .mr-student-avatar { background: linear-gradient(135deg, #2563eb, #3b82f6); box-shadow: 0 14px 32px rgba(59,130,246,.28); }
+.mr-root.dark .mr-robo-img { filter: drop-shadow(0 14px 22px rgba(255,138,61,.2)); }
+.mr-root.dark .mr-soundwave-ring { border-color: rgba(255,138,61,.62); }
+.mr-root.dark .mr-caption-hud,
+.mr-root.dark .mr-caption-hud[style] { background: rgba(15,26,40,.96) !important; color: #f8fafc; border-color: rgba(59,130,246,.36) !important; box-shadow: 0 10px 28px rgba(0,0,0,.28), 0 0 22px rgba(59,130,246,.08); }
+.mr-root.dark .mr-caption-label,
+.mr-root.dark .mr-caption-label[style] { color: var(--mr-blue) !important; }
+.mr-root.dark .mr-caption-label svg { color: var(--mr-blue) !important; }
+.mr-root.dark .mr-caption-text { color: #f8fafc; scrollbar-color: rgba(59,130,246,.72) rgba(255,255,255,.06); }
+.mr-root.dark .mr-caption-text::-webkit-scrollbar-thumb,
+.mr-root.dark .mr-side-content::-webkit-scrollbar-thumb,
+.mr-root.dark .chat-msgs::-webkit-scrollbar-thumb { background: var(--mr-blue); }
+.mr-root.dark .mr-caption-text::-webkit-scrollbar-track,
+.mr-root.dark .mr-side-content::-webkit-scrollbar-track,
+.mr-root.dark .chat-msgs::-webkit-scrollbar-track { background: rgba(85,230,176,.08); }
+.mr-root.dark .mr-side-content,
+.mr-root.dark .mr-side-content > .chat-msgs { scrollbar-color: rgba(59,130,246,.68) rgba(255,255,255,.05); }
+.mr-root.dark .mr-side-content > div:first-child { background: #192638 !important; border-color: var(--sd-line) !important; }
+.mr-root.dark .mr-side-content > div:first-child > div:first-child { color: var(--mr-blue) !important; }
+.mr-root.dark .mr-side-content > div:first-child > div:nth-child(2) { color: #f8fafc !important; }
+.mr-root.dark .mr-side-content > div:first-child > div:nth-child(3) { color: var(--sd-muted) !important; }
+.mr-root.dark .mr-side-content [style*="rgba(16,185,129"] { background: rgba(85,230,176,.1) !important; border-color: rgba(85,230,176,.28) !important; }
+.mr-root.dark .mr-side-content [style*="#10b981"] { color: var(--mr-mint) !important; }
+.mr-root.dark .mr-chat-input { background: #192638; border-color: var(--sd-line); color: #f8fafc; }
+.mr-root.dark .mr-chat-input::placeholder { color: #93a2b6; }
+.mr-root.dark .mr-chat-input:focus { border-color: var(--mr-blue); box-shadow: 0 0 0 3px rgba(59,130,246,.18); }
+.mr-root.dark .mr-chat-input-bar { background: rgba(12,20,32,.98); border-color: var(--sd-line); }
+.mr-root.dark .mr-chat-send-btn { background: linear-gradient(125deg, #2563eb, #3b82f6); box-shadow: 0 4px 14px rgba(59,130,246,.24); }
+.mr-root.dark .mr-btn-back:hover,
+.mr-root.dark .mr-btn-theme:hover { background: rgba(59,130,246,.14); border-color: rgba(59,130,246,.4); }
+.mr-root.dark .mr-room-badge { background: rgba(85,230,176,.1); border-color: rgba(85,230,176,.3); }
+.mr-root.dark .mr-room-badge > span:first-child { background: var(--mr-mint) !important; box-shadow: 0 0 10px var(--mr-mint) !important; }
+.mr-root.dark .mr-room-badge-text { color: var(--mr-mint); }
+.mr-root.dark .mr-turn-pill.you { background: rgba(85,230,176,.12); border-color: rgba(85,230,176,.34); color: var(--mr-mint); box-shadow: 0 0 16px rgba(85,230,176,.12); }
+.mr-root.dark .mr-turn-pill.ai { background: rgba(255,138,61,.12); border-color: rgba(255,138,61,.34); color: #ffb27d; box-shadow: 0 0 16px rgba(255,138,61,.1); }
+.mr-root.dark .mr-turn-banner { background-color: rgba(19,30,46,.96); }
+.mr-root.dark .mr-turn-banner.you { border-color: rgba(85,230,176,.34); background: linear-gradient(110deg, rgba(85,230,176,.1), #131e2e); }
+.mr-root.dark .mr-turn-banner.ai { border-color: rgba(255,138,61,.34); background: linear-gradient(110deg, rgba(255,138,61,.12), #131e2e); }
+.mr-root.dark .mr-turn-banner.you svg { color: var(--mr-mint) !important; }
+.mr-root.dark .mr-turn-banner.ai svg { color: var(--mr-orange) !important; }
+.mr-root.dark .mr-turn-banner.you > span { background: rgba(85,230,176,.14) !important; color: var(--mr-mint) !important; }
+.mr-root.dark .mr-turn-banner.ai > span { background: rgba(255,138,61,.15) !important; color: #ffb27d !important; }
+.mr-root.dark .mr-controls-dock { background: rgba(19,30,46,.94); border-color: var(--sd-line); }
+.mr-root.dark .mr-btn-mic.ready { background: linear-gradient(125deg, #2563eb, #3b82f6); box-shadow: 0 7px 20px rgba(59,130,246,.26); }
+.mr-root.dark .mr-btn-mic.ready:hover { box-shadow: 0 10px 26px rgba(59,130,246,.34); }
+.mr-root.dark .mr-btn-mic.recording { box-shadow: 0 7px 20px rgba(255,138,61,.22); }
+.mr-root.dark .mr-cursor-blink { background: var(--mr-mint); }
+.mr-root.dark .bubble-own { background: linear-gradient(125deg, #2563eb, #3478df); color: #fff; }
+.mr-root.dark .bubble-o { background: #192638; border-color: rgba(255,138,61,.24); color: #f8fafc; }
+.mr-root.dark .chat-sender { color: #c1ccda; }
+.mr-root.dark .chat-empty { color: #a8b5c6; }
+.mr-root.dark .mr-tile-status-pill span[style*="#60a5fa"] { color: #70aaff !important; }
+.mr-root.dark .mr-tile-status-pill span[style*="#c4b5fd"] { color: #ffb27d !important; }
+.mr-root.dark .mr-tile-status-pill span[style*="#34d399"] { color: var(--mr-mint) !important; }
+.mr-root.dark .mr-tile .tile-wave-bar[style*="#8b5cf6"] { background: var(--mr-orange) !important; }
+.mr-root.dark .mr-tile.ai-speaking .mr-caption-label > span:last-child { color: #ffb27d !important; }
+.mr-root.dark .mr-side-content [style*="rgba(139,92,246"] { background: rgba(255,138,61,.12) !important; border-color: rgba(255,138,61,.25) !important; }
+.mr-root.dark .mr-side-content [style*="#8b5cf6"] { color: #ffb27d !important; }
+.mr-root.dark > .mr-sparkle:nth-of-type(1) { background: radial-gradient(circle, rgba(59,130,246,.2), transparent 70%) !important; }
+.mr-root.dark > .mr-sparkle:nth-of-type(2) { background: radial-gradient(circle, rgba(255,138,61,.16), transparent 70%) !important; }
+@media (max-height: 700px) and (min-width: 1025px) {
+  .mr-root .mr-stage-area { padding-top: 10px; padding-bottom: 10px; gap: 9px; }
+  .mr-root .mr-stage-grid { min-height: min(340px, 53dvh); }
+  .mr-root .mr-turn-banner { padding: 8px 14px; }
+  .mr-root .mr-controls-dock { padding: 9px 18px; }
+}
+@media (max-width: 1024px) {
+  .mr-root .mr-topbar { flex-wrap: wrap; }
+  .mr-root .mr-body { flex-direction: column; overflow-y: auto; }
+  .mr-root .mr-stage-area { flex: 0 0 auto; overflow: visible; padding: 12px; }
+  .mr-root .mr-stage-grid { grid-template-columns: minmax(0, 1fr); grid-template-rows: repeat(2, minmax(230px, min(42dvh, 360px))); min-height: 0; flex: 0 0 auto; }
+  .mr-root .mr-side-panel { width: 100%; min-width: 100%; height: min(40dvh, 340px); min-height: 220px; max-height: none; flex: 0 0 auto; border-left: 0; border-top: 1px solid var(--sd-line); }
+  .mr-root .mr-side-content > .chat-msgs { max-height: 32dvh !important; }
+}
+@media (max-width: 640px) {
+  .mr-root .mr-topbar { flex-wrap: wrap; gap: 7px; padding-left: 10px; padding-right: 10px; }
+  .mr-root .mr-brand-group { flex: 1 1 100%; flex-wrap: wrap; }
+  .mr-root .mr-center-hud { gap: 5px; }
+  .mr-root .mr-turn-pill { padding: 6px 9px; font-size: 10px; }
+  .mr-root .mr-topic-pill { display: none; }
+  .mr-root .mr-stage-area { padding: 10px; gap: 9px; }
+  .mr-root .mr-stage-grid { grid-template-rows: repeat(2, minmax(210px, min(38dvh, 300px))); gap: 10px; }
+  .mr-root .mr-tile-top-bar { top: 10px; left: 10px; right: 10px; gap: 5px; }
+  .mr-root .mr-tile-badge { padding: 5px 8px; font-size: 10px; }
+  .mr-root .mr-tile-status-pill { padding: 4px 7px; font-size: 9px; }
+  .mr-root .mr-caption-hud { left: 9px; right: 9px; bottom: 9px; padding: 8px 10px; }
+  .mr-root .mr-caption-text { max-height: min(74px, 16dvh); font-size: 12px; }
+  .mr-root .mr-controls-dock { flex-wrap: wrap; gap: 7px; padding: 8px 10px; border-radius: 16px; }
+  .mr-root .mr-controls-dock > span { white-space: normal !important; text-align: center; }
+  .mr-root .mr-btn-mic { padding: 10px 14px; font-size: 11.5px; }
+  .mr-root .mr-side-panel { height: 38dvh; min-height: 200px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mr-root *, .mr-root *::before, .mr-root *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
+}
+
+/* ═════════════════════════════════════════════════════════════════════════════
+   TEAM DEBATE MEETING ROOM — STUDENT DASHBOARD & EXPLORE/PLAY COLORFUL THEME
+═════════════════════════════════════════════════════════════════════════════ */
+.tm-root {
+  min-height: 100vh;
+  height: 100vh;
+  max-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  color: var(--sd-ink);
+  background: radial-gradient(circle at 14% 9%, rgba(16, 185, 129, 0.08), transparent 28%),
+              radial-gradient(circle at 88% 14%, rgba(245, 158, 11, 0.10), transparent 26%),
+              linear-gradient(180deg, var(--sd-page), var(--sd-page-2));
+  --sd-page: #fbfcff;
+  --sd-page-2: #f4f8fe;
+  --sd-card: #ffffff;
+  --sd-card-soft: #f8fbff;
+  --sd-card-alt: #f1f6fd;
+  --sd-ink: #071235;
+  --sd-muted: #5e6b8c;
+  --sd-faint: #8d9bb5;
+  --sd-line: rgba(15, 23, 42, 0.08);
+  --sd-line-strong: rgba(15, 23, 42, 0.14);
+  --sd-shadow: 0 14px 34px rgba(35, 44, 87, 0.08);
+  --sd-shadow-soft: 0 6px 20px rgba(35, 44, 87, 0.05);
+  --tm-blue-ink: #1761b4;
+  --tm-orange-ink: #bd531e;
+  --tm-mint-ink: #13865d;
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  transition: background .3s ease, color .3s ease;
+}
+
+[data-theme="dark"] .tm-root,
+.dark .tm-root,
+.tm-root.dark {
+  --sd-page: #060b18;
+  --sd-page-2: #0b1328;
+  --sd-card: rgba(18, 27, 54, 0.94);
+  --sd-card-soft: rgba(25, 37, 72, 0.72);
+  --sd-card-alt: rgba(30, 44, 84, 0.85);
+  --sd-ink: #f8fafc;
+  --sd-muted: #a5b4cf;
+  --sd-faint: #7080a2;
+  --sd-line: rgba(255, 255, 255, 0.10);
+  --sd-line-strong: rgba(255, 255, 255, 0.18);
+  --sd-shadow: 0 20px 54px rgba(0, 0, 0, 0.6);
+  --sd-shadow-soft: 0 10px 28px rgba(0, 0, 0, 0.4);
+  --tm-blue-ink: #93c5fd;
+  --tm-orange-ink: #ffd19a;
+  --tm-mint-ink: #a7f3d0;
+  background: radial-gradient(circle at 14% 0%, rgba(16, 185, 129, 0.12), transparent 28%),
+              radial-gradient(circle at 88% 5%, rgba(245, 158, 11, 0.10), transparent 28%),
+              linear-gradient(180deg, #060b18 0%, #0b1328 100%);
+  color: #f8fafc;
+}
+
+/* Animations */
+@keyframes tmTurnSlide {
+  0% { opacity: 0; transform: translateY(-12px) scale(0.97); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes tmGlowPulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.4), 0 0 20px rgba(16, 185, 129, 0.2); }
+  50% { box-shadow: 0 0 0 3.5px rgba(16, 185, 129, 0.8), 0 0 30px rgba(16, 185, 129, 0.4); }
+}
+@keyframes tmBlueGlow {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.35), 0 0 18px rgba(14, 165, 233, 0.15); }
+  50% { box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.75), 0 0 28px rgba(14, 165, 233, 0.35); }
+}
+@keyframes tmOrangeGlow {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(255, 138, 61, 0.35), 0 0 18px rgba(255, 138, 61, 0.15); }
+  50% { box-shadow: 0 0 0 3px rgba(255, 138, 61, 0.75), 0 0 28px rgba(255, 138, 61, 0.3); }
+}
+@keyframes tmRoboFloat {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-6px) scale(1.02); }
+}
+
+/* Stage Layout */
+.tm-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.tm-stage-area {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 14px;
+  gap: 10px;
+  overflow: hidden;
+}
+
+/* Animated Turn Announcement Banner */
+.tm-turn-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 14px;
+  border-radius: 14px;
+  background: var(--sd-card);
+  border: 1.5px solid var(--sd-line-strong);
+  box-shadow: var(--sd-shadow-soft);
+  animation: tmTurnSlide .32s ease forwards;
+  flex-shrink: 0;
+  gap: 10px;
+}
+.tm-turn-banner.blue {
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.12), rgba(2, 132, 199, 0.05));
+  border-color: rgba(14, 165, 233, 0.35);
+}
+.tm-turn-banner.red {
+  background: linear-gradient(135deg, rgba(255, 138, 61, 0.14), rgba(232, 117, 44, 0.06));
+  border-color: rgba(255, 138, 61, 0.38);
+}
+.tm-turn-banner.you {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(5, 150, 105, 0.06));
+  border-color: rgba(16, 185, 129, 0.4);
+  animation: tmGlowPulse 2.5s infinite;
+}
+.tm-turn-banner.mod {
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.12), rgba(16, 185, 129, 0.08));
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+/* AI Moderator Podium */
+.tm-mod-podium {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 8px 14px;
+  border-radius: 16px;
+  background: var(--sd-card);
+  border: 1.5px solid rgba(16, 185, 129, 0.28);
+  box-shadow: var(--sd-shadow-soft);
+  flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+  transition: all .25s ease;
+}
+.tm-mod-podium.speaking {
+  border-color: #10b981;
+  animation: tmGlowPulse 2s infinite;
+}
+.tm-mod-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.tm-mod-robo-wrap {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.18), rgba(14, 165, 233, 0.15));
+  border: 2px solid rgba(16, 185, 129, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  flex-shrink: 0;
+}
+.tm-mod-robo-img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  animation: tmRoboFloat 3.5s ease-in-out infinite;
+}
+.tm-mod-transcript-box {
+  flex: 1;
+  min-width: 0;
+  background: var(--sd-card-soft);
+  border: 1px solid var(--sd-line);
+  border-radius: 12px;
+  padding: 7px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tm-mod-transcript-title {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: #10b981;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.tm-mod-transcript-text {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--sd-ink);
+  max-height: 44px;
+  overflow-y: auto;
+}
+
+/* Battle Arena: Side-by-Side Teams */
+.tm-battle-arena {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  overflow: hidden;
+}
+
+/* Team Card (Explore & Play Colorful Style) */
+.tm-team-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  border-radius: 18px;
+  background: var(--sd-card);
+  border: 1.5px solid var(--sd-line-strong);
+  box-shadow: var(--sd-shadow-soft);
+  overflow: hidden;
+  position: relative;
+  transition: all .28s ease;
+}
+.tm-team-card.team-a {
+  border-color: rgba(14, 165, 233, 0.32);
+}
+.tm-team-card.team-a.active {
+  animation: tmBlueGlow 2.2s infinite;
+  border-color: #0ea5e9;
+}
+.tm-team-card.team-b {
+  border-color: rgba(255, 138, 61, 0.32);
+}
+.tm-team-card.team-b.active {
+  animation: tmOrangeGlow 2.2s infinite;
+  border-color: #ff8a3d;
+}
+
+/* Team Header */
+.tm-team-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px;
+  background: var(--sd-card-soft);
+  border-bottom: 1px solid var(--sd-line);
+  flex-shrink: 0;
+  gap: 8px;
+}
+.tm-team-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tm-team-title {
+  font-size: 13.5px;
+  font-weight: 900;
+  color: var(--sd-ink);
+}
+.tm-team-sub {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--sd-muted);
+}
+.tm-team-pill {
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.tm-team-pill.blue {
+  background: rgba(14, 165, 233, 0.16);
+  color: #0284c7;
+  border: 1px solid rgba(14, 165, 233, 0.3);
+}
+.tm-team-pill.red {
+  background: rgba(255, 138, 61, 0.16);
+  color: #c45a18;
+  border: 1px solid rgba(255, 138, 61, 0.3);
+}
+
+/* Team Member Grid — Equal Responsive Split */
+.tm-member-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  overflow: hidden;
+}
+.tm-member-grid.count-1 {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+.tm-member-grid.count-2 {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+.tm-member-grid.count-3,
+.tm-member-grid.count-4 {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+.tm-member-grid.count-many {
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  grid-auto-rows: minmax(120px, 1fr);
+  overflow-y: auto;
+}
+
+/* Participant Tile */
+.tm-tile {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  border-radius: 14px;
+  background: linear-gradient(140deg, #2eb6ff 0%, #2676e8 52%, #40c95f 100%);
+  background-size: 180% 180%;
+  border: 1.5px solid var(--sd-line);
+  box-shadow: var(--sd-shadow-soft);
+  position: relative;
+  overflow: hidden;
+  padding: 8px 10px;
+  transition: transform .28s ease, background-position .5s ease, box-shadow .28s ease;
+}
+.tm-tile.team-b {
+  background: linear-gradient(140deg, #ff9c1a 0%, #ff7a35 54%, #2676e8 100%);
+}
+.tm-tile::before {
+  content: "";
+  position: absolute;
+  top: -48px;
+  right: -28px;
+  width: 138px;
+  height: 138px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,.28), transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+  transition: transform .35s ease;
+}
+.tm-tile::after {
+  content: "";
+  position: absolute;
+  top: -30%;
+  left: -55%;
+  width: 36%;
+  height: 160%;
+  transform: rotate(20deg);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.18), transparent);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 1;
+  transition: left .6s ease, opacity .2s ease;
+}
+.tm-tile:hover {
+  transform: translateY(-3px);
+  background-position: 100% 0;
+}
+.tm-tile:hover::before {
+  transform: scale(1.15);
+}
+.tm-tile:hover::after {
+  left: 125%;
+  opacity: 1;
+}
+.tm-tile.speaking {
+  border-color: #10b981;
+  box-shadow: 0 0 0 2.5px #10b981, 0 0 22px rgba(16, 185, 129, 0.32);
+  transform: translateY(-2px);
+}
+.tm-tile-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  flex-shrink: 0;
+  z-index: 2;
+}
+.tm-tile-name-group {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.tm-tile-name {
+  font-size: 12px;
+  font-weight: 800;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0,0,0,.28);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 110px;
+}
+.tm-badge {
+  font-size: 9.5px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.tm-badge.you {
+  background: rgba(16, 185, 129, 0.16);
+  color: #059669;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+.tm-badge.ai {
+  background: rgba(14, 165, 233, 0.16);
+  color: #0284c7;
+  border: 1px solid rgba(14, 165, 233, 0.3);
+}
+.tm-badge.host {
+  background: rgba(245, 158, 11, 0.18);
+  color: #d97706;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+.tm-badge.done {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+/* Tile Center / Avatar */
+.tm-tile-center {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  padding: 4px;
+}
+.tm-tile-avatar {
+  width: clamp(38px, 4.5vw, 64px);
+  height: clamp(38px, 4.5vw, 64px);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  font-size: clamp(15px, 1.8vw, 24px);
+  color: #fff;
+  position: relative;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+.tm-tile-avatar.team-a {
+  background: linear-gradient(135deg, #0ea5e9, #2563eb);
+}
+.tm-tile-avatar.team-b {
+  background: linear-gradient(135deg, #ff9c1a, #e45a27);
+}
+.tm-tile-avatar.speaking::after {
+  content: "";
+  position: absolute;
+  inset: -7px;
+  border-radius: 50%;
+  border: 2px solid #10b981;
+  animation: voicePulse 1.2s infinite;
+}
+.tm-robo-avatar-img {
+  width: clamp(44px, 5.5vw, 70px);
+  height: clamp(44px, 5.5vw, 70px);
+  object-fit: contain;
+  animation: tmRoboFloat 3s ease-in-out infinite;
+}
+
+/* Tile Live Caption / Speech-to-Text HUD */
+.tm-tile-hud {
+  padding: 4px 8px;
+  border-radius: 10px;
+  background: rgba(5, 20, 42, .82);
+  border: 1px solid rgba(255,255,255,.22);
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  line-height: 1.35;
+  max-height: 46px;
+  overflow-y: auto;
+  z-index: 2;
+}
+.tm-tile-hud.live-capturing {
+  border-color: rgba(85, 230, 176, 0.55);
+  background: rgba(7, 65, 65, 0.86);
+}
+.tm-tile-top,
+.tm-tile-center,
+.tm-tile-hud { position: relative; z-index: 2; }
+.tm-root.dark .tm-tile.team-a { background: linear-gradient(145deg, #16478d 0%, #087eaa 52%, #146b5f 100%); }
+.tm-root.dark .tm-tile.team-b { background: linear-gradient(145deg, #a8491d 0%, #9e5520 48%, #1b5793 100%); }
+.tm-root.dark .tm-tile::before { background: radial-gradient(circle, rgba(255,255,255,.2), transparent 70%); }
+.tm-root.dark .tm-tile::after { background: linear-gradient(90deg, transparent, rgba(255,255,255,.14), transparent); }
+.tm-root.dark .tm-tile.speaking { border-color: #55e6b0; box-shadow: 0 0 0 2.5px #55e6b0, 0 0 24px rgba(85,230,176,.3); }
+.tm-root.dark .tm-badge.you { color: #a7f3d0; }
+.tm-root.dark .tm-badge.ai { color: #93c5fd; }
+.tm-root.dark .tm-badge.host { color: #ffd19a; }
+.tm-root.dark .tm-team-pill.red { color: #ffd19a; }
+@media (prefers-reduced-motion: reduce) {
+  .tm-tile, .tm-tile::before, .tm-tile::after { transition: none; }
+}
+
+/* Team waiting room */
+.dp-room.team-waiting {
+  --tw-page: #f1f7ff;
+  --tw-panel: rgba(255,255,255,.9);
+  --tw-panel-soft: #f7fbff;
+  --tw-ink: #10213d;
+  --tw-muted: #5b6c85;
+  --tw-line: rgba(26,58,102,.12);
+  --tw-blue: #2676e8;
+  --tw-orange: #e8752c;
+  --tw-mint: #13865d;
+  background: var(--tw-page);
+  color: var(--tw-ink);
+}
+.dp-room.team-waiting .room-bar {
+  height: auto;
+  min-height: 50px;
+  padding: 8px 14px;
+  overflow: visible;
+  flex-wrap: wrap;
+  background: var(--tw-panel);
+  border-color: var(--tw-line);
+}
+.dp-room.team-waiting .room-logo { color: var(--tw-ink); }
+.dp-room.team-waiting .room-logo-ico { background: linear-gradient(135deg, var(--tw-blue), var(--tw-mint)); }
+.dp-room.team-waiting .rbar-topic { color: var(--tw-muted); }
+.dp-room.team-waiting .rbar-topic strong { color: var(--tw-ink); }
+.dp-room.team-waiting .team-waiting-status {
+  background: rgba(38,118,232,.1);
+  border: 1px solid rgba(38,118,232,.24);
+  color: var(--tw-blue);
+}
+.team-waiting-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: clamp(12px, 3vw, 30px);
+  background:
+    radial-gradient(circle at 10% 8%, rgba(38,118,232,.1), transparent 30%),
+    radial-gradient(circle at 92% 12%, rgba(255,138,61,.1), transparent 28%),
+    linear-gradient(160deg, var(--tw-page), color-mix(in srgb, var(--tw-page) 86%, #d8f5e9));
+  color: var(--tw-ink);
+}
+.team-waiting-grid {
+  width: min(1120px, 100%);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(280px, .85fr);
+  align-items: start;
+  gap: clamp(12px, 2vw, 20px);
+}
+.team-waiting-controls { display: grid; gap: 14px; align-content: start; }
+.team-waiting-card {
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
+  padding: clamp(16px, 2.4vw, 24px);
+  border: 1px solid var(--tw-line);
+  border-radius: 18px;
+  background: linear-gradient(145deg, var(--tw-panel), var(--tw-panel-soft));
+  box-shadow: 0 16px 34px rgba(22,49,86,.1);
+}
+.team-waiting-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: linear-gradient(90deg, var(--tw-blue), var(--tw-mint), var(--tw-orange));
+}
+.team-waiting-card > * { position: relative; z-index: 1; }
+.team-waiting-heading { margin: 0 0 8px; color: var(--tw-ink); font-size: 20px; font-weight: 900; }
+.team-waiting-controls .team-waiting-heading { font-size: 16px; }
+.team-waiting-description { margin: 0 0 16px; color: var(--tw-muted); line-height: 1.65; }
+.team-waiting-error {
+  width: min(560px, 100%);
+  margin: clamp(20px, 6vh, 56px) auto;
+  padding: clamp(18px, 4vw, 26px);
+  border: 1px solid rgba(239,68,68,.24);
+  border-radius: 18px;
+  background: var(--tw-panel);
+  color: var(--tw-ink);
+}
+.team-waiting-error-title { margin-bottom: 8px; color: var(--tw-ink); font-size: 20px; font-weight: 900; }
+.team-waiting-error-message { margin-bottom: 16px; color: var(--tw-muted); line-height: 1.7; }
+.team-waiting-loading { min-height: 60vh; display: grid; place-items: center; align-content: center; gap: 12px; color: var(--tw-ink); font-weight: 800; }
+.team-waiting-link { margin: 0 0 16px; background: rgba(38,118,232,.07); border-color: rgba(38,118,232,.2); }
+.team-waiting-link .link-box-title { color: var(--tw-blue); }
+.team-waiting-link-row { background: var(--tw-panel-soft); border-color: var(--tw-line); }
+.team-waiting-link-value { color: var(--tw-blue); }
+.dp-room.team-waiting .copy-btn,
+.dp-room.team-waiting .btn-p { background: linear-gradient(125deg, #2676e8, #148f9c); box-shadow: 0 6px 16px rgba(38,118,232,.22); }
+.dp-room.team-waiting .copy-btn + .copy-btn { background: linear-gradient(125deg, #e8752c, #d95d35); }
+.team-waiting-participants { max-height: none; }
+.team-waiting .host-popup-item { background: var(--tw-panel-soft); border: 1px solid var(--tw-line); }
+.team-waiting .host-popup-name { color: var(--tw-ink); }
+.team-waiting .host-popup-note { color: var(--tw-muted); }
+.team-waiting-avatar {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  border-radius: 13px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(140deg, #2676e8, #14a5c2);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 900;
+  box-shadow: 0 6px 14px rgba(38,118,232,.2);
+}
+.team-waiting-avatar.ai { background: linear-gradient(140deg, #ff9c1a, #e45a27); box-shadow: 0 6px 14px rgba(232,117,44,.22); }
+.team-waiting-visibility-label { display: block; margin-bottom: 6px; color: var(--tw-muted); font-size: 10px; font-weight: 800; text-transform: uppercase; }
+.team-waiting-select.finput { background-color: var(--tw-panel-soft); color: var(--tw-ink); border-color: var(--tw-line); }
+.team-waiting-approval { padding: 10px 12px; border-radius: 12px; font-size: 12px; font-weight: 800; }
+.team-waiting-approval.approved { background: rgba(19,134,93,.1); border: 1px solid rgba(19,134,93,.22); color: var(--tw-mint); }
+.team-waiting-approval.pending { background: rgba(38,118,232,.1); border: 1px solid rgba(38,118,232,.22); color: var(--tw-blue); }
+.dp-room.team-waiting .modal { background: var(--tw-panel); color: var(--tw-ink); border-color: var(--tw-line); }
+.dp-room.team-waiting .mh-title { color: var(--tw-ink); }
+.dp-room.team-waiting .mb { color: var(--tw-ink); }
+.dp-room.team-waiting .finput { background-color: var(--tw-panel-soft); color: var(--tw-ink); }
+.dp-room.team-waiting .btn-s { color: var(--tw-muted); }
+.dp-room.team-waiting .btn-s.is-selected { border-color: var(--tw-blue); color: var(--tw-blue); }
+.dark .dp-room.team-waiting,
+[data-theme="dark"] .dp-room.team-waiting {
+  --tw-page: #0b1220;
+  --tw-panel: rgba(19,30,46,.95);
+  --tw-panel-soft: #192638;
+  --tw-ink: #f8fafc;
+  --tw-muted: #b8c5d7;
+  --tw-line: rgba(173,195,221,.16);
+  --tw-blue: #70aaff;
+  --tw-orange: #ffb27d;
+  --tw-mint: #70e5b4;
+}
+.dark .dp-room.team-waiting .team-waiting-body,
+[data-theme="dark"] .dp-room.team-waiting .team-waiting-body {
+  background:
+    radial-gradient(circle at 10% 8%, rgba(59,130,246,.13), transparent 30%),
+    radial-gradient(circle at 92% 12%, rgba(255,138,61,.11), transparent 28%),
+    linear-gradient(160deg, #0b1220, #101a29 58%, #0d1b24);
+}
+.dark .dp-room.team-waiting .team-waiting-card,
+[data-theme="dark"] .dp-room.team-waiting .team-waiting-card { box-shadow: 0 18px 38px rgba(0,0,0,.3); }
+.dark .dp-room.team-waiting .team-waiting-avatar,
+[data-theme="dark"] .dp-room.team-waiting .team-waiting-avatar { background: linear-gradient(140deg, #16478d, #087eaa); }
+.dark .dp-room.team-waiting .team-waiting-avatar.ai,
+[data-theme="dark"] .dp-room.team-waiting .team-waiting-avatar.ai { background: linear-gradient(140deg, #a8491d, #9e5520); }
+@media (max-width: 760px) {
+  .team-waiting-grid { grid-template-columns: minmax(0, 1fr); }
+  .team-waiting-card { padding: 18px; }
+}
+@media (max-width: 480px) {
+  .dp-room.team-waiting .room-bar { gap: 6px; padding: 8px 10px; }
+  .dp-room.team-waiting .rbar-topic { display: none; }
+  .dp-room.team-waiting .room-logo { font-size: 12px; }
+  .team-waiting-body { padding: 10px; }
+  .team-waiting-card { padding: 16px 14px; border-radius: 15px; }
+  .team-waiting-heading { font-size: 18px; }
+  .team-waiting-controls .team-waiting-heading { font-size: 15px; }
+  .team-waiting-link-row { flex-wrap: wrap; }
+  .team-waiting-link-value { min-width: 0; flex-basis: 100%; }
+  .team-waiting-link-row .copy-btn { flex: 1; }
+}
+
+@media (max-width: 900px) {
+  .tm-body { flex-direction: column; overflow-y: auto; }
+  .tm-stage-area { flex: 0 0 auto; overflow: visible; padding: 10px; }
+  .tm-battle-arena { grid-template-columns: 1fr; min-height: 480px; flex: 0 0 auto; }
+  .tm-root .mr-side-panel { width: 100%; min-width: 100%; height: 36dvh; min-height: 200px; flex: 0 0 auto; border-left: 0; border-top: 1px solid var(--sd-line); }
+}
+@media (max-width: 640px) {
+  .tm-stage-area { padding: 8px; gap: 8px; }
+  .tm-mod-podium { flex-direction: column; align-items: stretch; gap: 8px; }
+  .tm-battle-arena { min-height: 420px; }
+  .tm-tile-name { max-width: 80px; }
+}
 `;
 
 // ─── CONSTANTS ───────────────────────────────────────────────────────────────
@@ -1949,6 +3651,164 @@ function Tile({
   );
 }
 
+function TeamMemberTile({
+  p,
+  team,
+  isLocalSpeaking,
+  liveStudentTranscript,
+  isAiSpeakingThisTile,
+  liveAiTranscript,
+  isAiTyping,
+}: {
+  p: Participant;
+  team: "A" | "B";
+  isLocalSpeaking?: boolean;
+  liveStudentTranscript?: string;
+  isAiSpeakingThisTile?: boolean;
+  liveAiTranscript?: string;
+  isAiTyping?: boolean;
+}) {
+  const vRef = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    if (vRef.current && p.stream instanceof MediaStream) {
+      vRef.current.srcObject = p.stream;
+    }
+  }, [p.stream]);
+
+  const isSpeakingNow = Boolean(p.isSpeaking || isLocalSpeaking || isAiSpeakingThisTile);
+  const isTeamA = team === "A";
+
+  return (
+    <div
+      className={`tm-tile ${isTeamA ? "team-a" : "team-b"} ${isSpeakingNow ? "speaking" : ""}`}
+      style={{
+        borderLeftWidth: 3,
+        borderLeftColor: isTeamA ? "#3b82f6" : "#ff8a3d",
+      }}
+    >
+      {/* Top Header of Tile */}
+      <div className="tm-tile-top">
+        <div className="tm-tile-name-group">
+          <span className="tm-tile-name" title={p.name}>
+            {p.name}
+          </span>
+          {p.isLocal && <span className="tm-badge you">You</span>}
+          {p.isHost && <span className="tm-badge host">Host</span>}
+          {p.isAI && (
+            <span className="tm-badge ai" style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+              <Bot size={10} /> AI
+            </span>
+          )}
+          {p.hasSpoken && <span className="tm-badge done">✓ Done</span>}
+        </div>
+        <div>
+          {isSpeakingNow ? (
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 800,
+                color: "#10b981",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+              }}
+            >
+              <Radio size={11} className="animate-pulse" /> Live
+            </span>
+          ) : p.micMuted ? (
+            <MicOff size={11} style={{ opacity: 0.55 }} />
+          ) : (
+            <Mic size={11} style={{ color: "#10b981" }} />
+          )}
+        </div>
+      </div>
+
+      {/* Center of Tile: Video or Avatar (Robot or Student Initial) */}
+      <div className="tm-tile-center">
+        {p.stream instanceof MediaStream && p.camOn ? (
+          <video
+            ref={vRef}
+            autoPlay
+            playsInline
+            muted={p.isLocal}
+            style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 12 }}
+          />
+        ) : p.isAI ? (
+          <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center" }}>
+            <img
+              src={isSpeakingNow ? studyRobo : robotLaptop}
+              alt="AI Student"
+              className="tm-robo-avatar-img"
+            />
+            {isSpeakingNow && (
+              <div
+                style={{
+                  position: "absolute",
+                  inset: -6,
+                  borderRadius: "50%",
+                  border: "2px solid #0ea5e9",
+                  animation: "voicePulse 1.2s infinite",
+                }}
+              />
+            )}
+            {isSpeakingNow && (
+              <div style={{ marginTop: 6 }}>
+                <WaveBars color="#0ea5e9" />
+              </div>
+            )}
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+            <div className={`tm-tile-avatar ${isTeamA ? "team-a" : "team-b"} ${isSpeakingNow ? "speaking" : ""}`}>
+              {avInit(p.name)}
+            </div>
+            {isSpeakingNow && (
+              <WaveBars color="#10b981" />
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Bottom of Tile: Live Speech-to-Text Transcript HUD / Subtitles */}
+      {p.isLocal && liveStudentTranscript ? (
+        <div className="tm-tile-hud live-capturing">
+          <div style={{ fontSize: 9.5, fontWeight: 800, color: "#10b981", display: "flex", alignItems: "center", gap: 4, marginBottom: 2 }}>
+            <Radio size={10} className="animate-pulse" /> Live Speech:
+          </div>
+          <div>
+            "{liveStudentTranscript}"
+            <span className="mr-cursor-blink" />
+          </div>
+        </div>
+      ) : p.isAI && isAiSpeakingThisTile && liveAiTranscript ? (
+        <div className="tm-tile-hud live-capturing" style={{ borderColor: "rgba(14, 165, 233, 0.4)", background: "rgba(14, 165, 233, 0.08)" }}>
+          <div style={{ fontSize: 9.5, fontWeight: 800, color: "#0ea5e9", display: "flex", alignItems: "center", gap: 4, marginBottom: 2 }}>
+            <Bot size={10} /> AI Subtitles:
+          </div>
+          <div>
+            "{liveAiTranscript}"
+            {isAiTyping && <span className="mr-cursor-blink" />}
+          </div>
+        </div>
+      ) : p.isMyTurn ? (
+        <div
+          style={{
+            textAlign: "center",
+            padding: "3px 8px",
+            borderRadius: 8,
+            background: "rgba(16, 185, 129, 0.12)",
+            color: "#059669",
+            fontSize: 10,
+            fontWeight: 800,
+          }}
+        >
+          🎤 Active Turn
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function createDummyStudents(startId = 10, count = 10): Participant[] {
   return shuffle(DUMMY_STUDENTS)
     .slice(0, count)
@@ -2179,7 +4039,7 @@ function ScheduleDebateModal({ config, onSchedule, onClose }: any) {
 
 const TEAM_COLORS: Record<Team, string> = {
   A: "#3b82f6", // Blue — matches AI greeting "🔵 Blue Team"
-  B: "#ef4444", // Red  — matches AI greeting "🔴 Red Team"
+  B: "#ff8a3d", // Orange accent for Red Team
 };
 
 function getTeamColor(team: Team | undefined) {
@@ -3731,6 +5591,82 @@ function TeamDebateRoom({
   const [userIsSpeaking, setUserIsSpeaking] = useState(false);
   const [meetingReady, setMeetingReady] = useState(false);
 
+  // ── Room Theme (Dark / Light) ──────────────────────────────────────────
+  const [roomTheme, setRoomTheme] = useState<"dark" | "light">(() => {
+    if (typeof document !== "undefined") {
+      return document.documentElement.classList.contains("dark") ||
+        document.documentElement.getAttribute("data-theme") === "dark"
+        ? "dark"
+        : "light";
+    }
+    return "dark";
+  });
+
+  const toggleRoomTheme = () => {
+    const next = roomTheme === "dark" ? "light" : "dark";
+    setRoomTheme(next);
+    if (typeof document !== "undefined") {
+      document.documentElement.setAttribute("data-theme", next);
+      document.documentElement.classList.toggle("dark", next === "dark");
+      document.documentElement.classList.toggle("light", next === "light");
+    }
+  };
+
+  // ── Live Transcripts & Typing Animations ─────────────────────────────────
+  const [liveStudentTranscript, setLiveStudentTranscript] = useState("");
+  const [liveAiTranscript, setLiveAiTranscript] = useState("");
+  const [isAiTyping, setIsAiTyping] = useState(false);
+  const aiTypingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recognitionRef = useRef<any>(null);
+
+  const streamAiTranscript = useCallback((fullText: string, audio?: HTMLAudioElement | null) => {
+    if (aiTypingTimerRef.current) {
+      clearInterval(aiTypingTimerRef.current);
+      aiTypingTimerRef.current = null;
+    }
+    const clean = String(fullText || "").trim();
+    if (!clean) {
+      setLiveAiTranscript("");
+      setIsAiTyping(false);
+      return;
+    }
+    setLiveAiTranscript("");
+    setIsAiTyping(true);
+    let displayedLength = 0;
+    const startedAt = performance.now();
+    const fallbackDuration = Math.max(2200, clean.length * 36);
+    aiTypingTimerRef.current = setInterval(() => {
+      const duration = audio?.duration;
+      const audioProgress = audio && typeof duration === "number" && Number.isFinite(duration) && duration > 0
+        ? audio.currentTime / duration
+        : null;
+      const elapsedProgress = (performance.now() - startedAt) / fallbackDuration;
+      const progress = Math.max(0, Math.min(1, audioProgress ?? elapsedProgress));
+      displayedLength = Math.max(displayedLength, Math.floor(clean.length * progress));
+      if (progress >= 1) {
+        setLiveAiTranscript(clean);
+        setIsAiTyping(false);
+        if (aiTypingTimerRef.current) {
+          clearInterval(aiTypingTimerRef.current);
+          aiTypingTimerRef.current = null;
+        }
+      } else if (displayedLength > 0) {
+        setLiveAiTranscript(clean.slice(0, displayedLength));
+      }
+    }, 40);
+  }, []);
+
+  useEffect(() => () => {
+    if (aiTypingTimerRef.current) clearInterval(aiTypingTimerRef.current);
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch {}
+    }
+  }, []);
+
+  // ── Turn Change Announcement Banner ──────────────────────────────────────
+  const [turnNotice, setTurnNotice] = useState<string | null>("Welcome to Team Debate! Stage is live.");
+  const [turnBannerKey, setTurnBannerKey] = useState(0);
+
   const [greetingPending, setGreetingPending] = useState(false);
   const [openingCompletionPending, setOpeningCompletionPending] =
     useState(false);
@@ -3869,6 +5805,34 @@ function TeamDebateRoom({
     roomSnapshot?.liveSession || config.liveSession,
   );
   const roomReady = meetingReady && (!loadingRoom || roomHasSnapshot);
+
+  useEffect(() => {
+    setTurnBannerKey((k) => k + 1);
+    if (isModeratorSpeaking) {
+      setTurnNotice("AI Moderator is addressing both teams");
+    } else if (isAiStudentTtsSpeaking || isAiParticipantSpeaking) {
+      setTurnNotice(`AI Debater (Team ${currentSpeaker?.team || activeTeam || "-"}) is delivering rebuttal arguments`);
+    } else if (canSpeak) {
+      setTurnNotice("It's YOUR turn to speak! Click 'Start Speaking' or send in chat.");
+    } else if (activeTeam === "A") {
+      setTurnNotice(`Blue Team Round: ${currentSpeaker?.name || "Debater"} has the floor`);
+    } else if (activeTeam === "B") {
+      setTurnNotice(`Red Team Round: ${currentSpeaker?.name || "Debater"} has the floor`);
+    } else if (liveSession?.status === "waiting_for_ai") {
+      setTurnNotice("AI Moderator is deliberating next round...");
+    } else {
+      setTurnNotice(null);
+    }
+  }, [
+    isModeratorSpeaking,
+    isAiStudentTtsSpeaking,
+    isAiParticipantSpeaking,
+    canSpeak,
+    activeTeam,
+    currentSpeaker?.name,
+    currentSpeaker?.team,
+    liveSession?.status,
+  ]);
 
   useEffect(() => {
     // ▼ CRITICAL: DO NOT ENABLE MIC IF AI IS SPEAKING ▼
@@ -4383,6 +6347,8 @@ function TeamDebateRoom({
             setGreetingPending(false);
             setAiIsSpeaking(false);
             setAiSpeakingSpeakerId(null);
+            setLiveAiTranscript("");
+            setIsAiTyping(false);
           }
         };
 
@@ -4398,6 +6364,8 @@ function TeamDebateRoom({
           setAiSpeakingSpeakerId(null);
           setGreetingPending(false);
           setOpeningCompletionPending(false);
+          setLiveAiTranscript("");
+          setIsAiTyping(false);
           activeAudioRef.current = null;
         };
 
@@ -4412,28 +6380,7 @@ function TeamDebateRoom({
         });
         greetingAudio.addEventListener("error", onGreetingError);
 
-        // ✓ Timeout fallback in case "ended" event never fires
-        // const greetingTimeoutId = setTimeout(() => {
-        //   if (playbackToken === greetingPlaybackTokenRef.current) {
-        //     console.warn(
-        //       "[GREETING] ended event timeout — forcing completion",
-        //       {
-        //         sessionId: config.sessionId,
-        //       },
-        //     );
-        //     onGreetingEnd().catch((error) => {
-        //       console.error("[GREETING] timeout completion failed", {
-        //         sessionId: config.sessionId,
-        //         message:
-        //           error instanceof Error ? error.message : String(error),
-        //       });
-        //     });
-        //   }
-        // }, 10000);
-
-        // Store timeout id so cleanup can clear it if a real new greeting starts
-        // greetingTimeoutRef.current = greetingTimeoutId;
-
+        streamAiTranscript(text, greetingAudio);
         greetingAudio
           .play()
           .then(() => {
@@ -4456,6 +6403,8 @@ function TeamDebateRoom({
             setAiSpeakingSpeakerId(null);
             setGreetingPending(false);
             setOpeningCompletionPending(false);
+            setLiveAiTranscript("");
+            setIsAiTyping(false);
             activeAudioRef.current = null;
           });
       } catch (error) {
@@ -4737,6 +6686,8 @@ useEffect(() => {
         settled = true;
         audio.onended = null;
         audio.onerror = null;
+        setLiveAiTranscript("");
+        setIsAiTyping(false);
         resolve();
       };
 
@@ -4745,12 +6696,17 @@ useEffect(() => {
         settled = true;
         audio.onended = null;
         audio.onerror = null;
+        setLiveAiTranscript("");
+        setIsAiTyping(false);
         reject(new Error("AI student audio playback failed"));
       };
 
       audio.onended = finish;
       audio.onerror = fail;
+      streamAiTranscript(trimmed, audio);
       audio.play().catch((error) => {
+        setLiveAiTranscript("");
+        setIsAiTyping(false);
         reject(error instanceof Error ? error : new Error(String(error)));
       });
     });
@@ -4876,6 +6832,7 @@ useEffect(() => {
       }
 
       setMessageInput("");
+      setLiveStudentTranscript("");
 
       // ✓ FIX: Update snapshot with fresh server state
       setRoomSnapshot({
@@ -5164,6 +7121,10 @@ useEffect(() => {
         state: recorder.state,
         chunkCount: mediaChunksRef.current.length,
       });
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch {}
+        recognitionRef.current = null;
+      }
       setSpeechRecording(false);
       setUserIsSpeaking(false);
       const blob = new Blob(mediaChunksRef.current, { type: mimeType });
@@ -5181,7 +7142,7 @@ useEffect(() => {
       setSpeechProcessing(true);
       try {
         const transcription = await transcribeDebateAudio(blob);
-        const text = transcription?.text?.trim();
+        const text = transcription?.text?.trim() || liveStudentTranscript.trim();
         debateDebug("[TRANSCRIBE] result", {
           sessionId: config.sessionId,
           textLength: text?.length || 0,
@@ -5214,6 +7175,29 @@ useEffect(() => {
       mimeType,
     });
     setSpeechRecording(true);
+    setLiveStudentTranscript("");
+    try {
+      const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SR) {
+        const recognition = new SR();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = "en-US";
+        recognition.onresult = (evt: any) => {
+          let t = "";
+          for (let i = 0; i < evt.results.length; i++) {
+            t += evt.results[i][0].transcript + " ";
+          }
+          if (t.trim()) {
+            setLiveStudentTranscript(t.trim());
+            setUserIsSpeaking(true);
+          }
+        };
+        recognition.onerror = () => {};
+        recognition.start();
+        recognitionRef.current = recognition;
+      }
+    } catch {}
     speechDetectedRef.current = false;
     speechActiveStreakRef.current = 0;
     speechSilentStreakRef.current = 0;
@@ -5298,6 +7282,11 @@ useEffect(() => {
     autoSilenceSpeechDetectedRef.current = false;
     autoSilenceCounterRef.current = 0;
     cleanupSpeechDetection();
+
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch {}
+      recognitionRef.current = null;
+    }
 
     const activeRecorder = mediaRecorderRef.current;
     if (activeRecorder && activeRecorder.state !== "inactive") {
@@ -5620,77 +7609,180 @@ useEffect(() => {
   const teamATiles = buildTeamTiles("A");
   const teamBTiles = buildTeamTiles("B");
 
-  return (
-    <div className="dp-room">
-      <div className="room-bar">
-        <button className="room-logo" type="button">
-          <span className="room-logo-ico">🎤</span>
-          <span>DebateArena</span>
-        </button>
-        <button
-          className="btn-s"
-          style={{ width: "auto", padding: "6px 10px" }}
-          onClick={() => setShowBackConfirm(true)}
-        >
-          Back
-        </button>
-        <div className="rbar-div" />
-        <div className="rbar-topic">
-          <strong>{config.topic}</strong> · {config.subject} · {config.unit}
-        </div>
-        <div
-          className="rbar-pill"
-          style={{ background: "rgba(99,102,241,.14)", color: "#c7d2fe" }}
-        >
-          {liveSession?.status === "waiting_for_ai"
-            ? "Waiting for AI"
-            : liveSession?.status === "active"
-              ? "Live debate"
-              : liveSession?.status || "Connecting"}
-        </div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            fontSize: 11,
-          }}
-        >
-          {meetingReady && livekitConnected && (
-            <span style={{ color: "#22c55e" }}>● Voice connected</span>
-          )}
-          {meetingReady && !livekitConnected && (
-            <span style={{ color: "#f97316" }}>● Connecting voice...</span>
-          )}
-        </div>
-      </div>
+  const handleSendTextMessage = async () => {
+    const text = messageInput.trim();
+    if (!text || submittingTurn || endingRoom) return;
+    if (!canSpeak) {
+      toast$("It is not your turn to speak right now.", "info");
+      return;
+    }
+    await submitTurn(text);
+  };
 
-      <div
-        style={{
-          flex: 1,
-          overflow: "auto",
-          padding: 20,
-          background: "linear-gradient(180deg,#081223 0%,#0f172a 100%)",
-        }}
-      >
+  return (
+    <div
+      className={`tm-root ${roomTheme === "dark" ? "dark" : ""}`}
+      data-theme={roomTheme}
+    >
+      {/* Student Dashboard Ambient Sparkles */}
+      <div className="sd-bg-spark s1" />
+      <div className="sd-bg-spark s2" />
+      <div className="sd-bg-spark s3" />
+
+      {/* Top Meeting Bar */}
+      <header className="mr-topbar">
+        <div className="mr-brand-group">
+          <button
+            className="mr-btn-back"
+            onClick={() => setShowBackConfirm(true)}
+            title="Leave team debate"
+          >
+            <ChevronLeft size={16} /> Exit Room
+          </button>
+          <div className="mr-room-badge">
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: "#10b981",
+                boxShadow: "0 0 10px #10b981",
+                animation: "pulse 1.2s infinite",
+              }}
+            />
+            <span className="mr-room-badge-text">
+              <Mic size={14} /> Team Debate Arena
+            </span>
+          </div>
+          <div
+            className="mr-topic-pill"
+            title={`${config.subject ? `${config.subject} · ` : ""}${config.unit ? `${config.unit} · ` : ""}${config.topic}`}
+          >
+            <Sparkles size={13} style={{ color: "#0ea5e9", flexShrink: 0 }} />
+            <span>
+              <strong>
+                {config.subject ? `${config.subject} · ` : ""}
+                {config.unit ? `${config.unit} · ` : ""}
+              </strong>
+              {config.topic}
+            </span>
+          </div>
+        </div>
+
+        {/* Center Clock, Turn Status & Voice Indicator */}
+        <div className="mr-center-hud">
+          <div className="mr-timer-pill" title="Debate Time Remaining">
+            <Clock size={15} style={{ color: "#0ea5e9" }} />
+            <span>{debateTimer}</span>
+          </div>
+          <div
+            className={`mr-turn-pill ${
+              canSpeak
+                ? "you"
+                : isModeratorSpeaking || isAiStudentTtsSpeaking
+                  ? "ai"
+                  : "wait"
+            }`}
+          >
+            {canSpeak ? (
+              <>
+                <Mic size={14} className="animate-pulse" />
+                <span>
+                  Your Turn (Team {currentParticipant?.team || activeTeam || "-"})
+                </span>
+              </>
+            ) : speechProcessing ? (
+              <>
+                <Radio size={14} className="animate-spin" />
+                <span>Transcribing Speech...</span>
+              </>
+            ) : isModeratorSpeaking ? (
+              <>
+                <Volume2 size={14} />
+                <span>AI Moderator Speaking</span>
+              </>
+            ) : isAiStudentTtsSpeaking ? (
+              <>
+                <Bot size={14} />
+                <span>AI Debater Speaking</span>
+              </>
+            ) : (
+              <>
+                <Clock size={14} />
+                <span>
+                  {currentSpeaker
+                    ? `${currentSpeaker.name} · Team ${currentSpeaker.team || activeTeam || "-"}`
+                    : "Live Room"}
+                </span>
+              </>
+            )}
+          </div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 11,
+              fontWeight: 700,
+            }}
+          >
+            {meetingReady && livekitConnected && (
+              <span style={{ color: "#10b981" }}>● Voice connected</span>
+            )}
+            {meetingReady && !livekitConnected && (
+              <span style={{ color: "#f59e0b" }}>● Connecting voice...</span>
+            )}
+          </div>
+        </div>
+
+        {/* Right Actions: Theme Toggle & End */}
+        <div className="mr-top-actions">
+          <button
+            className="mr-btn-theme"
+            onClick={toggleRoomTheme}
+            title={`Switch to ${roomTheme === "dark" ? "Light" : "Dark"} Mode`}
+          >
+            {roomTheme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+          </button>
+          {isHost && (
+            <button
+              className="mr-btn-end"
+              onClick={() => handleEndDebate(Boolean(endError))}
+              disabled={endingRoom}
+            >
+              <PhoneOff size={15} /> {endingRoom ? "Ending..." : "End Debate"}
+            </button>
+          )}
+        </div>
+      </header>
+
+      {/* Main Body */}
+      <div className="tm-body">
         {roomError ? (
           <div
             style={{
-              maxWidth: 560,
-              margin: "40px auto",
+              maxWidth: 540,
+              margin: "60px auto",
               background: "rgba(239,68,68,.08)",
-              border: "1px solid rgba(239,68,68,.24)",
+              border: "1.5px solid rgba(239,68,68,.25)",
               borderRadius: 20,
               padding: 24,
-              color: "#fff",
+              textAlign: "center",
             }}
           >
-            <div style={{ fontSize: 20, fontWeight: 900, marginBottom: 8 }}>
+            <div
+              style={{
+                fontSize: 20,
+                fontWeight: 900,
+                marginBottom: 8,
+                color: "var(--sd-ink)",
+              }}
+            >
               Unable to load debate room
             </div>
             <div
               style={{
-                color: "rgba(255,255,255,.7)",
+                color: "var(--sd-muted)",
                 lineHeight: 1.7,
                 marginBottom: 16,
               }}
@@ -5699,334 +7791,715 @@ useEffect(() => {
             </div>
             <button
               className="btn-p"
-              style={{ width: "auto" }}
+              style={{ width: "auto", margin: "0 auto" }}
               onClick={() => syncRoom(true).catch(() => null)}
             >
-              Retry
+              Retry Connection
             </button>
           </div>
         ) : !roomReady ? (
           <div
             style={{
-              color: "#fff",
+              flex: 1,
               display: "grid",
               placeItems: "center",
-              minHeight: "60vh",
-              gap: 12,
+              gap: 14,
+              color: "var(--sd-ink)",
             }}
           >
-            <div className="loader-spin" />
-            <div style={{ fontWeight: 800 }}>Loading debate room...</div>
+            <div className="loader-spin" style={{ width: 36, height: 36 }} />
+            <div style={{ fontWeight: 800, fontSize: 16 }}>
+              Preparing debate meeting room...
+            </div>
           </div>
         ) : (
           <>
-            {roomWarning && (
-              <div
-                style={{
-                  background: "rgba(245,158,11,.12)",
-                  border: "1px solid rgba(245,158,11,.24)",
-                  borderRadius: 16,
-                  padding: 14,
-                  color: "#fde68a",
-                  fontSize: 13,
-                  fontWeight: 700,
-                  marginBottom: 16,
-                }}
-              >
-                {roomWarning}
-              </div>
-            )}
-            <div className="room-body">
-              <div className="grid-area">
-                <div className="team-stage">
-                  <div className="moderator-row">
-                    <Tile p={moderatorTile} />
-                  </div>
-                  <div className="team-vs-grid">
-                    <section
-                      className={`team-box team-box-a${activeTeam === "A" ? " active" : ""}`}
-                    >
-                      <div className="team-box-head">
-                        <div>
-                          <div className="team-box-title">🔵 Blue Team</div>
-                          <div className="team-box-sub">
-                            {
-                              teamATiles.filter(
-                                (participant) => participant.hasSpoken,
-                              ).length
-                            }
-                            /{teamATiles.length} spoke
-                          </div>
-                        </div>
-                        <span className="team-a-badge">Blue</span>
-                      </div>
-                      <div className="team-member-grid">
-                        {teamATiles.map((participant) => (
-                          <Tile key={participant.id} p={participant} />
-                        ))}
-                      </div>
-                    </section>
+            <main className="tm-stage-area">
+              {roomWarning && (
+                <div
+                  style={{
+                    background: "rgba(245,158,11,.12)",
+                    border: "1px solid rgba(245,158,11,.28)",
+                    borderRadius: 14,
+                    padding: "10px 14px",
+                    color: "#f59e0b",
+                    fontSize: 12.5,
+                    fontWeight: 700,
+                  }}
+                >
+                  {roomWarning}
+                </div>
+              )}
 
-                    <section
-                      className={`team-box team-box-b${activeTeam === "B" ? " active" : ""}`}
+              {/* Turn Change Animated Notice Banner */}
+              {turnNotice && (
+                <div
+                  key={turnBannerKey}
+                  className={`tm-turn-banner ${
+                    canSpeak
+                      ? "you"
+                      : activeTeam === "A"
+                        ? "blue"
+                        : activeTeam === "B"
+                          ? "red"
+                          : "mod"
+                  }`}
+                >
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 10 }}
+                  >
+                    {canSpeak ? (
+                      <Flame
+                        size={18}
+                        style={{ color: "#10b981", flexShrink: 0 }}
+                      />
+                    ) : activeTeam === "A" ? (
+                      <Flame
+                        size={18}
+                        style={{ color: "#0ea5e9", flexShrink: 0 }}
+                      />
+                    ) : activeTeam === "B" ? (
+                      <Flame
+                        size={18}
+                        style={{ color: "#ff8a3d", flexShrink: 0 }}
+                      />
+                    ) : (
+                      <Bot
+                        size={18}
+                        style={{ color: "#0ea5e9", flexShrink: 0 }}
+                      />
+                    )}
+                    <div>
+                      <div
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 800,
+                          color: "var(--sd-ink)",
+                        }}
+                      >
+                        {turnNotice}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: "var(--sd-muted)",
+                          marginTop: 1,
+                        }}
+                      >
+                        {canSpeak
+                          ? "Speak via microphone or submit written arguments in chat."
+                          : "Listen closely to the speaker to plan your team's rebuttals."}
+                      </div>
+                    </div>
+                  </div>
+                  <span
+                    className={`tm-badge ${
+                      canSpeak ? "you" : activeTeam === "A" ? "ai" : "host"
+                    }`}
+                  >
+                    {canSpeak
+                      ? "Active Speaker"
+                      : activeTeam
+                        ? `Team ${activeTeam} Turn`
+                        : "Moderation Phase"}
+                  </span>
+                </div>
+              )}
+
+              {/* AI Moderator Podium */}
+              <div
+                className={`tm-mod-podium ${isModeratorSpeaking ? "speaking" : ""}`}
+              >
+                <div className="tm-mod-left">
+                  <div className="tm-mod-robo-wrap">
+                    <img
+                      src={isModeratorSpeaking ? studyRobo : robotLaptop}
+                      alt="AI Moderator"
+                      className="tm-mod-robo-img"
+                    />
+                    {isModeratorSpeaking && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          inset: -4,
+                          borderRadius: "50%",
+                          border: "2px solid #10b981",
+                          animation: "voicePulse 1.2s infinite",
+                        }}
+                      />
+                    )}
+                  </div>
+                  <div>
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: 6 }}
                     >
-                      <div className="team-box-head">
-                        <div>
-                          <div className="team-box-title">🔴 Red Team</div>
-                          <div className="team-box-sub">
-                            {
-                              teamBTiles.filter(
-                                (participant) => participant.hasSpoken,
-                              ).length
-                            }
-                            /{teamBTiles.length} spoke
-                          </div>
-                        </div>
-                        <span className="team-b-badge">Red</span>
-                      </div>
-                      <div className="team-member-grid">
-                        {teamBTiles.map((participant) => (
-                          <Tile key={participant.id} p={participant} />
-                        ))}
-                      </div>
-                    </section>
+                      <span
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 900,
+                          color: "var(--sd-ink)",
+                        }}
+                      >
+                        AI Moderator
+                      </span>
+                      <span className="tm-badge ai">MED</span>
+                      {isModeratorSpeaking ? (
+                        <span
+                          className="tm-badge you"
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 4,
+                          }}
+                        >
+                          <Volume2 size={10} /> Speaking
+                        </span>
+                      ) : (
+                        <span className="tm-badge done">Listening</span>
+                      )}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: "var(--sd-muted)",
+                        marginTop: 2,
+                      }}
+                    >
+                      Facilitating debate between Blue Team &amp; Red Team
+                    </div>
                   </div>
                 </div>
 
-                <div className="ctrl-bar">
-                  <div className="cg">
-                    <button
-                      className={`cbtn ${micBlocked ? "locked" : micEnabled ? "on" : "off"}`}
-                      onClick={handleMicGrant}
-                      disabled={
-                        speechRecording ||
-                        speechProcessing ||
-                        endingRoom ||
-                        roomMicState === "requesting"
-                      }
-                    >
-                      <span className="cbtn-ico">
-                        {micBlocked ? "🔴" : "🎤"}
-                      </span>
-                      <span>
-                        {roomMicState === "requesting"
-                          ? "Requesting Mic..."
-                          : micBlocked
-                            ? roomMicState === "denied"
-                              ? "Grant Mic"
-                              : "Mic Off"
-                            : "Mic Ready"}
-                      </span>
-                    </button>
-                    <button
-                      className={`cbtn ${speechRecording ? "mic-live" : canSpeak && !micBlocked ? "on" : "off"}`}
-                      onClick={
-                        speechRecording ? stopSpeechCapture : startSpeechCapture
-                      }
-                      disabled={
-                        speechRecording
-                          ? false
-                          : micBlocked ||
-                            !canSpeak ||
-                            speechProcessing ||
-                            submittingTurn ||
-                            endingRoom
-                      }
-                    >
-                      <span className="cbtn-ico">
-                        {speechRecording ? "🎙" : "🎤"}
-                      </span>
-                      <span>
-                        {speechProcessing
-                          ? "Transcribing..."
-                          : speechRecording || (canSpeak && micEnabled)
-                            ? "Stop Speak"
-                            : micBlocked
-                              ? "Enable Mic"
-                              : "Start Speak"}
-                      </span>
-                    </button>
+                {/* Live Subtitle Transcript for Moderator */}
+                <div className="tm-mod-transcript-box">
+                  <div className="tm-mod-transcript-title">
+                    <Bot size={12} />
+                    <span>Moderator Live Transcript &amp; Directives</span>
+                    {isModeratorSpeaking && (
+                      <span style={{ color: "#10b981" }}>● Live Voice</span>
+                    )}
                   </div>
-                  <div className="cg">
-                    <button
-                      className={`cbtn${aiIsSpeaking || liveSession?.status === "waiting_for_ai" ? " speaking" : ""}`}
-                      disabled
-                    >
-                      <span className="cbtn-ico">🔊</span>
-                      <span>
-                        {isAiStudentTtsSpeaking
-                          ? "AI Student speaking..."
-                          : isModeratorSpeaking
-                          ? "AI Moderator speaking..."
-                          : liveSession?.status === "waiting_for_ai"
-                            ? "Waiting for AI"
-                            : currentSpeaker
-                              ? `${currentSpeaker.name}`
-                              : "Live Room"}
-                      </span>
-                    </button>
-                    {isHost && (
-                      <button
-                        className="end-btn"
-                        onClick={() => handleEndDebate(Boolean(endError))}
-                        disabled={endingRoom}
-                      >
-                        {endingRoom ? "Ending..." : "End"}
-                      </button>
+                  <div className="tm-mod-transcript-text">
+                    {liveAiTranscript && isModeratorSpeaking ? (
+                      <>
+                        "{liveAiTranscript}"
+                        {isAiTyping && <span className="mr-cursor-blink" />}
+                      </>
+                    ) : isModeratorSpeaking ? (
+                      "AI Moderator is speaking..."
+                    ) : (
+                      "AI Moderator has opened the floor. Teams take turns presenting claims and rebuttals."
                     )}
                   </div>
                 </div>
               </div>
 
-              <div className="side-panel">
-                <div className="panel-tabs-dark">
-                  <button className="ptab active">
-                    💬
-                    <span style={{ fontSize: 8.5, display: "block" }}>
-                      Feed
-                    </span>
-                  </button>
-                </div>
-                <div
-                  className="pscroll"
-                  style={{ display: "flex", flexDirection: "column", gap: 12 }}
+              {/* Battle Arena: Blue Team vs Red Team */}
+              <div className="tm-battle-arena">
+                {/* Blue Team Card */}
+                <section
+                  className={`tm-team-card team-a ${activeTeam === "A" ? "active" : ""}`}
                 >
-<div className="room-info-grid">
-                    <div className="room-info-card live">
-                      <div className="room-info-label">Current Turn</div>
-                      <div className="room-info-title">
-                        {isAiStudentTtsSpeaking
-                          ? `AI Student Â· Team ${currentSpeaker?.team || "-"}`
-                          : isModeratorSpeaking
-                          ? "AI Moderator"
-                          : isAiParticipantSpeaking
-                            ? `AI Student · Team ${currentSpeaker?.team || "-"}`
-                            : currentSpeaker
-                              ? `${currentSpeaker.name} · Team ${currentSpeaker.team || "-"}`
-                              : "Preparing next speaker"}
+                  <div className="tm-team-header">
+                    <div className="tm-team-title-row">
+                      <span style={{ fontSize: 18 }}>🔵</span>
+                      <div>
+                        <div className="tm-team-title">Blue Team</div>
+                        <div className="tm-team-sub">
+                          {
+                            teamATiles.filter((p) => p.hasSpoken).length
+                          }
+                          /{teamATiles.length} spoke
+                        </div>
                       </div>
-                      <div className="room-info-sub">
-                        {isAiStudentTtsSpeaking
-                          ? "AI Student is speaking. Everyone is muted."
-                          : isModeratorSpeaking
-                          ? "Moderator response in progress. Everyone is muted."
-                          : isAiParticipantSpeaking
-                            ? "AI Student is speaking. Everyone is muted."
-                            : canSpeak
-                              ? micBlocked
-                                ? roomMicState === "denied"
-                                  ? "Microphone access was denied. Grant access in your browser to speak."
-                                  : "It is your turn, but your microphone is off."
-                                : "It is your turn now."
-                              : currentPhase === "ai_opening"
-                                ? "Opening moderation is in progress."
-                                : liveSession?.status === "waiting_for_ai"
-                                  ? "Waiting for the AI moderator response."
-                                  : activeTeam
-                                    ? `Team ${activeTeam} is active.`
-                                    : "Room is syncing."}
-                      </div>
-                      {roomMicError && micBlocked && (
-                        <div
+                    </div>
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: 6 }}
+                    >
+                      {activeTeam === "A" && (
+                        <span
+                          className="tm-badge you"
                           style={{
-                            marginTop: 10,
-                            fontSize: 12,
-                            color: "#fecaca",
-                            lineHeight: 1.6,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 4,
                           }}
                         >
-                          {roomMicError}
-                        </div>
+                          <Flame size={10} /> Speaking Round
+                        </span>
                       )}
+                      <span className="tm-team-pill blue">Team A</span>
                     </div>
                   </div>
-                  <div className="chat-msgs" style={{ maxHeight: 320 }}>
-                    {(liveSession?.turns || []).length ? (
-                      (liveSession?.turns || []).map((turn: any) => (
-                        <div key={turn.id} className="chat-msg">
+
+                  {/* Member Grid - Equal Responsive Split */}
+                  <div
+                    className={`tm-member-grid count-${Math.min(teamATiles.length, 4) || 1}`}
+                  >
+                    {teamATiles.map((participant) => (
+                      <TeamMemberTile
+                        key={participant.id}
+                        p={participant}
+                        team="A"
+                        isLocalSpeaking={participant.isLocal && userIsSpeaking}
+                        liveStudentTranscript={
+                          participant.isLocal ? liveStudentTranscript : ""
+                        }
+                        isAiSpeakingThisTile={
+                          participant.isAI &&
+                          aiSpeakingOwnerId === participant.id &&
+                          isAiStudentTtsSpeaking
+                        }
+                        liveAiTranscript={
+                          participant.isAI ? liveAiTranscript : ""
+                        }
+                        isAiTyping={isAiTyping}
+                      />
+                    ))}
+                  </div>
+                </section>
+
+                {/* Red Team Card */}
+                <section
+                  className={`tm-team-card team-b ${activeTeam === "B" ? "active" : ""}`}
+                >
+                  <div className="tm-team-header">
+                    <div className="tm-team-title-row">
+                      <span style={{ fontSize: 18 }}>🟠</span>
+                      <div>
+                        <div className="tm-team-title">Red Team</div>
+                        <div className="tm-team-sub">
+                          {
+                            teamBTiles.filter((p) => p.hasSpoken).length
+                          }
+                          /{teamBTiles.length} spoke
+                        </div>
+                      </div>
+                    </div>
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: 6 }}
+                    >
+                      {activeTeam === "B" && (
+                        <span
+                          className="tm-badge you"
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 4,
+                          }}
+                        >
+                          <Flame size={10} /> Speaking Round
+                        </span>
+                      )}
+                      <span className="tm-team-pill red">Team B</span>
+                    </div>
+                  </div>
+
+                  {/* Member Grid - Equal Responsive Split */}
+                  <div
+                    className={`tm-member-grid count-${Math.min(teamBTiles.length, 4) || 1}`}
+                  >
+                    {teamBTiles.map((participant) => (
+                      <TeamMemberTile
+                        key={participant.id}
+                        p={participant}
+                        team="B"
+                        isLocalSpeaking={participant.isLocal && userIsSpeaking}
+                        liveStudentTranscript={
+                          participant.isLocal ? liveStudentTranscript : ""
+                        }
+                        isAiSpeakingThisTile={
+                          participant.isAI &&
+                          aiSpeakingOwnerId === participant.id &&
+                          isAiStudentTtsSpeaking
+                        }
+                        liveAiTranscript={
+                          participant.isAI ? liveAiTranscript : ""
+                        }
+                        isAiTyping={isAiTyping}
+                      />
+                    ))}
+                  </div>
+                </section>
+              </div>
+
+              {/* Floating Controls Dock */}
+              <div
+                className="mr-controls-dock"
+                style={{ position: "relative", zIndex: 10 }}
+              >
+                {speechProcessing ? (
+                  <button className="mr-btn-mic disabled" disabled>
+                    <Radio size={17} className="animate-spin" />
+                    <span>Transcribing Speech...</span>
+                  </button>
+                ) : speechRecording ? (
+                  <button
+                    className="mr-btn-mic recording"
+                    onClick={stopSpeechCapture}
+                  >
+                    <Square size={17} />
+                    <span>Stop Speaking &amp; Submit</span>
+                  </button>
+                ) : canSpeak && !micBlocked ? (
+                  <button
+                    className="mr-btn-mic ready"
+                    onClick={startSpeechCapture}
+                  >
+                    <Mic size={17} />
+                    <span>Start Speaking (Your Turn)</span>
+                  </button>
+                ) : micBlocked ? (
+                  <button
+                    className="mr-btn-mic mr-dock-action-mic"
+                    title="Enable microphone"
+                    aria-label="Enable microphone"
+                    onClick={handleMicGrant}
+                    disabled={
+                      speechRecording ||
+                      speechProcessing ||
+                      endingRoom ||
+                      roomMicState === "requesting"
+                    }
+                  >
+                    <MicOff size={17} />
+                    <span>{roomMicState === "requesting" ? "Wait" : "Enable"}</span>
+                  </button>
+                ) : (
+                  <button className="mr-btn-mic disabled" disabled>
+                    <MicOff size={17} />
+                    <span>
+                      {isModeratorSpeaking
+                        ? "AI Moderator Speaking (Muted)"
+                        : isAiStudentTtsSpeaking
+                          ? "AI Debater Speaking (Muted)"
+                          : activeTeam
+                            ? `Team ${activeTeam}'s Turn (Muted)`
+                            : "Debate Room"}
+                    </span>
+                  </button>
+                )}
+
+                <span
+                  style={{
+                    fontSize: 11,
+                    color: "var(--sd-muted)",
+                    fontWeight: 700,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  Auto-stops after silence · You can also send text in chat
+                </span>
+
+                {isHost && (
+                  <button
+                    className="mr-btn-end mr-dock-action-end"
+                    title="End debate"
+                    aria-label="End debate"
+                    onClick={() => handleEndDebate(Boolean(endError))}
+                    disabled={endingRoom}
+                  >
+                    <PhoneOff size={15} />
+                    {endingRoom ? "Wait" : "End"}
+                  </button>
+                )}
+              </div>
+            </main>
+
+            {/* Right Side Panel: Feed & Chat */}
+            <aside className="mr-side-panel">
+              <div className="mr-side-header">
+                <div className="mr-side-title">
+                  <MessageSquare size={16} style={{ color: "#0ea5e9" }} />
+                  <span>Live Debate Feed</span>
+                </div>
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 800,
+                    color: "var(--sd-muted)",
+                    background: "var(--sd-card)",
+                    padding: "3px 8px",
+                    borderRadius: 8,
+                    border: "1px solid var(--sd-line)",
+                  }}
+                >
+                  {(liveSession?.turns || []).length} turns
+                </span>
+              </div>
+
+              <div className="mr-side-content">
+                {/* Current Turn Info Card */}
+                <div
+                  style={{
+                    borderRadius: 16,
+                    padding: "12px 14px",
+                    background:
+                      activeTeam === "A"
+                        ? "linear-gradient(135deg, rgba(14, 165, 233, 0.12), rgba(2, 132, 199, 0.05))"
+                        : activeTeam === "B"
+                          ? "linear-gradient(135deg, rgba(255, 138, 61, 0.14), rgba(232, 117, 44, 0.06))"
+                          : "linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(14, 165, 233, 0.05))",
+                    border: `1.5px solid ${
+                      activeTeam === "A"
+                        ? "rgba(14, 165, 233, 0.35)"
+                        : activeTeam === "B"
+                          ? "rgba(255, 138, 61, 0.38)"
+                          : "rgba(16, 185, 129, 0.35)"
+                    }`,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 4,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 900,
+                      letterSpacing: ".08em",
+                      textTransform: "uppercase",
+                      color:
+                        activeTeam === "A"
+                          ? "#0284c7"
+                          : activeTeam === "B"
+                            ? "var(--tm-orange-ink)"
+                            : "#059669",
+                    }}
+                  >
+                    Current Turn
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 900,
+                      color: "var(--sd-ink)",
+                    }}
+                  >
+                    {isAiStudentTtsSpeaking
+                      ? `AI Student · Team ${currentSpeaker?.team || activeTeam || "-"}`
+                      : isModeratorSpeaking
+                        ? "AI Moderator"
+                        : currentSpeaker
+                          ? `${currentSpeaker.name} · Team ${currentSpeaker.team || activeTeam || "-"}`
+                          : "Preparing Next Speaker"}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: "var(--sd-muted)",
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {isAiStudentTtsSpeaking
+                      ? "AI Student is presenting their point. Everyone is muted."
+                      : isModeratorSpeaking
+                        ? "AI Moderator is summarizing and directing the round."
+                        : canSpeak
+                          ? "It is your turn now! Present your arguments."
+                          : activeTeam
+                            ? `Team ${activeTeam} is speaking now.`
+                            : "Debate room is syncing..."}
+                  </div>
+                </div>
+
+                {/* Chat Messages */}
+                <div
+                  className="chat-msgs"
+                  style={{
+                    flex: 1,
+                    minHeight: 0,
+                    overflowY: "auto",
+                    maxHeight: "none",
+                  }}
+                >
+                  {(liveSession?.turns || []).length ? (
+                    (liveSession?.turns || []).map((turn: any) => {
+                      const isMod =
+                        turn.role === "moderator" ||
+                        turn.speakerName === "AI Moderator";
+                      const isAiStud =
+                        turn.isAi || turn.speakerName?.includes("AI");
+                      const isOwn =
+                        String(turn.speakerId) === String(candidateId);
+                      const isTeamA =
+                        turn.team === "A" || turn.team === "blue";
+                      return (
+                        <div
+                          key={turn.id}
+                          className={`chat-msg ${isOwn ? "own" : ""}`}
+                        >
                           <div className="chat-bwrap" style={{ width: "100%" }}>
-                            <span className="chat-sender">
-                              {turn.speakerName || "Unknown"}
-                              {turn.team ? ` · Team ${turn.team}` : ""}
-                            </span>
-                            <div className="chat-bubble bubble-o">
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 6,
+                                marginBottom: 2,
+                              }}
+                            >
+                              {isMod ? (
+                                <img
+                                  src={robotWaving}
+                                  alt="AI"
+                                  style={{
+                                    width: 16,
+                                    height: 16,
+                                    objectFit: "contain",
+                                  }}
+                                />
+                              ) : isAiStud ? (
+                                <img
+                                  src={studyRobo}
+                                  alt="AI"
+                                  style={{
+                                    width: 16,
+                                    height: 16,
+                                    objectFit: "contain",
+                                  }}
+                                />
+                              ) : (
+                                <span style={{ fontSize: 12 }}>
+                                  {isTeamA ? "🔵" : "🟠"}
+                                </span>
+                              )}
+                              <span
+                                className="chat-sender"
+                                style={{
+                                  fontWeight: 800,
+                                  color: "var(--sd-ink)",
+                                }}
+                              >
+                                {turn.speakerName || "Participant"}
+                                {turn.team ? ` · Team ${turn.team}` : ""}
+                              </span>
+                            </div>
+                            <div
+                              className={`chat-bubble ${isOwn ? "bubble-own" : "bubble-o"}`}
+                              style={{
+                                background: isOwn
+                                  ? "linear-gradient(135deg, #0ea5e9, #2563eb)"
+                                  : isMod
+                                    ? "rgba(16, 185, 129, 0.08)"
+                                    : isTeamA
+                                      ? "rgba(14, 165, 233, 0.08)"
+                                      : "rgba(255, 138, 61, 0.12)",
+                                borderColor: isMod
+                                  ? "rgba(16, 185, 129, 0.25)"
+                                  : isTeamA
+                                    ? "rgba(14, 165, 233, 0.25)"
+                                    : "rgba(255, 138, 61, 0.3)",
+                                color: isOwn ? "#fff" : "var(--sd-ink)",
+                                borderRadius: 12,
+                                padding: "10px 12px",
+                                lineHeight: 1.5,
+                              }}
+                            >
                               {turn.message ||
                                 turn.transcript ||
                                 "No message recorded."}
                             </div>
                           </div>
                         </div>
-                      ))
-                    ) : aiIsSpeaking ? (
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 10,
-                          padding: "12px 14px",
-                          borderRadius: 13,
-                          background: "rgba(139,92,246,.08)",
-                          border: "1px solid rgba(139,92,246,.18)",
-                        }}
-                      >
-                        <div
-                          className="loader-spin"
-                          style={{
-                            width: 16,
-                            height: 16,
-                            borderWidth: 2,
-                            flexShrink: 0,
-                          }}
-                        />
-                        <div>
-                          <div
-                            style={{
-                              fontSize: 12,
-                              fontWeight: 800,
-                              color: "#c4b5fd",
-                            }}
-                          >
-                            {isAiStudentTtsSpeaking
-                              ? "AI Student is speaking..."
-                              : "AI Moderator is speaking..."}
-                          </div>
-                          <div
-                            style={{
-                              fontSize: 11,
-                              color: "rgba(255,255,255,.45)",
-                              marginTop: 2,
-                            }}
-                          >
-                            {isAiStudentTtsSpeaking
-                              ? "Playing AI student turn"
-                              : "Preparing the opening greeting"}
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="chat-empty">
-                        No debate turns recorded yet.
-                      </div>
-                    )}
-                  </div>
-                  {endError && (
+                      );
+                    })
+                  ) : isModeratorSpeaking ? (
                     <div
                       style={{
-                        background: "rgba(239,68,68,.08)",
-                        border: "1px solid rgba(239,68,68,.24)",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        padding: "12px 14px",
                         borderRadius: 14,
-                        padding: 12,
-                        color: "#fecaca",
-                        fontSize: 12.5,
-                        lineHeight: 1.6,
+                        background: "rgba(16, 185, 129, 0.08)",
+                        border: "1px solid rgba(16, 185, 129, 0.25)",
                       }}
                     >
-                      {endError}
+                      <div
+                        className="loader-spin"
+                        style={{
+                          width: 16,
+                          height: 16,
+                          borderWidth: 2,
+                          flexShrink: 0,
+                        }}
+                      />
+                      <div>
+                        <div
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 800,
+                            color: "#10b981",
+                          }}
+                        >
+                          AI Moderator is speaking...
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: "var(--sd-muted)",
+                            marginTop: 2,
+                          }}
+                        >
+                          Preparing opening debate framework
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      className="chat-empty"
+                      style={{ color: "var(--sd-muted)" }}
+                    >
+                      No debate turns recorded yet.
                     </div>
                   )}
                 </div>
+
+                {endError && (
+                  <div
+                    style={{
+                      background: "rgba(239,68,68,.08)",
+                      border: "1px solid rgba(239,68,68,.24)",
+                      borderRadius: 14,
+                      padding: 12,
+                      color: "#ef4444",
+                      fontSize: 12.5,
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    {endError}
+                  </div>
+                )}
+
+                {/* Chat / Written Argument Input Bar */}
+                <div className="mr-chat-input-bar">
+                  <input
+                    type="text"
+                    className="mr-chat-input"
+                    placeholder={
+                      canSpeak
+                        ? "Type your argument and press Enter..."
+                        : "Send a message in chat..."
+                    }
+                    value={messageInput}
+                    onChange={(e) => setMessageInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendTextMessage();
+                      }
+                    }}
+                  />
+                  <button
+                    className="mr-chat-send-btn"
+                    onClick={handleSendTextMessage}
+                    disabled={!messageInput.trim()}
+                    title="Submit message/argument"
+                  >
+                    <Send size={15} />
+                  </button>
+                </div>
               </div>
-            </div>
+            </aside>
           </>
         )}
       </div>
@@ -6049,11 +8522,17 @@ useEffect(() => {
             </div>
             <div className="mb" style={{ textAlign: "center" as const }}>
               <div style={{ fontSize: 42, marginBottom: 10 }}>←</div>
-              <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 6 }}>
+              <div
+                style={{ fontSize: 14, fontWeight: 800, marginBottom: 6 }}
+              >
                 Are you sure you want to go back?
               </div>
               <div
-                style={{ fontSize: 12.5, color: "var(--t2)", lineHeight: 1.75 }}
+                style={{
+                  fontSize: 12.5,
+                  color: "var(--t2)",
+                  lineHeight: 1.75,
+                }}
               >
                 {isHost
                   ? "Your debate room will end for everyone."
@@ -6122,6 +8601,8 @@ function LiveAIDebateRoom({
   }>({ you: null, ai: null });
   const [sessionFeedback, setSessionFeedback] = useState<any>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const studentCaptionRef = useRef<HTMLDivElement>(null);
+  const liveAiCaptionRef = useRef<HTMLDivElement>(null);
   const speechRecorderRef = useRef<MediaRecorder | null>(null);
   const speechChunksRef = useRef<Blob[]>([]);
   const activeAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -6148,6 +8629,109 @@ function LiveAIDebateRoom({
   const autoSilenceCounterRef = useRef(0);
   const activeSpeakerId = whoTurn === "you" ? 0 : 1;
   const hardCleanupRef = useRef(false);
+
+  // ── Theme support ──────────────────────────────────────────────────────────
+  let roomTheme = "light";
+  let toggleRoomTheme = () => {};
+  try {
+    const t = useTheme();
+    roomTheme = t.theme;
+    toggleRoomTheme = t.toggleTheme;
+  } catch {
+    roomTheme = typeof document !== "undefined" && (document.documentElement.getAttribute("data-theme") === "dark" || document.documentElement.classList.contains("dark")) ? "dark" : "light";
+    toggleRoomTheme = () => {
+      const next = roomTheme === "dark" ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      document.documentElement.classList.toggle("dark", next === "dark");
+      document.documentElement.classList.toggle("light", next === "light");
+    };
+  }
+
+  // ── Live Transcripts & Typing Animations ─────────────────────────────────
+  const [liveStudentTranscript, setLiveStudentTranscript] = useState("");
+  const [liveAiTranscript, setLiveAiTranscript] = useState("");
+  const [isAiTyping, setIsAiTyping] = useState(false);
+  const aiTypingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recognitionRef = useRef<any>(null);
+
+  const streamAiTranscript = useCallback((fullText: string, audio?: HTMLAudioElement | null) => {
+    if (aiTypingTimerRef.current) {
+      clearInterval(aiTypingTimerRef.current);
+      aiTypingTimerRef.current = null;
+    }
+    const clean = String(fullText || "").trim();
+    if (!clean) {
+      setLiveAiTranscript("");
+      setIsAiTyping(false);
+      return;
+    }
+    setLiveAiTranscript("");
+    setIsAiTyping(true);
+    let displayedLength = 0;
+    const startedAt = performance.now();
+    const fallbackDuration = Math.max(2400, clean.length * 42);
+    aiTypingTimerRef.current = setInterval(() => {
+      const duration = audio?.duration;
+      const audioProgress = audio && typeof duration === "number" && Number.isFinite(duration) && duration > 0
+        ? audio.currentTime / duration
+        : null;
+      const elapsedProgress = (performance.now() - startedAt) / fallbackDuration;
+      const progress = Math.max(0, Math.min(1, audioProgress ?? elapsedProgress));
+      displayedLength = Math.max(displayedLength, Math.floor(clean.length * progress));
+      if (progress >= 1) {
+        setLiveAiTranscript(clean);
+        setIsAiTyping(false);
+        if (aiTypingTimerRef.current) {
+          clearInterval(aiTypingTimerRef.current);
+          aiTypingTimerRef.current = null;
+        }
+      } else if (displayedLength > 0) {
+        setLiveAiTranscript(clean.slice(0, displayedLength));
+      }
+    }, 40);
+  }, []);
+
+  useEffect(() => {
+    [studentCaptionRef.current, liveAiCaptionRef.current].forEach((caption) => {
+      if (caption) caption.scrollTop = caption.scrollHeight;
+    });
+  }, [liveStudentTranscript, liveAiTranscript]);
+
+  useEffect(() => () => {
+    if (aiTypingTimerRef.current) clearInterval(aiTypingTimerRef.current);
+  }, []);
+
+  // ── Turn announcement banner ──────────────────────────────────────────────
+  const [turnNotice, setTurnNotice] = useState<string | null>(
+    config.initialAiMessage
+      ? "AI Debater is delivering opening statement..."
+      : "Your Turn! Present your opening argument."
+  );
+  const [turnBannerKey, setTurnBannerKey] = useState(0);
+
+  useEffect(() => {
+    setTurnBannerKey((k) => k + 1);
+    if (whoTurn === "you") {
+      setTurnNotice("Your Turn! Click 'Start Speaking' or send a message in chat.");
+    } else {
+      setTurnNotice("AI Debater is formulating rebuttal arguments...");
+    }
+    const t = setTimeout(() => setTurnNotice(null), 6000);
+    return () => clearTimeout(t);
+  }, [whoTurn]);
+
+  // ── Video stream check for student ────────────────────────────────────────
+  const studentVideoRef = useRef<HTMLVideoElement>(null);
+  const hasVideoStream = Boolean(
+    config.stream instanceof MediaStream &&
+      config.stream.getVideoTracks?.().some((t: any) => t.readyState === "live" && t.enabled)
+  );
+
+  useEffect(() => {
+    if (studentVideoRef.current && config.stream instanceof MediaStream) {
+      studentVideoRef.current.srcObject = config.stream;
+    }
+  }, [config.stream]);
 
   const addMsg = useCallback(
     (sender: string, senderId: number, text: string) => {
@@ -6215,6 +8799,7 @@ function LiveAIDebateRoom({
                     token: playbackToken,
                   });
                   setAiIsSpeaking(true);
+                  streamAiTranscript(text, activeAudioRef.current);
                 },
                 () => {
                   if (playbackToken !== speechPlaybackTokenRef.current) return;
@@ -6243,6 +8828,7 @@ function LiveAIDebateRoom({
                     token: playbackToken,
                   });
                   setAiIsSpeaking(true);
+                  streamAiTranscript(text, activeAudioRef.current);
                 },
                 () => {
                   if (playbackToken !== speechPlaybackTokenRef.current) return;
@@ -6259,14 +8845,16 @@ function LiveAIDebateRoom({
           return;
         }
         setAiIsSpeaking(false);
+        streamAiTranscript(text);
         onDone?.();
       })
       .catch(() => {
         if (playbackToken !== speechPlaybackTokenRef.current) return;
         setAiIsSpeaking(false);
+        streamAiTranscript(text);
         onDone?.();
       });
-  }, []);
+  }, [streamAiTranscript]);
 
   useEffect(() => {
     const lastMessage = messages[messages.length - 1];
@@ -6454,6 +9042,7 @@ function LiveAIDebateRoom({
         });
         addMsg("AI Debater", 1, text);
         if (!audio?.dataUrl) {
+          streamAiTranscript(text);
           setAiLocked(false);
           setWhoTurn("you");
           ttsDebug("[LOADER] Meeting ready", {
@@ -6474,6 +9063,7 @@ function LiveAIDebateRoom({
               sessionId: config.sessionId,
             });
             setAiIsSpeaking(true);
+            streamAiTranscript(text, activeAudioRef.current);
           },
           () => {
             setAiIsSpeaking(false);
@@ -6497,6 +9087,7 @@ function LiveAIDebateRoom({
         );
       } catch (error) {
         if (!mounted) return;
+        streamAiTranscript(text);
         ttsDebug("[TTS] play error", {
           mode: "ai",
           message: error instanceof Error ? error.message : String(error),
@@ -6519,9 +9110,13 @@ function LiveAIDebateRoom({
         sessionId: config.sessionId,
       });
     };
-  }, [config.initialAiMessage, config.sessionId]);
+  }, [config.initialAiMessage, config.sessionId, streamAiTranscript]);
 
   function cleanupSpeechDetection() {
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch {}
+      recognitionRef.current = null;
+    }
     debateDebug("[CLEANUP] speech detection cleanup", {
       endingDebate,
       speechRecording,
@@ -6776,12 +9371,13 @@ function LiveAIDebateRoom({
         debateDebug("[TRANSCRIBE] result", {
           textLength: transcriptText?.length || 0,
         });
-        if (!transcriptText) {
+        const finalText = transcriptText || liveStudentTranscript.trim();
+        if (!finalText) {
           toast$("No speech detected. Passing to AI.", "info");
           await sendMsg("Pass");
           return;
         }
-        await sendMsg(transcriptText);
+        await sendMsg(finalText);
       } catch (error: any) {
         debateDebug("[ERROR] transcribe failed", {
           message: error?.message || String(error),
@@ -6803,6 +9399,29 @@ function LiveAIDebateRoom({
       mimeType,
     });
     setSpeechRecording(true);
+    setLiveStudentTranscript("");
+    try {
+      const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SR) {
+        const recognition = new SR();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = "en-US";
+        recognition.onresult = (evt: any) => {
+          let text = "";
+          for (let i = 0; i < evt.results.length; i++) {
+            text += evt.results[i][0].transcript + " ";
+          }
+          if (text.trim()) {
+            setLiveStudentTranscript(text.trim());
+            setUserIsSpeaking(true);
+          }
+        };
+        recognition.onerror = () => {};
+        recognition.start();
+        recognitionRef.current = recognition;
+      }
+    } catch {}
     speechDetectedRef.current = false;
     speechActiveStreakRef.current = 0;
     speechSilentStreakRef.current = 0;
@@ -7103,166 +9722,437 @@ function LiveAIDebateRoom({
   }
 
   return (
-    <div className="dp-room">
-      <div className="room-bar">
-        <div className="room-logo">
-          <div className="room-logo-ico">🎤</div>DebateArena
-        </div>
-        <button
-          className="btn-s"
-          style={{ width: "auto", padding: "6px 10px" }}
-          onClick={() => setShowBackConfirm(true)}
-        >
-          Back
-        </button>
-        <div className="rbar-div" />
-        <div className="rbar-topic">
-          <strong>
-            {config.subject &&
-              `${config.subject}${config.unit ? ` · ${config.unit}` : ""} · `}
-          </strong>
-          {config.topic}
-        </div>
-        <div className="rbar-pill pill-timer">{debateTimer}</div>
-        <div
-          className={`rbar-pill ${whoTurn === "you" ? "pill-turn-you" : "pill-turn-ai"}`}
-        >
-          {whoTurn === "you"
-            ? "🎤 Your Turn"
-            : speechProcessing
-              ? "📝 Transcribing..."
-              : aiIsSpeaking
-                ? "🤖 AI Speaking..."
-                : "⏳ Waiting for AI..."}
-        </div>
-        <button className="rbar-end" onClick={() => setShowEnd(true)}>
-          ✕ End
-        </button>
-      </div>
+    <div className={`mr-root ${roomTheme === "dark" ? "dark" : ""}`} data-theme={roomTheme}>
+      {/* Background ambient sparkles & aura */}
+      <div
+        className="mr-sparkle"
+        style={{
+          top: "8%",
+          left: "6%",
+          width: 280,
+          height: 280,
+          background: "radial-gradient(circle, rgba(99,102,241,.18), transparent 70%)",
+        }}
+      />
+      <div
+        className="mr-sparkle"
+        style={{
+          top: "52%",
+          right: "5%",
+          width: 320,
+          height: 320,
+          background: "radial-gradient(circle, rgba(236,72,153,.14), transparent 70%)",
+        }}
+      />
+      <div className="sd-bg-spark s1" />
+      <div className="sd-bg-spark s2" />
+      <div className="sd-bg-spark s3" />
 
-      <div className="room-body">
-        <div className="grid-area">
-          <div className="vid-grid vg-2">
-            <Tile
-              p={{
-                id: 0,
-                name: config.name,
-                stream:
-                  config.stream instanceof MediaStream ? config.stream : null,
-                isLocal: true,
-                isHost: true,
-                isStudent: true,
-                micMuted: !speechRecording,
-                camOn: false,
-                isSpeaking: userIsSpeaking && speechRecording,
-                handRaised: false,
-                isMyTurn: whoTurn === "you" && !aiLocked,
-                avatarColor: COLORS[0],
-                energy: 88,
-                reactionsReceived: 0,
-                turnsTaken: 0,
-              }}
-            />
-            <Tile
-              p={{
-                id: 1,
-                name: "AI Debater",
-                stream: null,
-                isAI: true,
-                isLocal: false,
-                isHost: false,
-                isStudent: false,
-                micMuted: false,
-                camOn: false,
-                isSpeaking: aiIsSpeaking,
-                handRaised: false,
-                avatarColor: "#8b5cf6",
-                energy: 92,
-                reactionsReceived: 0,
-                turnsTaken: 0,
-              }}
-            />
-          </div>
-
-          <div className="ctrl-bar">
-            <div className="cg">
-              <button
-                className={`cbtn ${speechRecording ? "mic-live" : whoTurn === "you" && !aiLocked ? "on" : "off"}`}
-                onClick={
-                  speechRecording ? stopSpeechCapture : startSpeechCapture
-                }
-                disabled={
-                  whoTurn !== "you" ||
-                  aiLocked ||
-                  speechProcessing ||
-                  endingDebate
-                }
-              >
-                <span className="cbtn-ico">
-                  {speechRecording ? "🎙" : "🎤"}
-                </span>
-                <span>
-                  {speechProcessing
-                    ? "Transcribing..."
-                    : speechRecording
-                      ? "Stop Speaking"
-                      : "Start Speaking"}
-                </span>
-              </button>
-            </div>
-            <div className="cg">
-              <button
-                className={`cbtn${aiIsSpeaking ? " speaking" : ""}`}
-                disabled
-              >
-                <span className="cbtn-ico">🔊</span>
-                <span>
-                  {aiIsSpeaking
-                    ? "AI Speaking"
-                    : whoTurn === "you"
-                      ? "Your Turn"
-                      : "AI Turn"}
-                </span>
-              </button>
-              <button
-                className="end-btn"
-                onClick={() => setShowEnd(true)}
-                disabled={endingDebate}
-              >
-                {endingDebate ? "Ending..." : "End"}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="side-panel">
-          <div className="panel-tabs-dark">
-            <button className="ptab active">
-              💬<span style={{ fontSize: 8.5, display: "block" }}>Chat</span>
-            </button>
-          </div>
-          <div
-            className="pscroll"
-            style={{ display: "flex", flexDirection: "column", gap: 12 }}
+      {/* Top Meeting Bar */}
+      <header className="mr-topbar">
+        <div className="mr-brand-group">
+          <button
+            className="mr-btn-back"
+            onClick={() => setShowBackConfirm(true)}
+            title="Leave debate session"
           >
-            <div className="room-info-grid">
-              <div className="room-info-card live">
-                <div className="room-info-label">Debate Status</div>
-                <div className="room-info-title">
-                  {aiIsSpeaking
-                    ? "AI is speaking"
-                    : whoTurn === "you"
-                      ? "Your response window is open"
-                      : "Waiting for AI"}
-                </div>
-                <div className="room-info-sub">
-                  {whoTurn === "you"
-                    ? "You can type or speak your argument now."
-                    : "Your mic stays blocked until the AI finishes."}
+            <ChevronLeft size={16} /> Exit Room
+          </button>
+          <div className="mr-room-badge">
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: "#10b981",
+                boxShadow: "0 0 10px #10b981",
+                animation: "pulse 1.2s infinite",
+              }}
+            />
+            <span className="mr-room-badge-text">
+              <Bot size={15} /> 1 vs AI Live Arena
+            </span>
+          </div>
+          <div className="mr-topic-pill" title={`${config.subject ? `${config.subject} · ` : ""}${config.unit ? `${config.unit} · ` : ""}${config.topic}`}>
+            <Sparkles size={13} style={{ color: "#6366f1", flexShrink: 0 }} />
+            <span>
+              <strong>
+                {config.subject ? `${config.subject} · ` : ""}
+                {config.unit ? `${config.unit} · ` : ""}
+              </strong>
+              {config.topic}
+            </span>
+          </div>
+        </div>
+
+        {/* Center Clock & Turn Status */}
+        <div className="mr-center-hud">
+          <div className="mr-timer-pill" title="Debate Time Remaining">
+            <Clock size={15} style={{ color: "#6366f1" }} />
+            <span>{debateTimer}</span>
+          </div>
+          <div className={`mr-turn-pill ${whoTurn === "you" ? "you" : "ai"}`}>
+            {whoTurn === "you" ? (
+              <>
+                <Mic size={14} />
+                <span>Your Turn to Speak</span>
+              </>
+            ) : speechProcessing ? (
+              <>
+                <Radio size={14} className="animate-spin" />
+                <span>Transcribing Argument...</span>
+              </>
+            ) : aiIsSpeaking ? (
+              <>
+                <Volume2 size={14} />
+                <span>AI Debater Speaking...</span>
+              </>
+            ) : (
+              <>
+                <Clock size={14} />
+                <span>Waiting for AI...</span>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Right Top Actions */}
+        <div className="mr-top-actions">
+          <button
+            className="mr-btn-theme"
+            onClick={toggleRoomTheme}
+            title={`Switch to ${roomTheme === "dark" ? "Light" : "Dark"} Mode`}
+          >
+            {roomTheme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+          </button>
+          <button
+            className="mr-btn-end"
+            onClick={() => setShowEnd(true)}
+            disabled={endingDebate}
+          >
+            <PhoneOff size={15} /> {endingDebate ? "Ending..." : "End Debate"}
+          </button>
+        </div>
+      </header>
+
+      {/* Main Body: Stage Area & Right Chat Panel */}
+      <div className="mr-body">
+        <main className="mr-stage-area">
+          {/* Animated Turn Change Notice Banner */}
+          {turnNotice && (
+            <div
+              key={turnBannerKey}
+              className={`mr-turn-banner ${whoTurn === "you" ? "you" : "ai"}`}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                {whoTurn === "you" ? (
+                  <Flame size={20} style={{ color: "#10b981" }} />
+                ) : (
+                  <Bot size={20} style={{ color: "#8b5cf6" }} />
+                )}
+                <div>
+                  <div style={{ fontSize: 13.5, fontWeight: 800, color: "var(--sd-ink)" }}>
+                    {turnNotice}
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--sd-muted)", marginTop: 1 }}>
+                    {whoTurn === "you"
+                      ? "Speak via microphone or submit written arguments in chat."
+                      : "Listen closely to identify rebuttal points."}
+                  </div>
                 </div>
               </div>
+              <span
+                style={{
+                  fontSize: 10.5,
+                  fontWeight: 800,
+                  textTransform: "uppercase",
+                  padding: "4px 10px",
+                  borderRadius: 999,
+                  background:
+                    whoTurn === "you"
+                      ? "rgba(16,185,129,.15)"
+                      : "rgba(139,92,246,.15)",
+                  color: whoTurn === "you" ? "#10b981" : "#8b5cf6",
+                }}
+              >
+                {whoTurn === "you" ? "Active Speaker" : "Rebuttal Phase"}
+              </span>
             </div>
-            <div className="chat-msgs" style={{ maxHeight: 340 }}>
+          )}
+
+          {/* Meeting Room Stage: 2 Participants Grid */}
+          <div className="mr-stage-grid">
+            {/* 1. Student Debater Tile (You) */}
+            <div
+              className={`mr-tile ${whoTurn === "you" || userIsSpeaking ? "active-speaker" : ""}`}
+            >
+              <div className="mr-tile-top-bar">
+                <div className="mr-tile-badge">
+                  <User size={13} />
+                  <span>{config.name || user?.firstName || "Student Debater"}</span>
+                  <span style={{ opacity: 0.7, fontSize: 10, marginLeft: 2 }}>[You]</span>
+                </div>
+                <div className="mr-tile-status-pill">
+                  {speechRecording ? (
+                    <span style={{ color: "#34d399", display: "flex", alignItems: "center", gap: 5 }}>
+                      <Radio size={12} className="animate-pulse" /> Live Mic Active
+                    </span>
+                  ) : whoTurn === "you" ? (
+                    <span style={{ color: "#60a5fa" }}>Your Response Window</span>
+                  ) : (
+                    <span style={{ opacity: 0.65, display: "flex", alignItems: "center", gap: 4 }}>
+                      <MicOff size={12} /> Mic Muted
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="mr-tile-center">
+                {hasVideoStream ? (
+                  <video
+                    ref={studentVideoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "cover",
+                      borderRadius: 20,
+                    }}
+                  />
+                ) : (
+                  <div className="mr-student-avatar">
+                    {avInit(config.name || user?.firstName || "You")}
+                    {userIsSpeaking && speechRecording && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          inset: -14,
+                          borderRadius: "50%",
+                          border: "3px solid #10b981",
+                          animation: "voicePulse 1.2s infinite",
+                        }}
+                      />
+                    )}
+                  </div>
+                )}
+                {speechRecording && userIsSpeaking && (
+                  <div style={{ marginTop: 14 }}>
+                    <WaveBars color="#10b981" />
+                  </div>
+                )}
+              </div>
+
+              {/* Student Live Speech-to-Text Transcript HUD */}
+              {speechRecording && liveStudentTranscript ? (
+                <div className="mr-caption-hud">
+                  <div className="mr-caption-label">
+                    <span>
+                      <Radio
+                        size={11}
+                        style={{
+                          display: "inline",
+                          verticalAlign: "middle",
+                          marginRight: 4,
+                          color: "#10b981",
+                        }}
+                      />{" "}
+                      Live Speech-to-Text Transcript
+                    </span>
+                    <span style={{ color: "#10b981" }}>● Capturing Live</span>
+                  </div>
+                  <div className="mr-caption-text" ref={studentCaptionRef}>
+                    "{liveStudentTranscript}"
+                    <span className="mr-cursor-blink" />
+                  </div>
+                </div>
+              ) : whoTurn === "you" && !speechRecording && !speechProcessing ? (
+                <div
+                  className="mr-caption-hud"
+                  style={{
+                    background: "rgba(99,102,241,.1)",
+                    borderColor: "rgba(99,102,241,.25)",
+                  }}
+                >
+                  <div className="mr-caption-label" style={{ color: "#6366f1" }}>
+                    Ready for your response
+                  </div>
+                  <div className="mr-caption-text" style={{ fontSize: 12.5, opacity: 0.9 }}>
+                    Click "Start Speaking" below or type in the chat to present your argument.
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            {/* 2. AI Debater Tile (Opponent) */}
+            <div className={`mr-tile ${aiIsSpeaking ? "ai-speaking" : ""}`}>
+              <div className="mr-tile-top-bar">
+                <div className="mr-tile-badge">
+                  <Bot size={13} />
+                  <span>AI Debater</span>
+                  <span style={{ opacity: 0.7, fontSize: 10, marginLeft: 2 }}>[Opponent]</span>
+                </div>
+                <div className="mr-tile-status-pill">
+                  {aiIsSpeaking ? (
+                    <span style={{ color: "#c4b5fd", display: "flex", alignItems: "center", gap: 5 }}>
+                      <Volume2 size={13} /> Speaking Argument
+                    </span>
+                  ) : aiLocked ? (
+                    <span style={{ color: "#fcd34d" }}>Thinking...</span>
+                  ) : (
+                    <span style={{ opacity: 0.65, display: "flex", alignItems: "center", gap: 4 }}>
+                      <VolumeX size={12} /> Listening
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="mr-tile-center">
+                <div className="mr-robo-img-wrap">
+                  <img
+                    src={aiIsSpeaking ? studyRobo : robotLaptop}
+                    alt="AI Debater"
+                    className="mr-robo-img"
+                  />
+                  <div className={`mr-soundwave-ring ${aiIsSpeaking ? "pulse" : ""}`} />
+                </div>
+                {aiIsSpeaking && (
+                  <div style={{ marginTop: 14 }}>
+                    <WaveBars color="#8b5cf6" />
+                  </div>
+                )}
+              </div>
+
+              {/* AI Live Subtitles HUD with Typing Animation */}
+              {liveAiTranscript ? (
+                <div className="mr-caption-hud">
+                  <div className="mr-caption-label">
+                    <span>
+                      <Bot
+                        size={11}
+                        style={{
+                          display: "inline",
+                          verticalAlign: "middle",
+                          marginRight: 4,
+                          color: "#8b5cf6",
+                        }}
+                      />{" "}
+                      AI Live Subtitles
+                    </span>
+                    {aiIsSpeaking && (
+                      <span style={{ color: "#a78bfa" }}>● Synthesizing Speech</span>
+                    )}
+                  </div>
+                  <div className="mr-caption-text" ref={liveAiCaptionRef}>
+                    "{liveAiTranscript}"
+                    {isAiTyping && <span className="mr-cursor-blink" />}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          {/* Bottom Floating Controls Dock */}
+          <div className="mr-controls-dock">
+            {whoTurn !== "you" ? (
+              <button className="mr-btn-mic disabled" disabled>
+                <MicOff size={18} />
+                <span>AI's Turn (Mic Muted)</span>
+              </button>
+            ) : speechProcessing ? (
+              <button className="mr-btn-mic disabled" disabled>
+                <Radio size={18} className="animate-spin" />
+                <span>Transcribing Speech...</span>
+              </button>
+            ) : speechRecording ? (
+              <button className="mr-btn-mic recording" onClick={stopSpeechCapture}>
+                <Square size={18} />
+                <span>Stop Speaking & Submit</span>
+              </button>
+            ) : (
+              <button
+                className="mr-btn-mic ready"
+                onClick={startSpeechCapture}
+                disabled={aiLocked || endingDebate}
+              >
+                <Mic size={18} />
+                <span>Start Speaking</span>
+              </button>
+            )}
+            <span
+              style={{
+                fontSize: 11,
+                color: "var(--sd-muted)",
+                fontWeight: 700,
+                whiteSpace: "nowrap",
+              }}
+            >
+              Mic auto-stops after 8s silence
+            </span>
+          </div>
+        </main>
+
+        {/* Right Side Panel: Chat & Analytics (Elevated Design) */}
+        <aside className="mr-side-panel">
+          <div className="mr-side-header">
+            <div className="mr-side-title">
+              <MessageSquare size={16} style={{ color: "#6366f1" }} />
+              <span>Live Debate Feed</span>
+            </div>
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 800,
+                color: "var(--sd-muted)",
+                background: "var(--sd-card)",
+                padding: "3px 8px",
+                borderRadius: 8,
+                border: "1px solid var(--sd-line)",
+              }}
+            >
+              {messages.length} turns
+            </span>
+          </div>
+
+          <div className="mr-side-content">
+            {/* Debate Status Card */}
+            <div
+              style={{
+                background: "var(--sd-card-soft)",
+                border: "1px solid var(--sd-line)",
+                borderRadius: 16,
+                padding: "12px 14px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 10.5,
+                  fontWeight: 800,
+                  textTransform: "uppercase",
+                  color: "#6366f1",
+                  letterSpacing: ".06em",
+                  marginBottom: 3,
+                }}
+              >
+                Debate Status
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "var(--sd-ink)" }}>
+                {aiIsSpeaking
+                  ? "AI is delivering argument"
+                  : whoTurn === "you"
+                    ? "Your response window is open"
+                    : "Waiting for AI turn"}
+              </div>
+              <div style={{ fontSize: 11.5, color: "var(--sd-muted)", marginTop: 2 }}>
+                {whoTurn === "you"
+                  ? "You can speak via mic or type your argument below."
+                  : "Your microphone stays muted until the AI finishes."}
+              </div>
+            </div>
+
+            {/* Chat Messages Stream */}
+            <div className="chat-msgs" style={{ flex: 1, minHeight: 220, maxHeight: 380, overflowY: "auto" }}>
               {messages.length ? (
                 messages.map((message, index) => (
                   <div
@@ -7270,89 +10160,95 @@ function LiveAIDebateRoom({
                     className={`chat-msg${message.senderId === 0 ? " own" : ""}`}
                   >
                     <div className="chat-bwrap" style={{ width: "100%" }}>
-                      <span className="chat-sender">{message.sender}</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                        {message.senderId === 1 ? (
+                          <img
+                            src={roboImg}
+                            alt="Robo"
+                            style={{ width: 14, height: 14, objectFit: "contain" }}
+                          />
+                        ) : null}
+                        <span className="chat-sender">{message.sender}</span>
+                      </div>
                       <div
                         className={`chat-bubble ${message.senderId === 0 ? "bubble-own" : "bubble-o"}`}
                       >
                         {message.text}
-                        {/* <FormattedAIContent content={message.text} /> */}
                       </div>
                     </div>
                   </div>
                 ))
               ) : (
                 <div className="chat-empty">
-                  The debate will appear here as messages are exchanged.
+                  The debate argument stream will appear here as speech is exchanged.
                 </div>
               )}
               <div ref={chatEndRef} />
             </div>
+
+            {/* Live Scores Grid */}
             {scores.you !== null || scores.ai !== null ? (
               <div
                 style={{
                   display: "grid",
                   gridTemplateColumns: "1fr 1fr",
-                  gap: 12,
+                  gap: 10,
                 }}
               >
                 <div
                   style={{
                     background: "rgba(16,185,129,.08)",
-                    border: "1px solid rgba(16,185,129,.2)",
-                    borderRadius: 16,
-                    padding: 12,
+                    border: "1px solid rgba(16,185,129,.24)",
+                    borderRadius: 14,
+                    padding: 10,
+                    textAlign: "center",
                   }}
                 >
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: "#6ee7b7",
-                      fontWeight: 800,
-                      marginBottom: 4,
-                    }}
-                  >
+                  <div style={{ fontSize: 11, color: "#10b981", fontWeight: 800 }}>
                     You
                   </div>
-                  <div style={{ fontSize: 24, color: "#fff", fontWeight: 900 }}>
+                  <div style={{ fontSize: 22, color: "var(--sd-ink)", fontWeight: 900 }}>
                     {scores.you ?? "-"}
                   </div>
                 </div>
                 <div
                   style={{
                     background: "rgba(139,92,246,.08)",
-                    border: "1px solid rgba(139,92,246,.2)",
-                    borderRadius: 16,
-                    padding: 12,
+                    border: "1px solid rgba(139,92,246,.24)",
+                    borderRadius: 14,
+                    padding: 10,
+                    textAlign: "center",
                   }}
                 >
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: "#c4b5fd",
-                      fontWeight: 800,
-                      marginBottom: 4,
-                    }}
-                  >
+                  <div style={{ fontSize: 11, color: "#8b5cf6", fontWeight: 800 }}>
                     AI
                   </div>
-                  <div style={{ fontSize: 24, color: "#fff", fontWeight: 900 }}>
+                  <div style={{ fontSize: 22, color: "var(--sd-ink)", fontWeight: 900 }}>
                     {scores.ai ?? "-"}
                   </div>
                 </div>
               </div>
             ) : null}
+
+            {/* Feedback Snapshot */}
             {sessionFeedback && (
               <div
                 style={{
-                  background: "rgba(255,255,255,.04)",
-                  border: "1px solid rgba(255,255,255,.08)",
-                  borderRadius: 16,
-                  padding: 14,
-                  color: "#fff",
+                  background: "var(--sd-card-soft)",
+                  border: "1px solid var(--sd-line)",
+                  borderRadius: 14,
+                  padding: 12,
                 }}
               >
-                <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 8 }}>
-                  Latest Feedback Snapshot
+                <div
+                  style={{
+                    fontSize: 11.5,
+                    fontWeight: 800,
+                    color: "var(--sd-ink)",
+                    marginBottom: 6,
+                  }}
+                >
+                  Feedback Snapshot
                 </div>
                 <FormattedAIContent
                   content={
@@ -7363,102 +10259,133 @@ function LiveAIDebateRoom({
                 />
               </div>
             )}
+
+            {/* End Error Alert */}
             {endError && (
               <div
                 style={{
                   background: "rgba(239,68,68,.08)",
                   border: "1px solid rgba(239,68,68,.24)",
-                  borderRadius: 14,
-                  padding: 12,
-                  color: "#fecaca",
-                  fontSize: 12.5,
-                  lineHeight: 1.6,
+                  borderRadius: 12,
+                  padding: 10,
+                  color: "#ef4444",
+                  fontSize: 12,
                 }}
               >
                 {endError}
               </div>
             )}
           </div>
-        </div>
+
+          {/* Chat Argument Input Bar */}
+          <div className="mr-chat-input-bar">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (chatInput.trim() && whoTurn === "you" && !aiLocked) {
+                  sendMsg(chatInput.trim());
+                }
+              }}
+              style={{ display: "flex", gap: 8, width: "100%" }}
+            >
+              <input
+                className="mr-chat-input"
+                placeholder={
+                  whoTurn === "you"
+                    ? "Type your debate argument..."
+                    : "Wait for AI to finish speaking..."
+                }
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                disabled={whoTurn !== "you" || aiLocked || endingDebate}
+              />
+              <button
+                type="submit"
+                className="mr-chat-send-btn"
+                disabled={!chatInput.trim() || whoTurn !== "you" || aiLocked || endingDebate}
+                title="Send Argument"
+              >
+                <Send size={16} />
+              </button>
+            </form>
+          </div>
+        </aside>
       </div>
 
+      {/* End Debate Modal */}
       {showEnd && (
         <div className="overlay" onClick={() => setShowEnd(false)}>
           <div
             className="modal"
-            style={{ maxWidth: 360 }}
+            style={{ maxWidth: 380, background: "var(--sd-card)", color: "var(--sd-ink)" }}
             onClick={(event) => event.stopPropagation()}
           >
             <div className="mh">
-              <div className="mh-title">End Debate?</div>
+              <div className="mh-title" style={{ color: "var(--sd-ink)" }}>
+                End AI Debate?
+              </div>
               <button className="mh-close" onClick={() => setShowEnd(false)}>
                 ✕
               </button>
             </div>
             <div className="mb" style={{ textAlign: "center" as const }}>
-              <div style={{ fontSize: 42, marginBottom: 10 }}>🛑</div>
-              <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 6 }}>
-                Finish this AI debate session?
+              <div style={{ fontSize: 44, marginBottom: 10 }}>🛑</div>
+              <div style={{ fontSize: 14.5, fontWeight: 800, marginBottom: 6, color: "var(--sd-ink)" }}>
+                Finish this 1 vs AI debate session?
               </div>
-              <div
-                style={{ fontSize: 12.5, color: "var(--t2)", lineHeight: 1.75 }}
-              >
-                We’ll end the live session and show the real feedback from the
-                backend.
+              <div style={{ fontSize: 12.5, color: "var(--sd-muted)", lineHeight: 1.75 }}>
+                We'll end the live meeting and generate your comprehensive performance evaluation and feedback.
               </div>
             </div>
             <div className="mf">
               <button className="btn-s" onClick={() => setShowEnd(false)}>
                 Cancel
               </button>
-              <button className="btn-d" onClick={handleEnd}>
-                End Debate
+              <button className="btn-d" onClick={handleEnd} disabled={endingDebate}>
+                {endingDebate ? "Ending..." : "End Debate"}
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Back Confirmation Modal */}
       {showBackConfirm && (
         <div className="overlay" onClick={() => setShowBackConfirm(false)}>
           <div
             className="modal"
-            style={{ maxWidth: 360 }}
+            style={{ maxWidth: 380, background: "var(--sd-card)", color: "var(--sd-ink)" }}
             onClick={(event) => event.stopPropagation()}
           >
             <div className="mh">
-              <div className="mh-title">Go Back?</div>
-              <button
-                className="mh-close"
-                onClick={() => setShowBackConfirm(false)}
-              >
+              <div className="mh-title" style={{ color: "var(--sd-ink)" }}>
+                Exit Meeting Room?
+              </div>
+              <button className="mh-close" onClick={() => setShowBackConfirm(false)}>
                 ✕
               </button>
             </div>
             <div className="mb" style={{ textAlign: "center" as const }}>
-              <div style={{ fontSize: 42, marginBottom: 10 }}>←</div>
-              <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 6 }}>
-                Are you sure you want to go back?
+              <div style={{ fontSize: 44, marginBottom: 10 }}>←</div>
+              <div style={{ fontSize: 14.5, fontWeight: 800, marginBottom: 6, color: "var(--sd-ink)" }}>
+                Are you sure you want to exit?
               </div>
-              <div
-                style={{ fontSize: 12.5, color: "var(--t2)", lineHeight: 1.75 }}
-              >
-                Your active AI debate session will be lost.
+              <div style={{ fontSize: 12.5, color: "var(--sd-muted)", lineHeight: 1.75 }}>
+                Your current active 1 vs AI debate session will be concluded.
               </div>
             </div>
             <div className="mf">
-              <button
-                className="btn-s"
-                onClick={() => setShowBackConfirm(false)}
-              >
+              <button className="btn-s" onClick={() => setShowBackConfirm(false)}>
                 Cancel
               </button>
               <button className="btn-d" onClick={abortDebateSession}>
-                Proceed
+                Exit Session
               </button>
             </div>
           </div>
         </div>
       )}
+
       {toastNode}
     </div>
   );
@@ -7906,7 +10833,7 @@ function DebateWaitingRoom({
   }
 
   return (
-    <div className="dp-room">
+    <div className="dp-room team-waiting">
       <div className="room-bar">
         <div className="room-logo">
           <div className="room-logo-ico">🎤</div>DebateArena
@@ -7922,125 +10849,46 @@ function DebateWaitingRoom({
         <div className="rbar-topic">
           <strong>{config.topic}</strong> · {config.subject} · {config.unit}
         </div>
-        <div
-          className="rbar-pill"
-          style={{
-            background: "rgba(99,102,241,.14)",
-            border: "1px solid rgba(99,102,241,.22)",
-            color: "#c7d2fe",
-          }}
-        >
+        <div className="rbar-pill team-waiting-status">
           Waiting Room
         </div>
       </div>
 
-      <div
-        style={{
-          flex: 1,
-          overflow: "auto",
-          padding: 20,
-          background: "linear-gradient(180deg,#081223 0%,#0f172a 100%)",
-        }}
-      >
+      <div className="team-waiting-body">
         {loading ? (
-          <div
-            style={{
-              color: "#fff",
-              display: "grid",
-              placeItems: "center",
-              minHeight: "60vh",
-              gap: 12,
-            }}
-          >
+          <div className="team-waiting-loading">
             <div className="loader-spin" />
-            <div style={{ fontWeight: 800 }}>Loading waiting room...</div>
+            <div>Loading waiting room...</div>
           </div>
         ) : error ? (
-          <div
-            style={{
-              maxWidth: 560,
-              margin: "40px auto",
-              background: "rgba(239,68,68,.08)",
-              border: "1px solid rgba(239,68,68,.24)",
-              borderRadius: 20,
-              padding: 24,
-              color: "#fff",
-            }}
-          >
-            <div style={{ fontSize: 20, fontWeight: 900, marginBottom: 8 }}>
+          <div className="team-waiting-error">
+            <div className="team-waiting-error-title">
               Unable to load waiting room
             </div>
-            <div
-              style={{
-                color: "rgba(255,255,255,.7)",
-                lineHeight: 1.7,
-                marginBottom: 16,
-              }}
-            >
-              {error}
-            </div>
+            <div className="team-waiting-error-message">{error}</div>
             <button
               className="btn-p"
-              style={{ width: "auto" }}
               onClick={() => syncRoom(true).catch(() => null)}
             >
               Retry
             </button>
           </div>
         ) : (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1.15fr .85fr",
-              gap: 16,
-            }}
-          >
-            <div
-              style={{
-                background: "#0d1428",
-                borderRadius: 22,
-                border: "1px solid rgba(255,255,255,.08)",
-                padding: 20,
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 18,
-                  fontWeight: 900,
-                  color: "#fff",
-                  marginBottom: 8,
-                }}
-              >
+          <div className="team-waiting-grid">
+            <div className="team-waiting-card team-waiting-main">
+              <div className="team-waiting-heading">
                 Waiting Room
               </div>
-              <div
-                style={{
-                  color: "rgba(255,255,255,.62)",
-                  lineHeight: 1.7,
-                  marginBottom: 16,
-                }}
-              >
+              <div className="team-waiting-description">
                 {isHost
                   ? `Share the link and start when everyone is ready. ${participantCount} participant${participantCount === 1 ? "" : "s"} joined so far.`
                   : "You’ve joined successfully. Please wait until the host starts the debate."}
               </div>
               {roomLink && (
-                <div
-                  className="link-box"
-                  style={{
-                    background: "rgba(99,102,241,.08)",
-                    borderColor: "rgba(99,102,241,.2)",
-                  }}
-                >
+                <div className="link-box team-waiting-link">
                   <div className="link-box-title">Invite Link</div>
-                  <div
-                    className="link-row"
-                    style={{
-                      background: "rgba(255,255,255,.06)",
-                      borderColor: "rgba(255,255,255,.08)",
-                    }}
-                  >
-                    <span className="link-val" style={{ color: "#c7d2fe" }}>
+                  <div className="link-row team-waiting-link-row">
+                    <span className="link-val team-waiting-link-value">
                       {roomLink}
                     </span>
                     <button className="copy-btn" onClick={copyLink}>
@@ -8052,21 +10900,12 @@ function DebateWaitingRoom({
                   </div>
                 </div>
               )}
-              <div className="host-popup-list" style={{ maxHeight: "none" }}>
+              <div className="host-popup-list team-waiting-participants">
                 {participants.length ? (
                   participants.map((participant: any) => (
                     <div key={participant.id} className="host-popup-item">
                       <div
-                        className="tile-av"
-                        style={{
-                          width: 38,
-                          height: 38,
-                          fontSize: 14,
-                          background: participant.isAi
-                            ? "rgba(139,92,246,.18)"
-                            : "rgba(99,102,241,.18)",
-                          color: "#fff",
-                        }}
+                        className={`team-waiting-avatar${participant.isAi ? " ai" : ""}`}
                       >
                         {participant.isAi
                           ? "AI"
@@ -8096,21 +10935,11 @@ function DebateWaitingRoom({
               </div>
             </div>
 
-            <div
-              style={{
-                background: "#0d1428",
-                borderRadius: 22,
-                border: "1px solid rgba(255,255,255,.08)",
-                padding: 20,
-                display: "grid",
-                gap: 14,
-                alignContent: "start",
-              }}
-            >
-              <div style={{ fontSize: 16, fontWeight: 900, color: "#fff" }}>
+            <div className="team-waiting-card team-waiting-controls">
+              <div className="team-waiting-heading">
                 {isHost ? "Host Controls" : "Participant Status"}
               </div>
-              <div style={{ color: "rgba(255,255,255,.62)", lineHeight: 1.7 }}>
+              <div className="team-waiting-description">
                 {meetingEnded
                   ? "This debate was ended before the live meeting started."
                   : isHost
@@ -8119,28 +10948,14 @@ function DebateWaitingRoom({
               </div>
               {isHost && !meetingEnded && (
                 <div>
-                  <label
-                    style={{
-                      display: "block",
-                      fontSize: 10,
-                      fontWeight: 800,
-                      color: "rgba(255,255,255,.42)",
-                      textTransform: "uppercase",
-                      marginBottom: 6,
-                    }}
-                  >
+                  <label className="team-waiting-visibility-label">
                     Session Visibility
                   </label>
                   <select
-                    className="finput"
+                    className="finput team-waiting-select"
                     value={currentVisibility}
                     disabled={visibilitySaving}
                     onChange={(event) => handleVisibilityChange(event.target.value)}
-                    style={{
-                      background: "rgba(255,255,255,.05)",
-                      borderColor: "rgba(255,255,255,.12)",
-                      color: "#fff",
-                    }}
                   >
                     <option value="public">Access to all</option>
                     <option value="school">Only to school</option>
@@ -8149,21 +10964,7 @@ function DebateWaitingRoom({
                   </select>
                 </div>
               )}
-              <div
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: 12,
-                  background: hostApproved
-                    ? "rgba(16,185,129,.08)"
-                    : "rgba(99,102,241,.08)",
-                  border: hostApproved
-                    ? "1px solid rgba(16,185,129,.18)"
-                    : "1px solid rgba(99,102,241,.18)",
-                  color: hostApproved ? "#6ee7b7" : "#c7d2fe",
-                  fontSize: 12,
-                  fontWeight: 800,
-                }}
-              >
+              <div className={`team-waiting-approval ${hostApproved ? "approved" : "pending"}`}>
                 {hostApproved
                   ? "Host approval granted"
                   : "Awaiting host approval"}
@@ -8247,8 +11048,8 @@ function DebateWaitingRoom({
             </div>
             <div className="mb" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                <button className="btn-s" onClick={() => setInviteMode("group")} style={inviteMode === "group" ? { borderColor: "var(--ind)", color: "var(--ind)" } : {}}>Send to group</button>
-                <button className="btn-s" onClick={() => setInviteMode("email")} style={inviteMode === "email" ? { borderColor: "var(--ind)", color: "var(--ind)" } : {}}>Send email</button>
+                <button className={`btn-s${inviteMode === "group" ? " is-selected" : ""}`} onClick={() => setInviteMode("group")}>Send to group</button>
+                <button className={`btn-s${inviteMode === "email" ? " is-selected" : ""}`} onClick={() => setInviteMode("email")}>Send email</button>
               </div>
               {inviteMode === "group" ? (
                 <select className="finput" value={selectedInviteGroup} onChange={(event) => setSelectedInviteGroup(event.target.value)}>
